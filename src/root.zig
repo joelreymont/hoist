@@ -8,3 +8,4 @@ pub const opcodes = @import("ir/opcodes.zig");
 pub const instruction_format = @import("ir/instruction_format.zig");
 pub const trapcode = @import("ir/trapcode.zig");
 pub const condcodes = @import("ir/condcodes.zig");
+pub const immediates = @import("ir/immediates.zig");
