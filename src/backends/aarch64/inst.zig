@@ -723,6 +723,313 @@ pub const Inst = union(enum) {
         base: Reg,
     },
 
+    // === Exclusive Access Instructions ===
+
+    /// LDXR - Load Exclusive Register (32-bit)
+    /// Load word with exclusive access, sets exclusive monitor.
+    ldxr_w: struct {
+        dst: WritableReg,
+        base: Reg,
+    },
+
+    /// LDXR - Load Exclusive Register (64-bit)
+    /// Load doubleword with exclusive access, sets exclusive monitor.
+    ldxr_x: struct {
+        dst: WritableReg,
+        base: Reg,
+    },
+
+    /// LDXRB - Load Exclusive Register Byte
+    /// Load byte with exclusive access, sets exclusive monitor.
+    ldxrb: struct {
+        dst: WritableReg,
+        base: Reg,
+    },
+
+    /// LDXRH - Load Exclusive Register Halfword
+    /// Load halfword with exclusive access, sets exclusive monitor.
+    ldxrh: struct {
+        dst: WritableReg,
+        base: Reg,
+    },
+
+    /// STXR - Store Exclusive Register (32-bit)
+    /// Store word with exclusive access. Sets status register to 0 on success, 1 on failure.
+    stxr_w: struct {
+        status: WritableReg, // Result register: 0=success, 1=failure
+        src: Reg,
+        base: Reg,
+    },
+
+    /// STXR - Store Exclusive Register (64-bit)
+    /// Store doubleword with exclusive access. Sets status register to 0 on success, 1 on failure.
+    stxr_x: struct {
+        status: WritableReg, // Result register: 0=success, 1=failure
+        src: Reg,
+        base: Reg,
+    },
+
+    /// STXRB - Store Exclusive Register Byte
+    /// Store byte with exclusive access. Sets status register to 0 on success, 1 on failure.
+    stxrb: struct {
+        status: WritableReg, // Result register: 0=success, 1=failure
+        src: Reg,
+        base: Reg,
+    },
+
+    /// STXRH - Store Exclusive Register Halfword
+    /// Store halfword with exclusive access. Sets status register to 0 on success, 1 on failure.
+    stxrh: struct {
+        status: WritableReg, // Result register: 0=success, 1=failure
+        src: Reg,
+        base: Reg,
+    },
+
+    /// LDAXR - Load-Acquire Exclusive Register (32-bit)
+    /// Load word with acquire-exclusive semantics.
+    ldaxr_w: struct {
+        dst: WritableReg,
+        base: Reg,
+    },
+
+    /// LDAXR - Load-Acquire Exclusive Register (64-bit)
+    /// Load doubleword with acquire-exclusive semantics.
+    ldaxr_x: struct {
+        dst: WritableReg,
+        base: Reg,
+    },
+
+    /// LDAXRB - Load-Acquire Exclusive Register Byte
+    /// Load byte with acquire-exclusive semantics.
+    ldaxrb: struct {
+        dst: WritableReg,
+        base: Reg,
+    },
+
+    /// LDAXRH - Load-Acquire Exclusive Register Halfword
+    /// Load halfword with acquire-exclusive semantics.
+    ldaxrh: struct {
+        dst: WritableReg,
+        base: Reg,
+    },
+
+    /// STLXR - Store-Release Exclusive Register (32-bit)
+    /// Store word with release-exclusive semantics.
+    stlxr_w: struct {
+        status: WritableReg, // Result register: 0=success, 1=failure
+        src: Reg,
+        base: Reg,
+    },
+
+    /// STLXR - Store-Release Exclusive Register (64-bit)
+    /// Store doubleword with release-exclusive semantics.
+    stlxr_x: struct {
+        status: WritableReg, // Result register: 0=success, 1=failure
+        src: Reg,
+        base: Reg,
+    },
+
+    /// STLXRB - Store-Release Exclusive Register Byte
+    /// Store byte with release-exclusive semantics.
+    stlxrb: struct {
+        status: WritableReg, // Result register: 0=success, 1=failure
+        src: Reg,
+        base: Reg,
+    },
+
+    /// STLXRH - Store-Release Exclusive Register Halfword
+    /// Store halfword with release-exclusive semantics.
+    stlxrh: struct {
+        status: WritableReg, // Result register: 0=success, 1=failure
+        src: Reg,
+        base: Reg,
+    },
+
+    // === Atomic Operations (ARMv8.1-A LSE) ===
+
+    /// LDADD - Atomic add
+    /// Atomically adds src to memory at [base], returns old value to dst.
+    ldadd: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// LDADDA - Atomic add with acquire semantics
+    ldadda: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// LDADDAL - Atomic add with acquire-release semantics
+    ldaddal: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// LDADDL - Atomic add with release semantics
+    ldaddl: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// LDCLR - Atomic bit clear
+    /// Atomically clears bits (AND NOT) in memory, returns old value.
+    ldclr: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// LDCLRA - Atomic bit clear with acquire semantics
+    ldclra: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// LDCLRAL - Atomic bit clear with acquire-release semantics
+    ldclral: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// LDCLRL - Atomic bit clear with release semantics
+    ldclrl: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// LDSET - Atomic bit set
+    /// Atomically sets bits (OR) in memory, returns old value.
+    ldset: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// LDSETA - Atomic bit set with acquire semantics
+    ldseta: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// LDSETAL - Atomic bit set with acquire-release semantics
+    ldsetal: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// LDSETL - Atomic bit set with release semantics
+    ldsetl: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// LDEOR - Atomic XOR
+    /// Atomically XORs bits in memory, returns old value.
+    ldeor: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// LDEORA - Atomic XOR with acquire semantics
+    ldeora: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// LDEORAL - Atomic XOR with acquire-release semantics
+    ldeoral: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// LDEORL - Atomic XOR with release semantics
+    ldeorl: struct {
+        dst: WritableReg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// CAS - Compare and Swap
+    /// Atomically compares memory at [base] with compare value, swaps if equal.
+    cas: struct {
+        compare: Reg, // Compare value (also destination for loaded value)
+        src: Reg, // New value to store
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// CASA - Compare and Swap with acquire semantics
+    casa: struct {
+        compare: Reg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// CASAL - Compare and Swap with acquire-release semantics
+    casal: struct {
+        compare: Reg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// CASL - Compare and Swap with release semantics
+    casl: struct {
+        compare: Reg,
+        src: Reg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    // === Memory Barriers ===
+
+    /// DMB - Data Memory Barrier
+    /// Ensures ordering of memory accesses before/after the barrier.
+    dmb: struct {
+        option: BarrierOption,
+    },
+
+    /// DSB - Data Synchronization Barrier
+    /// Ensures completion of memory accesses and context-synchronization.
+    dsb: struct {
+        option: BarrierOption,
+    },
+
+    /// ISB - Instruction Synchronization Barrier
+    /// Flushes pipeline, ensures all previous instructions complete before fetching new ones.
+    isb,
+
     /// Unconditional branch (B label).
     b: struct {
         target: BranchTarget,
@@ -771,6 +1078,194 @@ pub const Inst = union(enum) {
 
     /// No operation.
     nop,
+
+    // === Floating-Point Instructions ===
+
+    /// FADD - Floating-point add (scalar)
+    fadd_s: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    fadd_d: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    /// FSUB - Floating-point subtract (scalar)
+    fsub_s: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    fsub_d: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    /// FMUL - Floating-point multiply (scalar)
+    fmul_s: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    fmul_d: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    /// FDIV - Floating-point divide (scalar)
+    fdiv_s: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    fdiv_d: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    /// FMOV - Floating-point move register to register
+    fmov_rr_s: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    fmov_rr_d: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    /// FMOV - Floating-point move immediate (supports immediate zero)
+    fmov_imm_s: struct {
+        dst: WritableReg,
+        imm: f32,
+    },
+
+    fmov_imm_d: struct {
+        dst: WritableReg,
+        imm: f64,
+    },
+
+    /// FCMP - Floating-point compare
+    fcmp_s: struct {
+        src1: Reg,
+        src2: Reg,
+    },
+
+    fcmp_d: struct {
+        src1: Reg,
+        src2: Reg,
+    },
+
+    /// FCVT - Floating-point convert precision
+    fcvt_s_to_d: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    fcvt_d_to_s: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    /// SCVTF - Signed integer convert to float
+    scvtf_w_to_s: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    scvtf_x_to_s: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    scvtf_w_to_d: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    scvtf_x_to_d: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    /// FCVTZS - Float convert to signed integer (toward zero)
+    fcvtzs_s_to_w: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    fcvtzs_s_to_x: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    fcvtzs_d_to_w: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    fcvtzs_d_to_x: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    /// FNEG - Floating-point negate
+    fneg_s: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    fneg_d: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    /// FABS - Floating-point absolute value
+    fabs_s: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    fabs_d: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    /// FMAX - Floating-point maximum
+    fmax_s: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    fmax_d: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    /// FMIN - Floating-point minimum
+    fmin_s: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    fmin_d: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
 
     pub fn format(
         self: Inst,
@@ -866,6 +1361,45 @@ pub const Inst = union(enum) {
             .stlrh => |i| try writer.print("stlrh {}, [{}]", .{ i.src, i.base }),
             .stlr_w => |i| try writer.print("stlr {}, [{}]", .{ i.src, i.base }),
             .stlr_x => |i| try writer.print("stlr {}, [{}]", .{ i.src, i.base }),
+            .ldxr_w => |i| try writer.print("ldxr {}, [{}]", .{ i.dst, i.base }),
+            .ldxr_x => |i| try writer.print("ldxr {}, [{}]", .{ i.dst, i.base }),
+            .ldxrb => |i| try writer.print("ldxrb {}, [{}]", .{ i.dst, i.base }),
+            .ldxrh => |i| try writer.print("ldxrh {}, [{}]", .{ i.dst, i.base }),
+            .stxr_w => |i| try writer.print("stxr {}, {}, [{}]", .{ i.status, i.src, i.base }),
+            .stxr_x => |i| try writer.print("stxr {}, {}, [{}]", .{ i.status, i.src, i.base }),
+            .stxrb => |i| try writer.print("stxrb {}, {}, [{}]", .{ i.status, i.src, i.base }),
+            .stxrh => |i| try writer.print("stxrh {}, {}, [{}]", .{ i.status, i.src, i.base }),
+            .ldaxr_w => |i| try writer.print("ldaxr {}, [{}]", .{ i.dst, i.base }),
+            .ldaxr_x => |i| try writer.print("ldaxr {}, [{}]", .{ i.dst, i.base }),
+            .ldaxrb => |i| try writer.print("ldaxrb {}, [{}]", .{ i.dst, i.base }),
+            .ldaxrh => |i| try writer.print("ldaxrh {}, [{}]", .{ i.dst, i.base }),
+            .stlxr_w => |i| try writer.print("stlxr {}, {}, [{}]", .{ i.status, i.src, i.base }),
+            .stlxr_x => |i| try writer.print("stlxr {}, {}, [{}]", .{ i.status, i.src, i.base }),
+            .stlxrb => |i| try writer.print("stlxrb {}, {}, [{}]", .{ i.status, i.src, i.base }),
+            .stlxrh => |i| try writer.print("stlxrh {}, {}, [{}]", .{ i.status, i.src, i.base }),
+            .ldadd => |i| try writer.print("ldadd.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .ldadda => |i| try writer.print("ldadda.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .ldaddal => |i| try writer.print("ldaddal.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .ldaddl => |i| try writer.print("ldaddl.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .ldclr => |i| try writer.print("ldclr.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .ldclra => |i| try writer.print("ldclra.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .ldclral => |i| try writer.print("ldclral.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .ldclrl => |i| try writer.print("ldclrl.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .ldset => |i| try writer.print("ldset.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .ldseta => |i| try writer.print("ldseta.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .ldsetal => |i| try writer.print("ldsetal.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .ldsetl => |i| try writer.print("ldsetl.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .ldeor => |i| try writer.print("ldeor.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .ldeora => |i| try writer.print("ldeora.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .ldeoral => |i| try writer.print("ldeoral.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .ldeorl => |i| try writer.print("ldeorl.{} {}, {}, [{}]", .{ i.size, i.dst, i.src, i.base }),
+            .cas => |i| try writer.print("cas.{} {}, {}, [{}]", .{ i.size, i.compare, i.src, i.base }),
+            .casa => |i| try writer.print("casa.{} {}, {}, [{}]", .{ i.size, i.compare, i.src, i.base }),
+            .casal => |i| try writer.print("casal.{} {}, {}, [{}]", .{ i.size, i.compare, i.src, i.base }),
+            .casl => |i| try writer.print("casl.{} {}, {}, [{}]", .{ i.size, i.compare, i.src, i.base }),
+            .dmb => |i| try writer.print("dmb {}", .{i.option}),
+            .dsb => |i| try writer.print("dsb {}", .{i.option}),
+            .isb => try writer.writeAll("isb"),
             .b => |i| try writer.print("b {}", .{i.target}),
             .b_cond => |i| try writer.print("b.{} {}", .{ i.cond, i.target }),
             .bl => |i| try writer.print("bl {}", .{i.target}),
@@ -881,6 +1415,38 @@ pub const Inst = union(enum) {
             .adr => |i| try writer.print("adr {}, #{d}", .{ i.dst, i.offset }),
             .adrp => |i| try writer.print("adrp {}, #{d}", .{ i.dst, i.offset }),
             .nop => try writer.writeAll("nop"),
+            .fadd_s => |i| try writer.print("fadd.s {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .fadd_d => |i| try writer.print("fadd.d {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .fsub_s => |i| try writer.print("fsub.s {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .fsub_d => |i| try writer.print("fsub.d {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .fmul_s => |i| try writer.print("fmul.s {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .fmul_d => |i| try writer.print("fmul.d {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .fdiv_s => |i| try writer.print("fdiv.s {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .fdiv_d => |i| try writer.print("fdiv.d {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .fmov_rr_s => |i| try writer.print("fmov.s {}, {}", .{ i.dst, i.src }),
+            .fmov_rr_d => |i| try writer.print("fmov.d {}, {}", .{ i.dst, i.src }),
+            .fmov_imm_s => |i| try writer.print("fmov.s {}, #{d}", .{ i.dst, i.imm }),
+            .fmov_imm_d => |i| try writer.print("fmov.d {}, #{d}", .{ i.dst, i.imm }),
+            .fcmp_s => |i| try writer.print("fcmp.s {}, {}", .{ i.src1, i.src2 }),
+            .fcmp_d => |i| try writer.print("fcmp.d {}, {}", .{ i.src1, i.src2 }),
+            .fcvt_s_to_d => |i| try writer.print("fcvt.s_to_d {}, {}", .{ i.dst, i.src }),
+            .fcvt_d_to_s => |i| try writer.print("fcvt.d_to_s {}, {}", .{ i.dst, i.src }),
+            .scvtf_w_to_s => |i| try writer.print("scvtf.w_to_s {}, {}", .{ i.dst, i.src }),
+            .scvtf_x_to_s => |i| try writer.print("scvtf.x_to_s {}, {}", .{ i.dst, i.src }),
+            .scvtf_w_to_d => |i| try writer.print("scvtf.w_to_d {}, {}", .{ i.dst, i.src }),
+            .scvtf_x_to_d => |i| try writer.print("scvtf.x_to_d {}, {}", .{ i.dst, i.src }),
+            .fcvtzs_s_to_w => |i| try writer.print("fcvtzs.s_to_w {}, {}", .{ i.dst, i.src }),
+            .fcvtzs_s_to_x => |i| try writer.print("fcvtzs.s_to_x {}, {}", .{ i.dst, i.src }),
+            .fcvtzs_d_to_w => |i| try writer.print("fcvtzs.d_to_w {}, {}", .{ i.dst, i.src }),
+            .fcvtzs_d_to_x => |i| try writer.print("fcvtzs.d_to_x {}, {}", .{ i.dst, i.src }),
+            .fneg_s => |i| try writer.print("fneg.s {}, {}", .{ i.dst, i.src }),
+            .fneg_d => |i| try writer.print("fneg.d {}, {}", .{ i.dst, i.src }),
+            .fabs_s => |i| try writer.print("fabs.s {}, {}", .{ i.dst, i.src }),
+            .fabs_d => |i| try writer.print("fabs.d {}, {}", .{ i.dst, i.src }),
+            .fmax_s => |i| try writer.print("fmax.s {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .fmax_d => |i| try writer.print("fmax.d {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .fmin_s => |i| try writer.print("fmin.s {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .fmin_d => |i| try writer.print("fmin.d {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
         }
     }
 };
@@ -1132,6 +1698,45 @@ pub const ExtendOp = enum(u3) {
 
     pub fn format(
         self: ExtendOp,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        const name = @tagName(self);
+        try writer.writeAll(name);
+    }
+};
+
+/// Barrier option for DMB/DSB instructions.
+/// Specifies the shareability domain and access type for the barrier.
+pub const BarrierOption = enum(u4) {
+    /// Full system barrier (all operations)
+    sy = 0b1111,
+    /// Full system store barrier
+    st = 0b1110,
+    /// Full system load barrier
+    ld = 0b1101,
+    /// Inner shareable barrier (all operations)
+    ish = 0b1011,
+    /// Inner shareable store barrier
+    ishst = 0b1010,
+    /// Inner shareable load barrier
+    ishld = 0b1001,
+    /// Non-shareable barrier (all operations)
+    nsh = 0b0111,
+    /// Non-shareable store barrier
+    nshst = 0b0110,
+    /// Non-shareable load barrier
+    nshld = 0b0101,
+    /// Outer shareable barrier (all operations)
+    osh = 0b0011,
+    /// Outer shareable store barrier
+    oshst = 0b0010,
+    /// Outer shareable load barrier
+    oshld = 0b0001,
+
+    pub fn format(
+        self: BarrierOption,
         comptime _: []const u8,
         _: std.fmt.FormatOptions,
         writer: anytype,
