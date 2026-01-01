@@ -58,6 +58,67 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Multiply register (MUL Xd, Xn, Xm).
+    /// Computes Xd = Xn * Xm (lower bits only).
+    mul_rr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Multiply-add (MADD Xd, Xn, Xm, Xa).
+    /// Computes Xd = Xa + (Xn * Xm).
+    madd: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        addend: Reg,
+        size: OperandSize,
+    },
+
+    /// Multiply-subtract (MSUB Xd, Xn, Xm, Xa).
+    /// Computes Xd = Xa - (Xn * Xm).
+    msub: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        subtrahend: Reg,
+        size: OperandSize,
+    },
+
+    /// Signed multiply high (SMULH Xd, Xn, Xm).
+    /// Computes upper 64 bits of signed 64x64→128 multiply.
+    smulh: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    /// Unsigned multiply high (UMULH Xd, Xn, Xm).
+    /// Computes upper 64 bits of unsigned 64x64→128 multiply.
+    umulh: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    /// Signed multiply long (SMULL Xd, Wn, Wm).
+    /// 32x32→64 signed multiply.
+    smull: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    /// Unsigned multiply long (UMULL Xd, Wn, Wm).
+    /// 32x32→64 unsigned multiply.
+    umull: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
     /// Load register from memory (LDR Xt, [Xn, #offset]).
     ldr: struct {
         dst: WritableReg,
@@ -140,6 +201,13 @@ pub const Inst = union(enum) {
             .add_imm => |i| try writer.print("add.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
             .sub_rr => |i| try writer.print("sub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .sub_imm => |i| try writer.print("sub.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .mul_rr => |i| try writer.print("mul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .madd => |i| try writer.print("madd.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.addend }),
+            .msub => |i| try writer.print("msub.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.subtrahend }),
+            .smulh => |i| try writer.print("smulh {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .umulh => |i| try writer.print("umulh {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .smull => |i| try writer.print("smull {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .umull => |i| try writer.print("umull {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
             .ldr => |i| try writer.print("ldr.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
             .str => |i| try writer.print("str.{} {}, [{}, #{d}]", .{ i.size, i.src, i.base, i.offset }),
             .stp => |i| try writer.print("stp.{} {}, {}, [{}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
@@ -461,4 +529,85 @@ test "ImmShift encoding" {
     // Invalid - too large
     try testing.expectEqual(@as(?ImmShift, null), ImmShift.maybeFromU64(64));
     try testing.expectEqual(@as(?ImmShift, null), ImmShift.maybeFromU64(100));
+}
+
+test "Multiply instruction formatting" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const v3 = VReg.new(3, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const r3 = Reg.fromVReg(v3);
+    const wr0 = WritableReg.fromReg(r0);
+
+    // MUL
+    const mul = Inst{ .mul_rr = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size64,
+    } };
+    var buf: [64]u8 = undefined;
+    var str = try std.fmt.bufPrint(&buf, "{}", .{mul});
+    try testing.expect(std.mem.indexOf(u8, str, "mul") != null);
+
+    // MADD
+    const madd = Inst{ .madd = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .addend = r3,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{madd});
+    try testing.expect(std.mem.indexOf(u8, str, "madd") != null);
+
+    // MSUB
+    const msub = Inst{ .msub = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .subtrahend = r3,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{msub});
+    try testing.expect(std.mem.indexOf(u8, str, "msub") != null);
+
+    // SMULH
+    const smulh = Inst{ .smulh = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{smulh});
+    try testing.expect(std.mem.indexOf(u8, str, "smulh") != null);
+
+    // UMULH
+    const umulh = Inst{ .umulh = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{umulh});
+    try testing.expect(std.mem.indexOf(u8, str, "umulh") != null);
+
+    // SMULL
+    const smull = Inst{ .smull = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{smull});
+    try testing.expect(std.mem.indexOf(u8, str, "smull") != null);
+
+    // UMULL
+    const umull = Inst{ .umull = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{umull});
+    try testing.expect(std.mem.indexOf(u8, str, "umull") != null);
 }
