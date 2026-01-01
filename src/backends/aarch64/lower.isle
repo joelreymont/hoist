@@ -87,6 +87,53 @@
 ;; Note: Needs register negation for variable amount
 ;; rotl(x, k) = rotr(x, width - k)
 
+;; Comparison operations lowering
+
+;; icmp: Integer comparison with Equal condition
+(rule (lower (icmp IntCC.Equal ty x y))
+      (aarch64_cmp_rr ty x y IntCC.Equal))
+
+;; icmp: Integer comparison with NotEqual condition
+(rule (lower (icmp IntCC.NotEqual ty x y))
+      (aarch64_cmp_rr ty x y IntCC.NotEqual))
+
+;; icmp: Integer comparison with SignedLessThan condition
+(rule (lower (icmp IntCC.SignedLessThan ty x y))
+      (aarch64_cmp_rr ty x y IntCC.SignedLessThan))
+
+;; icmp: Integer comparison with SignedGreaterThanOrEqual condition
+(rule (lower (icmp IntCC.SignedGreaterThanOrEqual ty x y))
+      (aarch64_cmp_rr ty x y IntCC.SignedGreaterThanOrEqual))
+
+;; icmp: Integer comparison with SignedGreaterThan condition
+(rule (lower (icmp IntCC.SignedGreaterThan ty x y))
+      (aarch64_cmp_rr ty x y IntCC.SignedGreaterThan))
+
+;; icmp: Integer comparison with SignedLessThanOrEqual condition
+(rule (lower (icmp IntCC.SignedLessThanOrEqual ty x y))
+      (aarch64_cmp_rr ty x y IntCC.SignedLessThanOrEqual))
+
+;; icmp: Integer comparison with UnsignedLessThan condition
+(rule (lower (icmp IntCC.UnsignedLessThan ty x y))
+      (aarch64_cmp_rr ty x y IntCC.UnsignedLessThan))
+
+;; icmp: Integer comparison with UnsignedGreaterThanOrEqual condition
+(rule (lower (icmp IntCC.UnsignedGreaterThanOrEqual ty x y))
+      (aarch64_cmp_rr ty x y IntCC.UnsignedGreaterThanOrEqual))
+
+;; icmp: Integer comparison with UnsignedGreaterThan condition
+(rule (lower (icmp IntCC.UnsignedGreaterThan ty x y))
+      (aarch64_cmp_rr ty x y IntCC.UnsignedGreaterThan))
+
+;; icmp: Integer comparison with UnsignedLessThanOrEqual condition
+(rule (lower (icmp IntCC.UnsignedLessThanOrEqual ty x y))
+      (aarch64_cmp_rr ty x y IntCC.UnsignedLessThanOrEqual))
+
+;; icmp with immediate form (12-bit unsigned immediate)
+(rule (lower (icmp cc ty x (iconst k)))
+      (if-let $true (uimm12 k))
+      (aarch64_cmp_imm ty x k cc))
+
 ;; Bitwise operations lowering
 
 ;; band: Bitwise AND (register form)
@@ -169,6 +216,22 @@
   (if (<= 0 val 63)
       val))
 
+;; Type declarations
+
+;; Integer comparison condition codes
+(type IntCC (enum
+  Equal
+  NotEqual
+  SignedLessThan
+  SignedLessThanOrEqual
+  SignedGreaterThan
+  SignedGreaterThanOrEqual
+  UnsignedLessThan
+  UnsignedLessThanOrEqual
+  UnsignedGreaterThan
+  UnsignedGreaterThanOrEqual
+))
+
 ;; Constructor terms for aarch64 instructions
 
 (type Aarch64Inst (enum))
@@ -200,6 +263,10 @@
 (decl aarch64_orr_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_eor_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_mvn_rr (Type Value) Aarch64Inst)
+
+;; Comparison operations
+(decl aarch64_cmp_rr (Type Value Value IntCC) Aarch64Inst)
+(decl aarch64_cmp_imm (Type Value i64 IntCC) Aarch64Inst)
 
 ;; Memory
 (decl aarch64_ldr (Type Value) Aarch64Inst)

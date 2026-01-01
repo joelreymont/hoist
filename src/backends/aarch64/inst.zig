@@ -268,6 +268,30 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Count leading zeros (CLZ Xd, Xn).
+    /// Computes number of leading zero bits.
+    clz: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
+    /// Count leading sign bits (CLS Xd, Xn).
+    /// Computes number of leading bits that match the sign bit.
+    cls: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
+    /// Reverse bits (RBIT Xd, Xn).
+    /// Reverses the bit order of the source register.
+    rbit: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
     /// Compare register with register (CMP Xn, Xm).
     /// Alias for SUBS XZR, Xn, Xm. Sets condition flags for conditional branches.
     cmp_rr: struct {
@@ -421,6 +445,9 @@ pub const Inst = union(enum) {
             .eor_rr => |i| try writer.print("eor.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .eor_imm => |i| try writer.print("eor.{} {}, {}, #0x{x}", .{ i.imm.size, i.dst, i.src, i.imm.value }),
             .mvn_rr => |i| try writer.print("mvn.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .clz => |i| try writer.print("clz.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .cls => |i| try writer.print("cls.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .rbit => |i| try writer.print("rbit.{} {}, {}", .{ i.size, i.dst, i.src }),
             .cmp_rr => |i| try writer.print("cmp.{} {}, {}", .{ i.size, i.src1, i.src2 }),
             .cmp_imm => |i| try writer.print("cmp.{} {}, #{d}", .{ i.size, i.src, i.imm }),
             .cmn_rr => |i| try writer.print("cmn.{} {}, {}", .{ i.size, i.src1, i.src2 }),

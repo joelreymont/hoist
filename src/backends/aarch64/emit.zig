@@ -46,6 +46,15 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .eor_rr => |i| try emitEorRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .eor_imm => |i| try emitEorImm(i.dst.toReg(), i.src, i.imm, buffer),
         .mvn_rr => |i| try emitMvnRR(i.dst.toReg(), i.src, i.size, buffer),
+        .cmp_rr => |i| try emitCmpRR(i.src1, i.src2, i.size, buffer),
+        .cmp_imm => |i| try emitCmpImm(i.src, i.imm, i.size, buffer),
+        .cmn_rr => |i| try emitCmnRR(i.src1, i.src2, i.size, buffer),
+        .cmn_imm => |i| try emitCmnImm(i.src, i.imm, i.size, buffer),
+        .tst_rr => |i| try emitTstRR(i.src1, i.src2, i.size, buffer),
+        .tst_imm => |i| try emitTstImm(i.src, i.imm, buffer),
+        .clz => |i| try emitClz(i.dst.toReg(), i.src, i.size, buffer),
+        .cls => |i| try emitCls(i.dst.toReg(), i.src, i.size, buffer),
+        .rbit => |i| try emitRbit(i.dst.toReg(), i.src, i.size, buffer),
         .ldr => |i| try emitLdr(i.dst.toReg(), i.base, i.offset, i.size, buffer),
         .str => |i| try emitStr(i.src, i.base, i.offset, i.size, buffer),
         .stp => |i| try emitStp(i.src1, i.src2, i.base, i.offset, i.size, buffer),
@@ -675,6 +684,188 @@ fn emitMvnRR(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuff
     const insn: u32 = (sf_bit << 31) |
         (0b01001010001 << 21) | // ORN opcode (note the extra 1 bit at the end for NOT variant)
         (@as(u32, rm) << 16) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// CMP Xn, Xm (compare register with register)
+/// Alias for SUBS XZR, Xn, Xm
+fn emitCmpRR(src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd: u5 = 31; // XZR
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+
+    // SUBS: sf|1|1|01011|shift|0|Rm|imm6|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b11 << 29) |
+        (0b01011 << 24) |
+        (@as(u32, rm) << 16) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// CMP Xn, #imm (compare register with immediate)
+/// Alias for SUBS XZR, Xn, #imm
+fn emitCmpImm(src: Reg, imm: u16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd: u5 = 31; // XZR
+    const rn = hwEnc(src);
+    const imm12: u12 = @truncate(imm);
+
+    // SUBS imm: sf|1|1|10001|shift|imm12|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b11 << 29) |
+        (0b10001 << 24) |
+        (@as(u32, imm12) << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// CMN Xn, Xm (compare negative)
+/// Alias for ADDS XZR, Xn, Xm
+fn emitCmnRR(src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd: u5 = 31; // XZR
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+
+    // ADDS: sf|0|1|01011|shift|0|Rm|imm6|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b01 << 29) |
+        (0b01011 << 24) |
+        (@as(u32, rm) << 16) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// CMN Xn, #imm (compare negative with immediate)
+/// Alias for ADDS XZR, Xn, #imm
+fn emitCmnImm(src: Reg, imm: u16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd: u5 = 31; // XZR
+    const rn = hwEnc(src);
+    const imm12: u12 = @truncate(imm);
+
+    // ADDS imm: sf|0|1|10001|shift|imm12|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b01 << 29) |
+        (0b10001 << 24) |
+        (@as(u32, imm12) << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// TST Xn, Xm (test bits)
+/// Alias for ANDS XZR, Xn, Xm
+fn emitTstRR(src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd: u5 = 31; // XZR
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+
+    // ANDS (shifted register): sf|11|01010|shift|0|Rm|imm6|Rn|Rd
+    // Using shift=00 (LSL), imm6=0 (no shift)
+    const insn: u32 = (sf_bit << 31) |
+        (0b11001010 << 21) |
+        (@as(u32, rm) << 16) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// TST Xn, #imm (test bits with immediate)
+/// Alias for ANDS XZR, Xn, #imm
+fn emitTstImm(src: Reg, imm_logic: root.aarch64_inst.ImmLogic, buffer: *buffer_mod.MachBuffer) !void {
+    const size = imm_logic.size;
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd: u5 = 31; // XZR
+    const rn = hwEnc(src);
+    const n: u1 = if (imm_logic.n) 1 else 0;
+
+    // ANDS (immediate): sf|11|100100|N|immr|imms|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b11100100 << 23) |
+        (@as(u32, n) << 22) |
+        (@as(u32, imm_logic.r) << 16) |
+        (@as(u32, imm_logic.s) << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// CLZ Xd, Xn (count leading zeros)
+fn emitClz(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    // CLZ: sf|1|S|11010110|opcode2|opcode|Rn|Rd
+    // CLZ: sf|1|0|11010110|00000|00100|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (1 << 30) |
+        (0b11010110 << 21) |
+        (0b00000 << 16) | // opcode2
+        (0b00100 << 10) | // opcode
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// CLS Xd, Xn (count leading sign bits)
+fn emitCls(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    // CLS: sf|1|S|11010110|opcode2|opcode|Rn|Rd
+    // CLS: sf|1|0|11010110|00000|00101|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (1 << 30) |
+        (0b11010110 << 21) |
+        (0b00000 << 16) | // opcode2
+        (0b00101 << 10) | // opcode
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// RBIT Xd, Xn (reverse bits)
+fn emitRbit(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    // RBIT: sf|1|S|11010110|opcode2|opcode|Rn|Rd
+    // RBIT: sf|1|0|11010110|00000|00000|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (1 << 30) |
+        (0b11010110 << 21) |
+        (0b00000 << 16) | // opcode2
+        (0b00000 << 10) | // opcode
         (@as(u32, rn) << 5) |
         rd;
 
@@ -1509,6 +1700,403 @@ test "emit mvn rr 32-bit" {
     try testing.expectEqual(@as(u32, 0x2A2103E0), insn);
 }
 
+test "emit cmp rr 64-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v1 = root.reg.VReg.new(1, .int);
+    const v2 = root.reg.VReg.new(2, .int);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+
+    // CMP X1, X2 (alias for SUBS XZR, X1, X2)
+    try emit(.{ .cmp_rr = .{
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit = 1 for 64-bit
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1);
+
+    // Check S bit (bit 29) = 1 for SUBS
+    try testing.expectEqual(@as(u32, 1), (insn >> 29) & 1);
+
+    // Check opcode (bits 30-24) = 0b1101011 for SUB/SUBS
+    try testing.expectEqual(@as(u32, 0b1101011), (insn >> 24) & 0x7F);
+
+    // Check Rd = 31 (XZR), Rn = 1, Rm = 2
+    try testing.expectEqual(@as(u32, 31), insn & 0x1F);
+    try testing.expectEqual(@as(u32, 1), (insn >> 5) & 0x1F);
+    try testing.expectEqual(@as(u32, 2), (insn >> 16) & 0x1F);
+
+    // Verify complete encoding: 0xEB02003F (SUBS XZR, X1, X2 == CMP X1, X2)
+    try testing.expectEqual(@as(u32, 0xEB02003F), insn);
+}
+
+test "emit cmp rr 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v5 = root.reg.VReg.new(5, .int);
+    const v10 = root.reg.VReg.new(10, .int);
+    const r5 = Reg.fromVReg(v5);
+    const r10 = Reg.fromVReg(v10);
+
+    // CMP W5, W10
+    try emit(.{ .cmp_rr = .{
+        .src1 = r5,
+        .src2 = r10,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit = 0 for 32-bit
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1);
+
+    // Verify complete encoding: 0x6B0A00BF (SUBS WZR, W5, W10 == CMP W5, W10)
+    try testing.expectEqual(@as(u32, 0x6B0A00BF), insn);
+}
+
+test "emit cmp imm 64-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v3 = root.reg.VReg.new(3, .int);
+    const r3 = Reg.fromVReg(v3);
+
+    // CMP X3, #42 (alias for SUBS XZR, X3, #42)
+    try emit(.{ .cmp_imm = .{
+        .src = r3,
+        .imm = 42,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit = 1 for 64-bit
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1);
+
+    // Check S bit (bit 29) = 1 for SUBS
+    try testing.expectEqual(@as(u32, 1), (insn >> 29) & 1);
+
+    // Check opcode (bits 30-24) = 0b1100010 for immediate form
+    try testing.expectEqual(@as(u32, 0b1100010), (insn >> 24) & 0x7F);
+
+    // Check immediate value = 42
+    try testing.expectEqual(@as(u32, 42), (insn >> 10) & 0xFFF);
+
+    // Check Rd = 31 (XZR), Rn = 3
+    try testing.expectEqual(@as(u32, 31), insn & 0x1F);
+    try testing.expectEqual(@as(u32, 3), (insn >> 5) & 0x1F);
+
+    // Verify complete encoding: 0xF1002A7F (SUBS XZR, X3, #42 == CMP X3, #42)
+    try testing.expectEqual(@as(u32, 0xF1002A7F), insn);
+}
+
+test "emit cmp imm 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v7 = root.reg.VReg.new(7, .int);
+    const r7 = Reg.fromVReg(v7);
+
+    // CMP W7, #100
+    try emit(.{ .cmp_imm = .{
+        .src = r7,
+        .imm = 100,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit = 0 for 32-bit
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1);
+
+    // Check immediate value = 100
+    try testing.expectEqual(@as(u32, 100), (insn >> 10) & 0xFFF);
+
+    // Verify complete encoding: 0x710190FF (SUBS WZR, W7, #100 == CMP W7, #100)
+    try testing.expectEqual(@as(u32, 0x710190FF), insn);
+}
+
+test "emit cmn rr 64-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v8 = root.reg.VReg.new(8, .int);
+    const v9 = root.reg.VReg.new(9, .int);
+    const r8 = Reg.fromVReg(v8);
+    const r9 = Reg.fromVReg(v9);
+
+    // CMN X8, X9 (alias for ADDS XZR, X8, X9)
+    try emit(.{ .cmn_rr = .{
+        .src1 = r8,
+        .src2 = r9,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit = 1 for 64-bit
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1);
+
+    // Check S bit (bit 29) = 1 for ADDS
+    try testing.expectEqual(@as(u32, 1), (insn >> 29) & 1);
+
+    // Check opcode (bits 30-24) = 0b0101011 for ADD/ADDS
+    try testing.expectEqual(@as(u32, 0b0101011), (insn >> 24) & 0x7F);
+
+    // Check Rd = 31 (XZR), Rn = 8, Rm = 9
+    try testing.expectEqual(@as(u32, 31), insn & 0x1F);
+    try testing.expectEqual(@as(u32, 8), (insn >> 5) & 0x1F);
+    try testing.expectEqual(@as(u32, 9), (insn >> 16) & 0x1F);
+
+    // Verify complete encoding: 0xAB09011F (ADDS XZR, X8, X9 == CMN X8, X9)
+    try testing.expectEqual(@as(u32, 0xAB09011F), insn);
+}
+
+test "emit cmn rr 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+
+    // CMN W0, W1
+    try emit(.{ .cmn_rr = .{
+        .src1 = r0,
+        .src2 = r1,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit = 0 for 32-bit
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1);
+
+    // Verify complete encoding: 0x2B01001F (ADDS WZR, W0, W1 == CMN W0, W1)
+    try testing.expectEqual(@as(u32, 0x2B01001F), insn);
+}
+
+test "emit cmn imm 64-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v15 = root.reg.VReg.new(15, .int);
+    const r15 = Reg.fromVReg(v15);
+
+    // CMN X15, #255 (alias for ADDS XZR, X15, #255)
+    try emit(.{ .cmn_imm = .{
+        .src = r15,
+        .imm = 255,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit = 1 for 64-bit
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1);
+
+    // Check S bit (bit 29) = 1 for ADDS
+    try testing.expectEqual(@as(u32, 1), (insn >> 29) & 1);
+
+    // Check opcode (bits 30-24) = 0b0100010 for immediate form
+    try testing.expectEqual(@as(u32, 0b0100010), (insn >> 24) & 0x7F);
+
+    // Check immediate value = 255
+    try testing.expectEqual(@as(u32, 255), (insn >> 10) & 0xFFF);
+
+    // Check Rd = 31 (XZR), Rn = 15
+    try testing.expectEqual(@as(u32, 31), insn & 0x1F);
+    try testing.expectEqual(@as(u32, 15), (insn >> 5) & 0x1F);
+
+    // Verify complete encoding: 0xB1003FFF (ADDS XZR, X15, #255 == CMN X15, #255)
+    try testing.expectEqual(@as(u32, 0xB1003FFF), insn);
+}
+
+test "emit cmn imm 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v20 = root.reg.VReg.new(20, .int);
+    const r20 = Reg.fromVReg(v20);
+
+    // CMN W20, #1
+    try emit(.{ .cmn_imm = .{
+        .src = r20,
+        .imm = 1,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit = 0 for 32-bit
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1);
+
+    // Check immediate value = 1
+    try testing.expectEqual(@as(u32, 1), (insn >> 10) & 0xFFF);
+
+    // Verify complete encoding: 0x3100069F (ADDS WZR, W20, #1 == CMN W20, #1)
+    try testing.expectEqual(@as(u32, 0x3100069F), insn);
+}
+
+test "emit tst rr 64-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v12 = root.reg.VReg.new(12, .int);
+    const v13 = root.reg.VReg.new(13, .int);
+    const r12 = Reg.fromVReg(v12);
+    const r13 = Reg.fromVReg(v13);
+
+    // TST X12, X13 (alias for ANDS XZR, X12, X13)
+    try emit(.{ .tst_rr = .{
+        .src1 = r12,
+        .src2 = r13,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit = 1 for 64-bit
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1);
+
+    // Check opcode (bits 29-21) = 0b11001010 for ANDS
+    try testing.expectEqual(@as(u32, 0b11001010), (insn >> 21) & 0x3FF);
+
+    // Check Rd = 31 (XZR), Rn = 12, Rm = 13
+    try testing.expectEqual(@as(u32, 31), insn & 0x1F);
+    try testing.expectEqual(@as(u32, 12), (insn >> 5) & 0x1F);
+    try testing.expectEqual(@as(u32, 13), (insn >> 16) & 0x1F);
+
+    // Verify complete encoding: 0xEA0D019F (ANDS XZR, X12, X13 == TST X12, X13)
+    try testing.expectEqual(@as(u32, 0xEA0D019F), insn);
+}
+
+test "emit tst rr 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v25 = root.reg.VReg.new(25, .int);
+    const v30 = root.reg.VReg.new(30, .int);
+    const r25 = Reg.fromVReg(v25);
+    const r30 = Reg.fromVReg(v30);
+
+    // TST W25, W30
+    try emit(.{ .tst_rr = .{
+        .src1 = r25,
+        .src2 = r30,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit = 0 for 32-bit
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1);
+
+    // Verify complete encoding: 0x6A1E033F (ANDS WZR, W25, W30 == TST W25, W30)
+    try testing.expectEqual(@as(u32, 0x6A1E033F), insn);
+}
+
+test "emit tst imm 64-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v4 = root.reg.VReg.new(4, .int);
+    const r4 = Reg.fromVReg(v4);
+
+    // TST X4, #0xff (alias for ANDS XZR, X4, #0xff)
+    const imm_logic = root.aarch64_inst.ImmLogic{
+        .value = 0xff,
+        .n = true, // N=1 for 64-bit patterns
+        .r = 0, // immr
+        .s = 7, // imms (8 consecutive 1s)
+        .size = .size64,
+    };
+
+    try emit(.{ .tst_imm = .{
+        .src = r4,
+        .imm = imm_logic,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit = 1 for 64-bit
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1);
+
+    // Check opcode (bits 29-23) = 0b11100100 for ANDS immediate
+    try testing.expectEqual(@as(u32, 0b11100100), (insn >> 23) & 0x7F);
+
+    // Check N bit
+    try testing.expectEqual(@as(u32, 1), (insn >> 22) & 1);
+
+    // Check immr and imms fields
+    try testing.expectEqual(@as(u32, 0), (insn >> 16) & 0x3F);
+    try testing.expectEqual(@as(u32, 7), (insn >> 10) & 0x3F);
+
+    // Check Rd = 31 (XZR), Rn = 4
+    try testing.expectEqual(@as(u32, 31), insn & 0x1F);
+    try testing.expectEqual(@as(u32, 4), (insn >> 5) & 0x1F);
+
+    // Verify complete encoding: 0xF240109F (ANDS XZR, X4, #0xff == TST X4, #0xff)
+    try testing.expectEqual(@as(u32, 0xF240109F), insn);
+}
+
+test "emit tst imm 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v6 = root.reg.VReg.new(6, .int);
+    const r6 = Reg.fromVReg(v6);
+
+    // TST W6, #0xf (test lower 4 bits)
+    const imm_logic = root.aarch64_inst.ImmLogic{
+        .value = 0xf,
+        .n = false, // N=0 for 32-bit patterns
+        .r = 0, // immr
+        .s = 3, // imms (4 consecutive 1s)
+        .size = .size32,
+    };
+
+    try emit(.{ .tst_imm = .{
+        .src = r6,
+        .imm = imm_logic,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit = 0 for 32-bit
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1);
+
+    // Check N bit = 0 for 32-bit
+    try testing.expectEqual(@as(u32, 0), (insn >> 22) & 1);
+
+    // Check immr = 0, imms = 3
+    try testing.expectEqual(@as(u32, 0), (insn >> 16) & 0x3F);
+    try testing.expectEqual(@as(u32, 3), (insn >> 10) & 0x3F);
+
+    // Verify complete encoding: 0x72000CDF (ANDS WZR, W6, #0xf == TST W6, #0xf)
+    try testing.expectEqual(@as(u32, 0x72000CDF), insn);
+}
+
 test "emit lsl register 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -1914,4 +2502,304 @@ test "emit shift with edge cases" {
 
     // Verify encoding: immr=31, imms=31
     try testing.expectEqual(@as(u32, 0x537F7C20), insn);
+}
+
+test "emit clz 64-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = root.reg.WritableReg.fromReg(r0);
+
+    // CLZ X0, X1
+    try emit(.{ .clz = .{
+        .dst = wr0,
+        .src = r1,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit (bit 31) = 1 for 64-bit
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1);
+
+    // Check fixed bits (bits 30-21) = 0b1011010110
+    try testing.expectEqual(@as(u32, 0b1011010110), (insn >> 21) & 0x3FF);
+
+    // Check opcode2 field (bits 16-20) = 0b00000
+    try testing.expectEqual(@as(u32, 0b00000), (insn >> 16) & 0x1F);
+
+    // Check opcode field (bits 10-15) = 0b00100
+    try testing.expectEqual(@as(u32, 0b00100), (insn >> 10) & 0x3F);
+
+    // Check Rn field (bits 5-9) = 1
+    try testing.expectEqual(@as(u32, 1), (insn >> 5) & 0x1F);
+
+    // Check Rd field (bits 0-4) = 0
+    try testing.expectEqual(@as(u32, 0), insn & 0x1F);
+
+    // Verify complete encoding: 0xDAC01020
+    try testing.expectEqual(@as(u32, 0xDAC01020), insn);
+}
+
+test "emit clz 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v3 = root.reg.VReg.new(3, .int);
+    const v5 = root.reg.VReg.new(5, .int);
+    const r3 = Reg.fromVReg(v3);
+    const r5 = Reg.fromVReg(v5);
+    const wr3 = root.reg.WritableReg.fromReg(r3);
+
+    // CLZ W3, W5
+    try emit(.{ .clz = .{
+        .dst = wr3,
+        .src = r5,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit (bit 31) = 0 for 32-bit
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1);
+
+    // Check fixed bits (bits 30-21) = 0b1011010110
+    try testing.expectEqual(@as(u32, 0b1011010110), (insn >> 21) & 0x3FF);
+
+    // Check opcode field (bits 10-15) = 0b00100
+    try testing.expectEqual(@as(u32, 0b00100), (insn >> 10) & 0x3F);
+
+    // Check Rn field (bits 5-9) = 5
+    try testing.expectEqual(@as(u32, 5), (insn >> 5) & 0x1F);
+
+    // Check Rd field (bits 0-4) = 3
+    try testing.expectEqual(@as(u32, 3), insn & 0x1F);
+
+    // Verify complete encoding: 0x5AC010A3
+    try testing.expectEqual(@as(u32, 0x5AC010A3), insn);
+}
+
+test "emit cls 64-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v2 = root.reg.VReg.new(2, .int);
+    const v7 = root.reg.VReg.new(7, .int);
+    const r2 = Reg.fromVReg(v2);
+    const r7 = Reg.fromVReg(v7);
+    const wr2 = root.reg.WritableReg.fromReg(r2);
+
+    // CLS X2, X7
+    try emit(.{ .cls = .{
+        .dst = wr2,
+        .src = r7,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit (bit 31) = 1 for 64-bit
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1);
+
+    // Check fixed bits (bits 30-21) = 0b1011010110
+    try testing.expectEqual(@as(u32, 0b1011010110), (insn >> 21) & 0x3FF);
+
+    // Check opcode2 field (bits 16-20) = 0b00000
+    try testing.expectEqual(@as(u32, 0b00000), (insn >> 16) & 0x1F);
+
+    // Check opcode field (bits 10-15) = 0b00101
+    try testing.expectEqual(@as(u32, 0b00101), (insn >> 10) & 0x3F);
+
+    // Check Rn field (bits 5-9) = 7
+    try testing.expectEqual(@as(u32, 7), (insn >> 5) & 0x1F);
+
+    // Check Rd field (bits 0-4) = 2
+    try testing.expectEqual(@as(u32, 2), insn & 0x1F);
+
+    // Verify complete encoding: 0xDAC014E2
+    try testing.expectEqual(@as(u32, 0xDAC014E2), insn);
+}
+
+test "emit cls 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v10 = root.reg.VReg.new(10, .int);
+    const v15 = root.reg.VReg.new(15, .int);
+    const r10 = Reg.fromVReg(v10);
+    const r15 = Reg.fromVReg(v15);
+    const wr10 = root.reg.WritableReg.fromReg(r10);
+
+    // CLS W10, W15
+    try emit(.{ .cls = .{
+        .dst = wr10,
+        .src = r15,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit (bit 31) = 0 for 32-bit
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1);
+
+    // Check fixed bits (bits 30-21) = 0b1011010110
+    try testing.expectEqual(@as(u32, 0b1011010110), (insn >> 21) & 0x3FF);
+
+    // Check opcode field (bits 10-15) = 0b00101
+    try testing.expectEqual(@as(u32, 0b00101), (insn >> 10) & 0x3F);
+
+    // Check Rn field (bits 5-9) = 15
+    try testing.expectEqual(@as(u32, 15), (insn >> 5) & 0x1F);
+
+    // Check Rd field (bits 0-4) = 10
+    try testing.expectEqual(@as(u32, 10), insn & 0x1F);
+
+    // Verify complete encoding: 0x5AC015EA
+    try testing.expectEqual(@as(u32, 0x5AC015EA), insn);
+}
+
+test "emit rbit 64-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v4 = root.reg.VReg.new(4, .int);
+    const v9 = root.reg.VReg.new(9, .int);
+    const r4 = Reg.fromVReg(v4);
+    const r9 = Reg.fromVReg(v9);
+    const wr4 = root.reg.WritableReg.fromReg(r4);
+
+    // RBIT X4, X9
+    try emit(.{ .rbit = .{
+        .dst = wr4,
+        .src = r9,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit (bit 31) = 1 for 64-bit
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1);
+
+    // Check fixed bits (bits 30-21) = 0b1011010110
+    try testing.expectEqual(@as(u32, 0b1011010110), (insn >> 21) & 0x3FF);
+
+    // Check opcode2 field (bits 16-20) = 0b00000
+    try testing.expectEqual(@as(u32, 0b00000), (insn >> 16) & 0x1F);
+
+    // Check opcode field (bits 10-15) = 0b00000
+    try testing.expectEqual(@as(u32, 0b00000), (insn >> 10) & 0x3F);
+
+    // Check Rn field (bits 5-9) = 9
+    try testing.expectEqual(@as(u32, 9), (insn >> 5) & 0x1F);
+
+    // Check Rd field (bits 0-4) = 4
+    try testing.expectEqual(@as(u32, 4), insn & 0x1F);
+
+    // Verify complete encoding: 0xDAC00124
+    try testing.expectEqual(@as(u32, 0xDAC00124), insn);
+}
+
+test "emit rbit 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v8 = root.reg.VReg.new(8, .int);
+    const v12 = root.reg.VReg.new(12, .int);
+    const r8 = Reg.fromVReg(v8);
+    const r12 = Reg.fromVReg(v12);
+    const wr8 = root.reg.WritableReg.fromReg(r8);
+
+    // RBIT W8, W12
+    try emit(.{ .rbit = .{
+        .dst = wr8,
+        .src = r12,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit (bit 31) = 0 for 32-bit
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1);
+
+    // Check fixed bits (bits 30-21) = 0b1011010110
+    try testing.expectEqual(@as(u32, 0b1011010110), (insn >> 21) & 0x3FF);
+
+    // Check opcode field (bits 10-15) = 0b00000
+    try testing.expectEqual(@as(u32, 0b00000), (insn >> 10) & 0x3F);
+
+    // Check Rn field (bits 5-9) = 12
+    try testing.expectEqual(@as(u32, 12), (insn >> 5) & 0x1F);
+
+    // Check Rd field (bits 0-4) = 8
+    try testing.expectEqual(@as(u32, 8), insn & 0x1F);
+
+    // Verify complete encoding: 0x5AC00188
+    try testing.expectEqual(@as(u32, 0x5AC00188), insn);
+}
+
+test "emit bit manipulation with different registers" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = root.reg.WritableReg.fromReg(r0);
+
+    // CLZ X0, X1
+    try emit(.{ .clz = .{
+        .dst = wr0,
+        .src = r1,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    var insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check Rd = 0, Rn = 1
+    try testing.expectEqual(@as(u32, 0), insn & 0x1F);
+    try testing.expectEqual(@as(u32, 1), (insn >> 5) & 0x1F);
+
+    buffer.data.clearRetainingCapacity();
+
+    // CLS X0, X1
+    try emit(.{ .cls = .{
+        .dst = wr0,
+        .src = r1,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check Rd = 0, Rn = 1
+    try testing.expectEqual(@as(u32, 0), insn & 0x1F);
+    try testing.expectEqual(@as(u32, 1), (insn >> 5) & 0x1F);
+
+    buffer.data.clearRetainingCapacity();
+
+    // RBIT X0, X1
+    try emit(.{ .rbit = .{
+        .dst = wr0,
+        .src = r1,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check Rd = 0, Rn = 1
+    try testing.expectEqual(@as(u32, 0), insn & 0x1F);
+    try testing.expectEqual(@as(u32, 1), (insn >> 5) & 0x1F);
 }
