@@ -19,3 +19,29 @@ Completed IR foundation types:
 
 Next: InstructionData tagged union (needs all 40 format variants)
 Then: Full DFG implementation with PrimaryMap/SecondaryMap wrappers
+
+## InstructionData Status
+
+InstructionData is a large tagged union with 40 format variants. Each variant has different fields:
+- Nullary: just opcode
+- Unary: opcode + arg
+- Binary: opcode + args[2]
+- Ternary: opcode + args[3]
+- Load/Store: opcode + flags + offset + arg
+- Call/CallIndirect: opcode + func_ref/sig_ref + args
+- Branch: opcode + destination + args
+- BranchTable: opcode + table + arg
+- And 32 more variants...
+
+This requires careful implementation of:
+1. Tagged union with all 40 variants
+2. Field accessors for each variant
+3. Operand extraction/iteration
+4. Value mapping for optimization passes
+
+Deferred to next session due to size/complexity.
+
+## Summary
+
+Built comprehensive IR foundation (15 modules, ~3k LOC). All supporting types complete.
+Ready for InstructionData + full DFG implementation.
