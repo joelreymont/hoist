@@ -348,8 +348,8 @@ test "Layout appendInst" {
     try testing.expectEqual(b0, layout.instBlock(inst1).?);
 
     var iter = layout.blockInsts(b0);
-    try testing.expectEqual(i0, iter.next().?);
-    try testing.expectEqual(i1, iter.next().?);
+    try testing.expectEqual(inst0, iter.next().?);
+    try testing.expectEqual(inst1, iter.next().?);
     try testing.expect(iter.next() == null);
 }
 
