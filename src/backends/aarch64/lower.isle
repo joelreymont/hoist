@@ -165,6 +165,10 @@
 (rule (lower (bnot ty x))
       (aarch64_mvn_rr ty x))
 
+;; ineg: Integer negation (implemented as NEG)
+(rule (lower (ineg ty x))
+      (aarch64_neg ty x))
+
 ;; Conditional select lowering
 
 ;; select: Conditional select based on comparison result
@@ -285,6 +289,17 @@
 (decl aarch64_orr_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_eor_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_mvn_rr (Type Value) Aarch64Inst)
+
+;; Negation operations
+(decl aarch64_neg (Type Value) Aarch64Inst)
+(decl aarch64_ngc (Type Value) Aarch64Inst)
+
+;; Sign/zero extend operations
+(decl aarch64_sxtb (Type Value) Aarch64Inst)
+(decl aarch64_sxth (Type Value) Aarch64Inst)
+(decl aarch64_sxtw (Value) Aarch64Inst)
+(decl aarch64_uxtb (Type Value) Aarch64Inst)
+(decl aarch64_uxth (Type Value) Aarch64Inst)
 
 ;; Comparison operations
 (decl aarch64_cmp_rr (Type Value Value IntCC) Aarch64Inst)

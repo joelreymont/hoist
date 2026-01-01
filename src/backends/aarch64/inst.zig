@@ -292,6 +292,59 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// NEG - Negate (implemented as SUB Xd, XZR, Xm)
+    neg: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
+    /// NGC - Negate with carry (implemented as SBC Xd, XZR, Xm)
+    ngc: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
+    /// SXTB - Sign extend byte (8-bit to 32/64-bit).
+    /// Sign extends lowest 8 bits to destination size.
+    sxtb: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
+    /// SXTH - Sign extend halfword (16-bit to 32/64-bit).
+    /// Sign extends lowest 16 bits to destination size.
+    sxth: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
+    /// SXTW - Sign extend word (32-bit to 64-bit).
+    /// Sign extends lowest 32 bits to 64-bit. Only valid for 64-bit destination.
+    sxtw: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    /// UXTB - Zero extend byte (8-bit to 32/64-bit).
+    /// Zero extends lowest 8 bits to destination size.
+    uxtb: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
+    /// UXTH - Zero extend halfword (16-bit to 32/64-bit).
+    /// Zero extends lowest 16 bits to destination size.
+    uxth: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
     /// Count leading zeros (CLZ Xd, Xn).
     /// Computes number of leading zero bits.
     clz: struct {
@@ -501,6 +554,20 @@ pub const Inst = union(enum) {
         reg: ?Reg,
     },
 
+    /// ADR - Form PC-relative address
+    /// Computes Xd = PC + offset (±1MB range)
+    adr: struct {
+        dst: WritableReg,
+        offset: i32, // signed 21-bit offset (±1MB range)
+    },
+
+    /// ADRP - Form PC-relative address to 4KB page
+    /// Computes Xd = (PC & ~0xFFF) + (offset << 12) (±4GB range)
+    adrp: struct {
+        dst: WritableReg,
+        offset: i32, // signed 21-bit page offset (±4GB range when shifted)
+    },
+
     /// No operation.
     nop,
 
@@ -544,6 +611,13 @@ pub const Inst = union(enum) {
             .eor_rr => |i| try writer.print("eor.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .eor_imm => |i| try writer.print("eor.{} {}, {}, #0x{x}", .{ i.imm.size, i.dst, i.src, i.imm.value }),
             .mvn_rr => |i| try writer.print("mvn.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .neg => |i| try writer.print("neg.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .ngc => |i| try writer.print("ngc.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .sxtb => |i| try writer.print("sxtb.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .sxth => |i| try writer.print("sxth.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .sxtw => |i| try writer.print("sxtw {}, {}", .{ i.dst, i.src }),
+            .uxtb => |i| try writer.print("uxtb.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .uxth => |i| try writer.print("uxth.{} {}, {}", .{ i.size, i.dst, i.src }),
             .clz => |i| try writer.print("clz.{} {}, {}", .{ i.size, i.dst, i.src }),
             .cls => |i| try writer.print("cls.{} {}, {}", .{ i.size, i.dst, i.src }),
             .rbit => |i| try writer.print("rbit.{} {}, {}", .{ i.size, i.dst, i.src }),
@@ -577,6 +651,8 @@ pub const Inst = union(enum) {
                     try writer.writeAll("ret");
                 }
             },
+            .adr => |i| try writer.print("adr {}, #{d}", .{ i.dst, i.offset }),
+            .adrp => |i| try writer.print("adrp {}, #{d}", .{ i.dst, i.offset }),
             .nop => try writer.writeAll("nop"),
         }
     }
@@ -1379,4 +1455,103 @@ test "Comparison instruction formatting" {
     str = try std.fmt.bufPrint(&buf, "{}", .{tst_imm_64});
     try testing.expect(std.mem.indexOf(u8, str, "tst") != null);
     try testing.expect(std.mem.indexOf(u8, str, "0xff00") != null);
+}
+
+test "Extend instruction formatting" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    var buf: [128]u8 = undefined;
+    var str: []u8 = undefined;
+
+    // SXTB 32-bit
+    const sxtb_32 = Inst{ .sxtb = .{
+        .dst = wr0,
+        .src = r1,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{sxtb_32});
+    try testing.expect(std.mem.indexOf(u8, str, "sxtb") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
+
+    // SXTB 64-bit
+    const sxtb_64 = Inst{ .sxtb = .{
+        .dst = wr0,
+        .src = r1,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{sxtb_64});
+    try testing.expect(std.mem.indexOf(u8, str, "sxtb") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
+
+    // SXTH 32-bit
+    const sxth_32 = Inst{ .sxth = .{
+        .dst = wr0,
+        .src = r1,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{sxth_32});
+    try testing.expect(std.mem.indexOf(u8, str, "sxth") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
+
+    // SXTH 64-bit
+    const sxth_64 = Inst{ .sxth = .{
+        .dst = wr0,
+        .src = r1,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{sxth_64});
+    try testing.expect(std.mem.indexOf(u8, str, "sxth") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
+
+    // SXTW (always 64-bit)
+    const sxtw = Inst{ .sxtw = .{
+        .dst = wr0,
+        .src = r1,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{sxtw});
+    try testing.expect(std.mem.indexOf(u8, str, "sxtw") != null);
+
+    // UXTB 32-bit
+    const uxtb_32 = Inst{ .uxtb = .{
+        .dst = wr0,
+        .src = r1,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{uxtb_32});
+    try testing.expect(std.mem.indexOf(u8, str, "uxtb") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
+
+    // UXTB 64-bit
+    const uxtb_64 = Inst{ .uxtb = .{
+        .dst = wr0,
+        .src = r1,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{uxtb_64});
+    try testing.expect(std.mem.indexOf(u8, str, "uxtb") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
+
+    // UXTH 32-bit
+    const uxth_32 = Inst{ .uxth = .{
+        .dst = wr0,
+        .src = r1,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{uxth_32});
+    try testing.expect(std.mem.indexOf(u8, str, "uxth") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
+
+    // UXTH 64-bit
+    const uxth_64 = Inst{ .uxth = .{
+        .dst = wr0,
+        .src = r1,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{uxth_64});
+    try testing.expect(std.mem.indexOf(u8, str, "uxth") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
 }
