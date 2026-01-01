@@ -54,12 +54,20 @@ pub const Aarch64Lower = struct {
     }
 };
 
-/// ISLE-generated lowering helpers (stubs for now).
-/// In full implementation, these would be generated from lower.isle.
+/// ISLE-generated lowering helpers.
 /// Helper to convert IR type to aarch64 operand size.
-fn typeToSize(ty: anytype) OperandSize {
-    _ = ty;
-    return .size64; // Default to 64-bit
+pub fn typeToSize(ty: root.types.Type) OperandSize {
+    // Map IR types to AArch64 operand sizes
+    if (ty.eql(root.types.Type.I8) or ty.eql(root.types.Type.I16) or
+        ty.eql(root.types.Type.I32) or ty.eql(root.types.Type.F32))
+    {
+        return .size32;
+    } else if (ty.eql(root.types.Type.I64) or ty.eql(root.types.Type.F64)) {
+        return .size64;
+    } else {
+        // Default to 64-bit for unknown types (vectors, etc.)
+        return .size64;
+    }
 }
 
 /// Helper to get register for IR value.
@@ -99,4 +107,20 @@ test "Aarch64Lower with stub function" {
 
     // Stub returns false (not handled)
     try testing.expectEqual(false, handled);
+}
+
+test "typeToSize maps IR types correctly" {
+    // 32-bit types
+    try testing.expectEqual(OperandSize.size32, typeToSize(root.types.Type.I8));
+    try testing.expectEqual(OperandSize.size32, typeToSize(root.types.Type.I16));
+    try testing.expectEqual(OperandSize.size32, typeToSize(root.types.Type.I32));
+    try testing.expectEqual(OperandSize.size32, typeToSize(root.types.Type.F32));
+
+    // 64-bit types
+    try testing.expectEqual(OperandSize.size64, typeToSize(root.types.Type.I64));
+    try testing.expectEqual(OperandSize.size64, typeToSize(root.types.Type.F64));
+
+    // Larger types default to size64
+    try testing.expectEqual(OperandSize.size64, typeToSize(root.types.Type.I128));
+    try testing.expectEqual(OperandSize.size64, typeToSize(root.types.Type.F128));
 }
