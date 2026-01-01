@@ -86,15 +86,18 @@ pub fn build(b: *std.Build) void {
     fuzz_step.dependOn(&run_fuzz_compile.step);
     fuzz_step.dependOn(&run_fuzz_regalloc.step);
 
-    // ISLE compilation (future: .isle -> .zig generation)
-    // Bootstrap: check in generated files until Zig ISLE compiler ready
-    // const isle_step = b.addIsleCompile(.{
-    //     .sources = &.{
-    //         "src/backends/x64/lower.isle",
-    //         "src/backends/aarch64/lower.isle",
-    //         "src/dsl/isle/opts.isle",
-    //     },
-    //     .output_dir = "src/generated",
-    // });
-    // lib.step.dependOn(&isle_step.step);
+    // ISLE compilation (.isle -> .zig generation)
+    const IsleCompileStep = @import("build/IsleCompileStep.zig");
+    const isle_step = IsleCompileStep.create(
+        b,
+        &.{
+            "src/backends/aarch64/lower.isle",
+            "src/backends/x64/lower.isle",
+            "src/dsl/isle/opts.isle",
+        },
+        "src/generated",
+    );
+
+    // Make library depend on ISLE code generation
+    lib.step.dependOn(&isle_step.step);
 }
