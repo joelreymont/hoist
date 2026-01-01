@@ -7,12 +7,14 @@ const IsleCompileStep = @This();
 
 step: Step,
 owner: *Build,
+compiler_exe: *Build.Step.Compile,
 source_files: []const []const u8,
 output_dir: []const u8,
 generated_files: std.ArrayList(Build.GeneratedFile),
 
 pub fn create(
     owner: *Build,
+    compiler_exe: *Build.Step.Compile,
     source_files: []const []const u8,
     output_dir: []const u8,
 ) *IsleCompileStep {
@@ -25,36 +27,19 @@ pub fn create(
             .makeFn = make,
         }),
         .owner = owner,
+        .compiler_exe = compiler_exe,
         .source_files = owner.allocator.dupe([]const u8, source_files) catch @panic("OOM"),
         .output_dir = owner.allocator.dupe(u8, output_dir) catch @panic("OOM"),
         .generated_files = .{},
     };
-    return self;
-}
 
-fn make(step: *Step, options: Step.MakeOptions) !void {
-    _ = options;
-    const self: *IsleCompileStep = @fieldParentPtr("step", step);
-    const b = self.owner;
+    // Create output directory path
+    const output_dir_path = owner.pathJoin(&.{ owner.build_root.path.?, output_dir });
+    std.fs.cwd().makePath(output_dir_path) catch @panic("Failed to create output dir");
 
-    // Create output directory
-    const output_dir = b.pathJoin(&.{ b.build_root.path.?, self.output_dir });
-    try std.fs.cwd().makePath(output_dir);
-
-    // Compile each ISLE file
-    for (self.source_files) |source_path| {
-        const full_source_path = b.pathJoin(&.{ b.build_root.path.?, source_path });
-
-        // Read source file
-        const source_content = std.fs.cwd().readFileAlloc(
-            b.allocator,
-            full_source_path,
-            10 * 1024 * 1024, // 10MB max
-        ) catch |err| {
-            std.debug.print("Failed to read ISLE source {s}: {}\n", .{ full_source_path, err });
-            return err;
-        };
-        defer b.allocator.free(source_content);
+    // Create a Run step for each ISLE file
+    for (source_files) |source_path| {
+        const full_source_path = owner.pathJoin(&.{ owner.build_root.path.?, source_path });
 
         // Determine output file name
         const basename = std.fs.path.basename(source_path);
@@ -63,45 +48,36 @@ fn make(step: *Step, options: Step.MakeOptions) !void {
         else
             basename;
 
-        const output_filename = try std.fmt.allocPrint(
-            b.allocator,
+        const output_filename = std.fmt.allocPrint(
+            owner.allocator,
             "{s}_generated.zig",
             .{name_without_ext},
-        );
-        defer b.allocator.free(output_filename);
+        ) catch @panic("OOM");
 
-        const output_path = b.pathJoin(&.{ output_dir, output_filename });
+        const output_path = owner.pathJoin(&.{ output_dir_path, output_filename });
 
-        // For now, write a stub generated file
-        // TODO: Invoke actual ISLE compiler once module linking is set up
-        const stub_code = try std.fmt.allocPrint(
-            b.allocator,
-            \\// Generated from {s}
-            \\// TODO: Implement ISLE compiler invocation
-            \\
-            \\const std = @import("std");
-            \\
-            \\pub fn lowerInst() void {{}}
-            \\
-        ,
-            .{basename},
-        );
-        defer b.allocator.free(stub_code);
+        // Create run step for this file
+        const run_step = owner.addRunArtifact(compiler_exe);
+        run_step.addFileArg(.{ .cwd_relative = full_source_path });
+        run_step.addArg(output_path);
 
-        // Write stub to output file
-        try std.fs.cwd().writeFile(.{
-            .sub_path = output_path,
-            .data = stub_code,
-        });
-
-        std.debug.print("Generated {s} from {s}\n", .{ output_path, source_path });
+        // Make our step depend on this run
+        self.step.dependOn(&run_step.step);
 
         // Track generated file
-        try self.generated_files.append(b.allocator, .{
+        self.generated_files.append(owner.allocator, .{
             .step = &self.step,
-            .path = try b.allocator.dupe(u8, output_path),
-        });
+            .path = output_path,
+        }) catch @panic("OOM");
     }
+
+    return self;
+}
+
+fn make(step: *Step, options: Step.MakeOptions) !void {
+    // All work is done by the Run step dependencies
+    _ = step;
+    _ = options;
 }
 
 fn getBackendFromPath(path: []const u8) []const u8 {

@@ -86,10 +86,29 @@ pub fn build(b: *std.Build) void {
     fuzz_step.dependOn(&run_fuzz_compile.step);
     fuzz_step.dependOn(&run_fuzz_regalloc.step);
 
+    // ISLE compiler executable
+    const isle_compiler = b.addExecutable(.{
+        .name = "isle_compiler",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/isle_compiler.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+        }),
+    });
+
+    // Add isle module to the compiler
+    const isle_module = b.createModule(.{
+        .root_source_file = b.path("src/dsl/isle/compile.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    isle_compiler.root_module.addImport("isle", isle_module);
+
     // ISLE compilation (.isle -> .zig generation)
     const IsleCompileStep = @import("build/IsleCompileStep.zig");
     const isle_step = IsleCompileStep.create(
         b,
+        isle_compiler,
         &.{
             "src/backends/aarch64/lower.isle",
             "src/backends/x64/lower.isle",
