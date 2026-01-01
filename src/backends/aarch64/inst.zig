@@ -268,6 +268,53 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Compare register with register (CMP Xn, Xm).
+    /// Alias for SUBS XZR, Xn, Xm. Sets condition flags for conditional branches.
+    cmp_rr: struct {
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Compare register with immediate (CMP Xn, #imm).
+    /// Alias for SUBS XZR, Xn, #imm. Sets condition flags for conditional branches.
+    cmp_imm: struct {
+        src: Reg,
+        imm: u16,
+        size: OperandSize,
+    },
+
+    /// Compare negative register with register (CMN Xn, Xm).
+    /// Alias for ADDS XZR, Xn, Xm. Sets condition flags for conditional branches.
+    cmn_rr: struct {
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Compare negative register with immediate (CMN Xn, #imm).
+    /// Alias for ADDS XZR, Xn, #imm. Sets condition flags for conditional branches.
+    cmn_imm: struct {
+        src: Reg,
+        imm: u16,
+        size: OperandSize,
+    },
+
+    /// Test bits (TST Xn, Xm).
+    /// Alias for ANDS XZR, Xn, Xm. Sets condition flags for conditional branches.
+    tst_rr: struct {
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Test bits immediate (TST Xn, #imm).
+    /// Alias for ANDS XZR, Xn, #imm. Sets condition flags for conditional branches.
+    tst_imm: struct {
+        src: Reg,
+        imm: ImmLogic,
+    },
+
     /// Load register from memory (LDR Xt, [Xn, #offset]).
     ldr: struct {
         dst: WritableReg,
@@ -374,6 +421,12 @@ pub const Inst = union(enum) {
             .eor_rr => |i| try writer.print("eor.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .eor_imm => |i| try writer.print("eor.{} {}, {}, #0x{x}", .{ i.imm.size, i.dst, i.src, i.imm.value }),
             .mvn_rr => |i| try writer.print("mvn.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .cmp_rr => |i| try writer.print("cmp.{} {}, {}", .{ i.size, i.src1, i.src2 }),
+            .cmp_imm => |i| try writer.print("cmp.{} {}, #{d}", .{ i.size, i.src, i.imm }),
+            .cmn_rr => |i| try writer.print("cmn.{} {}, {}", .{ i.size, i.src1, i.src2 }),
+            .cmn_imm => |i| try writer.print("cmn.{} {}, #{d}", .{ i.size, i.src, i.imm }),
+            .tst_rr => |i| try writer.print("tst.{} {}, {}", .{ i.size, i.src1, i.src2 }),
+            .tst_imm => |i| try writer.print("tst.{} {}, #0x{x}", .{ i.imm.size, i.src, i.imm.value }),
             .ldr => |i| try writer.print("ldr.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
             .str => |i| try writer.print("str.{} {}, [{}, #{d}]", .{ i.size, i.src, i.base, i.offset }),
             .stp => |i| try writer.print("stp.{} {}, {}, [{}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
@@ -1062,4 +1115,134 @@ test "Shift instruction formatting" {
     str = try std.fmt.bufPrint(&buf, "{}", .{ror_imm_64});
     try testing.expect(std.mem.indexOf(u8, str, "ror") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#16") != null);
+}
+
+test "Comparison instruction formatting" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+
+    var buf: [128]u8 = undefined;
+    var str: []u8 = undefined;
+
+    // CMP register-register (32-bit)
+    const cmp_rr_32 = Inst{ .cmp_rr = .{
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{cmp_rr_32});
+    try testing.expect(std.mem.indexOf(u8, str, "cmp") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
+
+    // CMP register-register (64-bit)
+    const cmp_rr_64 = Inst{ .cmp_rr = .{
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{cmp_rr_64});
+    try testing.expect(std.mem.indexOf(u8, str, "cmp") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
+
+    // CMP immediate (32-bit)
+    const cmp_imm_32 = Inst{ .cmp_imm = .{
+        .src = r1,
+        .imm = 42,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{cmp_imm_32});
+    try testing.expect(std.mem.indexOf(u8, str, "cmp") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "#42") != null);
+
+    // CMP immediate (64-bit)
+    const cmp_imm_64 = Inst{ .cmp_imm = .{
+        .src = r1,
+        .imm = 100,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{cmp_imm_64});
+    try testing.expect(std.mem.indexOf(u8, str, "cmp") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "#100") != null);
+
+    // CMN register-register (32-bit)
+    const cmn_rr_32 = Inst{ .cmn_rr = .{
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{cmn_rr_32});
+    try testing.expect(std.mem.indexOf(u8, str, "cmn") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
+
+    // CMN register-register (64-bit)
+    const cmn_rr_64 = Inst{ .cmn_rr = .{
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{cmn_rr_64});
+    try testing.expect(std.mem.indexOf(u8, str, "cmn") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
+
+    // CMN immediate (32-bit)
+    const cmn_imm_32 = Inst{ .cmn_imm = .{
+        .src = r1,
+        .imm = 17,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{cmn_imm_32});
+    try testing.expect(std.mem.indexOf(u8, str, "cmn") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "#17") != null);
+
+    // CMN immediate (64-bit)
+    const cmn_imm_64 = Inst{ .cmn_imm = .{
+        .src = r1,
+        .imm = 255,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{cmn_imm_64});
+    try testing.expect(std.mem.indexOf(u8, str, "cmn") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "#255") != null);
+
+    // TST register-register (32-bit)
+    const tst_rr_32 = Inst{ .tst_rr = .{
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{tst_rr_32});
+    try testing.expect(std.mem.indexOf(u8, str, "tst") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
+
+    // TST register-register (64-bit)
+    const tst_rr_64 = Inst{ .tst_rr = .{
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{tst_rr_64});
+    try testing.expect(std.mem.indexOf(u8, str, "tst") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
+
+    // TST immediate (32-bit)
+    const tst_imm_32 = Inst{ .tst_imm = .{
+        .src = r1,
+        .imm = .{ .value = 0xf, .n = false, .r = 0, .s = 3, .size = .size32 },
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{tst_imm_32});
+    try testing.expect(std.mem.indexOf(u8, str, "tst") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "0xf") != null);
+
+    // TST immediate (64-bit)
+    const tst_imm_64 = Inst{ .tst_imm = .{
+        .src = r0,
+        .imm = .{ .value = 0xff00, .n = false, .r = 0, .s = 15, .size = .size64 },
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{tst_imm_64});
+    try testing.expect(std.mem.indexOf(u8, str, "tst") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "0xff00") != null);
 }

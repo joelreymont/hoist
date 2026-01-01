@@ -45,6 +45,66 @@
       (let ((quot Aarch64Inst (aarch64_udiv ty x y)))
             (aarch64_msub ty quot y x)))
 
+;; Shift operations lowering
+
+;; ishl: Integer shift left (register form)
+(rule (lower (ishl ty x y))
+      (aarch64_lsl_rr ty x y))
+
+;; ishl: Integer shift left (immediate form)
+(rule (lower (ishl ty x (iconst k)))
+      (if-let amt (valid_shift_imm k))
+      (aarch64_lsl_imm ty x amt))
+
+;; ushr: Unsigned shift right (register form)
+(rule (lower (ushr ty x y))
+      (aarch64_lsr_rr ty x y))
+
+;; ushr: Unsigned shift right (immediate form)
+(rule (lower (ushr ty x (iconst k)))
+      (if-let amt (valid_shift_imm k))
+      (aarch64_lsr_imm ty x amt))
+
+;; sshr: Signed shift right (register form)
+(rule (lower (sshr ty x y))
+      (aarch64_asr_rr ty x y))
+
+;; sshr: Signed shift right (immediate form)
+(rule (lower (sshr ty x (iconst k)))
+      (if-let amt (valid_shift_imm k))
+      (aarch64_asr_imm ty x amt))
+
+;; rotr: Rotate right (register form)
+(rule (lower (rotr ty x y))
+      (aarch64_ror_rr ty x y))
+
+;; rotr: Rotate right (immediate form)
+(rule (lower (rotr ty x (iconst k)))
+      (if-let amt (valid_shift_imm k))
+      (aarch64_ror_imm ty x amt))
+
+;; rotl: Rotate left - NOT IMPLEMENTED YET
+;; Note: Needs register negation for variable amount
+;; rotl(x, k) = rotr(x, width - k)
+
+;; Bitwise operations lowering
+
+;; band: Bitwise AND (register form)
+(rule (lower (band ty x y))
+      (aarch64_and_rr ty x y))
+
+;; bor: Bitwise OR (register form)
+(rule (lower (bor ty x y))
+      (aarch64_orr_rr ty x y))
+
+;; bxor: Bitwise XOR (register form)
+(rule (lower (bxor ty x y))
+      (aarch64_eor_rr ty x y))
+
+;; bnot: Bitwise NOT (implemented as MVN)
+(rule (lower (bnot ty x))
+      (aarch64_mvn_rr ty x))
+
 ;; Immediate forms
 
 ;; iadd with 12-bit immediate
@@ -104,6 +164,11 @@
   (if (<= 0 val 65535)
       val))
 
+;; Check if value is a valid shift amount (0-63, suitable for both I32 and I64)
+(extractor (valid_shift_imm val)
+  (if (<= 0 val 63)
+      val))
+
 ;; Constructor terms for aarch64 instructions
 
 (type Aarch64Inst (enum))
@@ -119,6 +184,22 @@
 (decl aarch64_sdiv (Type Value Value) Aarch64Inst)
 (decl aarch64_udiv (Type Value Value) Aarch64Inst)
 (decl aarch64_msub (Type Value Value Value) Aarch64Inst)
+
+;; Shift operations
+(decl aarch64_lsl_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_lsl_imm (Type Value i64) Aarch64Inst)
+(decl aarch64_lsr_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_lsr_imm (Type Value i64) Aarch64Inst)
+(decl aarch64_asr_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_asr_imm (Type Value i64) Aarch64Inst)
+(decl aarch64_ror_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_ror_imm (Type Value i64) Aarch64Inst)
+
+;; Bitwise operations
+(decl aarch64_and_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_orr_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_eor_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_mvn_rr (Type Value) Aarch64Inst)
 
 ;; Memory
 (decl aarch64_ldr (Type Value) Aarch64Inst)
