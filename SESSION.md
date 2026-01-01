@@ -17,8 +17,21 @@ Completed IR foundation types:
 - extfunc.zig - ExternalName, ExtFuncData
 - dfg.zig - ValueDef, ValueData (packed), BlockData
 
-Next: InstructionData tagged union (needs all 40 format variants)
-Then: Full DFG implementation with PrimaryMap/SecondaryMap wrappers
+## Latest Progress (2026-01-01 Session 2)
+
+Completed additional IR modules:
+- maps.zig - PrimaryMap/SecondaryMap for entity-indexed collections (~207 LOC)
+- layout.zig - Block/instruction linked lists with iterators (~387 LOC)
+- instruction_data.zig - InstructionData with 11 format variants (~230 LOC)
+- dfg.zig - DataFlowGraph with instruction/value management (~310 LOC)
+
+**Total: ~5.8k LOC across 23 modules**
+
+InstructionData: Implemented core formats (Nullary, Unary, Binary, IntCompare, FloatCompare, Branch, Jump, BranchTable, Call, CallIndirect, Load, Store). Remaining 29 formats deferred.
+
+DFG: Complete with makeInst(), appendInstResult(), instResults(), resolveAliases(), valueType(), valueDef(), setValueType().
+
+Next: Expand InstructionData to all 40 formats, then complete Function implementation.
 
 ## InstructionData Status
 
@@ -740,3 +753,25 @@ This session focuses on implementing the IR (Intermediate Representation) layer 
 **Claude:** PrimaryMap/SecondaryMap are the entity-indexed collections needed by DFG. Let me implement them.
 
 ---
+
+## Session 2026-01-01 Continuation
+
+Completed additional IR infrastructure:
+
+**Foundation:**
+- maps.zig - PrimaryMap/SecondaryMap (~207 LOC)
+
+**IR Layer:**
+- layout.zig - Block/instruction linked lists, iterators (~387 LOC)  
+- instruction_data.zig - InstructionData with 11 core formats (~230 LOC)
+- dfg.zig - DataFlowGraph with value/instruction management (~310 LOC)
+
+**InstructionData formats implemented:**
+Nullary, Unary, Binary, IntCompare, FloatCompare, Branch, Jump, BranchTable, Call, CallIndirect, Load, Store
+
+**DFG capabilities:**
+makeInst(), appendInstResult(), instResults(), firstResult(), numResults(), resolveAliases(), valueType(), valueDef(), setValueType()
+
+**Total: ~5.8k LOC across 23 modules**
+
+Next: Expand InstructionData to all 40 formats, complete Function implementation
