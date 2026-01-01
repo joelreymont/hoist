@@ -13,3 +13,4 @@ pub const memflags = @import("ir/memflags.zig");
 pub const value_list = @import("ir/value_list.zig");
 pub const block_call = @import("ir/block_call.zig");
 pub const atomic = @import("ir/atomic.zig");
+pub const signature = @import("ir/signature.zig");
