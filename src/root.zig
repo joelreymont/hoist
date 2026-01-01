@@ -27,6 +27,7 @@ pub const function = @import("ir/function.zig");
 pub const builder = @import("ir/builder.zig");
 pub const optimize = @import("ir/optimize.zig");
 pub const domtree = @import("ir/domtree.zig");
+pub const loops = @import("ir/loops.zig");
 
 pub const isle_sema = @import("dsl/isle/sema.zig");
 pub const isle_trie = @import("dsl/isle/trie.zig");
