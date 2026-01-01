@@ -488,7 +488,7 @@ pub const Inst = union(enum) {
         imm: ImmLogic,
     },
 
-    /// Load register from memory (LDR Xt, [Xn, #offset]).
+    /// Load register from memory with immediate offset (LDR Xt, [Xn, #offset]).
     ldr: struct {
         dst: WritableReg,
         base: Reg,
@@ -496,11 +496,63 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
-    /// Store register to memory (STR Xt, [Xn, #offset]).
+    /// Load register from memory with register offset (LDR Xt, [Xn, Xm]).
+    ldr_reg: struct {
+        dst: WritableReg,
+        base: Reg,
+        offset: Reg,
+        size: OperandSize,
+    },
+
+    /// Load register from memory with extended register offset (LDR Xt, [Xn, Wm, SXTW]).
+    ldr_ext: struct {
+        dst: WritableReg,
+        base: Reg,
+        offset: Reg,
+        extend: ExtendOp,
+        size: OperandSize,
+    },
+
+    /// Load register from memory with scaled register offset (LDR Xt, [Xn, Xm, LSL #3]).
+    ldr_scaled: struct {
+        dst: WritableReg,
+        base: Reg,
+        offset: Reg,
+        shift: u8, // log2(size): 0 for byte, 1 for half, 2 for word, 3 for dword
+        size: OperandSize,
+    },
+
+    /// Store register to memory with immediate offset (STR Xt, [Xn, #offset]).
     str: struct {
         src: Reg,
         base: Reg,
         offset: i16,
+        size: OperandSize,
+    },
+
+    /// Store register to memory with register offset (STR Xt, [Xn, Xm]).
+    str_reg: struct {
+        src: Reg,
+        base: Reg,
+        offset: Reg,
+        size: OperandSize,
+    },
+
+    /// Store register to memory with extended register offset (STR Xt, [Xn, Wm, SXTW]).
+    str_ext: struct {
+        src: Reg,
+        base: Reg,
+        offset: Reg,
+        extend: ExtendOp,
+        size: OperandSize,
+    },
+
+    /// Store register to memory with scaled register offset (STR Xt, [Xn, Xm, LSL #3]).
+    str_scaled: struct {
+        src: Reg,
+        base: Reg,
+        offset: Reg,
+        shift: u8, // log2(size): 0 for byte, 1 for half, 2 for word, 3 for dword
         size: OperandSize,
     },
 
@@ -636,7 +688,13 @@ pub const Inst = union(enum) {
             .tst_rr => |i| try writer.print("tst.{} {}, {}", .{ i.size, i.src1, i.src2 }),
             .tst_imm => |i| try writer.print("tst.{} {}, #0x{x}", .{ i.imm.size, i.src, i.imm.value }),
             .ldr => |i| try writer.print("ldr.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
+            .ldr_reg => |i| try writer.print("ldr.{} {}, [{}, {}]", .{ i.size, i.dst, i.base, i.offset }),
+            .ldr_ext => |i| try writer.print("ldr.{} {}, [{}, {}, {}]", .{ i.size, i.dst, i.base, i.offset, i.extend }),
+            .ldr_scaled => |i| try writer.print("ldr.{} {}, [{}, {}, lsl #{d}]", .{ i.size, i.dst, i.base, i.offset, i.shift }),
             .str => |i| try writer.print("str.{} {}, [{}, #{d}]", .{ i.size, i.src, i.base, i.offset }),
+            .str_reg => |i| try writer.print("str.{} {}, [{}, {}]", .{ i.size, i.src, i.base, i.offset }),
+            .str_ext => |i| try writer.print("str.{} {}, [{}, {}, {}]", .{ i.size, i.src, i.base, i.offset, i.extend }),
+            .str_scaled => |i| try writer.print("str.{} {}, [{}, {}, lsl #{d}]", .{ i.size, i.src, i.base, i.offset, i.shift }),
             .stp => |i| try writer.print("stp.{} {}, {}, [{}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
             .ldp => |i| try writer.print("ldp.{} {}, {}, [{}, #{d}]", .{ i.size, i.dst1, i.dst2, i.base, i.offset }),
             .b => |i| try writer.print("b {}", .{i.target}),
@@ -891,6 +949,16 @@ pub const ExtendOp = enum(u3) {
     sxth = 0b101, // Sign-extend halfword
     sxtw = 0b110, // Sign-extend word (32→64)
     sxtx = 0b111, // Sign-extend doubleword (nop for 64-bit)
+
+    pub fn format(
+        self: ExtendOp,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        const name = @tagName(self);
+        try writer.writeAll(name);
+    }
 };
 
 test "Inst formatting" {
