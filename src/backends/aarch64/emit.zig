@@ -1340,176 +1340,6 @@ fn emitLdp(dst1: Reg, dst2: Reg, base: Reg, offset: i16, size: OperandSize, buff
 
 /// LDARB Wt, [Xn] - Load-Acquire Register Byte
 fn emitLdarb(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-/// LDARB Wt, [Xn] - Load-Acquire Register Byte
-fn emitLdarb(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
-
-    // LDARB: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
-    // size=00 (byte), L=1 (load), Rs=11111, Rt2=11111
-    // Encoding: 00|001000|1|1|1|11111|1|11111|Rn|Rt
-    const insn: u32 = (0b00 << 30) | // size = byte
-        (0b001000 << 24) |
-        (1 << 23) | // fixed bit
-        (1 << 22) | // L = load
-        (1 << 21) | // o0
-        (0b11111 << 16) | // Rs = 31
-        (0b1111111 << 10) | // fixed bit + Rt2 = 31 (bits [15:10] = 111111)
-        (@as(u32, rn) << 5) |
-        rt;
-
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
-}
-
-/// LDARH Wt, [Xn] - Load-Acquire Register Halfword
-fn emitLdarh(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
-
-    // LDARH: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
-    // size=01 (halfword), L=1 (load), Rs=11111, Rt2=11111
-    const insn: u32 = (0b01 << 30) | // size = halfword
-        (0b001000 << 24) |
-        (1 << 23) | // fixed bit
-        (1 << 22) | // L = load
-        (1 << 21) | // o0
-        (0b11111 << 16) | // Rs = 31
-        (0b1111111 << 10) | // fixed bit + Rt2 = 31
-        (@as(u32, rn) << 5) |
-        rt;
-
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
-}
-
-/// LDAR Wt, [Xn] - Load-Acquire Register Word
-fn emitLdarW(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
-
-    // LDAR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
-    // size=10 (word), L=1 (load), Rs=11111, Rt2=11111
-    const insn: u32 = (0b10 << 30) | // size = word
-        (0b001000 << 24) |
-        (1 << 23) | // fixed bit
-        (1 << 22) | // L = load
-        (1 << 21) | // o0
-        (0b11111 << 16) | // Rs = 31
-        (0b1111111 << 10) | // fixed bit + Rt2 = 31
-        (@as(u32, rn) << 5) |
-        rt;
-
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
-}
-
-/// LDAR Xt, [Xn] - Load-Acquire Register Doubleword
-fn emitLdarX(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
-
-    // LDAR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
-    // size=11 (doubleword), L=1 (load), Rs=11111, Rt2=11111
-    const insn: u32 = (0b11 << 30) | // size = doubleword
-        (0b001000 << 24) |
-        (1 << 23) | // fixed bit
-        (1 << 22) | // L = load
-        (1 << 21) | // o0
-        (0b11111 << 16) | // Rs = 31
-        (0b1111111 << 10) | // fixed bit + Rt2 = 31
-        (@as(u32, rn) << 5) |
-        rt;
-
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
-}
-
-/// STLRB Wt, [Xn] - Store-Release Register Byte
-fn emitStlrb(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
-
-    // STLRB: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
-    // size=00 (byte), L=0 (store), Rs=11111, Rt2=11111
-    const insn: u32 = (0b00 << 30) | // size = byte
-        (0b001000 << 24) |
-        (1 << 23) | // fixed bit
-        (0 << 22) | // L = store
-        (1 << 21) | // o0
-        (0b11111 << 16) | // Rs = 31
-        (0b1111111 << 10) | // fixed bit + Rt2 = 31
-        (@as(u32, rn) << 5) |
-        rt;
-
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
-}
-
-/// STLRH Wt, [Xn] - Store-Release Register Halfword
-fn emitStlrh(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
-
-    // STLRH: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
-    // size=01 (halfword), L=0 (store), Rs=11111, Rt2=11111
-    const insn: u32 = (0b01 << 30) | // size = halfword
-        (0b001000 << 24) |
-        (1 << 23) | // fixed bit
-        (0 << 22) | // L = store
-        (1 << 21) | // o0
-        (0b11111 << 16) | // Rs = 31
-        (0b1111111 << 10) | // fixed bit + Rt2 = 31
-        (@as(u32, rn) << 5) |
-        rt;
-
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
-}
-
-/// STLR Wt, [Xn] - Store-Release Register Word
-fn emitStlrW(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
-
-    // STLR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
-    // size=10 (word), L=0 (store), Rs=11111, Rt2=11111
-    const insn: u32 = (0b10 << 30) | // size = word
-        (0b001000 << 24) |
-        (1 << 23) | // fixed bit
-        (0 << 22) | // L = store
-        (1 << 21) | // o0
-        (0b11111 << 16) | // Rs = 31
-        (0b1111111 << 10) | // fixed bit + Rt2 = 31
-        (@as(u32, rn) << 5) |
-        rt;
-
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
-}
-
-/// STLR Xt, [Xn] - Store-Release Register Doubleword
-fn emitStlrX(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
-
-    // STLR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
-    // size=11 (doubleword), L=0 (store), Rs=11111, Rt2=11111
-    const insn: u32 = (0b11 << 30) | // size = doubleword
-        (0b001000 << 24) |
-        (1 << 23) | // fixed bit
-        (0 << 22) | // L = store
-        (1 << 21) | // o0
-        (0b11111 << 16) | // Rs = 31
-        (0b1111111 << 10) | // fixed bit + Rt2 = 31
-        (@as(u32, rn) << 5) |
-        rt;
-
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
-}
-
-fn emitLdarb(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
     const rt = hwEnc(dst);
     const rn = hwEnc(base);
 
@@ -5452,4 +5282,168 @@ test "cmn is alias for adds with xzr" {
     const insn1 = std.mem.bytesToValue(u32, buffer1.data.items[0..4]);
     const insn2 = std.mem.bytesToValue(u32, buffer2.data.items[0..4]);
     try testing.expectEqual(insn1, insn2);
+}
+
+test "emit ldarb - verify correct encoding" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = root.reg.WritableReg.fromReg(r0);
+
+    // LDARB W0, [X1] - encoding: 0x08dffc20
+    try emit(.{ .ldarb = .{
+        .dst = wr0,
+        .base = r1,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0x08dffc20), insn);
+}
+
+test "emit ldarh - verify correct encoding" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v2 = root.reg.VReg.new(2, .int);
+    const v3 = root.reg.VReg.new(3, .int);
+    const r2 = Reg.fromVReg(v2);
+    const r3 = Reg.fromVReg(v3);
+    const wr2 = root.reg.WritableReg.fromReg(r2);
+
+    // LDARH W2, [X3] - encoding: 0x48dffc62
+    try emit(.{ .ldarh = .{
+        .dst = wr2,
+        .base = r3,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0x48dffc62), insn);
+}
+
+test "emit ldar_w - verify correct encoding" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v4 = root.reg.VReg.new(4, .int);
+    const v5 = root.reg.VReg.new(5, .int);
+    const r4 = Reg.fromVReg(v4);
+    const r5 = Reg.fromVReg(v5);
+    const wr4 = root.reg.WritableReg.fromReg(r4);
+
+    // LDAR W4, [X5] - encoding: 0x88dffca4
+    try emit(.{ .ldar_w = .{
+        .dst = wr4,
+        .base = r5,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0x88dffca4), insn);
+}
+
+test "emit ldar_x - verify correct encoding" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v6 = root.reg.VReg.new(6, .int);
+    const v7 = root.reg.VReg.new(7, .int);
+    const r6 = Reg.fromVReg(v6);
+    const r7 = Reg.fromVReg(v7);
+    const wr6 = root.reg.WritableReg.fromReg(r6);
+
+    // LDAR X6, [X7] - encoding: 0xc8dffce6
+    try emit(.{ .ldar_x = .{
+        .dst = wr6,
+        .base = r7,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0xc8dffce6), insn);
+}
+
+test "emit stlrb - verify correct encoding" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v8 = root.reg.VReg.new(8, .int);
+    const v9 = root.reg.VReg.new(9, .int);
+    const r8 = Reg.fromVReg(v8);
+    const r9 = Reg.fromVReg(v9);
+
+    // STLRB W8, [X9] - encoding: 0x089ffd28
+    try emit(.{ .stlrb = .{
+        .src = r8,
+        .base = r9,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0x089ffd28), insn);
+}
+
+test "emit stlrh - verify correct encoding" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v10 = root.reg.VReg.new(10, .int);
+    const v11 = root.reg.VReg.new(11, .int);
+    const r10 = Reg.fromVReg(v10);
+    const r11 = Reg.fromVReg(v11);
+
+    // STLRH W10, [X11] - encoding: 0x489ffd6a
+    try emit(.{ .stlrh = .{
+        .src = r10,
+        .base = r11,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0x489ffd6a), insn);
+}
+
+test "emit stlr_w - verify correct encoding" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v12 = root.reg.VReg.new(12, .int);
+    const v13 = root.reg.VReg.new(13, .int);
+    const r12 = Reg.fromVReg(v12);
+    const r13 = Reg.fromVReg(v13);
+
+    // STLR W12, [X13] - encoding: 0x889ffdac
+    try emit(.{ .stlr_w = .{
+        .src = r12,
+        .base = r13,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0x889ffdac), insn);
+}
+
+test "emit stlr_x - verify correct encoding" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v14 = root.reg.VReg.new(14, .int);
+    const v15 = root.reg.VReg.new(15, .int);
+    const r14 = Reg.fromVReg(v14);
+    const r15 = Reg.fromVReg(v15);
+
+    // STLR X14, [X15] - encoding: 0xc89ffdee
+    try emit(.{ .stlr_x = .{
+        .src = r14,
+        .base = r15,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0xc89ffdee), insn);
 }
