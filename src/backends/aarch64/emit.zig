@@ -9349,3 +9349,417 @@ test "emit fneg fabs fmax fmin" {
     const fmin_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x1E625820), fmin_insn);
 }
+
+// === Tests for Exclusive Access Instructions ===
+
+test "emit ldxr and stxr word" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const v2 = root.reg.VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr2 = root.reg.WritableReg.fromReg(r2);
+
+    // LDXR W0, [X1] - 32-bit
+    try emit(.{ .ldxr_w = .{
+        .dst = wr0,
+        .base = r1,
+    } }, &buffer);
+    const ldxr_w_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // size=10 (word) + 001000 + 0 + 1 (L) + 0 + 11111 + 0 + 11111 + X1 + X0
+    try testing.expectEqual(@as(u32, 0x885F7C20), ldxr_w_insn);
+
+    // STXR W2, W0, [X1] - 32-bit
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .stxr_w = .{
+        .status = wr2,
+        .src = r0,
+        .base = r1,
+    } }, &buffer);
+    const stxr_w_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // size=10 + 001000 + 0 + 0 (L) + 0 + W2(status) + 0 + 11111 + X1 + W0
+    try testing.expectEqual(@as(u32, 0x8802_7C20), stxr_w_insn);
+}
+
+test "emit ldxr and stxr doubleword" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const v2 = root.reg.VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr2 = root.reg.WritableReg.fromReg(r2);
+
+    // LDXR X0, [X1] - 64-bit
+    try emit(.{ .ldxr_x = .{
+        .dst = wr0,
+        .base = r1,
+    } }, &buffer);
+    const ldxr_x_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // size=11 (doubleword) + rest same as word
+    try testing.expectEqual(@as(u32, 0xC85F7C20), ldxr_x_insn);
+
+    // STXR W2, X0, [X1] - 64-bit
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .stxr_x = .{
+        .status = wr2,
+        .src = r0,
+        .base = r1,
+    } }, &buffer);
+    const stxr_x_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0xC8027C20), stxr_x_insn);
+}
+
+test "emit ldxrb ldxrh stxrb stxrh" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const v2 = root.reg.VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr2 = root.reg.WritableReg.fromReg(r2);
+
+    // LDXRB W0, [X1]
+    try emit(.{ .ldxrb = .{
+        .dst = wr0,
+        .base = r1,
+    } }, &buffer);
+    const ldxrb_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // size=00 (byte), o0=0
+    try testing.expectEqual(@as(u32, 0x085F7C20), ldxrb_insn);
+
+    // LDXRH W0, [X1]
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .ldxrh = .{
+        .dst = wr0,
+        .base = r1,
+    } }, &buffer);
+    const ldxrh_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // size=01 (halfword), o0=0
+    try testing.expectEqual(@as(u32, 0x485F7C20), ldxrh_insn);
+
+    // STXRB W2, W0, [X1]
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .stxrb = .{
+        .status = wr2,
+        .src = r0,
+        .base = r1,
+    } }, &buffer);
+    const stxrb_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0x08027C20), stxrb_insn);
+
+    // STXRH W2, W0, [X1]
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .stxrh = .{
+        .status = wr2,
+        .src = r0,
+        .base = r1,
+    } }, &buffer);
+    const stxrh_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0x48027C20), stxrh_insn);
+}
+
+test "emit ldaxr and stlxr with acquire/release" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const v2 = root.reg.VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr2 = root.reg.WritableReg.fromReg(r2);
+
+    // LDAXR W0, [X1] - acquire (o0=1)
+    try emit(.{ .ldaxr_w = .{
+        .dst = wr0,
+        .base = r1,
+    } }, &buffer);
+    const ldaxr_w_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0x885FFC20), ldaxr_w_insn);
+
+    // LDAXR X0, [X1] - acquire 64-bit (o0=1)
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .ldaxr_x = .{
+        .dst = wr0,
+        .base = r1,
+    } }, &buffer);
+    const ldaxr_x_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0xC85FFC20), ldaxr_x_insn);
+
+    // STLXR W2, W0, [X1] - release (o0=1)
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .stlxr_w = .{
+        .status = wr2,
+        .src = r0,
+        .base = r1,
+    } }, &buffer);
+    const stlxr_w_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0x8802FC20), stlxr_w_insn);
+
+    // STLXR W2, X0, [X1] - release 64-bit (o0=1)
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .stlxr_x = .{
+        .status = wr2,
+        .src = r0,
+        .base = r1,
+    } }, &buffer);
+    const stlxr_x_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0xC802FC20), stlxr_x_insn);
+}
+
+// === Tests for Atomic Operations (ARMv8.1-A LSE) ===
+
+test "emit ldadd atomic operations" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const v2 = root.reg.VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = root.reg.WritableReg.fromReg(r0);
+
+    // LDADD W0, W1, [X2] - 32-bit no ordering
+    try emit(.{ .ldadd = .{
+        .dst = wr0,
+        .src = r1,
+        .base = r2,
+        .size = .size32,
+    } }, &buffer);
+    const ldadd_w_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // size=0 + 111000 + AR=00 + 1 + Rs=X1 + opc=000 + 00 + X2 + X0
+    try testing.expectEqual(@as(u32, 0xB8210040), ldadd_w_insn);
+
+    // LDADD X0, X1, [X2] - 64-bit no ordering
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .ldadd = .{
+        .dst = wr0,
+        .src = r1,
+        .base = r2,
+        .size = .size64,
+    } }, &buffer);
+    const ldadd_x_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // size=1
+    try testing.expectEqual(@as(u32, 0xF8210040), ldadd_x_insn);
+
+    // LDADDA W0, W1, [X2] - acquire
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .ldadda = .{
+        .dst = wr0,
+        .src = r1,
+        .base = r2,
+        .size = .size32,
+    } }, &buffer);
+    const ldadda_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // AR=10 (acquire)
+    try testing.expectEqual(@as(u32, 0xB8A10040), ldadda_insn);
+
+    // LDADDAL X0, X1, [X2] - acquire-release
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .ldaddal = .{
+        .dst = wr0,
+        .src = r1,
+        .base = r2,
+        .size = .size64,
+    } }, &buffer);
+    const ldaddal_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // AR=11 (acquire-release)
+    try testing.expectEqual(@as(u32, 0xF8E10040), ldaddal_insn);
+
+    // LDADDL W0, W1, [X2] - release
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .ldaddl = .{
+        .dst = wr0,
+        .src = r1,
+        .base = r2,
+        .size = .size32,
+    } }, &buffer);
+    const ldaddl_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // AR=01 (release)
+    try testing.expectEqual(@as(u32, 0xB8610040), ldaddl_insn);
+}
+
+test "emit ldclr ldset ldeor atomic operations" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const v2 = root.reg.VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = root.reg.WritableReg.fromReg(r0);
+
+    // LDCLR X0, X1, [X2] - clear bits
+    try emit(.{ .ldclr = .{
+        .dst = wr0,
+        .src = r1,
+        .base = r2,
+        .size = .size64,
+    } }, &buffer);
+    const ldclr_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // opc=001 for LDCLR
+    try testing.expectEqual(@as(u32, 0xF8211040), ldclr_insn);
+
+    // LDSET X0, X1, [X2] - set bits
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .ldset = .{
+        .dst = wr0,
+        .src = r1,
+        .base = r2,
+        .size = .size64,
+    } }, &buffer);
+    const ldset_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // opc=011 for LDSET
+    try testing.expectEqual(@as(u32, 0xF8213040), ldset_insn);
+
+    // LDEOR X0, X1, [X2] - XOR bits
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .ldeor = .{
+        .dst = wr0,
+        .src = r1,
+        .base = r2,
+        .size = .size64,
+    } }, &buffer);
+    const ldeor_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // opc=010 for LDEOR
+    try testing.expectEqual(@as(u32, 0xF8212040), ldeor_insn);
+}
+
+test "emit cas compare and swap" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const v2 = root.reg.VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+
+    // CAS W0, W1, [X2] - 32-bit no ordering
+    try emit(.{ .cas = .{
+        .compare = r0,
+        .src = r1,
+        .base = r2,
+        .size = .size32,
+    } }, &buffer);
+    const cas_w_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // size=10 + 001010001 + Rs=W1 + 0 + 11111 + X2 + W0
+    try testing.expectEqual(@as(u32, 0x88A17C40), cas_w_insn);
+
+    // CAS X0, X1, [X2] - 64-bit no ordering
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .cas = .{
+        .compare = r0,
+        .src = r1,
+        .base = r2,
+        .size = .size64,
+    } }, &buffer);
+    const cas_x_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // size=11
+    try testing.expectEqual(@as(u32, 0xC8A17C40), cas_x_insn);
+
+    // CASA W0, W1, [X2] - acquire
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .casa = .{
+        .compare = r0,
+        .src = r1,
+        .base = r2,
+        .size = .size32,
+    } }, &buffer);
+    const casa_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // L=1 for acquire
+    try testing.expectEqual(@as(u32, 0x88E17C40), casa_insn);
+
+    // CASAL X0, X1, [X2] - acquire-release
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .casal = .{
+        .compare = r0,
+        .src = r1,
+        .base = r2,
+        .size = .size64,
+    } }, &buffer);
+    const casal_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // L=1 and o0=1 for acquire-release
+    try testing.expectEqual(@as(u32, 0xC8E1FC40), casal_insn);
+
+    // CASL W0, W1, [X2] - release
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .casl = .{
+        .compare = r0,
+        .src = r1,
+        .base = r2,
+        .size = .size32,
+    } }, &buffer);
+    const casl_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // o0=1 for release
+    try testing.expectEqual(@as(u32, 0x88A1FC40), casl_insn);
+}
+
+// === Tests for Memory Barriers ===
+
+test "emit memory barriers" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    // DMB ISH - inner shareable
+    try emit(.{ .dmb = .{
+        .option = .ish,
+    } }, &buffer);
+    const dmb_ish_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // 11010101000000110011 + CRm=1011 + 10111111
+    try testing.expectEqual(@as(u32, 0xD5033BBF), dmb_ish_insn);
+
+    // DMB SY - full system
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .dmb = .{
+        .option = .sy,
+    } }, &buffer);
+    const dmb_sy_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // CRm=1111
+    try testing.expectEqual(@as(u32, 0xD5033FBF), dmb_sy_insn);
+
+    // DSB ISH
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .dsb = .{
+        .option = .ish,
+    } }, &buffer);
+    const dsb_ish_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // Same as DMB but with different op2 bits
+    try testing.expectEqual(@as(u32, 0xD5033B9F), dsb_ish_insn);
+
+    // DSB SY
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .dsb = .{
+        .option = .sy,
+    } }, &buffer);
+    const dsb_sy_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0xD5033F9F), dsb_sy_insn);
+
+    // ISB
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .isb = {} }, &buffer);
+    const isb_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    // CRm=1111 + 11111111
+    try testing.expectEqual(@as(u32, 0xD5033FDF), isb_insn);
+}
