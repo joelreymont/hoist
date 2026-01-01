@@ -15,6 +15,16 @@
 (rule (lower (imul ty x y))
       (aarch64_mul_rr ty x y))
 
+;; smul_hi: Signed multiply returning upper bits (64×64→128, return high 64)
+(rule (lower (smul_hi ty x y))
+      (if-let $I64 ty)
+      (aarch64_smulh x y))
+
+;; umul_hi: Unsigned multiply returning upper bits (64×64→128, return high 64)
+(rule (lower (umul_hi ty x y))
+      (if-let $I64 ty)
+      (aarch64_umulh x y))
+
 ;; Immediate forms
 
 ;; iadd with 12-bit immediate
@@ -84,6 +94,8 @@
 (decl aarch64_sub_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_sub_imm (Type Value i64) Aarch64Inst)
 (decl aarch64_mul_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_smulh (Value Value) Aarch64Inst)
+(decl aarch64_umulh (Value Value) Aarch64Inst)
 
 ;; Memory
 (decl aarch64_ldr (Type Value) Aarch64Inst)
