@@ -292,6 +292,110 @@ pub const CallTarget = union(enum) {
     }
 };
 
+/// 12-bit unsigned immediate (optionally shifted left by 12).
+/// Used for ADD/SUB immediate instructions.
+pub const Imm12 = struct {
+    /// 12-bit immediate value.
+    bits: u16,
+    /// Whether to shift left by 12 bits.
+    shift12: bool,
+
+    pub const ZERO: Imm12 = .{ .bits = 0, .shift12 = false };
+
+    /// Create from u64 if it fits in 12-bit or 12-bit<<12 encoding.
+    pub fn maybeFromU64(val: u64) ?Imm12 {
+        if (val & ~@as(u64, 0xfff) == 0) {
+            return .{ .bits = @intCast(val), .shift12 = false };
+        } else if (val & ~@as(u64, 0xfff << 12) == 0) {
+            return .{ .bits = @intCast(val >> 12), .shift12 = true };
+        }
+        return null;
+    }
+
+    /// Convert back to u64.
+    pub fn toU64(self: Imm12) u64 {
+        const val: u64 = self.bits;
+        return if (self.shift12) val << 12 else val;
+    }
+
+    /// Get 2-bit shift field for encoding.
+    pub fn shiftBits(self: Imm12) u2 {
+        return if (self.shift12) 0b01 else 0b00;
+    }
+};
+
+/// Immediate for shift instructions (0-63).
+pub const ImmShift = struct {
+    /// 6-bit shift amount.
+    imm: u8,
+
+    /// Create from u64 if it fits in 6 bits.
+    pub fn maybeFromU64(val: u64) ?ImmShift {
+        if (val < 64) {
+            return .{ .imm = @intCast(val) };
+        }
+        return null;
+    }
+
+    pub fn toU64(self: ImmShift) u64 {
+        return self.imm;
+    }
+};
+
+/// Logical immediate encoding for AND/ORR/EOR instructions.
+/// Encodes repeating patterns using N, R, S fields.
+pub const ImmLogic = struct {
+    /// Actual 64-bit value represented.
+    value: u64,
+    /// N flag (1 for 64-bit patterns).
+    n: bool,
+    /// R field: rotation amount.
+    r: u8,
+    /// S field: element size and set bits.
+    s: u8,
+    /// Operand size (32 or 64 bit).
+    size: OperandSize,
+
+    /// Create from u64 if encodable as logical immediate.
+    /// This is complex - see ARM ARM for full algorithm.
+    pub fn maybeFromU64(val: u64, size: OperandSize) ?ImmLogic {
+        // TODO: Implement full logical immediate encoding algorithm
+        // For now, return null (will be implemented in Phase 2)
+        _ = val;
+        _ = size;
+        return null;
+    }
+
+    pub fn toU64(self: ImmLogic) u64 {
+        return self.value;
+    }
+};
+
+/// Shift operation and amount for shifted register operands.
+pub const ShiftOpAndAmt = struct {
+    op: ShiftOp,
+    amt: u8,
+
+    pub const ShiftOp = enum(u2) {
+        lsl = 0b00,
+        lsr = 0b01,
+        asr = 0b10,
+        ror = 0b11,
+    };
+};
+
+/// Extend operation for extended register operands.
+pub const ExtendOp = enum(u3) {
+    uxtb = 0b000, // Zero-extend byte
+    uxth = 0b001, // Zero-extend halfword
+    uxtw = 0b010, // Zero-extend word (32→64)
+    uxtx = 0b011, // Zero-extend doubleword (nop for 64-bit)
+    sxtb = 0b100, // Sign-extend byte
+    sxth = 0b101, // Sign-extend halfword
+    sxtw = 0b110, // Sign-extend word (32→64)
+    sxtx = 0b111, // Sign-extend doubleword (nop for 64-bit)
+};
+
 test "Inst formatting" {
     const v0 = VReg.new(0, .int);
     const v1 = VReg.new(1, .int);
@@ -321,4 +425,40 @@ test "CondCode invert" {
 test "OperandSize bytes" {
     try testing.expectEqual(@as(u32, 4), OperandSize.size32.bytes());
     try testing.expectEqual(@as(u32, 8), OperandSize.size64.bytes());
+}
+
+test "Imm12 encoding" {
+    // 12-bit immediate without shift
+    const imm1 = Imm12.maybeFromU64(42).?;
+    try testing.expectEqual(@as(u16, 42), imm1.bits);
+    try testing.expectEqual(false, imm1.shift12);
+    try testing.expectEqual(@as(u64, 42), imm1.toU64());
+
+    // 12-bit immediate with shift (12 << 12)
+    const imm2 = Imm12.maybeFromU64(12 << 12).?;
+    try testing.expectEqual(@as(u16, 12), imm2.bits);
+    try testing.expectEqual(true, imm2.shift12);
+    try testing.expectEqual(@as(u64, 12 << 12), imm2.toU64());
+
+    // Max 12-bit value
+    const imm3 = Imm12.maybeFromU64(0xfff).?;
+    try testing.expectEqual(@as(u16, 0xfff), imm3.bits);
+
+    // Invalid - too large
+    try testing.expectEqual(@as(?Imm12, null), Imm12.maybeFromU64(0x1000));
+
+    // Invalid - not aligned to either encoding
+    try testing.expectEqual(@as(?Imm12, null), Imm12.maybeFromU64((12 << 12) + 1));
+}
+
+test "ImmShift encoding" {
+    const sh1 = ImmShift.maybeFromU64(0).?;
+    try testing.expectEqual(@as(u8, 0), sh1.imm);
+
+    const sh2 = ImmShift.maybeFromU64(63).?;
+    try testing.expectEqual(@as(u8, 63), sh2.imm);
+
+    // Invalid - too large
+    try testing.expectEqual(@as(?ImmShift, null), ImmShift.maybeFromU64(64));
+    try testing.expectEqual(@as(?ImmShift, null), ImmShift.maybeFromU64(100));
 }
