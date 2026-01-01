@@ -1,10 +1,13 @@
 const std = @import("std");
 const testing = std.testing;
+const Allocator = std.mem.Allocator;
 
 const root = @import("../root.zig");
 const types = @import("types.zig");
 const entities = @import("entities.zig");
 const value_list = @import("value_list.zig");
+const instruction_data = @import("instruction_data.zig");
+const maps = @import("../foundation/maps.zig");
 
 const Type = types.Type;
 const Block = entities.Block;
@@ -12,6 +15,9 @@ const Inst = entities.Inst;
 const Value = entities.Value;
 const ValueList = value_list.ValueList;
 const ValueListPool = value_list.ValueListPool;
+const InstructionData = instruction_data.InstructionData;
+const PrimaryMap = maps.PrimaryMap;
+const SecondaryMap = maps.SecondaryMap;
 
 /// Value definition - where a value comes from.
 pub const ValueDef = union(enum) {
@@ -217,3 +223,116 @@ test "ValueDef unwrapInst" {
     try testing.expectEqual(Inst.new(42), def.unwrapInst());
     try testing.expectEqual(Inst.new(42), def.inst().?);
 }
+
+/// Data flow graph - SSA value definitions and instructions.
+pub const DataFlowGraph = struct {
+    insts: PrimaryMap(Inst, InstructionData),
+    results: SecondaryMap(Inst, ValueList),
+    values: SecondaryMap(Value, ValueData),
+    blocks: SecondaryMap(Block, BlockData),
+    value_lists: ValueListPool,
+
+    const Self = @This();
+
+    pub fn init(allocator: Allocator) DataFlowGraph {
+        return .{
+            .insts = PrimaryMap(Inst, InstructionData).init(allocator),
+            .results = SecondaryMap(Inst, ValueList).init(allocator),
+            .values = SecondaryMap(Value, ValueData).init(allocator),
+            .blocks = SecondaryMap(Block, BlockData).init(allocator),
+            .value_lists = ValueListPool.init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.insts.deinit();
+        self.results.deinit();
+        self.values.deinit();
+        self.blocks.deinit();
+        self.value_lists.deinit();
+    }
+
+    pub fn makeInst(self: *Self, data: InstructionData) !Inst {
+        return try self.insts.push(data);
+    }
+
+    pub fn appendInstResult(self: *Self, inst: Inst, ty: Type) !Value {
+        const results_list = try self.results.getOrDefault(inst);
+        const num: u16 = @intCast(self.value_lists.len(results_list.*));
+        const val_idx = self.values.elems.items.len;
+        const value_data = try self.values.getOrDefault(Value.new(val_idx));
+        const val = Value.new(val_idx);
+        value_data.* = ValueData.inst(ty, num, inst);
+        try self.value_lists.push(results_list, val);
+        return val;
+    }
+
+    pub fn instResults(self: *const Self, inst: Inst) []const Value {
+        const list = self.results.get(inst) orelse return &.{};
+        return self.value_lists.asSlice(list.*);
+    }
+
+    pub fn firstResult(self: *const Self, inst: Inst) ?Value {
+        const results = self.instResults(inst);
+        if (results.len == 0) return null;
+        return results[0];
+    }
+
+    pub fn numResults(self: *const Self, inst: Inst) usize {
+        return self.instResults(inst).len;
+    }
+
+    pub fn resolveAliases(self: *const Self, val: Value) Value {
+        var current = val;
+        while (self.values.get(current)) |data| {
+            if (data.aliasOriginal()) |original| {
+                current = original;
+            } else {
+                break;
+            }
+        }
+        return current;
+    }
+
+    pub fn valueType(self: *const Self, val: Value) ?Type {
+        const canonical = self.resolveAliases(val);
+        const data = self.values.get(canonical) orelse return null;
+        return data.getType();
+    }
+
+    pub fn valueDef(self: *const Self, val: Value) ?ValueDef {
+        const canonical = self.resolveAliases(val);
+        const data = self.values.get(canonical) orelse return null;
+        return data.toDef();
+    }
+
+    pub fn setValueType(self: *Self, val: Value, ty: Type) void {
+        const canonical = self.resolveAliases(val);
+        if (self.values.getMut(canonical)) |data| {
+            data.setType(ty);
+        }
+    }
+};
+
+test "DataFlowGraph makeInst" {
+    var dfg = DataFlowGraph.init(testing.allocator);
+    defer dfg.deinit();
+
+    const data = instruction_data.BinaryData.init(.iadd, Value.new(1), Value.new(2));
+    const inst = try dfg.makeInst(.{ .binary = data });
+    try testing.expectEqual(Inst.new(0), inst);
+}
+
+test "DataFlowGraph append result" {
+    var dfg = DataFlowGraph.init(testing.allocator);
+    defer dfg.deinit();
+
+    const data = instruction_data.BinaryData.init(.iadd, Value.new(1), Value.new(2));
+    const inst = try dfg.makeInst(.{ .binary = data });
+
+    const result = try dfg.appendInstResult(inst, Type.I32);
+    try testing.expectEqual(Value.new(0), result);
+    try testing.expectEqual(@as(usize, 1), dfg.numResults(inst));
+    try testing.expectEqual(result, dfg.firstResult(inst).?);
+}
+
