@@ -253,11 +253,83 @@
 
 ;; Load/store lowering
 
-;; load: Load from memory
+;; load: Load from memory with register+immediate offset
+;; Pattern: load(iadd(base, iconst(offset))) => LDR Xt, [Xn, #offset]
+(rule (lower (load ty (iadd ptr_ty base (iconst offset)) _flags _mem_offset))
+      (if-let scaled_offset (valid_ldr_imm_offset ty offset))
+      (aarch64_ldr_imm ty base scaled_offset))
+
+;; load: Load from memory with commuted register+immediate offset
+(rule (lower (load ty (iadd ptr_ty (iconst offset) base) _flags _mem_offset))
+      (if-let scaled_offset (valid_ldr_imm_offset ty offset))
+      (aarch64_ldr_imm ty base scaled_offset))
+
+;; load: Load from memory with register+register offset
+;; Pattern: load(iadd(base, index)) => LDR Xt, [Xn, Xm]
+(rule (lower (load ty (iadd ptr_ty base index) _flags _mem_offset))
+      (aarch64_ldr_reg ty base index))
+
+;; load: Load from memory with register+extended register offset
+;; Pattern: load(iadd(base, sxtw(index))) => LDR Xt, [Xn, Wm, SXTW]
+(rule (lower (load ty (iadd ptr_ty base (aarch64_sxtw index)) _flags _mem_offset))
+      (aarch64_ldr_ext ty base index ExtendOp.sxtw))
+
+;; load: Load from memory with commuted register+extended register offset
+(rule (lower (load ty (iadd ptr_ty (aarch64_sxtw index) base) _flags _mem_offset))
+      (aarch64_ldr_ext ty base index ExtendOp.sxtw))
+
+;; load: Load from memory with register+shifted register offset
+;; Pattern: load(iadd(base, ishl(index, iconst(shift)))) => LDR Xt, [Xn, Xm, LSL #shift]
+(rule (lower (load ty (iadd ptr_ty base (ishl idx_ty index (iconst shift))) _flags _mem_offset))
+      (if-let shift_amt (valid_ldr_shift ty shift))
+      (aarch64_ldr_shifted ty base index shift_amt))
+
+;; load: Load from memory with commuted register+shifted register offset
+(rule (lower (load ty (iadd ptr_ty (ishl idx_ty index (iconst shift)) base) _flags _mem_offset))
+      (if-let shift_amt (valid_ldr_shift ty shift))
+      (aarch64_ldr_shifted ty base index shift_amt))
+
+;; load: Load from memory (base register only)
 (rule (lower (load ty addr _flags _offset))
       (aarch64_ldr ty addr))
 
-;; store: Store to memory
+;; store: Store to memory with register+immediate offset
+;; Pattern: store(val, iadd(base, iconst(offset))) => STR Xt, [Xn, #offset]
+(rule (lower (store val (iadd ptr_ty base (iconst offset)) _flags _mem_offset))
+      (if-let scaled_offset (valid_str_imm_offset val offset))
+      (aarch64_str_imm val base scaled_offset))
+
+;; store: Store to memory with commuted register+immediate offset
+(rule (lower (store val (iadd ptr_ty (iconst offset) base) _flags _mem_offset))
+      (if-let scaled_offset (valid_str_imm_offset val offset))
+      (aarch64_str_imm val base scaled_offset))
+
+;; store: Store to memory with register+register offset
+;; Pattern: store(val, iadd(base, index)) => STR Xt, [Xn, Xm]
+(rule (lower (store val (iadd ptr_ty base index) _flags _mem_offset))
+      (aarch64_str_reg val base index))
+
+;; store: Store to memory with register+extended register offset
+;; Pattern: store(val, iadd(base, sxtw(index))) => STR Xt, [Xn, Wm, SXTW]
+(rule (lower (store val (iadd ptr_ty base (aarch64_sxtw index)) _flags _mem_offset))
+      (aarch64_str_ext val base index ExtendOp.sxtw))
+
+;; store: Store to memory with commuted register+extended register offset
+(rule (lower (store val (iadd ptr_ty (aarch64_sxtw index) base) _flags _mem_offset))
+      (aarch64_str_ext val base index ExtendOp.sxtw))
+
+;; store: Store to memory with register+shifted register offset
+;; Pattern: store(val, iadd(base, ishl(index, iconst(shift)))) => STR Xt, [Xn, Xm, LSL #shift]
+(rule (lower (store val (iadd ptr_ty base (ishl idx_ty index (iconst shift))) _flags _mem_offset))
+      (if-let shift_amt (valid_str_shift val shift))
+      (aarch64_str_shifted val base index shift_amt))
+
+;; store: Store to memory with commuted register+shifted register offset
+(rule (lower (store val (iadd ptr_ty (ishl idx_ty index (iconst shift)) base) _flags _mem_offset))
+      (if-let shift_amt (valid_str_shift val shift))
+      (aarch64_str_shifted val base index shift_amt))
+
+;; store: Store to memory (base register only)
 (rule (lower (store val addr _flags _offset))
       (aarch64_str val addr))
 
@@ -308,6 +380,29 @@
 (extractor (in_neg_uimm12_range val)
   (if (<= -4095 val -1)
       $true))
+
+;; Addressing mode extractors
+
+;; Check if offset is valid for load immediate addressing (simplified)
+;; For now, accept offsets 0-32760 (max for I64 8-byte aligned access)
+(extractor (valid_ldr_imm_offset ty offset)
+  (if (<= 0 offset 32760)
+      offset))
+
+;; Check if offset is valid for store immediate addressing (simplified)
+(extractor (valid_str_imm_offset val offset)
+  (if (<= 0 offset 32760)
+      offset))
+
+;; Check if shift is valid for load (must be 0-3)
+(extractor (valid_ldr_shift ty shift)
+  (if (<= 0 shift 3)
+      shift))
+
+;; Check if shift is valid for store (must be 0-3)
+(extractor (valid_str_shift val shift)
+  (if (<= 0 shift 3)
+      shift))
 
 ;; Type declarations
 
@@ -394,7 +489,15 @@
 
 ;; Memory
 (decl aarch64_ldr (Type Value) Aarch64Inst)
+(decl aarch64_ldr_imm (Type Value i64) Aarch64Inst)
+(decl aarch64_ldr_reg (Type Value Value) Aarch64Inst)
+(decl aarch64_ldr_ext (Type Value Value ExtendOp) Aarch64Inst)
+(decl aarch64_ldr_shifted (Type Value Value i64) Aarch64Inst)
 (decl aarch64_str (Value Value) Aarch64Inst)
+(decl aarch64_str_imm (Value Value i64) Aarch64Inst)
+(decl aarch64_str_reg (Value Value Value) Aarch64Inst)
+(decl aarch64_str_ext (Value Value Value ExtendOp) Aarch64Inst)
+(decl aarch64_str_shifted (Value Value Value i64) Aarch64Inst)
 
 ;; Control flow
 (decl aarch64_b (Block) Aarch64Inst)
