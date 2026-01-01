@@ -9,6 +9,9 @@ const WritableReg = root.aarch64_inst.WritableReg;
 const lower_mod = root.lower;
 const LowerCtx = lower_mod.LowerCtx;
 
+// Import ISLE-generated lowering code
+const isle_lower = @import("../../generated/aarch64_lower_generated.zig");
+
 /// Aarch64 lowering backend implementation.
 /// This connects ISLE rules to actual instruction emission.
 pub const Aarch64Lower = struct {
@@ -17,15 +20,12 @@ pub const Aarch64Lower = struct {
         ctx: *LowerCtx(Inst),
         inst: lower_mod.Inst,
     ) !bool {
-        _ = ctx;
-        _ = inst;
+        // Try ISLE-generated lowering first
+        const handled = try isle_lower.lower(ctx, inst);
+        if (handled) return true;
 
-        // In full implementation:
-        // 1. Get instruction data from IR
-        // 2. Match against ISLE rules
-        // 3. Emit aarch64 instructions via ctx.emit()
-
-        // For now, stub - ISLE integration pending
+        // Fallback for instructions not handled by ISLE
+        // (none yet - ISLE compiler needs parser completion)
         return false;
     }
 
