@@ -19,3 +19,4 @@ pub const constant = @import("ir/constant.zig");
 pub const extfunc = @import("ir/extfunc.zig");
 pub const dfg = @import("ir/dfg.zig");
 pub const layout = @import("ir/layout.zig");
+pub const instruction_data = @import("ir/instruction_data.zig");
