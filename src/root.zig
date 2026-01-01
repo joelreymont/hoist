@@ -1,3 +1,5 @@
+pub const context = @import("context.zig");
+
 pub const bforest = @import("foundation/bforest.zig");
 pub const bitset = @import("foundation/bitset.zig");
 pub const entity = @import("foundation/entity.zig");
