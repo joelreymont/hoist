@@ -1,0 +1,99 @@
+;; aarch64 ISLE lowering rules
+;; Minimal bootstrap set for ARM64 instruction selection
+
+;; Integer arithmetic lowering
+
+;; iadd: Add two integers
+(rule (lower (iadd ty x y))
+      (aarch64_add_rr ty x y))
+
+;; isub: Subtract integers
+(rule (lower (isub ty x y))
+      (aarch64_sub_rr ty x y))
+
+;; imul: Multiply integers
+(rule (lower (imul ty x y))
+      (aarch64_mul_rr ty x y))
+
+;; Immediate forms
+
+;; iadd with 12-bit immediate
+(rule (lower (iadd ty x (iconst k)))
+      (if-let $true (uimm12 k))
+      (aarch64_add_imm ty x k))
+
+;; isub with 12-bit immediate
+(rule (lower (isub ty x (iconst k)))
+      (if-let $true (uimm12 k))
+      (aarch64_sub_imm ty x k))
+
+;; Load/store lowering
+
+;; load: Load from memory
+(rule (lower (load ty addr _flags _offset))
+      (aarch64_ldr ty addr))
+
+;; store: Store to memory
+(rule (lower (store val addr _flags _offset))
+      (aarch64_str val addr))
+
+;; Control flow lowering
+
+;; jump: Unconditional branch
+(rule (lower (jump target))
+      (aarch64_b target))
+
+;; brif: Conditional branch
+(rule (lower (brif cond target))
+      (aarch64_b_cond cond target))
+
+;; return: Return from function
+(rule (lower (return))
+      (aarch64_ret))
+
+;; Constant materialization
+
+;; iconst: Integer constant (16-bit immediate via MOVZ)
+(rule (lower (iconst ty k))
+      (if-let $true (uimm16 k))
+      (aarch64_movz ty k))
+
+;; iconst: Larger constants (needs multiple instructions)
+(rule (lower (iconst ty k))
+      (aarch64_iconst ty k))
+
+;; Helper extractors
+
+;; Check if value fits in unsigned 12-bit
+(extractor (uimm12 val)
+  (if (<= 0 val 4095)
+      val))
+
+;; Check if value fits in unsigned 16-bit
+(extractor (uimm16 val)
+  (if (<= 0 val 65535)
+      val))
+
+;; Constructor terms for aarch64 instructions
+
+(type Aarch64Inst (enum))
+
+;; Arithmetic
+(decl aarch64_add_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_add_imm (Type Value i64) Aarch64Inst)
+(decl aarch64_sub_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_sub_imm (Type Value i64) Aarch64Inst)
+(decl aarch64_mul_rr (Type Value Value) Aarch64Inst)
+
+;; Memory
+(decl aarch64_ldr (Type Value) Aarch64Inst)
+(decl aarch64_str (Value Value) Aarch64Inst)
+
+;; Control flow
+(decl aarch64_b (Block) Aarch64Inst)
+(decl aarch64_b_cond (Value Block) Aarch64Inst)
+(decl aarch64_ret () Aarch64Inst)
+
+;; Constants
+(decl aarch64_movz (Type i64) Aarch64Inst)
+(decl aarch64_iconst (Type i64) Aarch64Inst)

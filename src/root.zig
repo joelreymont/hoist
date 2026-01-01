@@ -47,3 +47,4 @@ pub const x64_lower = @import("backends/x64/lower.zig");
 pub const aarch64_inst = @import("backends/aarch64/inst.zig");
 pub const aarch64_emit = @import("backends/aarch64/emit.zig");
 pub const aarch64_abi = @import("backends/aarch64/abi.zig");
+pub const aarch64_lower = @import("backends/aarch64/lower.zig");
