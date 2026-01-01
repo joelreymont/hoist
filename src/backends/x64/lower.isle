@@ -1,0 +1,88 @@
+;; x64 ISLE lowering rules
+;; Minimal bootstrap set for instruction selection
+
+;; Integer arithmetic lowering
+
+;; iadd: Add two integers
+(rule (lower (iadd ty x y))
+      (x64_add_rr ty x y))
+
+;; isub: Subtract integers
+(rule (lower (isub ty x y))
+      (x64_sub_rr ty x y))
+
+;; imul: Multiply integers
+(rule (lower (imul ty x y))
+      (x64_imul_rr ty x y))
+
+;; Immediate forms
+
+;; iadd with small immediate
+(rule (lower (iadd ty x (iconst k)))
+      (if-let $true (simm32 k))
+      (x64_add_imm ty x k))
+
+;; isub with small immediate
+(rule (lower (isub ty x (iconst k)))
+      (if-let $true (simm32 k))
+      (x64_sub_imm ty x k))
+
+;; Load/store lowering
+
+;; load: Load from memory
+(rule (lower (load ty addr _flags _offset))
+      (x64_load ty addr))
+
+;; store: Store to memory
+(rule (lower (store val addr _flags _offset))
+      (x64_store val addr))
+
+;; Control flow lowering
+
+;; jump: Unconditional branch
+(rule (lower (jump target))
+      (x64_jmp target))
+
+;; brif: Conditional branch
+(rule (lower (brif cond target))
+      (x64_brif cond target))
+
+;; return: Return from function
+(rule (lower (return))
+      (x64_ret))
+
+;; Constant materialization
+
+;; iconst: Integer constant
+(rule (lower (iconst ty k))
+      (x64_iconst ty k))
+
+;; Helper extractors
+
+;; Check if value fits in signed 32-bit
+(extractor (simm32 val)
+  (if (<= -2147483648 val 2147483647)
+      val))
+
+;; Constructor terms for x64 instructions
+
+(type X64Inst (enum))
+
+;; Arithmetic
+(decl x64_add_rr (Type Value Value) X64Inst)
+(decl x64_add_imm (Type Value i64) X64Inst)
+(decl x64_sub_rr (Type Value Value) X64Inst)
+(decl x64_sub_imm (Type Value i64) X64Inst)
+(decl x64_imul_rr (Type Value Value) X64Inst)
+
+;; Memory
+(decl x64_load (Type Value) X64Inst)
+(decl x64_store (Value Value) X64Inst)
+
+;; Control flow
+(decl x64_jmp (Block) X64Inst)
+(decl x64_brif (Value Block) X64Inst)
+(decl x64_ret () X64Inst)
+
+;; Constants
+(decl x64_iconst (Type i64) X64Inst)
