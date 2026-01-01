@@ -97,9 +97,9 @@ pub const BlockCall = struct {
     }
 
     /// Create BlockCall with block and arguments.
-    pub fn new(block: Block, args: []const Value, pool: *ValueListPool) !BlockCall {
+    pub fn new(blk: Block, args: []const Value, pool: *ValueListPool) !BlockCall {
         var values = ValueList.default();
-        try pool.push(&values, blockToValue(block));
+        try pool.push(&values, blockToValue(blk));
 
         for (args) |arg| {
             const encoded = BlockArg.fromValue(arg).encodeAsValue(arg, 0);
