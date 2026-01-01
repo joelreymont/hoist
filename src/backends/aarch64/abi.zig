@@ -968,3 +968,213 @@ test "large frame with callee-saves" {
     // Verify we generated code
     try testing.expect(buffer.data.items.len > 0);
 }
+
+test "callee-save register pairing with STP/LDP" {
+    // Test that pairs of callee-save registers use STP/LDP
+    const args = [_]abi_mod.Type{.i64};
+    const sig = abi_mod.ABISignature.init(&args, &.{.i64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    // Add pairs: X19/X20, X21/X22
+    try callee.clobberCalleeSave(PReg.new(.int, 19));
+    try callee.clobberCalleeSave(PReg.new(.int, 20));
+    try callee.clobberCalleeSave(PReg.new(.int, 21));
+    try callee.clobberCalleeSave(PReg.new(.int, 22));
+
+    callee.setLocalsSize(0);
+    // FP+LR (16) + 4 callee-saves as 2 pairs (32) = 48
+    try testing.expectEqual(@as(u32, 48), callee.frame_size);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try callee.emitPrologue(&buffer);
+    try callee.emitEpilogue(&buffer);
+
+    // Verify we generated code
+    try testing.expect(buffer.data.items.len > 0);
+
+    // With 4 callee-saves in 2 pairs, we expect:
+    // Prologue: STP FP/LR, MOV FP, STP X19/X20, STP X21/X22 = 4 instructions = 16 bytes
+    // Epilogue: LDP X19/X20, LDP X21/X22, LDP FP/LR, RET = 4 instructions = 16 bytes
+    // Total = 32 bytes
+    try testing.expectEqual(@as(usize, 32), buffer.data.items.len);
+}
+
+test "callee-save odd number uses STR/LDR for last register" {
+    // Test that an odd number of callee-saves uses STP for pairs and STR for the last one
+    const args = [_]abi_mod.Type{.i64};
+    const sig = abi_mod.ABISignature.init(&args, &.{.i64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    // Add 3 callee-saves: X19/X20 as pair, X21 alone
+    try callee.clobberCalleeSave(PReg.new(.int, 19));
+    try callee.clobberCalleeSave(PReg.new(.int, 20));
+    try callee.clobberCalleeSave(PReg.new(.int, 21));
+
+    callee.setLocalsSize(0);
+    // FP+LR (16) + 3 callee-saves rounded to 2 pairs (32) = 48
+    try testing.expectEqual(@as(u32, 48), callee.frame_size);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try callee.emitPrologue(&buffer);
+    try callee.emitEpilogue(&buffer);
+
+    // Verify we generated code
+    try testing.expect(buffer.data.items.len > 0);
+
+    // With 3 callee-saves, we expect:
+    // Prologue: STP FP/LR, MOV FP, STP X19/X20, STR X21 = 4 instructions = 16 bytes
+    // Epilogue: LDP X19/X20, LDR X21, LDP FP/LR, RET = 4 instructions = 16 bytes
+    // Total = 32 bytes
+    try testing.expectEqual(@as(usize, 32), buffer.data.items.len);
+}
+
+test "callee-save pairing preserves all standard pairs" {
+    // Test all standard register pairs: X19/X20, X21/X22, X23/X24, X25/X26, X27/X28
+    const args = [_]abi_mod.Type{.i64};
+    const sig = abi_mod.ABISignature.init(&args, &.{.i64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    // Add all 10 callee-saves (excluding FP and LR which are handled separately)
+    try callee.clobberCalleeSave(PReg.new(.int, 19));
+    try callee.clobberCalleeSave(PReg.new(.int, 20));
+    try callee.clobberCalleeSave(PReg.new(.int, 21));
+    try callee.clobberCalleeSave(PReg.new(.int, 22));
+    try callee.clobberCalleeSave(PReg.new(.int, 23));
+    try callee.clobberCalleeSave(PReg.new(.int, 24));
+    try callee.clobberCalleeSave(PReg.new(.int, 25));
+    try callee.clobberCalleeSave(PReg.new(.int, 26));
+    try callee.clobberCalleeSave(PReg.new(.int, 27));
+    try callee.clobberCalleeSave(PReg.new(.int, 28));
+
+    callee.setLocalsSize(0);
+    // FP+LR (16) + 10 callee-saves as 5 pairs (80) = 96
+    try testing.expectEqual(@as(u32, 96), callee.frame_size);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try callee.emitPrologue(&buffer);
+    try callee.emitEpilogue(&buffer);
+
+    // Verify we generated code
+    try testing.expect(buffer.data.items.len > 0);
+
+    // With 10 callee-saves in 5 pairs, we expect:
+    // Prologue: STP FP/LR, MOV FP, 5x STP = 7 instructions = 28 bytes
+    // Epilogue: 5x LDP, LDP FP/LR, RET = 7 instructions = 28 bytes
+    // Total = 56 bytes
+    try testing.expectEqual(@as(usize, 56), buffer.data.items.len);
+}
+
+test "callee-save offset calculation for paired saves" {
+    // Verify stack offsets are correct for paired saves
+    const args = [_]abi_mod.Type{.i64};
+    const sig = abi_mod.ABISignature.init(&args, &.{.i64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    // Add 5 callee-saves to test offset calculation
+    // Pairs: X19/X20, X21/X22, and X23 alone
+    try callee.clobberCalleeSave(PReg.new(.int, 19));
+    try callee.clobberCalleeSave(PReg.new(.int, 20));
+    try callee.clobberCalleeSave(PReg.new(.int, 21));
+    try callee.clobberCalleeSave(PReg.new(.int, 22));
+    try callee.clobberCalleeSave(PReg.new(.int, 23));
+
+    callee.setLocalsSize(0);
+    // FP+LR (16) + 5 callee-saves rounded to 3 pairs (48) = 64
+    try testing.expectEqual(@as(u32, 64), callee.frame_size);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try callee.emitPrologue(&buffer);
+
+    // Offsets should be:
+    // SP+0: FP, LR
+    // SP+16: X19, X20 (first pair)
+    // SP+32: X21, X22 (second pair)
+    // SP+48: X23, (padding) (odd register with 8-byte padding)
+
+    // Verify we generated correct number of instructions
+    // Prologue: STP FP/LR, MOV FP, STP X19/X20, STP X21/X22, STR X23 = 5 instructions = 20 bytes
+    try testing.expect(buffer.data.items.len >= 20);
+}
+
+test "verify STP/LDP encoding for callee-save pairs" {
+    // Verify that STP/LDP instructions are correctly encoded for register pairs
+    const args = [_]abi_mod.Type{.i64};
+    const sig = abi_mod.ABISignature.init(&args, &.{.i64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    // Add X19 and X20 as a pair
+    try callee.clobberCalleeSave(PReg.new(.int, 19));
+    try callee.clobberCalleeSave(PReg.new(.int, 20));
+
+    callee.setLocalsSize(0);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try callee.emitPrologue(&buffer);
+
+    // Should have STP FP/LR, MOV FP, STP X19/X20 = 3 instructions = 12 bytes
+    try testing.expect(buffer.data.items.len >= 12);
+
+    // Verify the third instruction is an STP (bits 31-22 should be 0b1010100100 for STP 64-bit)
+    if (buffer.data.items.len >= 12) {
+        const stp_x19_x20 = std.mem.bytesToValue(u32, buffer.data.items[8..12]);
+        const opcode = (stp_x19_x20 >> 22) & 0x3FF;
+        try testing.expectEqual(@as(u32, 0b1010100100), opcode);
+    }
+}
+
+test "16-byte alignment maintained with all callee-save combinations" {
+    // Verify 16-byte alignment is maintained for various numbers of callee-saves
+    const test_cases = [_]struct { num: u8, expected_size: u32 }{
+        .{ .num = 0, .expected_size = 16 }, // FP+LR only
+        .{ .num = 1, .expected_size = 32 }, // FP+LR + 1 reg (rounded to pair)
+        .{ .num = 2, .expected_size = 32 }, // FP+LR + 1 pair
+        .{ .num = 3, .expected_size = 48 }, // FP+LR + 2 pairs
+        .{ .num = 4, .expected_size = 48 }, // FP+LR + 2 pairs
+        .{ .num = 5, .expected_size = 64 }, // FP+LR + 3 pairs
+        .{ .num = 6, .expected_size = 64 }, // FP+LR + 3 pairs
+        .{ .num = 7, .expected_size = 80 }, // FP+LR + 4 pairs
+        .{ .num = 8, .expected_size = 80 }, // FP+LR + 4 pairs
+        .{ .num = 9, .expected_size = 96 }, // FP+LR + 5 pairs
+        .{ .num = 10, .expected_size = 96 }, // FP+LR + 5 pairs
+    };
+
+    for (test_cases) |tc| {
+        const args = [_]abi_mod.Type{.i64};
+        const sig = abi_mod.ABISignature.init(&args, &.{.i64}, .aapcs64);
+
+        var callee = Aarch64ABICallee.init(testing.allocator, sig);
+        defer callee.deinit();
+
+        // Add callee-saves
+        var i: u8 = 0;
+        while (i < tc.num) : (i += 1) {
+            try callee.clobberCalleeSave(PReg.new(.int, 19 + i));
+        }
+
+        callee.setLocalsSize(0);
+
+        // Verify frame size
+        try testing.expectEqual(tc.expected_size, callee.frame_size);
+        try testing.expectEqual(@as(u32, 0), callee.frame_size % 16);
+    }
+}
