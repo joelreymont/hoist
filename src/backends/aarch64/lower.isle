@@ -25,6 +25,26 @@
       (if-let $I64 ty)
       (aarch64_umulh x y))
 
+;; sdiv: Signed divide
+(rule (lower (sdiv ty x y))
+      (aarch64_sdiv ty x y))
+
+;; udiv: Unsigned divide
+(rule (lower (udiv ty x y))
+      (aarch64_udiv ty x y))
+
+;; srem: Signed remainder (implemented as sdiv + msub)
+;; srem(x, y) = x - (x / y) * y
+(rule (lower (srem ty x y))
+      (let ((quot Aarch64Inst (aarch64_sdiv ty x y)))
+            (aarch64_msub ty quot y x)))
+
+;; urem: Unsigned remainder (implemented as udiv + msub)
+;; urem(x, y) = x - (x / y) * y
+(rule (lower (urem ty x y))
+      (let ((quot Aarch64Inst (aarch64_udiv ty x y)))
+            (aarch64_msub ty quot y x)))
+
 ;; Immediate forms
 
 ;; iadd with 12-bit immediate
@@ -96,6 +116,9 @@
 (decl aarch64_mul_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_smulh (Value Value) Aarch64Inst)
 (decl aarch64_umulh (Value Value) Aarch64Inst)
+(decl aarch64_sdiv (Type Value Value) Aarch64Inst)
+(decl aarch64_udiv (Type Value Value) Aarch64Inst)
+(decl aarch64_msub (Type Value Value Value) Aarch64Inst)
 
 ;; Memory
 (decl aarch64_ldr (Type Value) Aarch64Inst)
