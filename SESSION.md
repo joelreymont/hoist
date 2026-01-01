@@ -43616,3 +43616,55 @@ For I32 = 0x76:
 So the formula is right, I just had the wrong constant subtraction! It should subtract LANE_BASE (0x70), not check if >= LANE_BASE. Let me fix types.zig properly now with correct values and encoding:
 
 ---
+
+## 2026-01-01 Session: IR Layer Foundation
+
+Implemented core IR building blocks for Cranelift port:
+
+### Completed Modules (7 total)
+1. **types.zig** (~345 LOC) - SSA value types with u16 encoding
+   - Type constants: I8-I128, F16-F128, I32X4, F32X4, F64X2, I8X16
+   - Lane operations, width conversions, format() for textual IR
+   
+2. **entities.zig** (~117 LOC) - Entity references using EntityRef abstraction
+   - Block, Value, Inst, StackSlot, DynamicStackSlot, DynamicType
+   - GlobalValue, MemoryType, Constant, Immediate, SigRef, FuncRef, JumpTable
+   
+3. **opcodes.zig** (~172 LOC) - 148 instruction opcodes
+   - jump, brif, call, load, store, iadd, imul, fcmp, etc.
+   
+4. **instruction_format.zig** (~70 LOC) - 40 instruction format variants
+   - binary, unary, ternary, load, store, call, jump, branch_table, etc.
+   
+5. **trapcode.zig** (~86 LOC) - Trap code enum
+   - Reserved codes 251-255: stack_overflow, integer_overflow, heap_out_of_bounds, etc.
+   - User codes 1-250
+   
+6. **condcodes.zig** (~193 LOC) - Condition codes
+   - IntCC: eq, ne, slt, sge, ult, uge, etc. with complement/swapArgs
+   - FloatCC: ord, uno, eq, lt, le, gt, ge, ult, uge, etc.
+   
+7. **immediates.zig** (~130 LOC) - Immediate operand types
+   - Imm64, Uimm8, Offset32, Ieee16, Ieee32, Ieee64
+
+### AGENTS.md Updates
+- Merged Zig idioms from ../dixie/AGENTS.md:
+  - Import once, namespace access
+  - Allocator first
+  - ArrayList batch append
+  - Error handling (NEVER MASK ERRORS)
+  - State machines (labeled switch pattern)
+
+### Key Technical Decisions
+- Used literal values from generated Cranelift code (not calculated)
+- Type encoding: (raw-LANE_BASE)>>4 for log2 lane count
+- Zig 0.15 format signature: `pub fn format(self, writer) !void`
+- Non-exhaustive enums with `_` for TrapCode user codes
+- All tests passing, all commits made
+
+### Next Steps (Not Started)
+- InstructionData tagged union (postponed - needs MemFlags, BlockCall, ValueList, etc.)
+- DFG (DataFlowGraph) implementation
+- Additional supporting types before InstructionData can be completed
+
+Total LOC added: ~1113 lines across IR layer
