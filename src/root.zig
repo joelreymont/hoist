@@ -14,3 +14,4 @@ pub const value_list = @import("ir/value_list.zig");
 pub const block_call = @import("ir/block_call.zig");
 pub const atomic = @import("ir/atomic.zig");
 pub const signature = @import("ir/signature.zig");
+pub const constant = @import("ir/constant.zig");
