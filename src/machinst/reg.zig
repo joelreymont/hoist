@@ -164,6 +164,10 @@ pub const WritableReg = struct {
         return .{ .reg = reg };
     }
 
+    pub fn fromVReg(vreg: VReg) WritableReg {
+        return .{ .reg = Reg.fromVReg(vreg) };
+    }
+
     pub fn toReg(self: WritableReg) Reg {
         return self.reg;
     }

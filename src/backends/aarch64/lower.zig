@@ -71,15 +71,24 @@ pub fn typeToSize(ty: root.types.Type) OperandSize {
 }
 
 /// Helper to get register for IR value.
-fn getValueReg(ctx: *LowerCtx(Inst), value: lower_mod.Value) !Reg {
-    const vreg = try ctx.getValueReg(value, .int);
+/// Maps an SSA value to a virtual register, allocating if needed.
+pub fn getValueReg(ctx: *LowerCtx(Inst), value: lower_mod.Value, class: lower_mod.RegClass) !Reg {
+    const vreg = try ctx.getValueReg(value, class);
     return Reg.fromVReg(vreg);
 }
 
-/// Helper to allocate output register.
-fn allocOutputReg(ctx: *LowerCtx(Inst)) !WritableReg {
-    const vreg = ctx.allocVReg(.int);
+/// Helper to allocate fresh output register.
+/// Allocates a new virtual register for an instruction result.
+pub fn allocOutputReg(ctx: *LowerCtx(Inst), class: lower_mod.RegClass) WritableReg {
+    const vreg = ctx.allocVReg(class);
     return WritableReg.fromVReg(vreg);
+}
+
+/// Helper to allocate fresh input register.
+/// Variant of allocOutputReg that returns a readable register.
+pub fn allocInputReg(ctx: *LowerCtx(Inst), class: lower_mod.RegClass) Reg {
+    const vreg = ctx.allocVReg(class);
+    return Reg.fromVReg(vreg);
 }
 
 test "Aarch64Lower backend creation" {
@@ -123,4 +132,73 @@ test "typeToSize maps IR types correctly" {
     // Larger types default to size64
     try testing.expectEqual(OperandSize.size64, typeToSize(root.types.Type.I128));
     try testing.expectEqual(OperandSize.size64, typeToSize(root.types.Type.F128));
+}
+
+test "getValueReg maps SSA values to registers" {
+    var func = lower_mod.Function.init(testing.allocator);
+    defer func.deinit();
+
+    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    // Map two different values
+    const v1 = lower_mod.Value.new(0);
+    const v2 = lower_mod.Value.new(1);
+
+    const r1 = try getValueReg(&ctx, v1, .int);
+    const r2 = try getValueReg(&ctx, v2, .int);
+
+    // Should get different registers
+    try testing.expect(!std.meta.eql(r1, r2));
+
+    // Requesting same value again should return same register
+    const r1_again = try getValueReg(&ctx, v1, .int);
+    try testing.expectEqual(r1, r1_again);
+}
+
+test "allocOutputReg allocates fresh registers" {
+    var func = lower_mod.Function.init(testing.allocator);
+    defer func.deinit();
+
+    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    // Allocate multiple output registers
+    const out1 = allocOutputReg(&ctx, .int);
+    const out2 = allocOutputReg(&ctx, .int);
+    const out3 = allocOutputReg(&ctx, .float);
+
+    // Should all be different
+    try testing.expect(!std.meta.eql(out1, out2));
+    try testing.expect(!std.meta.eql(out1, out3));
+    try testing.expect(!std.meta.eql(out2, out3));
+
+    // Should be writable
+    const r1 = out1.toReg();
+    const r2 = out2.toReg();
+    try testing.expect(!std.meta.eql(r1, r2));
+}
+
+test "allocInputReg allocates fresh registers" {
+    var func = lower_mod.Function.init(testing.allocator);
+    defer func.deinit();
+
+    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    // Allocate multiple input registers
+    const in1 = allocInputReg(&ctx, .int);
+    const in2 = allocInputReg(&ctx, .vector);
+
+    // Should be different
+    try testing.expect(!std.meta.eql(in1, in2));
 }
