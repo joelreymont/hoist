@@ -7,6 +7,61 @@
 (rule (lower (iadd ty x y))
       (aarch64_add_rr ty x y))
 
+;; iadd with sign-extended byte operand
+;; Pattern: iadd(x, sextb(y)) => ADD Xd, Xn, Wm, SXTB
+(rule (lower (iadd ty x (aarch64_sxtb ext_ty y)))
+      (if-let $I64 ty)
+      (aarch64_add_extended ty x y ExtendOp.sxtb))
+
+;; iadd with sign-extended halfword operand
+;; Pattern: iadd(x, sexth(y)) => ADD Xd, Xn, Wm, SXTH
+(rule (lower (iadd ty x (aarch64_sxth ext_ty y)))
+      (if-let $I64 ty)
+      (aarch64_add_extended ty x y ExtendOp.sxth))
+
+;; iadd with sign-extended word operand
+;; Pattern: iadd(x, sextw(y)) => ADD Xd, Xn, Wm, SXTW
+(rule (lower (iadd ty x (aarch64_sxtw y)))
+      (if-let $I64 ty)
+      (aarch64_add_extended ty x y ExtendOp.sxtw))
+
+;; iadd with zero-extended byte operand
+;; Pattern: iadd(x, uextb(y)) => ADD Xd, Xn, Wm, UXTB
+(rule (lower (iadd ty x (aarch64_uxtb ext_ty y)))
+      (if-let $I64 ty)
+      (aarch64_add_extended ty x y ExtendOp.uxtb))
+
+;; iadd with zero-extended halfword operand
+;; Pattern: iadd(x, uexth(y)) => ADD Xd, Xn, Wm, UXTH
+(rule (lower (iadd ty x (aarch64_uxth ext_ty y)))
+      (if-let $I64 ty)
+      (aarch64_add_extended ty x y ExtendOp.uxth))
+
+;; iadd with commuted operands (sign-extended byte)
+(rule (lower (iadd ty (aarch64_sxtb ext_ty y) x))
+      (if-let $I64 ty)
+      (aarch64_add_extended ty x y ExtendOp.sxtb))
+
+;; iadd with commuted operands (sign-extended halfword)
+(rule (lower (iadd ty (aarch64_sxth ext_ty y) x))
+      (if-let $I64 ty)
+      (aarch64_add_extended ty x y ExtendOp.sxth))
+
+;; iadd with commuted operands (sign-extended word)
+(rule (lower (iadd ty (aarch64_sxtw y) x))
+      (if-let $I64 ty)
+      (aarch64_add_extended ty x y ExtendOp.sxtw))
+
+;; iadd with commuted operands (zero-extended byte)
+(rule (lower (iadd ty (aarch64_uxtb ext_ty y) x))
+      (if-let $I64 ty)
+      (aarch64_add_extended ty x y ExtendOp.uxtb))
+
+;; iadd with commuted operands (zero-extended halfword)
+(rule (lower (iadd ty (aarch64_uxth ext_ty y) x))
+      (if-let $I64 ty)
+      (aarch64_add_extended ty x y ExtendOp.uxth))
+
 ;; isub: Subtract integers
 (rule (lower (isub ty x y))
       (aarch64_sub_rr ty x y))
@@ -184,6 +239,13 @@
       (if-let $true (uimm12 k))
       (aarch64_add_imm ty x k))
 
+;; isub with negated 12-bit immediate optimization
+;; Lower (isub x iconst) as (iadd x -iconst) when -imm fits in 12-bit
+;; This provides more flexibility in immediate selection
+(rule (lower (isub ty x (iconst k)))
+      (if-let $true (in_neg_uimm12_range k))
+      (aarch64_add_imm ty x (negate_i64 k)))
+
 ;; isub with 12-bit immediate
 (rule (lower (isub ty x (iconst k)))
       (if-let $true (uimm12 k))
@@ -241,6 +303,12 @@
   (if (<= 0 val 63)
       val))
 
+;; Check if value is in range where negation fits in unsigned 12-bit
+;; Returns $true if -4095 <= val <= -1 (i.e., -val fits in 0-4095)
+(extractor (in_neg_uimm12_range val)
+  (if (<= -4095 val -1)
+      $true))
+
 ;; Type declarations
 
 ;; Integer comparison condition codes
@@ -257,6 +325,18 @@
   UnsignedGreaterThanOrEqual
 ))
 
+;; Extend operations for extended register operands
+(type ExtendOp (enum
+  uxtb  ;; Zero-extend byte (8-bit)
+  uxth  ;; Zero-extend halfword (16-bit)
+  uxtw  ;; Zero-extend word (32-bit to 64-bit)
+  uxtx  ;; Zero-extend doubleword (no-op for 64-bit)
+  sxtb  ;; Sign-extend byte (8-bit)
+  sxth  ;; Sign-extend halfword (16-bit)
+  sxtw  ;; Sign-extend word (32-bit to 64-bit)
+  sxtx  ;; Sign-extend doubleword (no-op for 64-bit)
+))
+
 ;; Constructor terms for aarch64 instructions
 
 (type Aarch64Inst (enum))
@@ -264,6 +344,7 @@
 ;; Arithmetic
 (decl aarch64_add_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_add_imm (Type Value i64) Aarch64Inst)
+(decl aarch64_add_extended (Type Value Value ExtendOp) Aarch64Inst)
 (decl aarch64_sub_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_sub_imm (Type Value i64) Aarch64Inst)
 (decl aarch64_mul_rr (Type Value Value) Aarch64Inst)
@@ -323,3 +404,6 @@
 ;; Constants
 (decl aarch64_movz (Type i64) Aarch64Inst)
 (decl aarch64_iconst (Type i64) Aarch64Inst)
+
+;; Helper functions
+(decl negate_i64 (i64) i64)

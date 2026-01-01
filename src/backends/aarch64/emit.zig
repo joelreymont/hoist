@@ -23,6 +23,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .movn => |i| try emitMovn(i.dst.toReg(), i.imm, i.shift, i.size, buffer),
         .add_rr => |i| try emitAddRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .add_imm => |i| try emitAddImm(i.dst.toReg(), i.src, i.imm, i.size, buffer),
+        .add_shifted => |i| try emitAddShifted(i.dst.toReg(), i.src1, i.src2, i.shift_op, i.shift_amt, i.size, buffer),
+        .add_extended => |i| try emitAddExtended(i.dst.toReg(), i.src1, i.src2, i.extend_op, i.size, buffer),
         .sub_rr => |i| try emitSubRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .sub_imm => |i| try emitSubImm(i.dst.toReg(), i.src, i.imm, i.size, buffer),
         .mul_rr => |i| try emitMulRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -230,6 +232,54 @@ fn emitAddImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_m
     const insn: u32 = (sf_bit << 31) |
         (0b10001 << 24) |
         (@as(u32, imm12) << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// ADD Xd, Xn, Xm, shift_op #shift_amt
+/// ADD (shifted register) instruction
+fn emitAddShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: root.aarch64_inst.ShiftOp, shift_amt: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const shift: u32 = @intFromEnum(shift_op);
+    const imm6: u32 = @intCast(shift_amt);
+
+    // ADD (shifted register): sf|0|0|01011|shift|0|Rm|imm6|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b01011 << 24) |
+        (shift << 22) |
+        (@as(u32, rm) << 16) |
+        (imm6 << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// ADD Xd, Xn, Wm, extend_op
+/// ADD (extended register) instruction
+fn emitAddExtended(dst: Reg, src1: Reg, src2: Reg, extend_op: root.aarch64_inst.ExtendOp, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const option: u32 = @intFromEnum(extend_op);
+    const imm3: u32 = 0; // shift amount, typically 0 for add with extend
+
+    // ADD (extended register): sf|0|0|01011|00|1|Rm|option|imm3|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b01011 << 24) |
+        (0b00 << 22) |
+        (1 << 21) |
+        (@as(u32, rm) << 16) |
+        (option << 13) |
+        (imm3 << 10) |
         (@as(u32, rn) << 5) |
         rd;
 
@@ -1708,6 +1758,52 @@ test "emit add rr" {
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+}
+
+test "emit add shifted" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const v2 = root.reg.VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = root.reg.WritableReg.fromReg(r0);
+
+    // Test: ADD X0, X1, X2, LSL #3
+    try emit(.{ .add_shifted = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .shift_op = .lsl,
+        .shift_amt = 3,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit (bit 31) = 1 for 64-bit
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1);
+
+    // Check opc+S bits (bits 29-30) = 00 for ADD
+    try testing.expectEqual(@as(u32, 0b00), (insn >> 29) & 0b11);
+
+    // Check opcode field (bits 24-28) = 0b01011 for ADD/SUB shifted register
+    try testing.expectEqual(@as(u32, 0b01011), (insn >> 24) & 0b11111);
+
+    // Check shift type (bits 22-23) = 00 for LSL
+    try testing.expectEqual(@as(u32, 0b00), (insn >> 22) & 0b11);
+
+    // Check shift amount (bits 10-15) = 3
+    try testing.expectEqual(@as(u32, 3), (insn >> 10) & 0b111111);
+
+    // Check register encodings
+    try testing.expectEqual(@as(u32, 0), insn & 0x1F); // Rd = X0
+    try testing.expectEqual(@as(u32, 1), (insn >> 5) & 0x1F); // Rn = X1
+    try testing.expectEqual(@as(u32, 2), (insn >> 16) & 0x1F); // Rm = X2
 }
 
 test "emit mul rr" {

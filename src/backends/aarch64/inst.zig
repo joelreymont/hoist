@@ -786,6 +786,7 @@ pub const Inst = union(enum) {
             .movn => |i| try writer.print("movn.{} {}, #{d}, lsl #{d}", .{ i.size, i.dst, i.imm, i.shift }),
             .add_rr => |i| try writer.print("add.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .add_imm => |i| try writer.print("add.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .add_shifted => |i| try writer.print("add.{} {}, {}, {}, {} #{d}", .{ i.size, i.dst, i.src1, i.src2, i.shift_op, i.shift_amt }),
             .sub_rr => |i| try writer.print("sub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .sub_imm => |i| try writer.print("sub.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
             .mul_rr => |i| try writer.print("mul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),

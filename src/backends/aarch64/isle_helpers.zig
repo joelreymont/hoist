@@ -79,6 +79,18 @@ pub fn get_extended_op(ev: ExtendedValue) ExtendOp {
     return ev.op;
 }
 
+/// Helper function: Negate an i64 value.
+/// Used for isub -> iadd optimization with negated immediates.
+pub fn negate_i64(val: i64) i64 {
+    return -%val;
+}
+
+/// Extractor: Check if value is in range where negation fits in unsigned 12-bit.
+/// Returns true if -4095 <= val <= -1 (i.e., -val fits in 0-4095).
+pub fn in_neg_uimm12_range(val: i64) bool {
+    return val >= -4095 and val <= -1;
+}
+
 test "imm12_from_u64" {
     const testing = std.testing;
 
