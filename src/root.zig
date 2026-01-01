@@ -11,3 +11,4 @@ pub const condcodes = @import("ir/condcodes.zig");
 pub const immediates = @import("ir/immediates.zig");
 pub const memflags = @import("ir/memflags.zig");
 pub const value_list = @import("ir/value_list.zig");
+pub const block_call = @import("ir/block_call.zig");
