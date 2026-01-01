@@ -36,6 +36,33 @@ pub fn build(b: *std.Build) void {
     const bench_step = b.step("bench", "Run benchmarks");
     _ = bench_step;
 
+    // Fuzzing
+    const fuzz_compile = b.addExecutable(.{
+        .name = "fuzz_compile",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("fuzz/fuzz_compile.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    fuzz_compile.root_module.addImport("root", lib.root_module);
+
+    const fuzz_regalloc = b.addExecutable(.{
+        .name = "fuzz_regalloc",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("fuzz/fuzz_regalloc.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    fuzz_regalloc.root_module.addImport("root", lib.root_module);
+
+    const fuzz_step = b.step("fuzz", "Run fuzzers");
+    const run_fuzz_compile = b.addRunArtifact(fuzz_compile);
+    const run_fuzz_regalloc = b.addRunArtifact(fuzz_regalloc);
+    fuzz_step.dependOn(&run_fuzz_compile.step);
+    fuzz_step.dependOn(&run_fuzz_regalloc.step);
+
     // ISLE compilation (future: .isle -> .zig generation)
     // Bootstrap: check in generated files until Zig ISLE compiler ready
     // const isle_step = b.addIsleCompile(.{
