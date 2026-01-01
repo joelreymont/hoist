@@ -29,6 +29,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .umulh => |i| try emitUmulh(i.dst.toReg(), i.src1, i.src2, buffer),
         .smull => |i| try emitSmull(i.dst.toReg(), i.src1, i.src2, buffer),
         .umull => |i| try emitUmull(i.dst.toReg(), i.src1, i.src2, buffer),
+        .sdiv => |i| try emitSdiv(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .udiv => |i| try emitUdiv(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .ldr => |i| try emitLdr(i.dst.toReg(), i.base, i.offset, i.size, buffer),
         .str => |i| try emitStr(i.src, i.base, i.offset, i.size, buffer),
         .stp => |i| try emitStp(i.src1, i.src2, i.base, i.offset, i.size, buffer),
@@ -299,6 +301,50 @@ fn emitUmull(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (0b11011101 << 21) |
         (@as(u32, rm) << 16) |
         (@as(u32, ra) << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// SDIV Xd, Xn, Xm (signed divide)
+fn emitSdiv(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+
+    // SDIV: sf|0|0|11010110|Rm|00001|1|Rn|Rd
+    // Encoding: sf|0|0|11010110|Rm[20:16]|00001[15:11]|1[10]|Rn[9:5]|Rd[4:0]
+    // Note: bits 15-11 are 00001 for both SDIV and UDIV; bit 10 distinguishes them
+    const insn: u32 = (sf_bit << 31) |
+        (0b11010110 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b00001 << 11) |
+        (1 << 10) | // bit 10 = 1 for SDIV, 0 for UDIV
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// UDIV Xd, Xn, Xm (unsigned divide)
+fn emitUdiv(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+
+    // UDIV: sf|0|0|11010110|Rm|00001|0|Rn|Rd
+    // Encoding: sf|0|0|11010110|Rm[20:16]|00001[15:11]|0[10]|Rn[9:5]|Rd[4:0]
+    // Note: bits 15-11 are 00001 for both SDIV and UDIV; bit 10 distinguishes them
+    const insn: u32 = (sf_bit << 31) |
+        (0b11010110 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b00001 << 11) |
+        (0 << 10) | // bit 10 = 0 for UDIV, 1 for SDIV
         (@as(u32, rn) << 5) |
         rd;
 
@@ -684,4 +730,210 @@ test "emit umulh" {
 
     // Check opcode field (bits 21-28) = 0b11011110
     try testing.expectEqual(@as(u32, 0b11011110), (insn >> 21) & 0xFF);
+}
+
+test "emit sdiv 64-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v3 = root.reg.VReg.new(3, .int);
+    const v10 = root.reg.VReg.new(10, .int);
+    const v5 = root.reg.VReg.new(5, .int);
+    const r3 = Reg.fromVReg(v3);
+    const r10 = Reg.fromVReg(v10);
+    const r5 = Reg.fromVReg(v5);
+    const wr3 = root.reg.WritableReg.fromReg(r3);
+
+    // SDIV X3, X10, X5
+    try emit(.{ .sdiv = .{
+        .dst = wr3,
+        .src1 = r10,
+        .src2 = r5,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit (bit 31) = 1 for 64-bit
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1);
+
+    // Check bits 30-29 = 0b00
+    try testing.expectEqual(@as(u32, 0b00), (insn >> 29) & 0b11);
+
+    // Check opcode field (bits 21-28) = 0b11010110
+    try testing.expectEqual(@as(u32, 0b11010110), (insn >> 21) & 0xFF);
+
+    // Check Rm field (bits 16-20) = 5
+    try testing.expectEqual(@as(u32, 5), (insn >> 16) & 0x1F);
+
+    // Check opcode2 field (bits 11-15) = 0b00001 for SDIV
+    try testing.expectEqual(@as(u32, 0b00001), (insn >> 11) & 0x1F);
+
+    // Check bit 10 = 1
+    try testing.expectEqual(@as(u32, 1), (insn >> 10) & 1);
+
+    // Check Rn field (bits 5-9) = 10
+    try testing.expectEqual(@as(u32, 10), (insn >> 5) & 0x1F);
+
+    // Check Rd field (bits 0-4) = 3
+    try testing.expectEqual(@as(u32, 3), insn & 0x1F);
+
+    // Verify complete encoding: 0x9AC50D43
+    try testing.expectEqual(@as(u32, 0x9AC50D43), insn);
+}
+
+test "emit sdiv 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v3 = root.reg.VReg.new(3, .int);
+    const v10 = root.reg.VReg.new(10, .int);
+    const v5 = root.reg.VReg.new(5, .int);
+    const r3 = Reg.fromVReg(v3);
+    const r10 = Reg.fromVReg(v10);
+    const r5 = Reg.fromVReg(v5);
+    const wr3 = root.reg.WritableReg.fromReg(r3);
+
+    // SDIV W3, W10, W5
+    try emit(.{ .sdiv = .{
+        .dst = wr3,
+        .src1 = r10,
+        .src2 = r5,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit (bit 31) = 0 for 32-bit
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1);
+
+    // Check opcode field (bits 21-28) = 0b11010110
+    try testing.expectEqual(@as(u32, 0b11010110), (insn >> 21) & 0xFF);
+
+    // Check opcode2 field (bits 11-15) = 0b00001 for SDIV
+    try testing.expectEqual(@as(u32, 0b00001), (insn >> 11) & 0x1F);
+
+    // Verify complete encoding: 0x1AC50D43
+    try testing.expectEqual(@as(u32, 0x1AC50D43), insn);
+}
+
+test "emit udiv 64-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v3 = root.reg.VReg.new(3, .int);
+    const v10 = root.reg.VReg.new(10, .int);
+    const v5 = root.reg.VReg.new(5, .int);
+    const r3 = Reg.fromVReg(v3);
+    const r10 = Reg.fromVReg(v10);
+    const r5 = Reg.fromVReg(v5);
+    const wr3 = root.reg.WritableReg.fromReg(r3);
+
+    // UDIV X3, X10, X5
+    try emit(.{ .udiv = .{
+        .dst = wr3,
+        .src1 = r10,
+        .src2 = r5,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit (bit 31) = 1 for 64-bit
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1);
+
+    // Check bits 30-29 = 0b00
+    try testing.expectEqual(@as(u32, 0b00), (insn >> 29) & 0b11);
+
+    // Check opcode field (bits 21-28) = 0b11010110
+    try testing.expectEqual(@as(u32, 0b11010110), (insn >> 21) & 0xFF);
+
+    // Check Rm field (bits 16-20) = 5
+    try testing.expectEqual(@as(u32, 5), (insn >> 16) & 0x1F);
+
+    // Check bits 15-11 = 0b00001 (same as SDIV)
+    try testing.expectEqual(@as(u32, 0b00001), (insn >> 11) & 0x1F);
+
+    // Check bit 10 = 0 for UDIV (distinguishes from SDIV)
+    try testing.expectEqual(@as(u32, 0), (insn >> 10) & 1);
+
+    // Check Rn field (bits 5-9) = 10
+    try testing.expectEqual(@as(u32, 10), (insn >> 5) & 0x1F);
+
+    // Check Rd field (bits 0-4) = 3
+    try testing.expectEqual(@as(u32, 3), insn & 0x1F);
+
+    // Verify complete encoding: 0x9AC50943
+    try testing.expectEqual(@as(u32, 0x9AC50943), insn);
+}
+
+test "emit udiv 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v3 = root.reg.VReg.new(3, .int);
+    const v10 = root.reg.VReg.new(10, .int);
+    const v5 = root.reg.VReg.new(5, .int);
+    const r3 = Reg.fromVReg(v3);
+    const r10 = Reg.fromVReg(v10);
+    const r5 = Reg.fromVReg(v5);
+    const wr3 = root.reg.WritableReg.fromReg(r3);
+
+    // UDIV W3, W10, W5
+    try emit(.{ .udiv = .{
+        .dst = wr3,
+        .src1 = r10,
+        .src2 = r5,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit (bit 31) = 0 for 32-bit
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1);
+
+    // Check opcode field (bits 21-28) = 0b11010110
+    try testing.expectEqual(@as(u32, 0b11010110), (insn >> 21) & 0xFF);
+
+    // Check bits 15-11 = 0b00001 (same as SDIV)
+    try testing.expectEqual(@as(u32, 0b00001), (insn >> 11) & 0x1F);
+
+    // Check bit 10 = 0 for UDIV
+    try testing.expectEqual(@as(u32, 0), (insn >> 10) & 1);
+
+    // Verify complete encoding: 0x1AC50943
+    try testing.expectEqual(@as(u32, 0x1AC50943), insn);
+}
+
+test "emit divide with different registers" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const v2 = root.reg.VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = root.reg.WritableReg.fromReg(r0);
+
+    // SDIV X0, X1, X2
+    try emit(.{ .sdiv = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check Rd = 0, Rn = 1, Rm = 2
+    try testing.expectEqual(@as(u32, 0), insn & 0x1F);
+    try testing.expectEqual(@as(u32, 1), (insn >> 5) & 0x1F);
+    try testing.expectEqual(@as(u32, 2), (insn >> 16) & 0x1F);
 }

@@ -119,6 +119,155 @@ pub const Inst = union(enum) {
         src2: Reg,
     },
 
+    /// Signed divide (SDIV Xd, Xn, Xm).
+    /// Computes Xd = Xn / Xm (signed, truncate toward zero).
+    sdiv: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Unsigned divide (UDIV Xd, Xn, Xm).
+    /// Computes Xd = Xn / Xm (unsigned).
+    udiv: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Logical shift left register (LSL Xd, Xn, Xm).
+    /// Computes Xd = Xn << Xm.
+    lsl_rr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Logical shift left immediate (LSL Xd, Xn, #imm).
+    /// Computes Xd = Xn << imm.
+    lsl_imm: struct {
+        dst: WritableReg,
+        src: Reg,
+        imm: u8, // 0-63 for 64-bit, 0-31 for 32-bit
+        size: OperandSize,
+    },
+
+    /// Logical shift right register (LSR Xd, Xn, Xm).
+    /// Computes Xd = Xn >> Xm (logical/unsigned).
+    lsr_rr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Logical shift right immediate (LSR Xd, Xn, #imm).
+    /// Computes Xd = Xn >> imm (logical/unsigned).
+    lsr_imm: struct {
+        dst: WritableReg,
+        src: Reg,
+        imm: u8, // 0-63 for 64-bit, 0-31 for 32-bit
+        size: OperandSize,
+    },
+
+    /// Arithmetic shift right register (ASR Xd, Xn, Xm).
+    /// Computes Xd = Xn >> Xm (arithmetic/signed).
+    asr_rr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Arithmetic shift right immediate (ASR Xd, Xn, #imm).
+    /// Computes Xd = Xn >> imm (arithmetic/signed).
+    asr_imm: struct {
+        dst: WritableReg,
+        src: Reg,
+        imm: u8, // 0-63 for 64-bit, 0-31 for 32-bit
+        size: OperandSize,
+    },
+
+    /// Rotate right register (ROR Xd, Xn, Xm).
+    /// Computes Xd = rotate_right(Xn, Xm).
+    ror_rr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Rotate right immediate (ROR Xd, Xn, #imm).
+    /// Computes Xd = rotate_right(Xn, imm).
+    ror_imm: struct {
+        dst: WritableReg,
+        src: Reg,
+        imm: u8, // 0-63 for 64-bit, 0-31 for 32-bit
+        size: OperandSize,
+    },
+
+    /// Bitwise AND register (AND Xd, Xn, Xm).
+    /// Computes Xd = Xn & Xm.
+    and_rr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Bitwise AND immediate (AND Xd, Xn, #imm).
+    /// Computes Xd = Xn & imm (using logical immediate encoding).
+    and_imm: struct {
+        dst: WritableReg,
+        src: Reg,
+        imm: ImmLogic,
+    },
+
+    /// Bitwise OR register (ORR Xd, Xn, Xm).
+    /// Computes Xd = Xn | Xm.
+    orr_rr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Bitwise OR immediate (ORR Xd, Xn, #imm).
+    /// Computes Xd = Xn | imm (using logical immediate encoding).
+    orr_imm: struct {
+        dst: WritableReg,
+        src: Reg,
+        imm: ImmLogic,
+    },
+
+    /// Bitwise XOR register (EOR Xd, Xn, Xm).
+    /// Computes Xd = Xn ^ Xm.
+    eor_rr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Bitwise XOR immediate (EOR Xd, Xn, #imm).
+    /// Computes Xd = Xn ^ imm (using logical immediate encoding).
+    eor_imm: struct {
+        dst: WritableReg,
+        src: Reg,
+        imm: ImmLogic,
+    },
+
+    /// Bitwise NOT (MVN Xd, Xm).
+    /// Computes Xd = ~Xm. Implemented as ORN Xd, XZR, Xm.
+    mvn_rr: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
     /// Load register from memory (LDR Xt, [Xn, #offset]).
     ldr: struct {
         dst: WritableReg,
@@ -208,6 +357,23 @@ pub const Inst = union(enum) {
             .umulh => |i| try writer.print("umulh {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
             .smull => |i| try writer.print("smull {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
             .umull => |i| try writer.print("umull {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .sdiv => |i| try writer.print("sdiv.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .udiv => |i| try writer.print("udiv.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .lsl_rr => |i| try writer.print("lsl.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .lsl_imm => |i| try writer.print("lsl.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .lsr_rr => |i| try writer.print("lsr.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .lsr_imm => |i| try writer.print("lsr.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .asr_rr => |i| try writer.print("asr.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .asr_imm => |i| try writer.print("asr.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .ror_rr => |i| try writer.print("ror.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .ror_imm => |i| try writer.print("ror.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .and_rr => |i| try writer.print("and.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .and_imm => |i| try writer.print("and.{} {}, {}, #0x{x}", .{ i.imm.size, i.dst, i.src, i.imm.value }),
+            .orr_rr => |i| try writer.print("orr.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .orr_imm => |i| try writer.print("orr.{} {}, {}, #0x{x}", .{ i.imm.size, i.dst, i.src, i.imm.value }),
+            .eor_rr => |i| try writer.print("eor.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .eor_imm => |i| try writer.print("eor.{} {}, {}, #0x{x}", .{ i.imm.size, i.dst, i.src, i.imm.value }),
+            .mvn_rr => |i| try writer.print("mvn.{} {}, {}", .{ i.size, i.dst, i.src }),
             .ldr => |i| try writer.print("ldr.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
             .str => |i| try writer.print("str.{} {}, [{}, #{d}]", .{ i.size, i.src, i.base, i.offset }),
             .stp => |i| try writer.print("stp.{} {}, {}, [{}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
@@ -610,4 +776,290 @@ test "Multiply instruction formatting" {
     } };
     str = try std.fmt.bufPrint(&buf, "{}", .{umull});
     try testing.expect(std.mem.indexOf(u8, str, "umull") != null);
+}
+
+test "Bitwise instruction formatting" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    var buf: [128]u8 = undefined;
+    var str: []u8 = undefined;
+
+    // AND register-register (64-bit)
+    const and_rr_64 = Inst{ .and_rr = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{and_rr_64});
+    try testing.expect(std.mem.indexOf(u8, str, "and") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
+
+    // AND register-register (32-bit)
+    const and_rr_32 = Inst{ .and_rr = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{and_rr_32});
+    try testing.expect(std.mem.indexOf(u8, str, "and") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
+
+    // AND immediate
+    const and_imm = Inst{ .and_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = .{ .value = 0xff, .n = false, .r = 0, .s = 7, .size = .size64 },
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{and_imm});
+    try testing.expect(std.mem.indexOf(u8, str, "and") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "0xff") != null);
+
+    // ORR register-register (64-bit)
+    const orr_rr = Inst{ .orr_rr = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{orr_rr});
+    try testing.expect(std.mem.indexOf(u8, str, "orr") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
+
+    // ORR immediate
+    const orr_imm = Inst{ .orr_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = .{ .value = 0xf0f0, .n = false, .r = 0, .s = 15, .size = .size64 },
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{orr_imm});
+    try testing.expect(std.mem.indexOf(u8, str, "orr") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "0xf0f0") != null);
+
+    // EOR register-register (64-bit)
+    const eor_rr = Inst{ .eor_rr = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{eor_rr});
+    try testing.expect(std.mem.indexOf(u8, str, "eor") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
+
+    // EOR immediate
+    const eor_imm = Inst{ .eor_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = .{ .value = 0xaaaa, .n = false, .r = 0, .s = 15, .size = .size32 },
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{eor_imm});
+    try testing.expect(std.mem.indexOf(u8, str, "eor") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "0xaaaa") != null);
+
+    // MVN (bitwise NOT) 64-bit
+    const mvn_rr = Inst{ .mvn_rr = .{
+        .dst = wr0,
+        .src = r1,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{mvn_rr});
+    try testing.expect(std.mem.indexOf(u8, str, "mvn") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
+}
+
+test "Shift instruction formatting" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    var buf: [128]u8 = undefined;
+    var str: []u8 = undefined;
+
+    // LSL register-register (32-bit)
+    const lsl_rr_32 = Inst{ .lsl_rr = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{lsl_rr_32});
+    try testing.expect(std.mem.indexOf(u8, str, "lsl") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
+
+    // LSL register-register (64-bit)
+    const lsl_rr_64 = Inst{ .lsl_rr = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{lsl_rr_64});
+    try testing.expect(std.mem.indexOf(u8, str, "lsl") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
+
+    // LSL immediate (32-bit)
+    const lsl_imm_32 = Inst{ .lsl_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 5,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{lsl_imm_32});
+    try testing.expect(std.mem.indexOf(u8, str, "lsl") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "#5") != null);
+
+    // LSL immediate (64-bit)
+    const lsl_imm_64 = Inst{ .lsl_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 42,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{lsl_imm_64});
+    try testing.expect(std.mem.indexOf(u8, str, "lsl") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "#42") != null);
+
+    // LSR register-register (32-bit)
+    const lsr_rr_32 = Inst{ .lsr_rr = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{lsr_rr_32});
+    try testing.expect(std.mem.indexOf(u8, str, "lsr") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
+
+    // LSR register-register (64-bit)
+    const lsr_rr_64 = Inst{ .lsr_rr = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{lsr_rr_64});
+    try testing.expect(std.mem.indexOf(u8, str, "lsr") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
+
+    // LSR immediate (32-bit)
+    const lsr_imm_32 = Inst{ .lsr_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 13,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{lsr_imm_32});
+    try testing.expect(std.mem.indexOf(u8, str, "lsr") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "#13") != null);
+
+    // LSR immediate (64-bit)
+    const lsr_imm_64 = Inst{ .lsr_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 57,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{lsr_imm_64});
+    try testing.expect(std.mem.indexOf(u8, str, "lsr") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "#57") != null);
+
+    // ASR register-register (32-bit)
+    const asr_rr_32 = Inst{ .asr_rr = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{asr_rr_32});
+    try testing.expect(std.mem.indexOf(u8, str, "asr") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
+
+    // ASR register-register (64-bit)
+    const asr_rr_64 = Inst{ .asr_rr = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{asr_rr_64});
+    try testing.expect(std.mem.indexOf(u8, str, "asr") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
+
+    // ASR immediate (32-bit)
+    const asr_imm_32 = Inst{ .asr_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 7,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{asr_imm_32});
+    try testing.expect(std.mem.indexOf(u8, str, "asr") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "#7") != null);
+
+    // ASR immediate (64-bit)
+    const asr_imm_64 = Inst{ .asr_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 35,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{asr_imm_64});
+    try testing.expect(std.mem.indexOf(u8, str, "asr") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "#35") != null);
+
+    // ROR register-register (32-bit)
+    const ror_rr_32 = Inst{ .ror_rr = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{ror_rr_32});
+    try testing.expect(std.mem.indexOf(u8, str, "ror") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
+
+    // ROR register-register (64-bit)
+    const ror_rr_64 = Inst{ .ror_rr = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{ror_rr_64});
+    try testing.expect(std.mem.indexOf(u8, str, "ror") != null);
+    try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
+
+    // ROR immediate (32-bit)
+    const ror_imm_32 = Inst{ .ror_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 24,
+        .size = .size32,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{ror_imm_32});
+    try testing.expect(std.mem.indexOf(u8, str, "ror") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "#24") != null);
+
+    // ROR immediate (64-bit)
+    const ror_imm_64 = Inst{ .ror_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 16,
+        .size = .size64,
+    } };
+    str = try std.fmt.bufPrint(&buf, "{}", .{ror_imm_64});
+    try testing.expect(std.mem.indexOf(u8, str, "ror") != null);
+    try testing.expect(std.mem.indexOf(u8, str, "#16") != null);
 }
