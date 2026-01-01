@@ -44,14 +44,7 @@ pub fn EntityRef(comptime IndexType: type, comptime prefix: []const u8) type {
             return self.index != std.math.maxInt(IndexType);
         }
 
-        pub fn format(
-            self: Self,
-            comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
-        ) !void {
-            _ = fmt;
-            _ = options;
+        pub fn format(self: Self, writer: anytype) !void {
             try writer.print("{s}{d}", .{ prefix, self.index });
         }
     };
