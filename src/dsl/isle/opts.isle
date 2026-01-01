@@ -1,0 +1,132 @@
+;; ISLE optimization rules
+;; Pattern-based peephole optimizations for IR
+
+;; Algebraic simplifications
+
+;; Identity: x + 0 => x
+(rule (simplify (iadd ty x (iconst 0)))
+      x)
+
+;; Identity: x - 0 => x
+(rule (simplify (isub ty x (iconst 0)))
+      x)
+
+;; Identity: x * 1 => x
+(rule (simplify (imul ty x (iconst 1)))
+      x)
+
+;; Zero: x * 0 => 0
+(rule (simplify (imul ty x (iconst 0)))
+      (iconst 0))
+
+;; Annihilation: x & 0 => 0
+(rule (simplify (band ty x (iconst 0)))
+      (iconst 0))
+
+;; Identity: x & -1 => x
+(rule (simplify (band ty x (iconst -1)))
+      x)
+
+;; Identity: x | 0 => x
+(rule (simplify (bor ty x (iconst 0)))
+      x)
+
+;; Annihilation: x | -1 => -1
+(rule (simplify (bor ty x (iconst -1)))
+      (iconst -1))
+
+;; Identity: x ^ 0 => x
+(rule (simplify (bxor ty x (iconst 0)))
+      x)
+
+;; Cancellation: x ^ x => 0
+(rule (simplify (bxor ty x x))
+      (iconst 0))
+
+;; Constant folding
+
+;; Fold iadd with two constants
+(rule (simplify (iadd ty (iconst a) (iconst b)))
+      (iconst (iadd_const a b)))
+
+;; Fold isub with two constants
+(rule (simplify (isub ty (iconst a) (iconst b)))
+      (iconst (isub_const a b)))
+
+;; Fold imul with two constants
+(rule (simplify (imul ty (iconst a) (iconst b)))
+      (iconst (imul_const a b)))
+
+;; Strength reduction
+
+;; x * 2 => x << 1
+(rule (simplify (imul ty x (iconst 2)))
+      (ishl ty x (iconst 1)))
+
+;; x * 4 => x << 2
+(rule (simplify (imul ty x (iconst 4)))
+      (ishl ty x (iconst 2)))
+
+;; x * 8 => x << 3
+(rule (simplify (imul ty x (iconst 8)))
+      (ishl ty x (iconst 3)))
+
+;; x / 2 => x >> 1 (unsigned)
+(rule (simplify (udiv ty x (iconst 2)))
+      (ushr ty x (iconst 1)))
+
+;; x / 4 => x >> 2 (unsigned)
+(rule (simplify (udiv ty x (iconst 4)))
+      (ushr ty x (iconst 2)))
+
+;; Comparison simplifications
+
+;; x == x => true
+(rule (simplify (icmp IntCC.Equal ty x x))
+      (iconst 1))
+
+;; x != x => false
+(rule (simplify (icmp IntCC.NotEqual ty x x))
+      (iconst 0))
+
+;; x < x => false
+(rule (simplify (icmp IntCC.SignedLessThan ty x x))
+      (iconst 0))
+
+;; x <= x => true
+(rule (simplify (icmp IntCC.SignedLessThanOrEqual ty x x))
+      (iconst 1))
+
+;; Control flow simplifications
+
+;; brif with constant true => jump
+(rule (simplify (brif (iconst 1) target))
+      (jump target))
+
+;; brif with constant false => nop (dead branch)
+(rule (simplify (brif (iconst 0) target))
+      (nop))
+
+;; Helper functions for constant operations
+
+(decl iadd_const (i64 i64) i64)
+(decl isub_const (i64 i64) i64)
+(decl imul_const (i64 i64) i64)
+
+;; Type declarations
+
+(type IntCC (enum
+  Equal
+  NotEqual
+  SignedLessThan
+  SignedLessThanOrEqual
+  SignedGreaterThan
+  SignedGreaterThanOrEqual
+  UnsignedLessThan
+  UnsignedLessThanOrEqual
+  UnsignedGreaterThan
+  UnsignedGreaterThanOrEqual
+))
+
+;; Optimization pass entry point
+(decl simplify (Value) Value)

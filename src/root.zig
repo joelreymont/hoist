@@ -25,6 +25,7 @@ pub const global_value_data = @import("ir/global_value_data.zig");
 pub const jump_table_data = @import("ir/jump_table_data.zig");
 pub const function = @import("ir/function.zig");
 pub const builder = @import("ir/builder.zig");
+pub const optimize = @import("ir/optimize.zig");
 
 pub const isle_sema = @import("dsl/isle/sema.zig");
 pub const isle_trie = @import("dsl/isle/trie.zig");
