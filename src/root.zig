@@ -16,3 +16,4 @@ pub const atomic = @import("ir/atomic.zig");
 pub const signature = @import("ir/signature.zig");
 pub const constant = @import("ir/constant.zig");
 pub const extfunc = @import("ir/extfunc.zig");
+pub const dfg = @import("ir/dfg.zig");
