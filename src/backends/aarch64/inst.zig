@@ -627,6 +627,98 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Load register with pre-index (LDR Xt, [Xn, #offset]!).
+    /// Updates base register before memory access: base = base + offset, then load from base.
+    ldr_pre: struct {
+        dst: WritableReg,
+        base: WritableReg,
+        offset: i16,
+        size: OperandSize,
+    },
+
+    /// Load register with post-index (LDR Xt, [Xn], #offset).
+    /// Updates base register after memory access: load from base, then base = base + offset.
+    ldr_post: struct {
+        dst: WritableReg,
+        base: WritableReg,
+        offset: i16,
+        size: OperandSize,
+    },
+
+    /// Store register with pre-index (STR Xt, [Xn, #offset]!).
+    /// Updates base register before memory access: base = base + offset, then store to base.
+    str_pre: struct {
+        src: Reg,
+        base: WritableReg,
+        offset: i16,
+        size: OperandSize,
+    },
+
+    /// Store register with post-index (STR Xt, [Xn], #offset).
+    /// Updates base register after memory access: store to base, then base = base + offset.
+    str_post: struct {
+        src: Reg,
+        base: WritableReg,
+        offset: i16,
+        size: OperandSize,
+    },
+
+    /// LDARB - Load-Acquire Register Byte
+    /// Load byte with acquire semantics, ensures no earlier loads/stores reordered after.
+    ldarb: struct {
+        dst: WritableReg,
+        base: Reg,
+    },
+
+    /// LDARH - Load-Acquire Register Halfword
+    /// Load halfword with acquire semantics.
+    ldarh: struct {
+        dst: WritableReg,
+        base: Reg,
+    },
+
+    /// LDAR - Load-Acquire Register Word (32-bit)
+    /// Load word with acquire semantics.
+    ldar_w: struct {
+        dst: WritableReg,
+        base: Reg,
+    },
+
+    /// LDAR - Load-Acquire Register Doubleword (64-bit)
+    /// Load doubleword with acquire semantics.
+    ldar_x: struct {
+        dst: WritableReg,
+        base: Reg,
+    },
+
+    /// STLRB - Store-Release Register Byte
+    /// Store byte with release semantics, ensures no later loads/stores reordered before.
+    stlrb: struct {
+        src: Reg,
+        base: Reg,
+    },
+
+    /// STLRH - Store-Release Register Halfword
+    /// Store halfword with release semantics.
+    stlrh: struct {
+        src: Reg,
+        base: Reg,
+    },
+
+    /// STLR - Store-Release Register Word (32-bit)
+    /// Store word with release semantics.
+    stlr_w: struct {
+        src: Reg,
+        base: Reg,
+    },
+
+    /// STLR - Store-Release Register Doubleword (64-bit)
+    /// Store doubleword with release semantics.
+    stlr_x: struct {
+        src: Reg,
+        base: Reg,
+    },
+
     /// Unconditional branch (B label).
     b: struct {
         target: BranchTarget,
@@ -757,6 +849,18 @@ pub const Inst = union(enum) {
             .strh => |i| try writer.print("strh {}, [{}, #{d}]", .{ i.src, i.base, i.offset }),
             .stp => |i| try writer.print("stp.{} {}, {}, [{}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
             .ldp => |i| try writer.print("ldp.{} {}, {}, [{}, #{d}]", .{ i.size, i.dst1, i.dst2, i.base, i.offset }),
+            .ldr_pre => |i| try writer.print("ldr.{} {}, [{}, #{d}]!", .{ i.size, i.dst, i.base, i.offset }),
+            .ldr_post => |i| try writer.print("ldr.{} {}, [{}], #{d}", .{ i.size, i.dst, i.base, i.offset }),
+            .str_pre => |i| try writer.print("str.{} {}, [{}, #{d}]!", .{ i.size, i.src, i.base, i.offset }),
+            .str_post => |i| try writer.print("str.{} {}, [{}], #{d}", .{ i.size, i.src, i.base, i.offset }),
+            .ldarb => |i| try writer.print("ldarb {}, [{}]", .{ i.dst, i.base }),
+            .ldarh => |i| try writer.print("ldarh {}, [{}]", .{ i.dst, i.base }),
+            .ldar_w => |i| try writer.print("ldar {}, [{}]", .{ i.dst, i.base }),
+            .ldar_x => |i| try writer.print("ldar {}, [{}]", .{ i.dst, i.base }),
+            .stlrb => |i| try writer.print("stlrb {}, [{}]", .{ i.src, i.base }),
+            .stlrh => |i| try writer.print("stlrh {}, [{}]", .{ i.src, i.base }),
+            .stlr_w => |i| try writer.print("stlr {}, [{}]", .{ i.src, i.base }),
+            .stlr_x => |i| try writer.print("stlr {}, [{}]", .{ i.src, i.base }),
             .b => |i| try writer.print("b {}", .{i.target}),
             .b_cond => |i| try writer.print("b.{} {}", .{ i.cond, i.target }),
             .bl => |i| try writer.print("bl {}", .{i.target}),

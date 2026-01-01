@@ -1226,12 +1226,9 @@ fn emitLdrsh(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffe
     // Offset is scaled by 2 for halfword
     const imm12: u12 = @truncate(@as(u16, @bitCast(offset)) >> 1);
 
-    // LDRSH (immediate, unsigned offset): size|111|V|00|opc|imm12|Rn|Rt
-    // size=01 (16-bit), V=0 (GPR), opc=10/11 (signed, 64/32-bit dest)
-    const insn: u32 = (0b01 << 30) | // size
-        (0b111 << 27) |
-        (0b0 << 26) | // V
-        (0b00 << 24) |
+    // LDRSH (immediate, unsigned offset): 01|111|0|01|opc|imm12|Rn|Rt
+    // size=01 (16-bit), VR=0, opc=10/11 (signed, 64/32-bit dest)
+    const insn: u32 = (0b01111001 << 22) |
         (@as(u32, opc) << 22) |
         (@as(u32, imm12) << 10) |
         (@as(u32, rn) << 5) |
@@ -1248,14 +1245,10 @@ fn emitLdrsw(dst: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !
     // Offset is scaled by 4 for word
     const imm12: u12 = @truncate(@as(u16, @bitCast(offset)) >> 2);
 
-    // LDRSW (immediate, unsigned offset): size|111|V|00|opc|imm12|Rn|Rt
-    // size=10 (32-bit), V=0 (GPR), opc=10 (signed, 64-bit dest)
-    const insn: u32 = (0b10 << 30) | // size
-        (0b111 << 27) |
-        (0b0 << 26) | // V
-        (0b00 << 24) |
-        (0b10 << 22) | // opc
-
+    // LDRSW (immediate, unsigned offset): 10|111|0|01|10|imm12|Rn|Rt
+    // size=10 (32-bit), VR=0, opc=10 (signed, 64-bit dest)
+    const insn: u32 = (0b10111001 << 22) |
+        (0b10 << 22) |
         (@as(u32, imm12) << 10) |
         (@as(u32, rn) << 5) |
         rt;
@@ -1270,14 +1263,10 @@ fn emitStrb(src: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !v
     const rn = hwEnc(base);
     const imm12: u12 = @truncate(@as(u16, @bitCast(offset)));
 
-    // STRB (immediate, unsigned offset): size|111|V|00|opc|imm12|Rn|Rt
-    // size=00 (8-bit), V=0 (GPR), opc=00 (store)
-    const insn: u32 = (0b00 << 30) | // size
-        (0b111 << 27) |
-        (0b0 << 26) | // V
-        (0b00 << 24) |
-        (0b00 << 22) | // opc
-
+    // STRB (immediate, unsigned offset): 00|111|0|01|00|imm12|Rn|Rt
+    // size=00 (8-bit), VR=0, opc=00 (store)
+    const insn: u32 = (0b00111001 << 22) |
+        (0b00 << 22) |
         (@as(u32, imm12) << 10) |
         (@as(u32, rn) << 5) |
         rt;
@@ -1293,14 +1282,10 @@ fn emitStrh(src: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !v
     // Offset is scaled by 2 for halfword
     const imm12: u12 = @truncate(@as(u16, @bitCast(offset)) >> 1);
 
-    // STRH (immediate, unsigned offset): size|111|V|00|opc|imm12|Rn|Rt
-    // size=01 (16-bit), V=0 (GPR), opc=00 (store)
-    const insn: u32 = (0b01 << 30) | // size
-        (0b111 << 27) |
-        (0b0 << 26) | // V
-        (0b00 << 24) |
-        (0b00 << 22) | // opc
-
+    // STRH (immediate, unsigned offset): 01|111|0|01|00|imm12|Rn|Rt
+    // size=01 (16-bit), VR=0, opc=00 (store)
+    const insn: u32 = (0b01111001 << 22) |
+        (0b00 << 22) |
         (@as(u32, imm12) << 10) |
         (@as(u32, rn) << 5) |
         rt;
@@ -1346,6 +1331,345 @@ fn emitLdp(dst1: Reg, dst2: Reg, base: Reg, offset: i16, size: OperandSize, buff
         (0b1010011 << 23) |
         (@as(u32, imm7) << 15) |
         (@as(u32, rt2) << 10) |
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// LDARB Wt, [Xn] - Load-Acquire Register Byte
+fn emitLdarb(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+/// LDARB Wt, [Xn] - Load-Acquire Register Byte
+fn emitLdarb(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(dst);
+    const rn = hwEnc(base);
+
+    // LDARB: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=00 (byte), L=1 (load), Rs=11111, Rt2=11111
+    // Encoding: 00|001000|1|1|1|11111|1|11111|Rn|Rt
+    const insn: u32 = (0b00 << 30) | // size = byte
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (1 << 22) | // L = load
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31 (bits [15:10] = 111111)
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// LDARH Wt, [Xn] - Load-Acquire Register Halfword
+fn emitLdarh(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(dst);
+    const rn = hwEnc(base);
+
+    // LDARH: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=01 (halfword), L=1 (load), Rs=11111, Rt2=11111
+    const insn: u32 = (0b01 << 30) | // size = halfword
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (1 << 22) | // L = load
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// LDAR Wt, [Xn] - Load-Acquire Register Word
+fn emitLdarW(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(dst);
+    const rn = hwEnc(base);
+
+    // LDAR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=10 (word), L=1 (load), Rs=11111, Rt2=11111
+    const insn: u32 = (0b10 << 30) | // size = word
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (1 << 22) | // L = load
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// LDAR Xt, [Xn] - Load-Acquire Register Doubleword
+fn emitLdarX(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(dst);
+    const rn = hwEnc(base);
+
+    // LDAR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=11 (doubleword), L=1 (load), Rs=11111, Rt2=11111
+    const insn: u32 = (0b11 << 30) | // size = doubleword
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (1 << 22) | // L = load
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// STLRB Wt, [Xn] - Store-Release Register Byte
+fn emitStlrb(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(src);
+    const rn = hwEnc(base);
+
+    // STLRB: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=00 (byte), L=0 (store), Rs=11111, Rt2=11111
+    const insn: u32 = (0b00 << 30) | // size = byte
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (0 << 22) | // L = store
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// STLRH Wt, [Xn] - Store-Release Register Halfword
+fn emitStlrh(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(src);
+    const rn = hwEnc(base);
+
+    // STLRH: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=01 (halfword), L=0 (store), Rs=11111, Rt2=11111
+    const insn: u32 = (0b01 << 30) | // size = halfword
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (0 << 22) | // L = store
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// STLR Wt, [Xn] - Store-Release Register Word
+fn emitStlrW(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(src);
+    const rn = hwEnc(base);
+
+    // STLR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=10 (word), L=0 (store), Rs=11111, Rt2=11111
+    const insn: u32 = (0b10 << 30) | // size = word
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (0 << 22) | // L = store
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// STLR Xt, [Xn] - Store-Release Register Doubleword
+fn emitStlrX(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(src);
+    const rn = hwEnc(base);
+
+    // STLR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=11 (doubleword), L=0 (store), Rs=11111, Rt2=11111
+    const insn: u32 = (0b11 << 30) | // size = doubleword
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (0 << 22) | // L = store
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+fn emitLdarb(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(dst);
+    const rn = hwEnc(base);
+
+    // LDARB: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=00 (byte), L=1 (load), Rs=11111, Rt2=11111
+    // Encoding: 00|001000|1|1|1|11111|1|11111|Rn|Rt
+    const insn: u32 = (0b00 << 30) | // size = byte
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (1 << 22) | // L = load
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31 (bits [15:10] = 111111)
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// LDARH Wt, [Xn] - Load-Acquire Register Halfword
+fn emitLdarh(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(dst);
+    const rn = hwEnc(base);
+
+    // LDARH: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=01 (halfword), L=1 (load), Rs=11111, Rt2=11111
+    const insn: u32 = (0b01 << 30) | // size = halfword
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (1 << 22) | // L = load
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// LDAR Wt, [Xn] - Load-Acquire Register Word
+fn emitLdarW(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(dst);
+    const rn = hwEnc(base);
+
+    // LDAR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=10 (word), L=1 (load), Rs=11111, Rt2=11111
+    const insn: u32 = (0b10 << 30) | // size = word
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (1 << 22) | // L = load
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// LDAR Xt, [Xn] - Load-Acquire Register Doubleword
+fn emitLdarX(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(dst);
+    const rn = hwEnc(base);
+
+    // LDAR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=11 (doubleword), L=1 (load), Rs=11111, Rt2=11111
+    const insn: u32 = (0b11 << 30) | // size = doubleword
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (1 << 22) | // L = load
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// STLRB Wt, [Xn] - Store-Release Register Byte
+fn emitStlrb(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(src);
+    const rn = hwEnc(base);
+
+    // STLRB: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=00 (byte), L=0 (store), Rs=11111, Rt2=11111
+    const insn: u32 = (0b00 << 30) | // size = byte
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (0 << 22) | // L = store
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// STLRH Wt, [Xn] - Store-Release Register Halfword
+fn emitStlrh(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(src);
+    const rn = hwEnc(base);
+
+    // STLRH: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=01 (halfword), L=0 (store), Rs=11111, Rt2=11111
+    const insn: u32 = (0b01 << 30) | // size = halfword
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (0 << 22) | // L = store
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// STLR Wt, [Xn] - Store-Release Register Word
+fn emitStlrW(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(src);
+    const rn = hwEnc(base);
+
+    // STLR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=10 (word), L=0 (store), Rs=11111, Rt2=11111
+    const insn: u32 = (0b10 << 30) | // size = word
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (0 << 22) | // L = store
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31
+        (@as(u32, rn) << 5) |
+        rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// STLR Xt, [Xn] - Store-Release Register Doubleword
+fn emitStlrX(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(src);
+    const rn = hwEnc(base);
+
+    // STLR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
+    // size=11 (doubleword), L=0 (store), Rs=11111, Rt2=11111
+    const insn: u32 = (0b11 << 30) | // size = doubleword
+        (0b001000 << 24) |
+        (1 << 23) | // fixed bit
+        (0 << 22) | // L = store
+        (1 << 21) | // o0
+        (0b11111 << 16) | // Rs = 31
+        (0b1111111 << 10) | // fixed bit + Rt2 = 31
         (@as(u32, rn) << 5) |
         rt;
 
