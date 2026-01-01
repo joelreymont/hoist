@@ -27,3 +27,17 @@ pub const function = @import("ir/function.zig");
 pub const builder = @import("ir/builder.zig");
 
 pub const isle_sema = @import("dsl/isle/sema.zig");
+pub const isle_trie = @import("dsl/isle/trie.zig");
+pub const isle_codegen = @import("dsl/isle/codegen.zig");
+pub const isle_compile = @import("dsl/isle/compile.zig");
+pub const reg = @import("machinst/reg.zig");
+pub const machinst = @import("machinst/machinst.zig");
+pub const buffer = @import("machinst/buffer.zig");
+pub const vcode = @import("machinst/vcode.zig");
+pub const abi = @import("machinst/abi.zig");
+pub const regalloc = @import("machinst/regalloc.zig");
+pub const lower = @import("machinst/lower.zig");
+pub const compile = @import("machinst/compile.zig");
+
+pub const x64_inst = @import("backends/x64/inst.zig");
+pub const x64_emit = @import("backends/x64/emit.zig");

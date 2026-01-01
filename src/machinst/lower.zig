@@ -1,0 +1,242 @@
+const std = @import("std");
+const testing = std.testing;
+const Allocator = std.mem.Allocator;
+
+const vcode_mod = @import("vcode.zig");
+const reg_mod = @import("reg.zig");
+
+// Forward declarations for IR types (actual lowering will import from root)
+pub const Function = struct {
+    layout: Layout,
+
+    pub fn init(_: Allocator) @This() {
+        return .{ .layout = Layout{} };
+    }
+    pub fn deinit(_: *@This()) void {}
+};
+
+const Layout = struct {
+    pub fn blocks(_: *const @This()) BlockIterator {
+        return BlockIterator{};
+    }
+    pub fn blockInsts(_: *const @This(), _: Block) InstIterator {
+        return InstIterator{};
+    }
+    pub fn lastInst(_: *const @This(), _: Block) ?Inst {
+        return null;
+    }
+};
+
+const BlockIterator = struct {
+    pub fn next(_: *@This()) ?Block {
+        return null;
+    }
+};
+
+const InstIterator = struct {
+    pub fn next(_: *@This()) ?Inst {
+        return null;
+    }
+};
+
+pub const Block = struct {
+    index: u32,
+    pub fn new(idx: u32) Block {
+        return .{ .index = idx };
+    }
+};
+
+pub const Inst = struct {
+    index: u32,
+    pub fn new(idx: u32) Inst {
+        return .{ .index = idx };
+    }
+};
+
+pub const Value = struct {
+    index: u32,
+    pub fn new(idx: u32) Value {
+        return .{ .index = idx };
+    }
+};
+
+pub const VReg = reg_mod.VReg;
+pub const Reg = reg_mod.Reg;
+pub const RegClass = reg_mod.RegClass;
+
+/// Simplified lowering context for IR -> MachInst translation.
+/// This is a minimal bootstrap implementation - full lowering includes:
+/// - Side-effect tracking and instruction coloring
+/// - Value liveness analysis
+/// - Instruction sinking optimization
+/// - Block parameter handling
+/// - Constant materialization
+pub fn LowerCtx(comptime MachInst: type) type {
+    return struct {
+        /// Input IR function.
+        func: *const Function,
+
+        /// Output VCode being built.
+        vcode: *vcode_mod.VCode(MachInst),
+
+        /// Current block being lowered.
+        current_block: ?vcode_mod.BlockIndex,
+
+        /// Mapping from IR Value to VReg.
+        /// This tracks which virtual register holds each SSA value.
+        value_to_reg: std.AutoHashMap(Value, VReg),
+
+        /// Next available virtual register index.
+        next_vreg: u32,
+
+        /// Allocator.
+        allocator: Allocator,
+
+        const Self = @This();
+
+        pub fn init(
+            allocator: Allocator,
+            func: *const Function,
+            vcode: *vcode_mod.VCode(MachInst),
+        ) Self {
+            return .{
+                .func = func,
+                .vcode = vcode,
+                .current_block = null,
+                .value_to_reg = std.AutoHashMap(Value, VReg).init(allocator),
+                .next_vreg = 0,
+                .allocator = allocator,
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.value_to_reg.deinit();
+        }
+
+        /// Get the virtual register holding a value, allocating if needed.
+        pub fn getValueReg(self: *Self, value: Value, class: RegClass) !VReg {
+            const entry = try self.value_to_reg.getOrPut(value);
+            if (!entry.found_existing) {
+                const vreg = VReg.new(self.next_vreg, class);
+                self.next_vreg += 1;
+                entry.value_ptr.* = vreg;
+            }
+            return entry.value_ptr.*;
+        }
+
+        /// Allocate a fresh virtual register.
+        pub fn allocVReg(self: *Self, class: RegClass) VReg {
+            const vreg = VReg.new(self.next_vreg, class);
+            self.next_vreg += 1;
+            return vreg;
+        }
+
+        /// Emit a machine instruction to the current block.
+        pub fn emit(self: *Self, inst: MachInst) !void {
+            _ = self.current_block orelse return error.NoCurrentBlock;
+            _ = try self.vcode.addInst(inst);
+        }
+
+        /// Start lowering a new block.
+        pub fn startBlock(self: *Self, _: Block) !vcode_mod.BlockIndex {
+            const block_idx = try self.vcode.startBlock(&.{}); // No params for now
+            self.current_block = block_idx;
+            return block_idx;
+        }
+
+        /// Finish lowering the current block.
+        pub fn endBlock(self: *Self) void {
+            self.current_block = null;
+        }
+    };
+}
+
+/// Backend trait for architecture-specific lowering.
+/// Each target (x64, aarch64, etc.) implements this.
+pub fn LowerBackend(comptime MachInst: type) type {
+    return struct {
+        /// Lower a single IR instruction to machine instructions.
+        /// Returns true if the instruction was handled, false otherwise.
+        lowerInstFn: *const fn (
+            ctx: *LowerCtx(MachInst),
+            inst: Inst,
+        ) anyerror!bool,
+
+        /// Lower a branch instruction.
+        /// Branches are handled separately because they affect control flow.
+        lowerBranchFn: *const fn (
+            ctx: *LowerCtx(MachInst),
+            inst: Inst,
+        ) anyerror!bool,
+    };
+}
+
+/// Lower an entire function from IR to VCode.
+pub fn lowerFunction(
+    comptime MachInst: type,
+    allocator: Allocator,
+    func: *const Function,
+    backend: LowerBackend(MachInst),
+) !vcode_mod.VCode(MachInst) {
+    var vcode = vcode_mod.VCode(MachInst).init(allocator);
+    errdefer vcode.deinit();
+
+    var ctx = LowerCtx(MachInst).init(allocator, func, &vcode);
+    defer ctx.deinit();
+
+    // Lower each block in reverse postorder
+    // TODO: Compute proper RPO - for now just iterate layout order
+    var block_iter = func.layout.blocks();
+    while (block_iter.next()) |ir_block| {
+        // Start new machine block
+        _ = try ctx.startBlock(ir_block);
+
+        // Lower each instruction in the block
+        var inst_iter = func.layout.blockInsts(ir_block);
+        while (inst_iter.next()) |ir_inst| {
+            // Try to lower the instruction
+            const handled = try backend.lowerInstFn(&ctx, ir_inst);
+            if (!handled) {
+                // Instruction not handled - this is an error
+                std.debug.print("Unhandled instruction: {}\n", .{ir_inst});
+                return error.UnhandledInstruction;
+            }
+        }
+
+        // Handle block terminator (branch)
+        if (func.layout.lastInst(ir_block)) |term_inst| {
+            _ = try backend.lowerBranchFn(&ctx, term_inst);
+        }
+
+        ctx.endBlock();
+    }
+
+    return vcode;
+}
+
+// Stub test - actual lowering requires a real backend implementation
+test "LowerCtx basic" {
+    const TestInst = struct {
+        opcode: u32,
+    };
+
+    // Create minimal stub function
+    var func = Function.init(testing.allocator);
+    defer func.deinit();
+
+    var vcode = vcode_mod.VCode(TestInst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = LowerCtx(TestInst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    // Test vreg allocation
+    const v1 = Value.new(0);
+    const r1 = try ctx.getValueReg(v1, .int);
+    const r1_again = try ctx.getValueReg(v1, .int);
+    try testing.expectEqual(r1, r1_again);
+
+    const v2 = Value.new(1);
+    const r2 = try ctx.getValueReg(v2, .int);
+    try testing.expect(!std.meta.eql(r1, r2));
+}

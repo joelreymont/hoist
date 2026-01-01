@@ -59,7 +59,7 @@ pub const FunctionBuilder = struct {
         try self.func.layout.appendBlock(block);
     }
 
-    pub fn iconst(self: *Self, ty: Type, val: i64) !Value {
+    pub fn iconst(self: *Self, ty: Type, _: i64) !Value {
         const block = self.current_block orelse return error.NoCurrentBlock;
 
         // Create nullary iconst instruction (simplified - should use imm64)
@@ -144,7 +144,7 @@ test "FunctionBuilder iconst and iadd" {
 
     const v1 = try builder.iconst(Type.I32, 10);
     const v2 = try builder.iconst(Type.I32, 20);
-    const v3 = try builder.iadd(Type.I32, v1, v2);
+    _ = try builder.iadd(Type.I32, v1, v2);
     try builder.ret();
 
     try testing.expectEqual(@as(usize, 3), func.dfg.insts.elems.items.len);

@@ -1,0 +1,304 @@
+const std = @import("std");
+const testing = std.testing;
+
+/// Register class - indicates register file.
+pub const RegClass = enum(u8) {
+    /// Integer/general-purpose register.
+    int = 0,
+    /// Floating-point register.
+    float = 1,
+    /// Vector register.
+    vector = 2,
+
+    pub fn index(self: RegClass) u8 {
+        return @intFromEnum(self);
+    }
+};
+
+/// Physical register - actual hardware register.
+/// Encoded as: [class:2][hw_enc:6]
+pub const PReg = struct {
+    bits: u8,
+
+    const CLASS_SHIFT = 6;
+    const HW_ENC_MASK = 0x3F;
+
+    pub fn new(reg_class: RegClass, hw_enc: u6) PReg {
+        return .{
+            .bits = (@as(u8, reg_class.index()) << CLASS_SHIFT) | hw_enc,
+        };
+    }
+
+    pub fn class(self: PReg) RegClass {
+        return @enumFromInt(self.bits >> CLASS_SHIFT);
+    }
+
+    pub fn hwEnc(self: PReg) u6 {
+        return @intCast(self.bits & HW_ENC_MASK);
+    }
+
+    pub fn index(self: PReg) u8 {
+        return self.bits;
+    }
+
+    pub fn format(self: PReg, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("p{d}(class={s},hw={d})", .{
+            self.bits,
+            @tagName(self.class()),
+            self.hwEnc(),
+        });
+    }
+};
+
+/// Virtual register - SSA value before register allocation.
+/// Encoded as: [class:2][index:30]
+pub const VReg = struct {
+    bits: u32,
+
+    const CLASS_SHIFT = 30;
+    const INDEX_MASK = 0x3FFF_FFFF;
+
+    pub fn new(vreg_index: u32, reg_class: RegClass) VReg {
+        std.debug.assert(vreg_index <= INDEX_MASK);
+        return .{
+            .bits = (@as(u32, reg_class.index()) << CLASS_SHIFT) | vreg_index,
+        };
+    }
+
+    pub fn class(self: VReg) RegClass {
+        return @enumFromInt(@as(u8, @intCast(self.bits >> CLASS_SHIFT)));
+    }
+
+    pub fn index(self: VReg) u32 {
+        return self.bits & INDEX_MASK;
+    }
+
+    pub fn format(self: VReg, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("v{d}(class={s})", .{ self.index(), @tagName(self.class()) });
+    }
+};
+
+/// Register - can be virtual or physical.
+/// Post-regalloc, virtual registers are replaced with physical registers.
+/// The first N virtual registers are "pinned" to physical registers.
+pub const Reg = struct {
+    bits: u32,
+
+    const SPILLSLOT_BIT: u32 = 0x8000_0000;
+    const SPILLSLOT_MASK: u32 = ~SPILLSLOT_BIT;
+    pub const PINNED_VREGS: usize = 192; // 64 int, 64 float, 64 vec
+
+    pub fn fromVReg(vreg: VReg) Reg {
+        return .{ .bits = vreg.bits };
+    }
+
+    pub fn fromPReg(preg: PReg) Reg {
+        // Physical registers are pinned to the first PINNED_VREGS virtual registers
+        const vreg = VReg.new(preg.index(), preg.class());
+        return .{ .bits = vreg.bits };
+    }
+
+    pub fn fromSpillSlot(slot: SpillSlot) Reg {
+        return .{ .bits = SPILLSLOT_BIT | @as(u32, slot.index) };
+    }
+
+    pub fn toVReg(self: Reg) ?VReg {
+        if (self.isSpillSlot()) return null;
+        const vreg = VReg{ .bits = self.bits };
+        if (self.toRealReg()) |_| return null; // Is physical
+        return vreg;
+    }
+
+    pub fn toRealReg(self: Reg) ?PReg {
+        if (self.isSpillSlot()) return null;
+        const vreg = VReg{ .bits = self.bits };
+        if (vreg.index() < PINNED_VREGS) {
+            return PReg.new(vreg.class(), @intCast(vreg.index()));
+        }
+        return null;
+    }
+
+    pub fn toSpillSlot(self: Reg) ?SpillSlot {
+        if (self.isSpillSlot()) {
+            return SpillSlot{ .index = self.bits & SPILLSLOT_MASK };
+        }
+        return null;
+    }
+
+    pub fn isSpillSlot(self: Reg) bool {
+        return (self.bits & SPILLSLOT_BIT) != 0;
+    }
+
+    pub fn isVirtual(self: Reg) bool {
+        return self.toVReg() != null;
+    }
+
+    pub fn isReal(self: Reg) bool {
+        return self.toRealReg() != null;
+    }
+
+    pub fn class(self: Reg) RegClass {
+        std.debug.assert(!self.isSpillSlot());
+        const vreg = VReg{ .bits = self.bits };
+        return vreg.class();
+    }
+
+    pub fn format(self: Reg, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        if (self.toRealReg()) |preg| {
+            try writer.print("r{}", .{preg});
+        } else if (self.toVReg()) |vreg| {
+            try writer.print("r{}", .{vreg});
+        } else if (self.toSpillSlot()) |slot| {
+            try writer.print("rslot{d}", .{slot.index});
+        } else {
+            try writer.writeAll("r?");
+        }
+    }
+};
+
+/// Writable register - newtype to distinguish defs from uses.
+pub const WritableReg = struct {
+    reg: Reg,
+
+    pub fn fromReg(reg: Reg) WritableReg {
+        return .{ .reg = reg };
+    }
+
+    pub fn toReg(self: WritableReg) Reg {
+        return self.reg;
+    }
+};
+
+/// Spill slot - stack location for spilled registers.
+pub const SpillSlot = struct {
+    index: u32,
+
+    pub fn new(index: u32) SpillSlot {
+        return .{ .index = index };
+    }
+};
+
+/// Value register(s) - handles wide values that need 1-2 registers.
+/// For example: i128 on 64-bit, or f64 on 32-bit architectures.
+pub const ValueRegs = union(enum) {
+    /// Single register.
+    one: Reg,
+    /// Two registers for wide values (low, high).
+    two: struct { low: Reg, high: Reg },
+
+    pub fn single(reg: Reg) ValueRegs {
+        return .{ .one = reg };
+    }
+
+    pub fn pair(low: Reg, high: Reg) ValueRegs {
+        return .{ .two = .{ .low = low, .high = high } };
+    }
+
+    pub fn len(self: ValueRegs) usize {
+        return switch (self) {
+            .one => 1,
+            .two => 2,
+        };
+    }
+
+    pub fn get(self: ValueRegs, index: usize) ?Reg {
+        return switch (self) {
+            .one => |r| if (index == 0) r else null,
+            .two => |p| switch (index) {
+                0 => p.low,
+                1 => p.high,
+                else => null,
+            },
+        };
+    }
+
+    pub fn format(self: ValueRegs, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        switch (self) {
+            .one => |r| try writer.print("{}", .{r}),
+            .two => |p| try writer.print("[{},{}]", .{ p.low, p.high }),
+        }
+    }
+};
+
+/// Writable value registers.
+pub const WritableValueRegs = union(enum) {
+    one: WritableReg,
+    two: struct { low: WritableReg, high: WritableReg },
+
+    pub fn single(reg: WritableReg) WritableValueRegs {
+        return .{ .one = reg };
+    }
+
+    pub fn pair(low: WritableReg, high: WritableReg) WritableValueRegs {
+        return .{ .two = .{ .low = low, .high = high } };
+    }
+
+    pub fn toValueRegs(self: WritableValueRegs) ValueRegs {
+        return switch (self) {
+            .one => |r| ValueRegs.single(r.toReg()),
+            .two => |p| ValueRegs.pair(p.low.toReg(), p.high.toReg()),
+        };
+    }
+};
+
+test "PReg encoding" {
+    const preg = PReg.new(.int, 5);
+    try testing.expectEqual(RegClass.int, preg.class());
+    try testing.expectEqual(@as(u6, 5), preg.hwEnc());
+}
+
+test "VReg encoding" {
+    const vreg = VReg.new(42, .float);
+    try testing.expectEqual(RegClass.float, vreg.class());
+    try testing.expectEqual(@as(u32, 42), vreg.index());
+}
+
+test "Reg from PReg" {
+    const preg = PReg.new(.int, 10);
+    const reg = Reg.fromPReg(preg);
+
+    try testing.expect(reg.isReal());
+    try testing.expect(!reg.isVirtual());
+    try testing.expect(reg.toRealReg() != null);
+    try testing.expectEqual(preg.hwEnc(), reg.toRealReg().?.hwEnc());
+}
+
+test "Reg from VReg" {
+    const vreg = VReg.new(Reg.PINNED_VREGS + 100, .float);
+    const reg = Reg.fromVReg(vreg);
+
+    try testing.expect(!reg.isReal());
+    try testing.expect(reg.isVirtual());
+    try testing.expect(reg.toVReg() != null);
+    try testing.expectEqual(vreg.index(), reg.toVReg().?.index());
+}
+
+test "Reg from SpillSlot" {
+    const slot = SpillSlot.new(5);
+    const reg = Reg.fromSpillSlot(slot);
+
+    try testing.expect(reg.isSpillSlot());
+    try testing.expect(!reg.isReal());
+    try testing.expect(!reg.isVirtual());
+    try testing.expectEqual(@as(u32, 5), reg.toSpillSlot().?.index);
+}
+
+test "ValueRegs single" {
+    const reg = Reg.fromVReg(VReg.new(42, .int));
+    const vregs = ValueRegs.single(reg);
+
+    try testing.expectEqual(@as(usize, 1), vregs.len());
+    try testing.expectEqual(reg, vregs.get(0).?);
+    try testing.expect(vregs.get(1) == null);
+}
+
+test "ValueRegs pair" {
+    const low = Reg.fromVReg(VReg.new(42, .int));
+    const high = Reg.fromVReg(VReg.new(43, .int));
+    const vregs = ValueRegs.pair(low, high);
+
+    try testing.expectEqual(@as(usize, 2), vregs.len());
+    try testing.expectEqual(low, vregs.get(0).?);
+    try testing.expectEqual(high, vregs.get(1).?);
+    try testing.expect(vregs.get(2) == null);
+}

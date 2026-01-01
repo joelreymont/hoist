@@ -5,7 +5,7 @@ const Allocator = std.mem.Allocator;
 const ast = @import("ast.zig");
 const token_mod = @import("token.zig");
 
-const Pos = token_mod.Pos;
+pub const Pos = token_mod.Pos;
 
 /// Symbol ID - interned string identifier.
 pub const Sym = enum(u32) {
@@ -43,6 +43,19 @@ pub const TermId = enum(u32) {
 
     pub fn index(self: TermId) u32 {
         return @intFromEnum(self);
+    }
+};
+
+/// Variant ID - reference to an enum variant (combination of type ID and variant index).
+pub const VariantId = struct {
+    type_id: TypeId,
+    variant_index: u32,
+
+    pub fn new(type_id: TypeId, variant_index: u32) VariantId {
+        return .{
+            .type_id = type_id,
+            .variant_index = variant_index,
+        };
     }
 };
 
