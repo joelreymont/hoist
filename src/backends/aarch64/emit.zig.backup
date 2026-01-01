@@ -1226,12 +1226,9 @@ fn emitLdrsh(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffe
     // Offset is scaled by 2 for halfword
     const imm12: u12 = @truncate(@as(u16, @bitCast(offset)) >> 1);
 
-    // LDRSH (immediate, unsigned offset): size|111|V|00|opc|imm12|Rn|Rt
-    // size=01 (16-bit), V=0 (GPR), opc=10/11 (signed, 64/32-bit dest)
-    const insn: u32 = (0b01 << 30) | // size
-        (0b111 << 27) |
-        (0b0 << 26) | // V
-        (0b00 << 24) |
+    // LDRSH (immediate, unsigned offset): 01|111|0|01|opc|imm12|Rn|Rt
+    // size=01 (16-bit), VR=0, opc=10/11 (signed, 64/32-bit dest)
+    const insn: u32 = (0b01111001 << 22) |
         (@as(u32, opc) << 22) |
         (@as(u32, imm12) << 10) |
         (@as(u32, rn) << 5) |
@@ -1248,14 +1245,10 @@ fn emitLdrsw(dst: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !
     // Offset is scaled by 4 for word
     const imm12: u12 = @truncate(@as(u16, @bitCast(offset)) >> 2);
 
-    // LDRSW (immediate, unsigned offset): size|111|V|00|opc|imm12|Rn|Rt
-    // size=10 (32-bit), V=0 (GPR), opc=10 (signed, 64-bit dest)
-    const insn: u32 = (0b10 << 30) | // size
-        (0b111 << 27) |
-        (0b0 << 26) | // V
-        (0b00 << 24) |
-        (0b10 << 22) | // opc
-
+    // LDRSW (immediate, unsigned offset): 10|111|0|01|10|imm12|Rn|Rt
+    // size=10 (32-bit), VR=0, opc=10 (signed, 64-bit dest)
+    const insn: u32 = (0b10111001 << 22) |
+        (0b10 << 22) |
         (@as(u32, imm12) << 10) |
         (@as(u32, rn) << 5) |
         rt;
@@ -1270,14 +1263,10 @@ fn emitStrb(src: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !v
     const rn = hwEnc(base);
     const imm12: u12 = @truncate(@as(u16, @bitCast(offset)));
 
-    // STRB (immediate, unsigned offset): size|111|V|00|opc|imm12|Rn|Rt
-    // size=00 (8-bit), V=0 (GPR), opc=00 (store)
-    const insn: u32 = (0b00 << 30) | // size
-        (0b111 << 27) |
-        (0b0 << 26) | // V
-        (0b00 << 24) |
-        (0b00 << 22) | // opc
-
+    // STRB (immediate, unsigned offset): 00|111|0|01|00|imm12|Rn|Rt
+    // size=00 (8-bit), VR=0, opc=00 (store)
+    const insn: u32 = (0b00111001 << 22) |
+        (0b00 << 22) |
         (@as(u32, imm12) << 10) |
         (@as(u32, rn) << 5) |
         rt;
@@ -1293,14 +1282,10 @@ fn emitStrh(src: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !v
     // Offset is scaled by 2 for halfword
     const imm12: u12 = @truncate(@as(u16, @bitCast(offset)) >> 1);
 
-    // STRH (immediate, unsigned offset): size|111|V|00|opc|imm12|Rn|Rt
-    // size=01 (16-bit), V=0 (GPR), opc=00 (store)
-    const insn: u32 = (0b01 << 30) | // size
-        (0b111 << 27) |
-        (0b0 << 26) | // V
-        (0b00 << 24) |
-        (0b00 << 22) | // opc
-
+    // STRH (immediate, unsigned offset): 01|111|0|01|00|imm12|Rn|Rt
+    // size=01 (16-bit), VR=0, opc=00 (store)
+    const insn: u32 = (0b01111001 << 22) |
+        (0b00 << 22) |
         (@as(u32, imm12) << 10) |
         (@as(u32, rn) << 5) |
         rt;

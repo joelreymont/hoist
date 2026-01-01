@@ -556,6 +556,59 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Load byte (unsigned, zero-extend) (LDRB Wt, [Xn, #offset]).
+    ldrb: struct {
+        dst: WritableReg,
+        base: Reg,
+        offset: i16,
+        size: OperandSize, // destination size (32 or 64)
+    },
+
+    /// Load halfword (unsigned, zero-extend) (LDRH Wt, [Xn, #offset]).
+    ldrh: struct {
+        dst: WritableReg,
+        base: Reg,
+        offset: i16,
+        size: OperandSize, // destination size (32 or 64)
+    },
+
+    /// Load signed byte (LDRSB Wt/Xt, [Xn, #offset]).
+    ldrsb: struct {
+        dst: WritableReg,
+        base: Reg,
+        offset: i16,
+        size: OperandSize, // destination size (32 or 64)
+    },
+
+    /// Load signed halfword (LDRSH Wt/Xt, [Xn, #offset]).
+    ldrsh: struct {
+        dst: WritableReg,
+        base: Reg,
+        offset: i16,
+        size: OperandSize, // destination size (32 or 64)
+    },
+
+    /// Load signed word (32→64 bit) (LDRSW Xt, [Xn, #offset]).
+    ldrsw: struct {
+        dst: WritableReg,
+        base: Reg,
+        offset: i16,
+    },
+
+    /// Store byte (STRB Wt, [Xn, #offset]).
+    strb: struct {
+        src: Reg,
+        base: Reg,
+        offset: i16,
+    },
+
+    /// Store halfword (STRH Wt, [Xn, #offset]).
+    strh: struct {
+        src: Reg,
+        base: Reg,
+        offset: i16,
+    },
+
     /// Store pair of registers (STP Xt1, Xt2, [Xn, #offset]).
     stp: struct {
         src1: Reg,
@@ -695,6 +748,13 @@ pub const Inst = union(enum) {
             .str_reg => |i| try writer.print("str.{} {}, [{}, {}]", .{ i.size, i.src, i.base, i.offset }),
             .str_ext => |i| try writer.print("str.{} {}, [{}, {}, {}]", .{ i.size, i.src, i.base, i.offset, i.extend }),
             .str_scaled => |i| try writer.print("str.{} {}, [{}, {}, lsl #{d}]", .{ i.size, i.src, i.base, i.offset, i.shift }),
+            .ldrb => |i| try writer.print("ldrb.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
+            .ldrh => |i| try writer.print("ldrh.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
+            .ldrsb => |i| try writer.print("ldrsb.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
+            .ldrsh => |i| try writer.print("ldrsh.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
+            .ldrsw => |i| try writer.print("ldrsw {}, [{}, #{d}]", .{ i.dst, i.base, i.offset }),
+            .strb => |i| try writer.print("strb {}, [{}, #{d}]", .{ i.src, i.base, i.offset }),
+            .strh => |i| try writer.print("strh {}, [{}, #{d}]", .{ i.src, i.base, i.offset }),
             .stp => |i| try writer.print("stp.{} {}, {}, [{}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
             .ldp => |i| try writer.print("ldp.{} {}, {}, [{}, #{d}]", .{ i.size, i.dst1, i.dst2, i.base, i.offset }),
             .b => |i| try writer.print("b {}", .{i.target}),
