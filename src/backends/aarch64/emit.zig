@@ -18,6 +18,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
     switch (inst) {
         .mov_rr => |i| try emitMovRR(i.dst.toReg(), i.src, i.size, buffer),
         .mov_imm => |i| try emitMovImm(i.dst.toReg(), i.imm, i.size, buffer),
+        .movz => |i| try emitMovz(i.dst.toReg(), i.imm, i.shift, i.size, buffer),
+        .movk => |i| try emitMovk(i.dst.toReg(), i.imm, i.shift, i.size, buffer),
+        .movn => |i| try emitMovn(i.dst.toReg(), i.imm, i.shift, i.size, buffer),
         .add_rr => |i| try emitAddRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .add_imm => |i| try emitAddImm(i.dst.toReg(), i.src, i.imm, i.size, buffer),
         .sub_rr => |i| try emitSubRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -115,6 +118,63 @@ fn emitMovImm(dst: Reg, imm: u64, size: OperandSize, buffer: *buffer_mod.MachBuf
     const insn: u32 = (sf_bit << 31) |
         (0b10100101 << 23) |
         (@as(u32, imm16) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// MOVZ - Move wide with zero
+/// Encoding: sf|opc|100101|hw|imm16|Rd
+/// opc=10 for MOVZ, hw = shift / 16
+fn emitMovz(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const hw: u2 = @intCast(shift / 16);
+
+    // MOVZ: sf|10|100101|hw|imm16|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b10100101 << 23) |
+        (@as(u32, hw) << 21) |
+        (@as(u32, imm) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// MOVK - Move wide with keep
+/// Encoding: sf|opc|100101|hw|imm16|Rd
+/// opc=11 for MOVK, hw = shift / 16
+fn emitMovk(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const hw: u2 = @intCast(shift / 16);
+
+    // MOVK: sf|11|100101|hw|imm16|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b11100101 << 23) |
+        (@as(u32, hw) << 21) |
+        (@as(u32, imm) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// MOVN - Move wide with NOT
+/// Encoding: sf|opc|100101|hw|imm16|Rd
+/// opc=00 for MOVN, hw = shift / 16
+fn emitMovn(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const hw: u2 = @intCast(shift / 16);
+
+    // MOVN: sf|00|100101|hw|imm16|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b00100101 << 23) |
+        (@as(u32, hw) << 21) |
+        (@as(u32, imm) << 5) |
         rd;
 
     const bytes = std.mem.toBytes(insn);
@@ -2802,4 +2862,615 @@ test "emit bit manipulation with different registers" {
     // Check Rd = 0, Rn = 1
     try testing.expectEqual(@as(u32, 0), insn & 0x1F);
     try testing.expectEqual(@as(u32, 1), (insn >> 5) & 0x1F);
+}
+
+test "emit csel 64-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const v2 = root.reg.VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = root.reg.WritableReg.fromReg(r0);
+
+    // CSEL X0, X1, X2, EQ
+    try emit(.{ .csel = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .cond = .eq,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Encoding: sf|0|0|11010100|Rm|cond|00|Rn|Rd
+    // sf=1, Rm=2, cond=0000 (EQ), op=00, Rn=1, Rd=0
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1); // sf=1 for 64-bit
+    try testing.expectEqual(@as(u32, 0b00011010100), (insn >> 20) & 0x7FF); // opcode
+    try testing.expectEqual(@as(u32, 2), (insn >> 16) & 0x1F); // Rm
+    try testing.expectEqual(@as(u32, 0b0000), (insn >> 12) & 0xF); // cond=EQ
+    try testing.expectEqual(@as(u32, 0b00), (insn >> 10) & 0x3); // op=00 for CSEL
+    try testing.expectEqual(@as(u32, 1), (insn >> 5) & 0x1F); // Rn
+    try testing.expectEqual(@as(u32, 0), insn & 0x1F); // Rd
+}
+
+test "emit csel 32-bit with different conditions" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v10 = root.reg.VReg.new(10, .int);
+    const v11 = root.reg.VReg.new(11, .int);
+    const v12 = root.reg.VReg.new(12, .int);
+    const r10 = Reg.fromVReg(v10);
+    const r11 = Reg.fromVReg(v11);
+    const r12 = Reg.fromVReg(v12);
+    const wr10 = root.reg.WritableReg.fromReg(r10);
+
+    // CSEL W10, W11, W12, GT (greater than)
+    try emit(.{ .csel = .{
+        .dst = wr10,
+        .src1 = r11,
+        .src2 = r12,
+        .cond = .gt,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // sf=0, Rm=12, cond=1100 (GT), op=00, Rn=11, Rd=10
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1); // sf=0 for 32-bit
+    try testing.expectEqual(@as(u32, 12), (insn >> 16) & 0x1F); // Rm
+    try testing.expectEqual(@as(u32, 0b1100), (insn >> 12) & 0xF); // cond=GT
+    try testing.expectEqual(@as(u32, 0b00), (insn >> 10) & 0x3); // op=00
+    try testing.expectEqual(@as(u32, 11), (insn >> 5) & 0x1F); // Rn
+    try testing.expectEqual(@as(u32, 10), insn & 0x1F); // Rd
+}
+
+test "emit csinc 64-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v3 = root.reg.VReg.new(3, .int);
+    const v4 = root.reg.VReg.new(4, .int);
+    const v5 = root.reg.VReg.new(5, .int);
+    const r3 = Reg.fromVReg(v3);
+    const r4 = Reg.fromVReg(v4);
+    const r5 = Reg.fromVReg(v5);
+    const wr3 = root.reg.WritableReg.fromReg(r3);
+
+    // CSINC X3, X4, X5, NE
+    try emit(.{ .csinc = .{
+        .dst = wr3,
+        .src1 = r4,
+        .src2 = r5,
+        .cond = .ne,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Encoding: sf|0|0|11010100|Rm|cond|01|Rn|Rd
+    // sf=1, Rm=5, cond=0001 (NE), op=01, Rn=4, Rd=3
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1); // sf=1
+    try testing.expectEqual(@as(u32, 0b00011010100), (insn >> 20) & 0x7FF); // opcode
+    try testing.expectEqual(@as(u32, 5), (insn >> 16) & 0x1F); // Rm
+    try testing.expectEqual(@as(u32, 0b0001), (insn >> 12) & 0xF); // cond=NE
+    try testing.expectEqual(@as(u32, 0b01), (insn >> 10) & 0x3); // op=01 for CSINC
+    try testing.expectEqual(@as(u32, 4), (insn >> 5) & 0x1F); // Rn
+    try testing.expectEqual(@as(u32, 3), insn & 0x1F); // Rd
+}
+
+test "emit csinc 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v20 = root.reg.VReg.new(20, .int);
+    const v21 = root.reg.VReg.new(21, .int);
+    const v22 = root.reg.VReg.new(22, .int);
+    const r20 = Reg.fromVReg(v20);
+    const r21 = Reg.fromVReg(v21);
+    const r22 = Reg.fromVReg(v22);
+    const wr20 = root.reg.WritableReg.fromReg(r20);
+
+    // CSINC W20, W21, W22, HS (higher or same, unsigned >=)
+    try emit(.{ .csinc = .{
+        .dst = wr20,
+        .src1 = r21,
+        .src2 = r22,
+        .cond = .hs,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // sf=0, Rm=22, cond=0010 (HS), op=01, Rn=21, Rd=20
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1); // sf=0 for 32-bit
+    try testing.expectEqual(@as(u32, 22), (insn >> 16) & 0x1F); // Rm
+    try testing.expectEqual(@as(u32, 0b0010), (insn >> 12) & 0xF); // cond=HS
+    try testing.expectEqual(@as(u32, 0b01), (insn >> 10) & 0x3); // op=01
+    try testing.expectEqual(@as(u32, 21), (insn >> 5) & 0x1F); // Rn
+    try testing.expectEqual(@as(u32, 20), insn & 0x1F); // Rd
+}
+
+test "emit csinv 64-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v6 = root.reg.VReg.new(6, .int);
+    const v7 = root.reg.VReg.new(7, .int);
+    const v8 = root.reg.VReg.new(8, .int);
+    const r6 = Reg.fromVReg(v6);
+    const r7 = Reg.fromVReg(v7);
+    const r8 = Reg.fromVReg(v8);
+    const wr6 = root.reg.WritableReg.fromReg(r6);
+
+    // CSINV X6, X7, X8, LT (signed less than)
+    try emit(.{ .csinv = .{
+        .dst = wr6,
+        .src1 = r7,
+        .src2 = r8,
+        .cond = .lt,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Encoding: sf|1|0|11010100|Rm|cond|00|Rn|Rd
+    // sf=1, Rm=8, cond=1011 (LT), op=00 (but bit 30=1), Rn=7, Rd=6
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1); // sf=1
+    try testing.expectEqual(@as(u32, 0b10011010100), (insn >> 20) & 0x7FF); // opcode with bit 30=1
+    try testing.expectEqual(@as(u32, 8), (insn >> 16) & 0x1F); // Rm
+    try testing.expectEqual(@as(u32, 0b1011), (insn >> 12) & 0xF); // cond=LT
+    try testing.expectEqual(@as(u32, 0b00), (insn >> 10) & 0x3); // op=00
+    try testing.expectEqual(@as(u32, 7), (insn >> 5) & 0x1F); // Rn
+    try testing.expectEqual(@as(u32, 6), insn & 0x1F); // Rd
+}
+
+test "emit csinv 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v15 = root.reg.VReg.new(15, .int);
+    const v16 = root.reg.VReg.new(16, .int);
+    const v17 = root.reg.VReg.new(17, .int);
+    const r15 = Reg.fromVReg(v15);
+    const r16 = Reg.fromVReg(v16);
+    const r17 = Reg.fromVReg(v17);
+    const wr15 = root.reg.WritableReg.fromReg(r15);
+
+    // CSINV W15, W16, W17, GE (signed >=)
+    try emit(.{ .csinv = .{
+        .dst = wr15,
+        .src1 = r16,
+        .src2 = r17,
+        .cond = .ge,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // sf=0, Rm=17, cond=1010 (GE), op=00 (bit 30=1), Rn=16, Rd=15
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1); // sf=0 for 32-bit
+    try testing.expectEqual(@as(u32, 17), (insn >> 16) & 0x1F); // Rm
+    try testing.expectEqual(@as(u32, 0b1010), (insn >> 12) & 0xF); // cond=GE
+    try testing.expectEqual(@as(u32, 0b00), (insn >> 10) & 0x3); // op=00
+    try testing.expectEqual(@as(u32, 16), (insn >> 5) & 0x1F); // Rn
+    try testing.expectEqual(@as(u32, 15), insn & 0x1F); // Rd
+}
+
+test "emit csneg 64-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v9 = root.reg.VReg.new(9, .int);
+    const v10 = root.reg.VReg.new(10, .int);
+    const v11 = root.reg.VReg.new(11, .int);
+    const r9 = Reg.fromVReg(v9);
+    const r10 = Reg.fromVReg(v10);
+    const r11 = Reg.fromVReg(v11);
+    const wr9 = root.reg.WritableReg.fromReg(r9);
+
+    // CSNEG X9, X10, X11, LE (signed <=)
+    try emit(.{ .csneg = .{
+        .dst = wr9,
+        .src1 = r10,
+        .src2 = r11,
+        .cond = .le,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Encoding: sf|1|0|11010100|Rm|cond|01|Rn|Rd
+    // sf=1, Rm=11, cond=1101 (LE), op=01 (bit 30=1), Rn=10, Rd=9
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1); // sf=1
+    try testing.expectEqual(@as(u32, 0b10011010100), (insn >> 20) & 0x7FF); // opcode with bit 30=1
+    try testing.expectEqual(@as(u32, 11), (insn >> 16) & 0x1F); // Rm
+    try testing.expectEqual(@as(u32, 0b1101), (insn >> 12) & 0xF); // cond=LE
+    try testing.expectEqual(@as(u32, 0b01), (insn >> 10) & 0x3); // op=01 for CSNEG
+    try testing.expectEqual(@as(u32, 10), (insn >> 5) & 0x1F); // Rn
+    try testing.expectEqual(@as(u32, 9), insn & 0x1F); // Rd
+}
+
+test "emit csneg 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v25 = root.reg.VReg.new(25, .int);
+    const v26 = root.reg.VReg.new(26, .int);
+    const v27 = root.reg.VReg.new(27, .int);
+    const r25 = Reg.fromVReg(v25);
+    const r26 = Reg.fromVReg(v26);
+    const r27 = Reg.fromVReg(v27);
+    const wr25 = root.reg.WritableReg.fromReg(r25);
+
+    // CSNEG W25, W26, W27, HI (unsigned >)
+    try emit(.{ .csneg = .{
+        .dst = wr25,
+        .src1 = r26,
+        .src2 = r27,
+        .cond = .hi,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // sf=0, Rm=27, cond=1000 (HI), op=01 (bit 30=1), Rn=26, Rd=25
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1); // sf=0 for 32-bit
+    try testing.expectEqual(@as(u32, 27), (insn >> 16) & 0x1F); // Rm
+    try testing.expectEqual(@as(u32, 0b1000), (insn >> 12) & 0xF); // cond=HI
+    try testing.expectEqual(@as(u32, 0b01), (insn >> 10) & 0x3); // op=01
+    try testing.expectEqual(@as(u32, 26), (insn >> 5) & 0x1F); // Rn
+    try testing.expectEqual(@as(u32, 25), insn & 0x1F); // Rd
+}
+
+test "emit conditional select with same registers" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v5 = root.reg.VReg.new(5, .int);
+    const r5 = Reg.fromVReg(v5);
+    const wr5 = root.reg.WritableReg.fromReg(r5);
+
+    // CSEL X5, X5, X5, AL (always)
+    try emit(.{ .csel = .{
+        .dst = wr5,
+        .src1 = r5,
+        .src2 = r5,
+        .cond = .al,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // All registers should be 5
+    try testing.expectEqual(@as(u32, 5), insn & 0x1F); // Rd
+    try testing.expectEqual(@as(u32, 5), (insn >> 5) & 0x1F); // Rn
+    try testing.expectEqual(@as(u32, 5), (insn >> 16) & 0x1F); // Rm
+    try testing.expectEqual(@as(u32, 0b1110), (insn >> 12) & 0xF); // cond=AL
+}
+test "emit movz 64-bit shift 0" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const r0 = Reg.fromVReg(v0);
+    const wr0 = root.reg.WritableReg.fromReg(r0);
+
+    // MOVZ X0, #0x1234, lsl #0
+    try emit(.{ .movz = .{
+        .dst = wr0,
+        .imm = 0x1234,
+        .shift = 0,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit (bit 31) = 1 for 64-bit
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1);
+
+    // Check opc (bits 29-30) = 0b10 for MOVZ
+    try testing.expectEqual(@as(u32, 0b10), (insn >> 29) & 0x3);
+
+    // Check opcode (bits 23-28) = 0b100101
+    try testing.expectEqual(@as(u32, 0b100101), (insn >> 23) & 0x3F);
+
+    // Check hw (bits 21-22) = 0 for shift 0
+    try testing.expectEqual(@as(u32, 0), (insn >> 21) & 0x3);
+
+    // Check immediate value (bits 5-20) = 0x1234
+    try testing.expectEqual(@as(u32, 0x1234), (insn >> 5) & 0xFFFF);
+
+    // Check Rd = 0
+    try testing.expectEqual(@as(u32, 0), insn & 0x1F);
+
+    // Verify complete encoding: 0xD2824680 (MOVZ X0, #0x1234)
+    try testing.expectEqual(@as(u32, 0xD2824680), insn);
+}
+
+test "emit movz 64-bit shift 16" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v5 = root.reg.VReg.new(5, .int);
+    const r5 = Reg.fromVReg(v5);
+    const wr5 = root.reg.WritableReg.fromReg(r5);
+
+    // MOVZ X5, #0xABCD, lsl #16
+    try emit(.{ .movz = .{
+        .dst = wr5,
+        .imm = 0xABCD,
+        .shift = 16,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check hw = 1 for shift 16
+    try testing.expectEqual(@as(u32, 1), (insn >> 21) & 0x3);
+    try testing.expectEqual(@as(u32, 0xABCD), (insn >> 5) & 0xFFFF);
+    try testing.expectEqual(@as(u32, 5), insn & 0x1F);
+}
+
+test "emit movz 64-bit shift 32" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v10 = root.reg.VReg.new(10, .int);
+    const r10 = Reg.fromVReg(v10);
+    const wr10 = root.reg.WritableReg.fromReg(r10);
+
+    // MOVZ X10, #0x5678, lsl #32
+    try emit(.{ .movz = .{
+        .dst = wr10,
+        .imm = 0x5678,
+        .shift = 32,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check hw = 2 for shift 32
+    try testing.expectEqual(@as(u32, 2), (insn >> 21) & 0x3);
+    try testing.expectEqual(@as(u32, 0x5678), (insn >> 5) & 0xFFFF);
+    try testing.expectEqual(@as(u32, 10), insn & 0x1F);
+}
+
+test "emit movz 64-bit shift 48" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v15 = root.reg.VReg.new(15, .int);
+    const r15 = Reg.fromVReg(v15);
+    const wr15 = root.reg.WritableReg.fromReg(r15);
+
+    // MOVZ X15, #0x1111, lsl #48
+    try emit(.{ .movz = .{
+        .dst = wr15,
+        .imm = 0x1111,
+        .shift = 48,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check hw = 3 for shift 48
+    try testing.expectEqual(@as(u32, 3), (insn >> 21) & 0x3);
+    try testing.expectEqual(@as(u32, 0x1111), (insn >> 5) & 0xFFFF);
+    try testing.expectEqual(@as(u32, 15), insn & 0x1F);
+}
+
+test "emit movz 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v20 = root.reg.VReg.new(20, .int);
+    const r20 = Reg.fromVReg(v20);
+    const wr20 = root.reg.WritableReg.fromReg(r20);
+
+    // MOVZ W20, #0x9999, lsl #0
+    try emit(.{ .movz = .{
+        .dst = wr20,
+        .imm = 0x9999,
+        .shift = 0,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit = 0 for 32-bit
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1);
+    try testing.expectEqual(@as(u32, 0), (insn >> 21) & 0x3);
+    try testing.expectEqual(@as(u32, 0x9999), (insn >> 5) & 0xFFFF);
+    try testing.expectEqual(@as(u32, 20), insn & 0x1F);
+}
+
+test "emit movz 32-bit shift 16" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v7 = root.reg.VReg.new(7, .int);
+    const r7 = Reg.fromVReg(v7);
+    const wr7 = root.reg.WritableReg.fromReg(r7);
+
+    // MOVZ W7, #0x4321, lsl #16
+    try emit(.{ .movz = .{
+        .dst = wr7,
+        .imm = 0x4321,
+        .shift = 16,
+        .size = .size32,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit = 0, hw = 1
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1);
+    try testing.expectEqual(@as(u32, 1), (insn >> 21) & 0x3);
+    try testing.expectEqual(@as(u32, 0x4321), (insn >> 5) & 0xFFFF);
+    try testing.expectEqual(@as(u32, 7), insn & 0x1F);
+}
+
+test "emit movk 64-bit shift 0" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v1 = root.reg.VReg.new(1, .int);
+    const r1 = Reg.fromVReg(v1);
+    const wr1 = root.reg.WritableReg.fromReg(r1);
+
+    // MOVK X1, #0x5678, lsl #0
+    try emit(.{ .movk = .{
+        .dst = wr1,
+        .imm = 0x5678,
+        .shift = 0,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Check sf bit = 1, opc = 0b11 for MOVK
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1);
+    try testing.expectEqual(@as(u32, 0b11), (insn >> 29) & 0x3);
+    try testing.expectEqual(@as(u32, 0b100101), (insn >> 23) & 0x3F);
+    try testing.expectEqual(@as(u32, 0), (insn >> 21) & 0x3);
+    try testing.expectEqual(@as(u32, 0x5678), (insn >> 5) & 0xFFFF);
+    try testing.expectEqual(@as(u32, 1), insn & 0x1F);
+}
+
+test "emit movk 64-bit all shifts" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v2 = root.reg.VReg.new(2, .int);
+    const r2 = Reg.fromVReg(v2);
+    const wr2 = root.reg.WritableReg.fromReg(r2);
+
+    // Test shift 16
+    try emit(.{ .movk = .{ .dst = wr2, .imm = 0xFFFF, .shift = 16, .size = .size64 } }, &buffer);
+    var insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 1), (insn >> 21) & 0x3);
+
+    buffer.data.clearRetainingCapacity();
+
+    // Test shift 32
+    const v3 = root.reg.VReg.new(3, .int);
+    const r3 = Reg.fromVReg(v3);
+    const wr3 = root.reg.WritableReg.fromReg(r3);
+    try emit(.{ .movk = .{ .dst = wr3, .imm = 0x1234, .shift = 32, .size = .size64 } }, &buffer);
+    insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 2), (insn >> 21) & 0x3);
+
+    buffer.data.clearRetainingCapacity();
+
+    // Test shift 48
+    const v4 = root.reg.VReg.new(4, .int);
+    const r4 = Reg.fromVReg(v4);
+    const wr4 = root.reg.WritableReg.fromReg(r4);
+    try emit(.{ .movk = .{ .dst = wr4, .imm = 0xABCD, .shift = 48, .size = .size64 } }, &buffer);
+    insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 3), (insn >> 21) & 0x3);
+}
+
+test "emit movk 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v25 = root.reg.VReg.new(25, .int);
+    const r25 = Reg.fromVReg(v25);
+    const wr25 = root.reg.WritableReg.fromReg(r25);
+
+    // MOVK W25, #0x8888, lsl #0
+    try emit(.{ .movk = .{ .dst = wr25, .imm = 0x8888, .shift = 0, .size = .size32 } }, &buffer);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1);
+    try testing.expectEqual(@as(u32, 0), (insn >> 21) & 0x3);
+
+    buffer.data.clearRetainingCapacity();
+
+    // Test shift 16
+    const v30 = root.reg.VReg.new(30, .int);
+    const r30 = Reg.fromVReg(v30);
+    const wr30 = root.reg.WritableReg.fromReg(r30);
+    try emit(.{ .movk = .{ .dst = wr30, .imm = 0x2222, .shift = 16, .size = .size32 } }, &buffer);
+    const insn2 = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 1), (insn2 >> 21) & 0x3);
+}
+
+test "emit movn 64-bit all shifts" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v8 = root.reg.VReg.new(8, .int);
+    const r8 = Reg.fromVReg(v8);
+    const wr8 = root.reg.WritableReg.fromReg(r8);
+
+    // Test shift 0
+    try emit(.{ .movn = .{ .dst = wr8, .imm = 0x1234, .shift = 0, .size = .size64 } }, &buffer);
+    var insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1); // sf=1
+    try testing.expectEqual(@as(u32, 0b00), (insn >> 29) & 0x3); // opc=00 for MOVN
+    try testing.expectEqual(@as(u32, 0), (insn >> 21) & 0x3); // hw=0
+
+    buffer.data.clearRetainingCapacity();
+
+    // Test shift 16, 32, 48
+    const shifts = [_]u8{ 16, 32, 48 };
+    const expected_hw = [_]u32{ 1, 2, 3 };
+    const regs = [_]u8{ 9, 11, 12 };
+
+    for (shifts, expected_hw, regs) |shift, hw, reg| {
+        const v = root.reg.VReg.new(reg, .int);
+        const r = Reg.fromVReg(v);
+        const wr = root.reg.WritableReg.fromReg(r);
+        try emit(.{ .movn = .{ .dst = wr, .imm = 0x5678, .shift = shift, .size = .size64 } }, &buffer);
+        insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+        try testing.expectEqual(hw, (insn >> 21) & 0x3);
+        buffer.data.clearRetainingCapacity();
+    }
+}
+
+test "emit movn 32-bit" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v13 = root.reg.VReg.new(13, .int);
+    const r13 = Reg.fromVReg(v13);
+    const wr13 = root.reg.WritableReg.fromReg(r13);
+
+    // Test shift 0
+    try emit(.{ .movn = .{ .dst = wr13, .imm = 0x7777, .shift = 0, .size = .size32 } }, &buffer);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1); // sf=0
+    try testing.expectEqual(@as(u32, 0), (insn >> 21) & 0x3); // hw=0
+
+    buffer.data.clearRetainingCapacity();
+
+    // Test shift 16
+    const v14 = root.reg.VReg.new(14, .int);
+    const r14 = Reg.fromVReg(v14);
+    const wr14 = root.reg.WritableReg.fromReg(r14);
+    try emit(.{ .movn = .{ .dst = wr14, .imm = 0x1111, .shift = 16, .size = .size32 } }, &buffer);
+    const insn2 = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 1), (insn2 >> 21) & 0x3); // hw=1
 }

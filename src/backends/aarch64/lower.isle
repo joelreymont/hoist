@@ -15,6 +15,19 @@
 (rule (lower (imul ty x y))
       (aarch64_mul_rr ty x y))
 
+;; Multiply-add fusion patterns
+;; iadd(a, imul(x, y)) => madd(x, y, a)
+(rule (lower (iadd ty (imul ty x y) a))
+      (aarch64_madd ty x y a))
+
+(rule (lower (iadd ty a (imul ty x y)))
+      (aarch64_madd ty x y a))
+
+;; Multiply-subtract fusion patterns
+;; isub(a, imul(x, y)) => msub(x, y, a)
+(rule (lower (isub ty a (imul ty x y)))
+      (aarch64_msub ty x y a))
+
 ;; smul_hi: Signed multiply returning upper bits (64×64→128, return high 64)
 (rule (lower (smul_hi ty x y))
       (if-let $I64 ty)
@@ -152,6 +165,14 @@
 (rule (lower (bnot ty x))
       (aarch64_mvn_rr ty x))
 
+;; Conditional select lowering
+
+;; select: Conditional select based on comparison result
+;; select(cond, true_val, false_val) -> true_val if cond != 0, else false_val
+(rule (lower (select ty (icmp cc cmp_ty x y) true_val false_val))
+      (let ((cmp_inst Aarch64Inst (aarch64_cmp_rr cmp_ty x y cc)))
+            (aarch64_csel ty true_val false_val cmp_inst cc)))
+
 ;; Immediate forms
 
 ;; iadd with 12-bit immediate
@@ -242,11 +263,12 @@
 (decl aarch64_sub_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_sub_imm (Type Value i64) Aarch64Inst)
 (decl aarch64_mul_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_madd (Type Value Value Value) Aarch64Inst)
+(decl aarch64_msub (Type Value Value Value) Aarch64Inst)
 (decl aarch64_smulh (Value Value) Aarch64Inst)
 (decl aarch64_umulh (Value Value) Aarch64Inst)
 (decl aarch64_sdiv (Type Value Value) Aarch64Inst)
 (decl aarch64_udiv (Type Value Value) Aarch64Inst)
-(decl aarch64_msub (Type Value Value Value) Aarch64Inst)
 
 ;; Shift operations
 (decl aarch64_lsl_rr (Type Value Value) Aarch64Inst)
@@ -267,6 +289,12 @@
 ;; Comparison operations
 (decl aarch64_cmp_rr (Type Value Value IntCC) Aarch64Inst)
 (decl aarch64_cmp_imm (Type Value i64 IntCC) Aarch64Inst)
+
+;; Conditional select operations
+(decl aarch64_csel (Type Value Value Value IntCC) Aarch64Inst)
+(decl aarch64_csinc (Type Value Value Value IntCC) Aarch64Inst)
+(decl aarch64_csinv (Type Value Value Value IntCC) Aarch64Inst)
+(decl aarch64_csneg (Type Value Value Value IntCC) Aarch64Inst)
 
 ;; Memory
 (decl aarch64_ldr (Type Value) Aarch64Inst)

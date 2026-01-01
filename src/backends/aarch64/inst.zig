@@ -26,6 +26,30 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// MOVZ - Move wide with zero
+    movz: struct {
+        dst: WritableReg,
+        imm: u16, // 16-bit immediate
+        shift: u8, // shift amount (0, 16, 32, or 48)
+        size: OperandSize,
+    },
+
+    /// MOVK - Move wide with keep
+    movk: struct {
+        dst: WritableReg,
+        imm: u16,
+        shift: u8,
+        size: OperandSize,
+    },
+
+    /// MOVN - Move wide with NOT
+    movn: struct {
+        dst: WritableReg,
+        imm: u16,
+        shift: u8,
+        size: OperandSize,
+    },
+
     /// Add register to register (ADD Xd, Xn, Xm).
     add_rr: struct {
         dst: WritableReg,
@@ -292,6 +316,46 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Conditional select (CSEL Xd, Xn, Xm, cond).
+    /// Selects src1 if condition true, else src2.
+    csel: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        cond: CondCode,
+        size: OperandSize,
+    },
+
+    /// Conditional select increment (CSINC Xd, Xn, Xm, cond).
+    /// Selects src1 if condition true, else src2+1.
+    csinc: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        cond: CondCode,
+        size: OperandSize,
+    },
+
+    /// Conditional select invert (CSINV Xd, Xn, Xm, cond).
+    /// Selects src1 if condition true, else ~src2.
+    csinv: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        cond: CondCode,
+        size: OperandSize,
+    },
+
+    /// Conditional select negate (CSNEG Xd, Xn, Xm, cond).
+    /// Selects src1 if condition true, else -src2.
+    csneg: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        cond: CondCode,
+        size: OperandSize,
+    },
+
     /// Compare register with register (CMP Xn, Xm).
     /// Alias for SUBS XZR, Xn, Xm. Sets condition flags for conditional branches.
     cmp_rr: struct {
@@ -417,6 +481,9 @@ pub const Inst = union(enum) {
         switch (self) {
             .mov_rr => |i| try writer.print("mov.{} {}, {}", .{ i.size, i.dst, i.src }),
             .mov_imm => |i| try writer.print("mov.{} {}, #{d}", .{ i.size, i.dst, i.imm }),
+            .movz => |i| try writer.print("movz.{} {}, #{d}, lsl #{d}", .{ i.size, i.dst, i.imm, i.shift }),
+            .movk => |i| try writer.print("movk.{} {}, #{d}, lsl #{d}", .{ i.size, i.dst, i.imm, i.shift }),
+            .movn => |i| try writer.print("movn.{} {}, #{d}, lsl #{d}", .{ i.size, i.dst, i.imm, i.shift }),
             .add_rr => |i| try writer.print("add.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .add_imm => |i| try writer.print("add.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
             .sub_rr => |i| try writer.print("sub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
@@ -448,6 +515,10 @@ pub const Inst = union(enum) {
             .clz => |i| try writer.print("clz.{} {}, {}", .{ i.size, i.dst, i.src }),
             .cls => |i| try writer.print("cls.{} {}, {}", .{ i.size, i.dst, i.src }),
             .rbit => |i| try writer.print("rbit.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .csel => |i| try writer.print("csel.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
+            .csinc => |i| try writer.print("csinc.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
+            .csinv => |i| try writer.print("csinv.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
+            .csneg => |i| try writer.print("csneg.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
             .cmp_rr => |i| try writer.print("cmp.{} {}, {}", .{ i.size, i.src1, i.src2 }),
             .cmp_imm => |i| try writer.print("cmp.{} {}, #{d}", .{ i.size, i.src, i.imm }),
             .cmn_rr => |i| try writer.print("cmn.{} {}, {}", .{ i.size, i.src1, i.src2 }),
