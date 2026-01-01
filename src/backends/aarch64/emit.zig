@@ -65,11 +65,11 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .ldr => |i| try emitLdr(i.dst.toReg(), i.base, i.offset, i.size, buffer),
         .ldr_reg => |i| try emitLdrReg(i.dst.toReg(), i.base, i.offset, i.size, buffer),
         .ldr_ext => |i| try emitLdrExt(i.dst.toReg(), i.base, i.offset, i.extend, i.size, buffer),
-        .ldr_scaled => |i| try emitLdrScaled(i.dst.toReg(), i.base, i.offset, i.shift, i.size, buffer),
+        .ldr_shifted => |i| try emitLdrShifted(i.dst.toReg(), i.base, i.offset, i.shift_op, i.shift_amt, i.size, buffer),
         .str => |i| try emitStr(i.src, i.base, i.offset, i.size, buffer),
         .str_reg => |i| try emitStrReg(i.src, i.base, i.offset, i.size, buffer),
         .str_ext => |i| try emitStrExt(i.src, i.base, i.offset, i.extend, i.size, buffer),
-        .str_scaled => |i| try emitStrScaled(i.src, i.base, i.offset, i.shift, i.size, buffer),
+        .str_shifted => |i| try emitStrShifted(i.src, i.base, i.offset, i.shift_op, i.shift_amt, i.size, buffer),
         .ldrb => |i| try emitLdrb(i.dst.toReg(), i.base, i.offset, i.size, buffer),
         .ldrh => |i| try emitLdrh(i.dst.toReg(), i.base, i.offset, i.size, buffer),
         .ldrsb => |i| try emitLdrsb(i.dst.toReg(), i.base, i.offset, i.size, buffer),
@@ -1063,16 +1063,40 @@ fn emitLdrExt(dst: Reg, base: Reg, offset: Reg, extend: Inst.ExtendOp, size: Ope
     try buffer.put(&bytes);
 }
 
-/// LDR Xt, [Xn, Xm, LSL #shift] (scaled register offset)
-fn emitLdrScaled(dst: Reg, base: Reg, offset: Reg, shift: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+/// LDR Xt, [Xn, Xm, shift_op #shift_amt] (shifted register offset)
+///
+/// Implements the "Load Register (register offset)" instruction format from the
+/// ARM Architecture Reference Manual (ARM DDI 0487).
+///
+/// Encoding: sf|111|V|00|opc|1|Rm|option|S|10|Rn|Rt
+/// - sf: 0=32-bit (W), 1=64-bit (X)
+/// - V: 0 for GPR
+/// - opc: 01 for LDR
+/// - Rm: Offset register (bits 20-16)
+/// - option: 011 for LSL (bits 15-13)
+/// - S: Scale flag (bit 12): 0=no scale, 1=scale by log2(access_size)
+/// - Rn: Base register (bits 9-5)
+/// - Rt: Destination register (bits 4-0)
+///
+/// Note: ARM64 load/store register offset only supports LSL shift operation.
+/// LSR and ASR are NOT valid for load/store addressing modes (ARM ARM C3.3.8).
+/// Attempting to use them will cause a runtime panic.
+///
+/// Example: LDR X0, [X1, X2, LSL #3] loads from address (X1 + (X2 << 3))
+fn emitLdrShifted(dst: Reg, base: Reg, offset: Reg, shift_op: Inst.ShiftOp, shift_amt: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    // Validate that only LSL is used for load/store addressing
+    if (shift_op != .lsl) {
+        @panic("ARM64 load/store register offset only supports LSL shift operation");
+    }
+
     const sf_bit: u32 = @intCast(sf(size));
     const rt = hwEnc(dst);
     const rn = hwEnc(base);
     const rm = hwEnc(offset);
-    const s_bit: u1 = if (shift > 0) 1 else 0;
+    const s_bit: u1 = if (shift_amt > 0) 1 else 0;
 
-    // LDR (register, scaled): sf|111|0|00|01|Rm|011|S|10|Rn|Rt
-    // option=011 (LSL), S=1 (scale by size)
+    // LDR (register, shifted): sf|111|0|00|01|Rm|011|S|10|Rn|Rt
+    // option=011 (LSL), S bit indicates whether to scale by transfer size
     const insn: u32 = (sf_bit << 31) |
         (0b11100001 << 21) |
         (@as(u32, rm) << 16) |
@@ -1128,16 +1152,40 @@ fn emitStrExt(src: Reg, base: Reg, offset: Reg, extend: Inst.ExtendOp, size: Ope
     try buffer.put(&bytes);
 }
 
-/// STR Xt, [Xn, Xm, LSL #shift] (scaled register offset)
-fn emitStrScaled(src: Reg, base: Reg, offset: Reg, shift: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+/// STR Xt, [Xn, Xm, shift_op #shift_amt] (shifted register offset)
+///
+/// Implements the "Store Register (register offset)" instruction format from the
+/// ARM Architecture Reference Manual (ARM DDI 0487).
+///
+/// Encoding: sf|111|V|00|opc|1|Rm|option|S|10|Rn|Rt
+/// - sf: 0=32-bit (W), 1=64-bit (X)
+/// - V: 0 for GPR
+/// - opc: 00 for STR
+/// - Rm: Offset register (bits 20-16)
+/// - option: 011 for LSL (bits 15-13)
+/// - S: Scale flag (bit 12): 0=no scale, 1=scale by log2(access_size)
+/// - Rn: Base register (bits 9-5)
+/// - Rt: Source register (bits 4-0)
+///
+/// Note: ARM64 load/store register offset only supports LSL shift operation.
+/// LSR and ASR are NOT valid for load/store addressing modes (ARM ARM C3.3.8).
+/// Attempting to use them will cause a runtime panic.
+///
+/// Example: STR X0, [X1, X2, LSL #3] stores to address (X1 + (X2 << 3))
+fn emitStrShifted(src: Reg, base: Reg, offset: Reg, shift_op: Inst.ShiftOp, shift_amt: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    // Validate that only LSL is used for load/store addressing
+    if (shift_op != .lsl) {
+        @panic("ARM64 load/store register offset only supports LSL shift operation");
+    }
+
     const sf_bit: u32 = @intCast(sf(size));
     const rt = hwEnc(src);
     const rn = hwEnc(base);
     const rm = hwEnc(offset);
-    const s_bit: u1 = if (shift > 0) 1 else 0;
+    const s_bit: u1 = if (shift_amt > 0) 1 else 0;
 
-    // STR (register, scaled): sf|111|0|00|00|Rm|011|S|10|Rn|Rt
-    // option=011 (LSL), S=1 (scale by size)
+    // STR (register, shifted): sf|111|0|00|00|Rm|011|S|10|Rn|Rt
+    // option=011 (LSL), S bit indicates whether to scale by transfer size
     const insn: u32 = (sf_bit << 31) |
         (0b11100000 << 21) |
         (@as(u32, rm) << 16) |
@@ -4988,7 +5036,7 @@ test "emit ldr_ext uxtw 64-bit" {
     try testing.expectEqual(expected, insn);
 }
 
-test "emit ldr_scaled 64-bit" {
+test "emit ldr_shifted 64-bit with LSL" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
@@ -5001,22 +5049,23 @@ test "emit ldr_scaled 64-bit" {
     const wr0 = root.reg.WritableReg.fromReg(r0);
 
     // LDR X0, [X1, X2, LSL #3]
-    try emit(.{ .ldr_scaled = .{
+    try emit(.{ .ldr_shifted = .{
         .dst = wr0,
         .base = r1,
         .offset = r2,
-        .shift = 3,
+        .shift_op = .lsl,
+        .shift_amt = 3,
         .size = .size64,
     } }, &buffer);
 
-    // Verify encoding: sf=1, Rm=2, option=011, S=1 (scaled), Rn=1, Rt=0
+    // Verify encoding: sf=1, Rm=2, option=011 (LSL), S=1 (scaled), Rn=1, Rt=0
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
     const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     const expected: u32 = (1 << 31) | (0b11100001 << 21) | (2 << 16) | (0b011 << 13) | (1 << 12) | (0b10 << 10) | (1 << 5) | 0;
     try testing.expectEqual(expected, insn);
 }
 
-test "emit ldr_scaled 32-bit" {
+test "emit ldr_shifted 32-bit with LSL" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
@@ -5029,15 +5078,16 @@ test "emit ldr_scaled 32-bit" {
     const wr6 = root.reg.WritableReg.fromReg(r6);
 
     // LDR W6, [X7, X8, LSL #2]
-    try emit(.{ .ldr_scaled = .{
+    try emit(.{ .ldr_shifted = .{
         .dst = wr6,
         .base = r7,
         .offset = r8,
-        .shift = 2,
+        .shift_op = .lsl,
+        .shift_amt = 2,
         .size = .size32,
     } }, &buffer);
 
-    // Verify encoding: sf=0, Rm=8, option=011, S=1 (scaled), Rn=7, Rt=6
+    // Verify encoding: sf=0, Rm=8, option=011 (LSL), S=1 (scaled), Rn=7, Rt=6
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
     const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     const expected: u32 = (0 << 31) | (0b11100001 << 21) | (8 << 16) | (0b011 << 13) | (1 << 12) | (0b10 << 10) | (7 << 5) | 6;
@@ -5151,7 +5201,7 @@ test "emit str_ext uxtw 64-bit" {
     try testing.expectEqual(expected, insn);
 }
 
-test "emit str_scaled 64-bit" {
+test "emit str_shifted 64-bit with LSL" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
@@ -5163,11 +5213,12 @@ test "emit str_scaled 64-bit" {
     const r11 = Reg.fromVReg(v11);
 
     // STR X9, [X10, X11, LSL #3]
-    try emit(.{ .str_scaled = .{
+    try emit(.{ .str_shifted = .{
         .src = r9,
         .base = r10,
         .offset = r11,
-        .shift = 3,
+        .shift_op = .lsl,
+        .shift_amt = 3,
         .size = .size64,
     } }, &buffer);
 
@@ -5178,7 +5229,7 @@ test "emit str_scaled 64-bit" {
     try testing.expectEqual(expected, insn);
 }
 
-test "emit str_scaled 32-bit" {
+test "emit str_shifted 32-bit with LSL" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
@@ -5190,11 +5241,12 @@ test "emit str_scaled 32-bit" {
     const r14 = Reg.fromVReg(v14);
 
     // STR W12, [X13, X14, LSL #2]
-    try emit(.{ .str_scaled = .{
+    try emit(.{ .str_shifted = .{
         .src = r12,
         .base = r13,
         .offset = r14,
-        .shift = 2,
+        .shift_op = .lsl,
+        .shift_amt = 2,
         .size = .size32,
     } }, &buffer);
 
@@ -5446,4 +5498,184 @@ test "emit stlr_x - verify correct encoding" {
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
     const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0xc89ffdee), insn);
+}
+
+test "emit ldr_shifted with no shift" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const v2 = root.reg.VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = root.reg.WritableReg.fromReg(r0);
+
+    // LDR X0, [X1, X2, LSL #0] - No shift, S bit should be 0
+    try emit(.{ .ldr_shifted = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = r2,
+        .shift_op = .lsl,
+        .shift_amt = 0,
+        .size = .size64,
+    } }, &buffer);
+
+    // Verify encoding: sf=1, Rm=2, option=011 (LSL), S=0 (no scale), Rn=1, Rt=0
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    const expected: u32 = (1 << 31) | (0b11100001 << 21) | (2 << 16) | (0b011 << 13) | (0 << 12) | (0b10 << 10) | (1 << 5) | 0;
+    try testing.expectEqual(expected, insn);
+}
+
+test "emit str_shifted with no shift" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v5 = root.reg.VReg.new(5, .int);
+    const v6 = root.reg.VReg.new(6, .int);
+    const v7 = root.reg.VReg.new(7, .int);
+    const r5 = Reg.fromVReg(v5);
+    const r6 = Reg.fromVReg(v6);
+    const r7 = Reg.fromVReg(v7);
+
+    // STR W5, [X6, X7, LSL #0] - No shift, S bit should be 0
+    try emit(.{ .str_shifted = .{
+        .src = r5,
+        .base = r6,
+        .offset = r7,
+        .shift_op = .lsl,
+        .shift_amt = 0,
+        .size = .size32,
+    } }, &buffer);
+
+    // Verify encoding: sf=0, Rm=7, option=011 (LSL), S=0 (no scale), Rn=6, Rt=5
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    const expected: u32 = (0 << 31) | (0b11100000 << 21) | (7 << 16) | (0b011 << 13) | (0 << 12) | (0b10 << 10) | (6 << 5) | 5;
+    try testing.expectEqual(expected, insn);
+}
+
+test "emit ldr_shifted verifies encoding format" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v10 = root.reg.VReg.new(10, .int);
+    const v11 = root.reg.VReg.new(11, .int);
+    const v12 = root.reg.VReg.new(12, .int);
+    const r10 = Reg.fromVReg(v10);
+    const r11 = Reg.fromVReg(v11);
+    const r12 = Reg.fromVReg(v12);
+    const wr10 = root.reg.WritableReg.fromReg(r10);
+
+    // LDR X10, [X11, X12, LSL #3]
+    try emit(.{ .ldr_shifted = .{
+        .dst = wr10,
+        .base = r11,
+        .offset = r12,
+        .shift_op = .lsl,
+        .shift_amt = 3,
+        .size = .size64,
+    } }, &buffer);
+
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Verify individual bitfields per ARM Architecture Reference Manual
+    // LDR (register) encoding: size|111|V|00|opc|1|Rm|option|S|10|Rn|Rt
+    // For 64-bit GPR load: sf|111|0|00|01|1|Rm|011|S|10|Rn|Rt
+
+    // sf (bit 31): 1 for 64-bit
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1);
+
+    // bits 30-29: 11 (for load/store register offset)
+    try testing.expectEqual(@as(u32, 0b11), (insn >> 29) & 0b11);
+
+    // bits 28-27: 10 (V=0, fixed bits)
+    try testing.expectEqual(@as(u32, 0b10), (insn >> 27) & 0b11);
+
+    // bits 26-22: 00010 (opc=01 for LDR, fixed 1)
+    try testing.expectEqual(@as(u32, 0b00010), (insn >> 22) & 0b11111);
+
+    // bits 21: 1 (fixed)
+    try testing.expectEqual(@as(u32, 1), (insn >> 21) & 1);
+
+    // bits 20-16: Rm (12 in this case)
+    try testing.expectEqual(@as(u32, 12), (insn >> 16) & 0x1F);
+
+    // bits 15-13: option (011 for LSL)
+    try testing.expectEqual(@as(u32, 0b011), (insn >> 13) & 0b111);
+
+    // bit 12: S (1 for scaled)
+    try testing.expectEqual(@as(u32, 1), (insn >> 12) & 1);
+
+    // bits 11-10: 10 (fixed for register offset)
+    try testing.expectEqual(@as(u32, 0b10), (insn >> 10) & 0b11);
+
+    // bits 9-5: Rn (11 in this case)
+    try testing.expectEqual(@as(u32, 11), (insn >> 5) & 0x1F);
+
+    // bits 4-0: Rt (10 in this case)
+    try testing.expectEqual(@as(u32, 10), insn & 0x1F);
+}
+
+test "emit str_shifted verifies encoding format" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v20 = root.reg.VReg.new(20, .int);
+    const v21 = root.reg.VReg.new(21, .int);
+    const v22 = root.reg.VReg.new(22, .int);
+    const r20 = Reg.fromVReg(v20);
+    const r21 = Reg.fromVReg(v21);
+    const r22 = Reg.fromVReg(v22);
+
+    // STR W20, [X21, X22, LSL #2]
+    try emit(.{ .str_shifted = .{
+        .src = r20,
+        .base = r21,
+        .offset = r22,
+        .shift_op = .lsl,
+        .shift_amt = 2,
+        .size = .size32,
+    } }, &buffer);
+
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+
+    // Verify individual bitfields per ARM Architecture Reference Manual
+    // STR (register) encoding: size|111|V|00|opc|1|Rm|option|S|10|Rn|Rt
+    // For 32-bit GPR store: sf|111|0|00|00|1|Rm|011|S|10|Rn|Rt
+
+    // sf (bit 31): 0 for 32-bit
+    try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1);
+
+    // bits 30-29: 11 (for load/store register offset)
+    try testing.expectEqual(@as(u32, 0b11), (insn >> 29) & 0b11);
+
+    // bits 28-27: 10 (V=0, fixed bits)
+    try testing.expectEqual(@as(u32, 0b10), (insn >> 27) & 0b11);
+
+    // bits 26-22: 00000 (opc=00 for STR, fixed 1)
+    try testing.expectEqual(@as(u32, 0b00000), (insn >> 22) & 0b11111);
+
+    // bits 21: 1 (fixed)
+    try testing.expectEqual(@as(u32, 1), (insn >> 21) & 1);
+
+    // bits 20-16: Rm (22 in this case)
+    try testing.expectEqual(@as(u32, 22), (insn >> 16) & 0x1F);
+
+    // bits 15-13: option (011 for LSL)
+    try testing.expectEqual(@as(u32, 0b011), (insn >> 13) & 0b111);
+
+    // bit 12: S (1 for scaled)
+    try testing.expectEqual(@as(u32, 1), (insn >> 12) & 1);
+
+    // bits 11-10: 10 (fixed for register offset)
+    try testing.expectEqual(@as(u32, 0b10), (insn >> 10) & 0b11);
+
+    // bits 9-5: Rn (21 in this case)
+    try testing.expectEqual(@as(u32, 21), (insn >> 5) & 0x1F);
+
+    // bits 4-0: Rt (20 in this case)
+    try testing.expectEqual(@as(u32, 20), insn & 0x1F);
 }

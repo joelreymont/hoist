@@ -10,17 +10,25 @@ pub const PReg = reg_mod.PReg;
 pub const VReg = reg_mod.VReg;
 pub const RegClass = reg_mod.RegClass;
 
+/// Struct field descriptor for ABI.
+pub const StructField = struct {
+    ty: Type,
+    offset: u32,
+};
+
 /// Type stub for ABI.
-pub const Type = enum {
+pub const Type = union(enum) {
     i32,
     i64,
     f32,
     f64,
+    @"struct": []const StructField,
 
     pub fn regClass(self: Type) RegClass {
         return switch (self) {
             .i32, .i64 => .int,
             .f32, .f64 => .float,
+            .@"struct" => .int, // Default to int, caller should use classifyStruct
         };
     }
 
@@ -28,6 +36,11 @@ pub const Type = enum {
         return switch (self) {
             .i32, .f32 => 4,
             .i64, .f64 => 8,
+            .@"struct" => |fields| blk: {
+                if (fields.len == 0) break :blk 0;
+                const last = fields[fields.len - 1];
+                break :blk last.offset + last.ty.bytes();
+            },
         };
     }
 };

@@ -513,12 +513,14 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
-    /// Load register from memory with scaled register offset (LDR Xt, [Xn, Xm, LSL #3]).
-    ldr_scaled: struct {
+    /// Load register from memory with shifted register offset (LDR Xt, [Xn, Xm, LSL #3]).
+    /// Note: Only LSL is supported for load/store addressing in ARM64.
+    ldr_shifted: struct {
         dst: WritableReg,
         base: Reg,
         offset: Reg,
-        shift: u8, // log2(size): 0 for byte, 1 for half, 2 for word, 3 for dword
+        shift_op: ShiftOp,
+        shift_amt: u8, // Shift amount: 0-3 (log2 of access size for LSL)
         size: OperandSize,
     },
 
@@ -547,12 +549,14 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
-    /// Store register to memory with scaled register offset (STR Xt, [Xn, Xm, LSL #3]).
-    str_scaled: struct {
+    /// Store register to memory with shifted register offset (STR Xt, [Xn, Xm, LSL #3]).
+    /// Note: Only LSL is supported for load/store addressing in ARM64.
+    str_shifted: struct {
         src: Reg,
         base: Reg,
         offset: Reg,
-        shift: u8, // log2(size): 0 for byte, 1 for half, 2 for word, 3 for dword
+        shift_op: ShiftOp,
+        shift_amt: u8, // Shift amount: 0-3 (log2 of access size for LSL)
         size: OperandSize,
     },
 
@@ -835,11 +839,11 @@ pub const Inst = union(enum) {
             .ldr => |i| try writer.print("ldr.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
             .ldr_reg => |i| try writer.print("ldr.{} {}, [{}, {}]", .{ i.size, i.dst, i.base, i.offset }),
             .ldr_ext => |i| try writer.print("ldr.{} {}, [{}, {}, {}]", .{ i.size, i.dst, i.base, i.offset, i.extend }),
-            .ldr_scaled => |i| try writer.print("ldr.{} {}, [{}, {}, lsl #{d}]", .{ i.size, i.dst, i.base, i.offset, i.shift }),
+            .ldr_shifted => |i| try writer.print("ldr.{} {}, [{}, {}, {} #{d}]", .{ i.size, i.dst, i.base, i.offset, i.shift_op, i.shift_amt }),
             .str => |i| try writer.print("str.{} {}, [{}, #{d}]", .{ i.size, i.src, i.base, i.offset }),
             .str_reg => |i| try writer.print("str.{} {}, [{}, {}]", .{ i.size, i.src, i.base, i.offset }),
             .str_ext => |i| try writer.print("str.{} {}, [{}, {}, {}]", .{ i.size, i.src, i.base, i.offset, i.extend }),
-            .str_scaled => |i| try writer.print("str.{} {}, [{}, {}, lsl #{d}]", .{ i.size, i.src, i.base, i.offset, i.shift }),
+            .str_shifted => |i| try writer.print("str.{} {}, [{}, {}, {} #{d}]", .{ i.size, i.src, i.base, i.offset, i.shift_op, i.shift_amt }),
             .ldrb => |i| try writer.print("ldrb.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
             .ldrh => |i| try writer.print("ldrh.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
             .ldrsb => |i| try writer.print("ldrsb.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
@@ -1090,17 +1094,28 @@ pub const ImmLogic = struct {
     }
 };
 
+/// Shift operation for shifted register operands.
+pub const ShiftOp = enum(u2) {
+    lsl = 0b00,
+    lsr = 0b01,
+    asr = 0b10,
+    ror = 0b11,
+
+    pub fn format(
+        self: ShiftOp,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        const name = @tagName(self);
+        try writer.writeAll(name);
+    }
+};
+
 /// Shift operation and amount for shifted register operands.
 pub const ShiftOpAndAmt = struct {
     op: ShiftOp,
     amt: u8,
-
-    pub const ShiftOp = enum(u2) {
-        lsl = 0b00,
-        lsr = 0b01,
-        asr = 0b10,
-        ror = 0b11,
-    };
 };
 
 /// Extend operation for extended register operands.

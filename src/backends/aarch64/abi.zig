@@ -92,6 +92,83 @@ fn alignTo16(size: u32) u32 {
     return (size + 15) & ~@as(u32, 15);
 }
 
+/// Register class for struct passing after AAPCS64 classification.
+pub const StructClass = enum {
+    /// Homogeneous Floating-Point Aggregate: 1-4 same-size float members.
+    hfa,
+    /// Homogeneous Short-Vector Aggregate: 1-4 same-size vector members.
+    hva,
+    /// Non-homogeneous struct <= 16 bytes: passed in general registers.
+    general,
+    /// Struct > 16 bytes: passed by reference (pointer in register).
+    indirect,
+};
+
+/// Check if a type is a homogeneous floating-point aggregate (HFA).
+/// An HFA is a struct with 1-4 members of the same floating-point type (f32 or f64).
+/// AAPCS64 section 6.4.2.
+fn isHFA(fields: []const abi_mod.StructField) ?abi_mod.Type {
+    if (fields.len == 0 or fields.len > 4) return null;
+
+    // Get the type of the first field
+    const first_ty = switch (fields[0].ty) {
+        .f32 => abi_mod.Type.f32,
+        .f64 => abi_mod.Type.f64,
+        else => return null,
+    };
+
+    // Verify all fields have the same floating-point type
+    for (fields) |field| {
+        const field_ty = switch (field.ty) {
+            .f32 => abi_mod.Type.f32,
+            .f64 => abi_mod.Type.f64,
+            else => return null,
+        };
+        if (!std.meta.eql(field_ty, first_ty)) return null;
+    }
+
+    return first_ty;
+}
+
+/// Check if a type is a homogeneous short-vector aggregate (HVA).
+/// An HVA is a struct with 1-4 members of the same SIMD/vector type.
+/// AAPCS64 section 6.4.2.
+fn isHVA(fields: []const abi_mod.StructField) ?abi_mod.Type {
+    // Note: Current type system doesn't have vector types yet.
+    // This is a placeholder for future vector support.
+    _ = fields;
+    return null;
+}
+
+/// Classify a struct for AAPCS64 parameter passing.
+/// Returns the register class to use and optionally the element type for HFA/HVA.
+pub fn classifyStruct(ty: abi_mod.Type) struct { class: StructClass, elem_ty: ?abi_mod.Type } {
+    const fields = switch (ty) {
+        .@"struct" => |f| f,
+        else => return .{ .class = .general, .elem_ty = null },
+    };
+
+    const size = ty.bytes();
+
+    // Structs > 16 bytes are passed by reference
+    if (size > 16) {
+        return .{ .class = .indirect, .elem_ty = null };
+    }
+
+    // Check for HFA (Homogeneous Floating-Point Aggregate)
+    if (isHFA(fields)) |elem_ty| {
+        return .{ .class = .hfa, .elem_ty = elem_ty };
+    }
+
+    // Check for HVA (Homogeneous Short-Vector Aggregate)
+    if (isHVA(fields)) |elem_ty| {
+        return .{ .class = .hva, .elem_ty = elem_ty };
+    }
+
+    // Non-homogeneous struct <= 16 bytes: passed in general registers
+    return .{ .class = .general, .elem_ty = null };
+}
+
 /// Calculate total stack frame size including alignment.
 /// Frame layout (high to low address):
 /// - Saved FP + LR (16 bytes)
@@ -172,9 +249,10 @@ pub const Aarch64ABICallee = struct {
 
     /// Emit function prologue.
     /// Saves FP, LR, callee-saves, and allocates stack frame with 16-byte alignment.
+    /// For large frames (>504 bytes), uses multi-instruction allocation.
     /// Frame layout (high to low address):
     ///   [SP at entry]
-    ///   [FP, LR] <- saved by STP with pre-index
+    ///   [FP, LR] <- saved first
     ///   [callee-saves] <- saved in pairs with STP
     ///   [locals/spills]
     ///   [SP after prologue] <- 16-byte aligned
@@ -188,29 +266,82 @@ pub const Aarch64ABICallee = struct {
         const lr = Reg.fromPReg(PReg.new(.int, 30)); // X30 (LR)
         const sp = Reg.fromPReg(PReg.new(.int, 31)); // SP
         const fp_w = WritableReg.fromReg(fp);
+        const sp_w = WritableReg.fromReg(sp);
+
         // Recalculate frame size to ensure alignment
         self.frame_size = calculateFrameSize(
             self.locals_size,
             @intCast(self.clobbered_callee_saves.items.len),
         );
 
-        // 1. Save FP and LR with pre-index: STP X29, X30, [SP, #-frame_size]!
-        // This allocates the entire frame and saves FP/LR atomically
-        const frame_offset: i16 = -@as(i16, @intCast(self.frame_size));
-        try emit_fn(.{ .stp = .{
-            .src1 = fp,
-            .src2 = lr,
-            .base = sp,
-            .offset = frame_offset,
-            .size = .size64,
-        } }, buffer);
+        // STP with offset has 7-bit signed immediate scaled by 8 bytes
+        // Max negative offset: -64 * 8 = -512 bytes
+        // But we need to save FP/LR at the top, so max usable is 504 bytes
+        const max_stp_offset: u32 = 504;
 
-        // 2. Set up frame pointer: MOV X29, SP
-        try emit_fn(.{ .mov_rr = .{
-            .dst = fp_w,
-            .src = sp,
-            .size = .size64,
-        } }, buffer);
+        if (self.frame_size <= max_stp_offset) {
+            // Small frame: use STP with offset to allocate and save atomically
+            // STP X29, X30, [SP, #-frame_size]!
+            const frame_offset: i16 = -@as(i16, @intCast(self.frame_size));
+            try emit_fn(.{ .stp = .{
+                .src1 = fp,
+                .src2 = lr,
+                .base = sp,
+                .offset = frame_offset,
+                .size = .size64,
+            } }, buffer);
+
+            // Set up frame pointer: MOV X29, SP
+            try emit_fn(.{ .mov_rr = .{
+                .dst = fp_w,
+                .src = sp,
+                .size = .size64,
+            } }, buffer);
+        } else {
+            // Large frame: allocate in multiple steps
+            // Strategy: SUB SP, SP, #amount (up to 4095 per instruction)
+
+            // First, allocate space for FP/LR (16 bytes) so we can save them
+            try emit_fn(.{ .sub_imm = .{
+                .dst = sp_w,
+                .src = sp,
+                .imm = 16,
+                .size = .size64,
+            } }, buffer);
+
+            // Save FP and LR at current SP
+            try emit_fn(.{ .stp = .{
+                .src1 = fp,
+                .src2 = lr,
+                .base = sp,
+                .offset = 0,
+                .size = .size64,
+            } }, buffer);
+
+            // Set up frame pointer to point at saved FP/LR
+            try emit_fn(.{ .mov_rr = .{
+                .dst = fp_w,
+                .src = sp,
+                .size = .size64,
+            } }, buffer);
+
+            // Allocate remaining frame space
+            var remaining = self.frame_size - 16;
+
+            // SUB immediate can encode 12-bit values (0-4095)
+            // For now, we don't use the shift form (would require updating emit.zig)
+            // so we just break into 4095-byte chunks
+            while (remaining > 0) {
+                const chunk = @min(remaining, 4095);
+                try emit_fn(.{ .sub_imm = .{
+                    .dst = sp_w,
+                    .src = sp,
+                    .imm = @intCast(chunk),
+                    .size = .size64,
+                } }, buffer);
+                remaining -= chunk;
+            }
+        }
 
         // 3. Save callee-save registers in pairs using STP
         // Stack offset starts after FP/LR (16 bytes from SP)
@@ -245,6 +376,7 @@ pub const Aarch64ABICallee = struct {
 
     /// Emit function epilogue.
     /// Restores callee-saves, FP, LR, and returns with proper stack cleanup.
+    /// For large frames (>504 bytes), uses multi-instruction deallocation.
     pub fn emitEpilogue(
         self: *Aarch64ABICallee,
         buffer: *buffer_mod.MachBuffer,
@@ -256,6 +388,7 @@ pub const Aarch64ABICallee = struct {
         const sp = Reg.fromPReg(PReg.new(.int, 31));
         const fp_w = WritableReg.fromReg(fp);
         const lr_w = WritableReg.fromReg(lr);
+        const sp_w = WritableReg.fromReg(sp);
 
         // 1. Restore callee-save registers in reverse order (using pairs)
         var stack_offset: i16 = 16;
@@ -286,15 +419,54 @@ pub const Aarch64ABICallee = struct {
             }
         }
 
-        // 2. Restore FP and LR, deallocate frame: LDP X29, X30, [SP], #frame_size
-        // Post-index form adds frame_size to SP after loading
-        try emit_fn(.{ .ldp = .{
-            .dst1 = fp_w,
-            .dst2 = lr_w,
-            .base = sp,
-            .offset = @intCast(self.frame_size),
-            .size = .size64,
-        } }, buffer);
+        const max_stp_offset: u32 = 504;
+
+        if (self.frame_size <= max_stp_offset) {
+            // Small frame: restore FP/LR and deallocate in one instruction
+            // LDP X29, X30, [SP], #frame_size
+            try emit_fn(.{ .ldp = .{
+                .dst1 = fp_w,
+                .dst2 = lr_w,
+                .base = sp,
+                .offset = @intCast(self.frame_size),
+                .size = .size64,
+            } }, buffer);
+        } else {
+            // Large frame: deallocate in multiple steps
+            // First restore FP/LR from current SP
+            try emit_fn(.{ .ldp = .{
+                .dst1 = fp_w,
+                .dst2 = lr_w,
+                .base = sp,
+                .offset = 0,
+                .size = .size64,
+            } }, buffer);
+
+            // Deallocate the 16 bytes for FP/LR
+            try emit_fn(.{ .add_imm = .{
+                .dst = sp_w,
+                .src = sp,
+                .imm = 16,
+                .size = .size64,
+            } }, buffer);
+
+            // Deallocate remaining frame space
+            var remaining = self.frame_size - 16;
+
+            // ADD immediate can encode 12-bit values (0-4095)
+            // For now, we don't use the shift form (would require updating emit.zig)
+            // so we just break into 4095-byte chunks
+            while (remaining > 0) {
+                const chunk = @min(remaining, 4095);
+                try emit_fn(.{ .add_imm = .{
+                    .dst = sp_w,
+                    .src = sp,
+                    .imm = @intCast(chunk),
+                    .size = .size64,
+                } }, buffer);
+                remaining -= chunk;
+            }
+        }
 
         // 3. Return: RET (defaults to X30/LR)
         try emit_fn(.{ .ret = .{ .reg = null } }, buffer);
@@ -480,6 +652,311 @@ test "frame alignment with multiple callee-saves" {
     // Expected: FP+LR (16) + 3 callee-saves rounded to 2 pairs (32) + locals (25) = 73, rounds to 80
     callee.setLocalsSize(25);
     try testing.expectEqual(@as(u32, 80), callee.frame_size);
+    try testing.expectEqual(@as(u32, 0), callee.frame_size % 16);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try callee.emitPrologue(&buffer);
+    try callee.emitEpilogue(&buffer);
+
+    // Verify we generated code
+    try testing.expect(buffer.data.items.len > 0);
+}
+
+test "isHFA with f32 fields" {
+    // struct { f32, f32 } - valid HFA
+    const fields1 = [_]abi_mod.StructField{
+        .{ .ty = .f32, .offset = 0 },
+        .{ .ty = .f32, .offset = 4 },
+    };
+    const result1 = isHFA(&fields1);
+    try testing.expect(result1 != null);
+    try testing.expect(std.meta.eql(result1.?, abi_mod.Type.f32));
+
+    // struct { f32, f32, f32, f32 } - valid HFA (max 4 members)
+    const fields2 = [_]abi_mod.StructField{
+        .{ .ty = .f32, .offset = 0 },
+        .{ .ty = .f32, .offset = 4 },
+        .{ .ty = .f32, .offset = 8 },
+        .{ .ty = .f32, .offset = 12 },
+    };
+    const result2 = isHFA(&fields2);
+    try testing.expect(result2 != null);
+    try testing.expect(std.meta.eql(result2.?, abi_mod.Type.f32));
+}
+
+test "isHFA with f64 fields" {
+    // struct { f64, f64, f64 } - valid HFA
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = .f64, .offset = 0 },
+        .{ .ty = .f64, .offset = 8 },
+        .{ .ty = .f64, .offset = 16 },
+    };
+    const result = isHFA(&fields);
+    try testing.expect(result != null);
+    try testing.expect(std.meta.eql(result.?, abi_mod.Type.f64));
+}
+
+test "isHFA with mixed float types" {
+    // struct { f32, f64 } - not HFA (different sizes)
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = .f32, .offset = 0 },
+        .{ .ty = .f64, .offset = 8 },
+    };
+    const result = isHFA(&fields);
+    try testing.expect(result == null);
+}
+
+test "isHFA with non-float fields" {
+    // struct { i32, f32 } - not HFA (contains integer)
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = .i32, .offset = 0 },
+        .{ .ty = .f32, .offset = 4 },
+    };
+    const result = isHFA(&fields);
+    try testing.expect(result == null);
+}
+
+test "isHFA with too many fields" {
+    // struct { f32, f32, f32, f32, f32 } - not HFA (> 4 members)
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = .f32, .offset = 0 },
+        .{ .ty = .f32, .offset = 4 },
+        .{ .ty = .f32, .offset = 8 },
+        .{ .ty = .f32, .offset = 12 },
+        .{ .ty = .f32, .offset = 16 },
+    };
+    const result = isHFA(&fields);
+    try testing.expect(result == null);
+}
+
+test "isHFA with empty struct" {
+    // struct {} - not HFA (no members)
+    const fields = [_]abi_mod.StructField{};
+    const result = isHFA(&fields);
+    try testing.expect(result == null);
+}
+
+test "classifyStruct HFA" {
+    // struct { f32, f32 } - HFA
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = .f32, .offset = 0 },
+        .{ .ty = .f32, .offset = 4 },
+    };
+    const ty = abi_mod.Type{ .@"struct" = &fields };
+    const result = classifyStruct(ty);
+    try testing.expectEqual(StructClass.hfa, result.class);
+    try testing.expect(result.elem_ty != null);
+    try testing.expect(std.meta.eql(result.elem_ty.?, abi_mod.Type.f32));
+}
+
+test "classifyStruct general" {
+    // struct { i32, i32 } - general (non-homogeneous, <= 16 bytes)
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = .i32, .offset = 0 },
+        .{ .ty = .i32, .offset = 4 },
+    };
+    const ty = abi_mod.Type{ .@"struct" = &fields };
+    const result = classifyStruct(ty);
+    try testing.expectEqual(StructClass.general, result.class);
+    try testing.expect(result.elem_ty == null);
+}
+
+test "classifyStruct indirect" {
+    // struct { i64, i64, i32 } - indirect (> 16 bytes: 8 + 8 + 4 = 20)
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = .i64, .offset = 0 },
+        .{ .ty = .i64, .offset = 8 },
+        .{ .ty = .i32, .offset = 16 },
+    };
+    const ty = abi_mod.Type{ .@"struct" = &fields };
+    const result = classifyStruct(ty);
+    try testing.expectEqual(StructClass.indirect, result.class);
+    try testing.expect(result.elem_ty == null);
+}
+
+test "classifyStruct exactly 16 bytes" {
+    // struct { i64, i64 } - general (exactly 16 bytes)
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = .i64, .offset = 0 },
+        .{ .ty = .i64, .offset = 8 },
+    };
+    const ty = abi_mod.Type{ .@"struct" = &fields };
+    const result = classifyStruct(ty);
+    try testing.expectEqual(StructClass.general, result.class);
+    try testing.expect(result.elem_ty == null);
+}
+
+test "classifyStruct non-struct type" {
+    // Passing a non-struct type should return general
+    const ty = abi_mod.Type.i64;
+    const result = classifyStruct(ty);
+    try testing.expectEqual(StructClass.general, result.class);
+    try testing.expect(result.elem_ty == null);
+}
+
+test "struct Type bytes calculation" {
+    // Empty struct
+    const fields_empty = [_]abi_mod.StructField{};
+    const ty_empty = abi_mod.Type{ .@"struct" = &fields_empty };
+    try testing.expectEqual(@as(u32, 0), ty_empty.bytes());
+
+    // struct { i32, i32 } - 8 bytes
+    const fields1 = [_]abi_mod.StructField{
+        .{ .ty = .i32, .offset = 0 },
+        .{ .ty = .i32, .offset = 4 },
+    };
+    const ty1 = abi_mod.Type{ .@"struct" = &fields1 };
+    try testing.expectEqual(@as(u32, 8), ty1.bytes());
+
+    // struct { f64, f64, f64 } - 24 bytes
+    const fields2 = [_]abi_mod.StructField{
+        .{ .ty = .f64, .offset = 0 },
+        .{ .ty = .f64, .offset = 8 },
+        .{ .ty = .f64, .offset = 16 },
+    };
+    const ty2 = abi_mod.Type{ .@"struct" = &fields2 };
+    try testing.expectEqual(@as(u32, 24), ty2.bytes());
+}
+
+test "large frame exactly 4096 bytes" {
+    // Test frame size of exactly 4096 bytes
+    // Frame = FP+LR (16) + locals, so locals = 4096 - 16 = 4080
+    const args = [_]abi_mod.Type{.i64};
+    const sig = abi_mod.ABISignature.init(&args, &.{.i64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    callee.setLocalsSize(4080);
+    try testing.expectEqual(@as(u32, 4096), callee.frame_size);
+    try testing.expectEqual(@as(u32, 0), callee.frame_size % 16);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    // Should use multi-instruction allocation (4096 > 504)
+    try callee.emitPrologue(&buffer);
+    try callee.emitEpilogue(&buffer);
+
+    // Verify we generated code
+    try testing.expect(buffer.data.items.len > 0);
+}
+
+test "large frame 8192 bytes" {
+    // Test frame size of 8192 bytes
+    // Frame = FP+LR (16) + locals, so locals = 8192 - 16 = 8176
+    const args = [_]abi_mod.Type{.i64};
+    const sig = abi_mod.ABISignature.init(&args, &.{.i64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    callee.setLocalsSize(8176);
+    try testing.expectEqual(@as(u32, 8192), callee.frame_size);
+    try testing.expectEqual(@as(u32, 0), callee.frame_size % 16);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    // Should use multi-instruction allocation
+    try callee.emitPrologue(&buffer);
+    try callee.emitEpilogue(&buffer);
+
+    // Verify we generated code
+    try testing.expect(buffer.data.items.len > 0);
+}
+
+test "large frame 65536 bytes" {
+    // Test frame size of 65536 bytes (64KB)
+    // Frame = FP+LR (16) + locals, so locals = 65536 - 16 = 65520
+    const args = [_]abi_mod.Type{.i64};
+    const sig = abi_mod.ABISignature.init(&args, &.{.i64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    callee.setLocalsSize(65520);
+    try testing.expectEqual(@as(u32, 65536), callee.frame_size);
+    try testing.expectEqual(@as(u32, 0), callee.frame_size % 16);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    // Should use multi-instruction allocation
+    try callee.emitPrologue(&buffer);
+    try callee.emitEpilogue(&buffer);
+
+    // Verify we generated code
+    try testing.expect(buffer.data.items.len > 0);
+}
+
+test "frame boundary at 504 bytes" {
+    // Test frame size exactly at the STP offset limit
+    // 504 bytes should use single-instruction path
+    const args = [_]abi_mod.Type{.i64};
+    const sig = abi_mod.ABISignature.init(&args, &.{.i64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    // 504 - 16 (FP+LR) = 488 bytes of locals
+    callee.setLocalsSize(488);
+    try testing.expectEqual(@as(u32, 504), callee.frame_size);
+    try testing.expectEqual(@as(u32, 0), callee.frame_size % 16);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    // Should use single-instruction path (<=504)
+    try callee.emitPrologue(&buffer);
+    try callee.emitEpilogue(&buffer);
+
+    // Verify we generated code
+    try testing.expect(buffer.data.items.len > 0);
+}
+
+test "frame just over 504 bytes boundary" {
+    // Test frame size just over the STP offset limit
+    // 512 bytes should use multi-instruction path
+    const args = [_]abi_mod.Type{.i64};
+    const sig = abi_mod.ABISignature.init(&args, &.{.i64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    // 512 - 16 (FP+LR) = 496 bytes of locals
+    callee.setLocalsSize(496);
+    try testing.expectEqual(@as(u32, 512), callee.frame_size);
+    try testing.expectEqual(@as(u32, 0), callee.frame_size % 16);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    // Should use multi-instruction path (>504)
+    try callee.emitPrologue(&buffer);
+    try callee.emitEpilogue(&buffer);
+
+    // Verify we generated code
+    try testing.expect(buffer.data.items.len > 0);
+}
+
+test "large frame with callee-saves" {
+    // Test large frame with callee-save registers
+    const args = [_]abi_mod.Type{.i64};
+    const sig = abi_mod.ABISignature.init(&args, &.{.i64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    // Add some callee-saves
+    try callee.clobberCalleeSave(PReg.new(.int, 19));
+    try callee.clobberCalleeSave(PReg.new(.int, 20));
+
+    // Large locals: 8192 - 16 (FP+LR) - 16 (2 callee-saves) = 8160
+    callee.setLocalsSize(8160);
+    try testing.expectEqual(@as(u32, 8192), callee.frame_size);
     try testing.expectEqual(@as(u32, 0), callee.frame_size % 16);
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
