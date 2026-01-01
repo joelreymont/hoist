@@ -356,6 +356,38 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// ADDS - Add and set flags (ADDS Xd, Xn, Xm).
+    adds_rr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// ADDS - Add immediate and set flags (ADDS Xd, Xn, #imm).
+    adds_imm: struct {
+        dst: WritableReg,
+        src: Reg,
+        imm: u16, // 12-bit unsigned immediate
+        size: OperandSize,
+    },
+
+    /// SUBS - Subtract and set flags (SUBS Xd, Xn, Xm).
+    subs_rr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// SUBS - Subtract immediate and set flags (SUBS Xd, Xn, #imm).
+    subs_imm: struct {
+        dst: WritableReg,
+        src: Reg,
+        imm: u16,
+        size: OperandSize,
+    },
+
     /// Compare register with register (CMP Xn, Xm).
     /// Alias for SUBS XZR, Xn, Xm. Sets condition flags for conditional branches.
     cmp_rr: struct {
@@ -519,6 +551,10 @@ pub const Inst = union(enum) {
             .csinc => |i| try writer.print("csinc.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
             .csinv => |i| try writer.print("csinv.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
             .csneg => |i| try writer.print("csneg.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
+            .adds_rr => |i| try writer.print("adds.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .adds_imm => |i| try writer.print("adds.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .subs_rr => |i| try writer.print("subs.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .subs_imm => |i| try writer.print("subs.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
             .cmp_rr => |i| try writer.print("cmp.{} {}, {}", .{ i.size, i.src1, i.src2 }),
             .cmp_imm => |i| try writer.print("cmp.{} {}, #{d}", .{ i.size, i.src, i.imm }),
             .cmn_rr => |i| try writer.print("cmn.{} {}, {}", .{ i.size, i.src1, i.src2 }),
