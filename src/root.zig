@@ -42,3 +42,5 @@ pub const compile = @import("machinst/compile.zig");
 pub const x64_inst = @import("backends/x64/inst.zig");
 pub const x64_emit = @import("backends/x64/emit.zig");
 pub const x64_abi = @import("backends/x64/abi.zig");
+
+pub const aarch64_inst = @import("backends/aarch64/inst.zig");
