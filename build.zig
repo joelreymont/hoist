@@ -32,9 +32,32 @@ pub fn build(b: *std.Build) void {
     const integration_step = b.step("test-integration", "Run integration tests");
     integration_step.dependOn(&run_tests.step);
 
-    // Benchmarks (future: performance regression tests)
+    // Benchmarks
+    const bench_fib = b.addExecutable(.{
+        .name = "bench_fib",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/compile_fib.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    bench_fib.root_module.addImport("root", lib.root_module);
+
+    const bench_large = b.addExecutable(.{
+        .name = "bench_large",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/compile_large.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    bench_large.root_module.addImport("root", lib.root_module);
+
     const bench_step = b.step("bench", "Run benchmarks");
-    _ = bench_step;
+    const run_bench_fib = b.addRunArtifact(bench_fib);
+    const run_bench_large = b.addRunArtifact(bench_large);
+    bench_step.dependOn(&run_bench_fib.step);
+    bench_step.dependOn(&run_bench_large.step);
 
     // Fuzzing
     const fuzz_compile = b.addExecutable(.{
