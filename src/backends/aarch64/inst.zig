@@ -398,6 +398,15 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+
+    /// REV (reverse bytes): REV Xd, Xn
+    /// Reverses byte order in register
+    rev: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
     /// Conditional select (CSEL Xd, Xn, Xm, cond).
     /// Selects src1 if condition true, else src2.
     csel: struct {
@@ -1776,6 +1785,7 @@ pub const Inst = union(enum) {
             .clz => |i| try writer.print("clz.{} {}, {}", .{ i.size, i.dst, i.src }),
             .cls => |i| try writer.print("cls.{} {}, {}", .{ i.size, i.dst, i.src }),
             .rbit => |i| try writer.print("rbit.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .rev => |i| try writer.print("rev.{} {}, {}", .{ i.size, i.dst, i.src }),
             .csel => |i| try writer.print("csel.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
             .csinc => |i| try writer.print("csinc.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
             .csinv => |i| try writer.print("csinv.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),

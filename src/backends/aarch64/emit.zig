@@ -72,6 +72,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .clz => |i| try emitClz(i.dst.toReg(), i.src, i.size, buffer),
         .cls => |i| try emitCls(i.dst.toReg(), i.src, i.size, buffer),
         .rbit => |i| try emitRbit(i.dst.toReg(), i.src, i.size, buffer),
+        .rev => |i| try emitRev(i.dst.toReg(), i.src, i.size, buffer),
         .csel => |i| try emitCsel(i.dst.toReg(), i.src1, i.src2, i.cond, i.size, buffer),
         .csinc => |i| try emitCsinc(i.dst.toReg(), i.src1, i.src2, i.cond, i.size, buffer),
         .csinv => |i| try emitCsinv(i.dst.toReg(), i.src1, i.src2, i.cond, i.size, buffer),
@@ -11287,6 +11288,31 @@ fn emitEonRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
         (0b0 << 21) |
         (@as(u32, rm) << 16) |
         (0b000000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// REV (reverse bytes): REV Xd, Xn
+/// Encoding: sf|1|0|11010110|00000|00001|0|Rn|Rd (for 64-bit)
+///           sf|1|0|11010110|00000|00000|0|Rn|Rd (for 32-bit)
+/// Reverses byte order in register
+fn emitRev(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const sf_bit = sf(size);
+    // opc field: 10 for REV (32-bit), 11 for REV (64-bit)
+    const opc: u2 = if (size == .size64) 0b11 else 0b10;
+
+    const insn: u32 = (@as(u32, sf_bit) << 31) |
+        (0b1 << 30) |
+        (0b0 << 29) |
+        (0b11010110 << 21) |
+        (0b00000 << 16) |
+        (0b0000 << 12) |
+        (@as(u32, opc) << 10) |
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
