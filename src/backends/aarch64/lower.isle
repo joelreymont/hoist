@@ -333,6 +333,20 @@
 (rule (lower (store val addr _flags _offset))
       (aarch64_str val addr))
 
+;; Load pair optimization (LDP)
+;; Pattern: two adjacent loads with 8-byte offset
+;; load(base+0) and load(base+8) => LDP X0, X1, [base]
+(rule (lower (load_pair ty base offset1 offset2))
+      (if-let $true (is_ldp_valid_offset offset1 offset2))
+      (aarch64_ldp ty base offset1))
+
+;; Store pair optimization (STP)
+;; Pattern: two adjacent stores with 8-byte offset
+;; store(val1, base+0) and store(val2, base+8) => STP X0, X1, [base]
+(rule (lower (store_pair val1 val2 base offset1 offset2))
+      (if-let $true (is_stp_valid_offset offset1 offset2))
+      (aarch64_stp val1 val2 base offset1))
+
 ;; Control flow lowering
 
 ;; jump: Unconditional branch
