@@ -240,21 +240,58 @@ pub const OptimizationPass = struct {
 
     /// Replace instruction result with a constant.
     fn replaceWithConst(self: *OptimizationPass, inst: Inst, val: i64) !void {
-        _ = self;
-        _ = inst;
-        _ = val;
-        // TODO: Create iconst instruction and replace
-        // Requires instruction creation API
+        _ = val; // TODO: Store immediate value when immediate pool is implemented
+
+        const results = self.func.dfg.instResults(inst);
+        if (results.len == 0) return;
+
+        const old_value = results[0];
+        const ty = self.func.dfg.valueType(old_value);
+
+        // Create iconst instruction
+        const iconst_data = InstructionData{ .nullary = .{ .opcode = .iconst } };
+        const iconst_inst = try self.func.dfg.makeInst(iconst_data);
+        const const_value = try self.func.dfg.appendInstResult(iconst_inst, ty);
+
+        // Insert iconst before the current instruction
+        if (self.func.layout.instBlock(inst)) |block| {
+            try self.func.layout.insertInstBefore(iconst_inst, inst, block);
+        }
+
+        // Replace all uses
+        try self.func.dfg.replaceAllUses(old_value, const_value);
+        self.changed = true;
     }
 
     /// Replace multiplication with left shift.
     fn replaceWithShift(self: *OptimizationPass, inst: Inst, value: Value, shift: u6) !void {
-        _ = self;
-        _ = inst;
-        _ = value;
-        _ = shift;
-        // TODO: Create ishl instruction and replace
-        // Requires instruction creation API
+        _ = shift; // TODO: Store shift amount when immediate pool is implemented
+
+        const results = self.func.dfg.instResults(inst);
+        if (results.len == 0) return;
+
+        const old_value = results[0];
+        const ty = self.func.dfg.valueType(old_value);
+
+        // Create shift instruction - for now use ishl with placeholder shift value
+        // In full implementation, would encode shift amount as immediate
+        const shift_data = InstructionData{
+            .binary = .{
+                .opcode = .ishl,
+                .args = [2]Value{ value, value }, // TODO: Second arg should be shift immediate
+            },
+        };
+        const shift_inst = try self.func.dfg.makeInst(shift_data);
+        const shift_value = try self.func.dfg.appendInstResult(shift_inst, ty);
+
+        // Insert shift before the current instruction
+        if (self.func.layout.instBlock(inst)) |block| {
+            try self.func.layout.insertInstBefore(shift_inst, inst, block);
+        }
+
+        // Replace all uses
+        try self.func.dfg.replaceAllUses(old_value, shift_value);
+        self.changed = true;
     }
 };
 
