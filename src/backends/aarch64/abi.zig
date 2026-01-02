@@ -103,6 +103,75 @@ fn alignTo16(size: u32) u32 {
     return (size + 15) & ~@as(u32, 15);
 }
 
+/// AAPCS64 va_list structure for variadic function support.
+/// As specified in AAPCS64 section 7.1.4, va_list is a struct containing:
+/// - __stack: pointer to next stack parameter
+/// - __gr_top: pointer to end of GP register save area
+/// - __vr_top: pointer to end of FP/SIMD register save area
+/// - __gr_offs: offset from __gr_top to next GP register argument (negative)
+/// - __vr_offs: offset from __vr_top to next FP/SIMD register argument (negative)
+pub const VaList = struct {
+    /// Pointer to the next stack parameter.
+    stack: u64,
+    /// Pointer to the top (end) of the GP register save area.
+    gr_top: u64,
+    /// Pointer to the top (end) of the FP/SIMD register save area.
+    vr_top: u64,
+    /// Offset from gr_top to the next GP register argument (negative or zero).
+    gr_offs: i32,
+    /// Offset from vr_top to the next FP/SIMD register argument (negative or zero).
+    vr_offs: i32,
+
+    /// Size of the va_list structure in bytes.
+    pub const size_bytes: u32 = 32;
+
+    /// Maximum number of GP registers saved (x0-x7).
+    const max_gp_regs: u32 = 8;
+    /// Maximum number of FP/SIMD registers saved (v0-v7).
+    const max_fp_regs: u32 = 8;
+    /// Size of GP register save area in bytes (8 registers * 8 bytes).
+    const gp_save_area_size: u32 = max_gp_regs * 8;
+    /// Size of FP/SIMD register save area in bytes (8 registers * 16 bytes).
+    const fp_save_area_size: u32 = max_fp_regs * 16;
+
+    /// Initialize a va_list structure.
+    /// - gp_save_area: pointer to the base of the GP register save area
+    /// - fp_save_area: pointer to the base of the FP/SIMD register save area
+    /// - stack_args: pointer to the first stack argument
+    /// - gp_used: number of GP registers already used (0-8)
+    /// - fp_used: number of FP/SIMD registers already used (0-8)
+    pub fn init(
+        gp_save_area: u64,
+        fp_save_area: u64,
+        stack_args: u64,
+        gp_used: u8,
+        fp_used: u8,
+    ) VaList {
+        std.debug.assert(gp_used <= max_gp_regs);
+        std.debug.assert(fp_used <= max_fp_regs);
+
+        return .{
+            .stack = stack_args,
+            .gr_top = gp_save_area + gp_save_area_size,
+            .vr_top = fp_save_area + fp_save_area_size,
+            .gr_offs = -@as(i32, @intCast((max_gp_regs - gp_used) * 8)),
+            .vr_offs = -@as(i32, @intCast((max_fp_regs - fp_used) * 16)),
+        };
+    }
+
+    /// Initialize a va_list structure for a function with no variadic arguments.
+    /// All registers are marked as used, so va_arg will only read from stack.
+    pub fn initEmpty(stack_args: u64) VaList {
+        return .{
+            .stack = stack_args,
+            .gr_top = 0,
+            .vr_top = 0,
+            .gr_offs = 0,
+            .vr_offs = 0,
+        };
+    }
+};
+
 /// Register class for struct passing after AAPCS64 classification.
 pub const StructClass = enum {
     /// Homogeneous Floating-Point Aggregate: 1-4 same-size float members.
@@ -145,10 +214,29 @@ fn isHFA(fields: []const abi_mod.StructField) ?abi_mod.Type {
 /// An HVA is a struct with 1-4 members of the same SIMD/vector type.
 /// AAPCS64 section 6.4.2.
 fn isHVA(fields: []const abi_mod.StructField) ?abi_mod.Type {
-    // Note: Current type system doesn't have vector types yet.
-    // This is a placeholder for future vector support.
-    _ = fields;
-    return null;
+    if (fields.len == 0 or fields.len > 4) return null;
+
+    // Get the type of the first field - must be a vector
+    const first_ty = fields[0].ty;
+    if (!first_ty.isVector()) return null;
+
+    // Extract vector characteristics from first field
+    const first_elem = first_ty.vectorElementType() orelse return null;
+    const first_lanes = first_ty.vectorLaneCount() orelse return null;
+
+    // Verify all fields have the same vector type
+    for (fields) |field| {
+        if (!field.ty.isVector()) return null;
+
+        const elem = field.ty.vectorElementType() orelse return null;
+        const lanes = field.ty.vectorLaneCount() orelse return null;
+
+        // Must match element type, lane count, and size
+        if (elem != first_elem or lanes != first_lanes) return null;
+        if (field.ty.bytes() != first_ty.bytes()) return null;
+    }
+
+    return first_ty;
 }
 
 /// Classify a struct for AAPCS64 parameter passing.
@@ -979,6 +1067,123 @@ test "isHFA with empty struct" {
     try testing.expect(result == null);
 }
 
+test "isHVA with v128 fields" {
+    // struct { v128<4xf32>, v128<4xf32> } - valid HVA
+    const vec_ty = abi_mod.Type{ .v128 = .{ .elem_type = .f32, .lane_count = 4 } };
+    const fields1 = [_]abi_mod.StructField{
+        .{ .ty = vec_ty, .offset = 0 },
+        .{ .ty = vec_ty, .offset = 16 },
+    };
+    const result1 = isHVA(&fields1);
+    try testing.expect(result1 != null);
+    try testing.expect(std.meta.eql(result1.?, vec_ty));
+
+    // struct { v128<2xf64>, v128<2xf64>, v128<2xf64> } - valid HVA (3 members)
+    const vec_ty2 = abi_mod.Type{ .v128 = .{ .elem_type = .f64, .lane_count = 2 } };
+    const fields2 = [_]abi_mod.StructField{
+        .{ .ty = vec_ty2, .offset = 0 },
+        .{ .ty = vec_ty2, .offset = 16 },
+        .{ .ty = vec_ty2, .offset = 32 },
+    };
+    const result2 = isHVA(&fields2);
+    try testing.expect(result2 != null);
+    try testing.expect(std.meta.eql(result2.?, vec_ty2));
+}
+
+test "isHVA with v64 fields" {
+    // struct { v64<2xf32>, v64<2xf32> } - valid HVA
+    const vec_ty = abi_mod.Type{ .v64 = .{ .elem_type = .f32, .lane_count = 2 } };
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = vec_ty, .offset = 0 },
+        .{ .ty = vec_ty, .offset = 8 },
+    };
+    const result = isHVA(&fields);
+    try testing.expect(result != null);
+    try testing.expect(std.meta.eql(result.?, vec_ty));
+}
+
+test "isHVA with maximum 4 members" {
+    // struct { v128, v128, v128, v128 } - valid HVA (exactly 4 members)
+    const vec_ty = abi_mod.Type{ .v128 = .{ .elem_type = .i32, .lane_count = 4 } };
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = vec_ty, .offset = 0 },
+        .{ .ty = vec_ty, .offset = 16 },
+        .{ .ty = vec_ty, .offset = 32 },
+        .{ .ty = vec_ty, .offset = 48 },
+    };
+    const result = isHVA(&fields);
+    try testing.expect(result != null);
+    try testing.expect(std.meta.eql(result.?, vec_ty));
+}
+
+test "isHVA with mixed vector types" {
+    // struct { v128<4xf32>, v128<2xf64> } - not HVA (different element types)
+    const vec_ty1 = abi_mod.Type{ .v128 = .{ .elem_type = .f32, .lane_count = 4 } };
+    const vec_ty2 = abi_mod.Type{ .v128 = .{ .elem_type = .f64, .lane_count = 2 } };
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = vec_ty1, .offset = 0 },
+        .{ .ty = vec_ty2, .offset = 16 },
+    };
+    const result = isHVA(&fields);
+    try testing.expect(result == null);
+}
+
+test "isHVA with mixed vector sizes" {
+    // struct { v64<2xf32>, v128<4xf32> } - not HVA (different sizes)
+    const vec_ty1 = abi_mod.Type{ .v64 = .{ .elem_type = .f32, .lane_count = 2 } };
+    const vec_ty2 = abi_mod.Type{ .v128 = .{ .elem_type = .f32, .lane_count = 4 } };
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = vec_ty1, .offset = 0 },
+        .{ .ty = vec_ty2, .offset = 8 },
+    };
+    const result = isHVA(&fields);
+    try testing.expect(result == null);
+}
+
+test "isHVA with non-vector fields" {
+    // struct { i32, v128 } - not HVA (contains non-vector)
+    const vec_ty = abi_mod.Type{ .v128 = .{ .elem_type = .f32, .lane_count = 4 } };
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = .i32, .offset = 0 },
+        .{ .ty = vec_ty, .offset = 16 },
+    };
+    const result = isHVA(&fields);
+    try testing.expect(result == null);
+}
+
+test "isHVA with too many fields" {
+    // struct { v128, v128, v128, v128, v128 } - not HVA (> 4 members)
+    const vec_ty = abi_mod.Type{ .v128 = .{ .elem_type = .f32, .lane_count = 4 } };
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = vec_ty, .offset = 0 },
+        .{ .ty = vec_ty, .offset = 16 },
+        .{ .ty = vec_ty, .offset = 32 },
+        .{ .ty = vec_ty, .offset = 48 },
+        .{ .ty = vec_ty, .offset = 64 },
+    };
+    const result = isHVA(&fields);
+    try testing.expect(result == null);
+}
+
+test "isHVA with empty struct" {
+    // struct {} - not HVA (no members)
+    const fields = [_]abi_mod.StructField{};
+    const result = isHVA(&fields);
+    try testing.expect(result == null);
+}
+
+test "isHVA with different lane counts" {
+    // struct { v128<4xi32>, v128<2xi32> } - not HVA (different lane counts)
+    const vec_ty1 = abi_mod.Type{ .v128 = .{ .elem_type = .i32, .lane_count = 4 } };
+    const vec_ty2 = abi_mod.Type{ .v128 = .{ .elem_type = .i32, .lane_count = 2 } };
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = vec_ty1, .offset = 0 },
+        .{ .ty = vec_ty2, .offset = 16 },
+    };
+    const result = isHVA(&fields);
+    try testing.expect(result == null);
+}
+
 test "classifyStruct HFA" {
     // struct { f32, f32 } - HFA
     const fields = [_]abi_mod.StructField{
@@ -990,6 +1195,20 @@ test "classifyStruct HFA" {
     try testing.expectEqual(StructClass.hfa, result.class);
     try testing.expect(result.elem_ty != null);
     try testing.expect(std.meta.eql(result.elem_ty.?, abi_mod.Type.f32));
+}
+
+test "classifyStruct HVA" {
+    // struct { v128<4xf32>, v128<4xf32> } - HVA
+    const vec_ty = abi_mod.Type{ .v128 = .{ .elem_type = .f32, .lane_count = 4 } };
+    const fields = [_]abi_mod.StructField{
+        .{ .ty = vec_ty, .offset = 0 },
+        .{ .ty = vec_ty, .offset = 16 },
+    };
+    const ty = abi_mod.Type{ .@"struct" = &fields };
+    const result = classifyStruct(ty);
+    try testing.expectEqual(StructClass.hva, result.class);
+    try testing.expect(result.elem_ty != null);
+    try testing.expect(std.meta.eql(result.elem_ty.?, vec_ty));
 }
 
 test "classifyStruct general" {
@@ -1776,4 +1995,414 @@ test "CallerSavedTracker comprehensive register coverage" {
     // Emit restores
     try tracker.emitRestores(&buffer, 0);
     try testing.expect(buffer.data.items.len > 0);
+}
+
+test "VaList size_bytes constant" {
+    // VaList should be 32 bytes: 2 u64 pointers + 2 u64 pointers + 2 i32 offsets
+    // = 8 + 8 + 8 + 4 + 4 = 32 bytes
+    try testing.expectEqual(@as(u32, 32), VaList.size_bytes);
+}
+
+test "VaList init with no registers used" {
+    // When no registers have been used, all registers are available
+    const gp_save_area: u64 = 0x1000;
+    const fp_save_area: u64 = 0x2000;
+    const stack_args: u64 = 0x3000;
+
+    const va_list = VaList.init(gp_save_area, fp_save_area, stack_args, 0, 0);
+
+    try testing.expectEqual(stack_args, va_list.stack);
+    try testing.expectEqual(gp_save_area + VaList.gp_save_area_size, va_list.gr_top);
+    try testing.expectEqual(fp_save_area + VaList.fp_save_area_size, va_list.vr_top);
+    try testing.expectEqual(@as(i32, -64), va_list.gr_offs); // -8 * 8 = -64
+    try testing.expectEqual(@as(i32, -128), va_list.vr_offs); // -8 * 16 = -128
+}
+
+test "VaList init with all GP registers used" {
+    // When all 8 GP registers have been used, gr_offs should be 0
+    const gp_save_area: u64 = 0x1000;
+    const fp_save_area: u64 = 0x2000;
+    const stack_args: u64 = 0x3000;
+
+    const va_list = VaList.init(gp_save_area, fp_save_area, stack_args, 8, 0);
+
+    try testing.expectEqual(@as(i32, 0), va_list.gr_offs);
+    try testing.expectEqual(@as(i32, -128), va_list.vr_offs);
+}
+
+test "VaList init with all FP registers used" {
+    // When all 8 FP registers have been used, vr_offs should be 0
+    const gp_save_area: u64 = 0x1000;
+    const fp_save_area: u64 = 0x2000;
+    const stack_args: u64 = 0x3000;
+
+    const va_list = VaList.init(gp_save_area, fp_save_area, stack_args, 0, 8);
+
+    try testing.expectEqual(@as(i32, -64), va_list.gr_offs);
+    try testing.expectEqual(@as(i32, 0), va_list.vr_offs);
+}
+
+test "VaList init with partial register usage" {
+    // Test with 3 GP registers and 2 FP registers used
+    const gp_save_area: u64 = 0x1000;
+    const fp_save_area: u64 = 0x2000;
+    const stack_args: u64 = 0x3000;
+
+    const va_list = VaList.init(gp_save_area, fp_save_area, stack_args, 3, 2);
+
+    // 3 GP regs used means 5 available: -(8-3)*8 = -40
+    try testing.expectEqual(@as(i32, -40), va_list.gr_offs);
+    // 2 FP regs used means 6 available: -(8-2)*16 = -96
+    try testing.expectEqual(@as(i32, -96), va_list.vr_offs);
+}
+
+test "VaList init with all registers used" {
+    // When all registers have been used, both offsets should be 0
+    const gp_save_area: u64 = 0x1000;
+    const fp_save_area: u64 = 0x2000;
+    const stack_args: u64 = 0x3000;
+
+    const va_list = VaList.init(gp_save_area, fp_save_area, stack_args, 8, 8);
+
+    try testing.expectEqual(@as(i32, 0), va_list.gr_offs);
+    try testing.expectEqual(@as(i32, 0), va_list.vr_offs);
+}
+
+test "VaList initEmpty" {
+    // Empty va_list should have all offsets at 0 and only stack pointer set
+    const stack_args: u64 = 0x3000;
+
+    const va_list = VaList.initEmpty(stack_args);
+
+    try testing.expectEqual(stack_args, va_list.stack);
+    try testing.expectEqual(@as(u64, 0), va_list.gr_top);
+    try testing.expectEqual(@as(u64, 0), va_list.vr_top);
+    try testing.expectEqual(@as(i32, 0), va_list.gr_offs);
+    try testing.expectEqual(@as(i32, 0), va_list.vr_offs);
+}
+
+test "VaList gr_top calculation" {
+    // Verify gr_top points to the end of the GP save area
+    const gp_save_area: u64 = 0x1000;
+    const fp_save_area: u64 = 0x2000;
+    const stack_args: u64 = 0x3000;
+
+    const va_list = VaList.init(gp_save_area, fp_save_area, stack_args, 0, 0);
+
+    // gr_top should be base + 8 registers * 8 bytes = base + 64
+    try testing.expectEqual(@as(u64, 0x1040), va_list.gr_top);
+}
+
+test "VaList vr_top calculation" {
+    // Verify vr_top points to the end of the FP save area
+    const gp_save_area: u64 = 0x1000;
+    const fp_save_area: u64 = 0x2000;
+    const stack_args: u64 = 0x3000;
+
+    const va_list = VaList.init(gp_save_area, fp_save_area, stack_args, 0, 0);
+
+    // vr_top should be base + 8 registers * 16 bytes = base + 128
+    try testing.expectEqual(@as(u64, 0x2080), va_list.vr_top);
+}
+
+test "VaList offset calculation for single GP register used" {
+    // When 1 GP register is used, 7 remain available
+    const va_list = VaList.init(0x1000, 0x2000, 0x3000, 1, 0);
+
+    // Offset should be -(8-1)*8 = -56
+    try testing.expectEqual(@as(i32, -56), va_list.gr_offs);
+}
+
+test "VaList offset calculation for single FP register used" {
+    // When 1 FP register is used, 7 remain available
+    const va_list = VaList.init(0x1000, 0x2000, 0x3000, 0, 1);
+
+    // Offset should be -(8-1)*16 = -112
+    try testing.expectEqual(@as(i32, -112), va_list.vr_offs);
+}
+
+test "VaList realistic scenario with function call" {
+    // Simulate: void foo(int a, int b, int c, ...)
+    // a, b, c use x0, x1, x2 (3 GP registers)
+    // Remaining variadic args can use x3-x7 (5 more GP registers)
+    const gp_save_area: u64 = 0x7fff_ffff_f000;
+    const fp_save_area: u64 = 0x7fff_ffff_f100;
+    const stack_args: u64 = 0x7fff_ffff_f200;
+
+    const va_list = VaList.init(gp_save_area, fp_save_area, stack_args, 3, 0);
+
+    // Verify GP offset allows access to 5 remaining registers
+    try testing.expectEqual(@as(i32, -40), va_list.gr_offs); // -(8-3)*8
+    try testing.expectEqual(@as(i32, -128), va_list.vr_offs); // -(8-0)*16
+
+    // Verify pointers are set correctly
+    try testing.expectEqual(@as(u64, 0x7fff_ffff_f040), va_list.gr_top);
+    try testing.expectEqual(@as(u64, 0x7fff_ffff_f180), va_list.vr_top);
+    try testing.expectEqual(stack_args, va_list.stack);
+}
+
+test "VaList with mixed argument types" {
+    // Simulate: void foo(int a, double b, int c, double d, ...)
+    // a uses x0, b uses v0, c uses x1, d uses v1
+    // So 2 GP regs and 2 FP regs are used
+    const gp_save_area: u64 = 0x1000;
+    const fp_save_area: u64 = 0x2000;
+    const stack_args: u64 = 0x3000;
+
+    const va_list = VaList.init(gp_save_area, fp_save_area, stack_args, 2, 2);
+
+    // 6 GP registers remain: -(8-2)*8 = -48
+    try testing.expectEqual(@as(i32, -48), va_list.gr_offs);
+    // 6 FP registers remain: -(8-2)*16 = -96
+    try testing.expectEqual(@as(i32, -96), va_list.vr_offs);
+}
+
+test "VaList constants match AAPCS64 specification" {
+    // Verify constants match the AAPCS64 specification
+    try testing.expectEqual(@as(u32, 8), VaList.max_gp_regs);
+    try testing.expectEqual(@as(u32, 8), VaList.max_fp_regs);
+    try testing.expectEqual(@as(u32, 64), VaList.gp_save_area_size); // 8 * 8
+    try testing.expectEqual(@as(u32, 128), VaList.fp_save_area_size); // 8 * 16
+}
+
+/// Varargs register save area per AAPCS64 specification.
+/// For variadic functions, argument registers must be saved to allow va_start/va_arg to work.
+/// Reference: ARM AAPCS64 Appendix B (Variable Argument Lists)
+/// https://github.com/ARM-software/abi-aa/blob/main/aapcs64/aapcs64.rst
+///
+/// The save area layout (high to low address):
+///   [General register save area: X0-X7] <- 64 bytes, 16-byte aligned
+///   [FP/SIMD register save area: V0-V7] <- 128 bytes, 16-byte aligned
+///   Total: 192 bytes
+///
+/// Note: The specification allows optimization when FP/SIMD registers are not used,
+/// but this implementation always reserves the full save area for simplicity.
+pub const VarargsRegisterSaveArea = struct {
+    /// Size of general register save area (8 registers * 8 bytes).
+    pub const gr_save_size: u32 = 64;
+    /// Size of FP/SIMD register save area (8 registers * 16 bytes).
+    pub const vr_save_size: u32 = 128;
+    /// Total size of both save areas.
+    pub const total_size: u32 = gr_save_size + vr_save_size;
+
+    /// Stack offset to the start of the general register save area.
+    /// This is relative to the stack pointer after prologue.
+    gr_save_offset: i16,
+    /// Stack offset to the start of the FP/SIMD register save area.
+    /// This is relative to the stack pointer after prologue.
+    vr_save_offset: i16,
+
+    /// Initialize save area with given stack offset.
+    /// The offset should point to the start of the general register save area.
+    /// FP/SIMD save area will be placed immediately after.
+    pub fn init(stack_offset: i16) VarargsRegisterSaveArea {
+        return .{
+            .gr_save_offset = stack_offset,
+            .vr_save_offset = stack_offset + @as(i16, @intCast(gr_save_size)),
+        };
+    }
+
+    /// Emit instructions to save general argument registers (X0-X7) to the save area.
+    pub fn emitSaveGeneralRegs(
+        self: VarargsRegisterSaveArea,
+        buffer: *buffer_mod.MachBuffer,
+    ) !void {
+        const emit_fn = @import("emit.zig").emit;
+        const sp = Reg.fromPReg(PReg.new(.int, 31)); // SP
+
+        // Save X0-X7 in pairs using STP
+        var offset = self.gr_save_offset;
+        var i: u5 = 0;
+        while (i < 8) : (i += 2) {
+            const reg1 = Reg.fromPReg(PReg.new(.int, i));
+            const reg2 = Reg.fromPReg(PReg.new(.int, i + 1));
+            try emit_fn(.{ .stp = .{
+                .src1 = reg1,
+                .src2 = reg2,
+                .base = sp,
+                .offset = offset,
+                .size = .size64,
+            } }, buffer);
+            offset += 16;
+        }
+    }
+
+    /// Emit instructions to save FP/SIMD argument registers (V0-V7) to the save area.
+    pub fn emitSaveFloatRegs(
+        self: VarargsRegisterSaveArea,
+        buffer: *buffer_mod.MachBuffer,
+    ) !void {
+        const emit_fn = @import("emit.zig").emit;
+        const sp = Reg.fromPReg(PReg.new(.int, 31)); // SP
+
+        // Save V0-V7 in pairs using STP (128-bit each)
+        var offset = self.vr_save_offset;
+        var i: u5 = 0;
+        while (i < 8) : (i += 2) {
+            const reg1 = Reg.fromPReg(PReg.new(.float, i));
+            const reg2 = Reg.fromPReg(PReg.new(.float, i + 1));
+            try emit_fn(.{ .stp = .{
+                .src1 = reg1,
+                .src2 = reg2,
+                .base = sp,
+                .offset = offset,
+                .size = .size128,
+            } }, buffer);
+            offset += 32; // Two 128-bit regs = 32 bytes
+        }
+    }
+
+    /// Emit instructions to save all argument registers to the save area.
+    /// This should be called in the prologue of variadic functions.
+    pub fn emitSaveAll(
+        self: VarargsRegisterSaveArea,
+        buffer: *buffer_mod.MachBuffer,
+    ) !void {
+        try self.emitSaveGeneralRegs(buffer);
+        try self.emitSaveFloatRegs(buffer);
+    }
+};
+
+test "VarargsRegisterSaveArea init" {
+    const save_area = VarargsRegisterSaveArea.init(0);
+    try testing.expectEqual(@as(i16, 0), save_area.gr_save_offset);
+    try testing.expectEqual(@as(i16, 64), save_area.vr_save_offset);
+}
+
+test "VarargsRegisterSaveArea size constants" {
+    try testing.expectEqual(@as(u32, 64), VarargsRegisterSaveArea.gr_save_size);
+    try testing.expectEqual(@as(u32, 128), VarargsRegisterSaveArea.vr_save_size);
+    try testing.expectEqual(@as(u32, 192), VarargsRegisterSaveArea.total_size);
+}
+
+test "VarargsRegisterSaveArea emitSaveGeneralRegs" {
+    const save_area = VarargsRegisterSaveArea.init(16);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try save_area.emitSaveGeneralRegs(&buffer);
+
+    // Should emit 4 STP instructions (X0/X1, X2/X3, X4/X5, X6/X7)
+    try testing.expectEqual(@as(usize, 16), buffer.data.items.len);
+}
+
+test "VarargsRegisterSaveArea emitSaveFloatRegs" {
+    const save_area = VarargsRegisterSaveArea.init(16);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try save_area.emitSaveFloatRegs(&buffer);
+
+    // Should emit 4 STP instructions (V0/V1, V2/V3, V4/V5, V6/V7)
+    try testing.expectEqual(@as(usize, 16), buffer.data.items.len);
+}
+
+test "VarargsRegisterSaveArea emitSaveAll" {
+    const save_area = VarargsRegisterSaveArea.init(32);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try save_area.emitSaveAll(&buffer);
+
+    // Should emit 8 STP instructions (4 for general regs, 4 for float regs)
+    try testing.expectEqual(@as(usize, 32), buffer.data.items.len);
+}
+
+test "VarargsRegisterSaveArea offset calculation" {
+    const save_area = VarargsRegisterSaveArea.init(64);
+
+    // General register save area starts at 64
+    try testing.expectEqual(@as(i16, 64), save_area.gr_save_offset);
+
+    // FP/SIMD save area starts 64 bytes after general regs
+    try testing.expectEqual(@as(i16, 128), save_area.vr_save_offset);
+}
+
+test "VarargsRegisterSaveArea with zero offset" {
+    const save_area = VarargsRegisterSaveArea.init(0);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try save_area.emitSaveAll(&buffer);
+
+    // Should still generate correct code at offset 0
+    try testing.expectEqual(@as(usize, 32), buffer.data.items.len);
+}
+
+test "VarargsRegisterSaveArea frame integration" {
+    // Test that save area can be integrated into a stack frame
+    const args = [_]abi_mod.Type{ .i64, .i64 };
+    const sig = abi_mod.ABISignature.init(&args, &.{.i64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    // Set up a frame with locals
+    callee.setLocalsSize(32);
+
+    // Calculate offset for varargs save area after FP/LR and callee-saves
+    // Frame layout: [FP/LR] [callee-saves] [varargs save area] [locals]
+    const varargs_offset = 16; // After FP/LR
+
+    const save_area = VarargsRegisterSaveArea.init(@intCast(varargs_offset));
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    // Emit prologue
+    try callee.emitPrologue(&buffer);
+
+    const prologue_len = buffer.data.items.len;
+
+    // Emit varargs save
+    try save_area.emitSaveAll(&buffer);
+
+    // Verify save instructions were added
+    try testing.expect(buffer.data.items.len > prologue_len);
+}
+
+test "VarargsRegisterSaveArea alignment" {
+    // Verify that save area sizes maintain 16-byte alignment
+    try testing.expectEqual(@as(u32, 0), VarargsRegisterSaveArea.gr_save_size % 16);
+    try testing.expectEqual(@as(u32, 0), VarargsRegisterSaveArea.vr_save_size % 16);
+    try testing.expectEqual(@as(u32, 0), VarargsRegisterSaveArea.total_size % 16);
+}
+
+test "VarargsRegisterSaveArea general register coverage" {
+    // Ensure all 8 argument registers are saved
+    const save_area = VarargsRegisterSaveArea.init(0);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try save_area.emitSaveGeneralRegs(&buffer);
+
+    // 4 STP instructions = 16 bytes, saves all X0-X7
+    try testing.expectEqual(@as(usize, 16), buffer.data.items.len);
+
+    // Verify the instructions are STP (opcode check)
+    // STP 64-bit has opcode bits [31-22] = 0b1010100100
+    for (0..4) |i| {
+        const inst_bytes = buffer.data.items[i * 4 .. (i + 1) * 4];
+        const inst = std.mem.bytesToValue(u32, inst_bytes);
+        const opcode = (inst >> 22) & 0x3FF;
+        try testing.expectEqual(@as(u32, 0b1010100100), opcode);
+    }
+}
+
+test "VarargsRegisterSaveArea float register coverage" {
+    // Ensure all 8 FP/SIMD argument registers are saved
+    const save_area = VarargsRegisterSaveArea.init(0);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try save_area.emitSaveFloatRegs(&buffer);
+
+    // 4 STP instructions = 16 bytes, saves all V0-V7
+    try testing.expectEqual(@as(usize, 16), buffer.data.items.len);
 }
