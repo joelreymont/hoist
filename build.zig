@@ -2,6 +2,12 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
+
+    // Optimization levels (use -Doptimize=<level>):
+    //   Debug        - No optimizations, safety checks enabled (default)
+    //   ReleaseSafe  - Optimizations enabled, safety checks enabled
+    //   ReleaseSmall - Optimize for small binary size
+    //   ReleaseFast  - Optimize for execution speed, safety checks disabled
     const optimize = b.standardOptimizeOption(.{});
 
     // Library
@@ -132,13 +138,13 @@ pub fn build(b: *std.Build) void {
     fuzz_step.dependOn(&run_fuzz_compile.step);
     fuzz_step.dependOn(&run_fuzz_regalloc.step);
 
-    // ISLE compiler executable
+    // ISLE compiler executable (respects user's optimization level)
     const isle_compiler = b.addExecutable(.{
         .name = "isle_compiler",
         .root_module = b.createModule(.{
             .root_source_file = b.path("tools/isle_compiler.zig"),
             .target = target,
-            .optimize = .ReleaseFast,
+            .optimize = optimize,
         }),
     });
 

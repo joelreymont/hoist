@@ -27,8 +27,18 @@ Key components:
 ### Build
 
 ```bash
+# Default (Debug mode)
 zig build
+
+# With optimization level
+zig build -Doptimize=ReleaseFast
 ```
+
+Available optimization levels:
+- `Debug` - No optimizations, all safety checks enabled (default)
+- `ReleaseSafe` - Optimizations enabled, safety checks enabled
+- `ReleaseSmall` - Optimize for small binary size
+- `ReleaseFast` - Optimize for execution speed, safety checks disabled
 
 ### Run Tests
 
