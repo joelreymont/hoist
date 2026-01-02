@@ -112,6 +112,16 @@ pub const LabelUseKind = enum {
     }
 };
 
+/// Constant pool entry.
+const ConstPoolEntry = struct {
+    /// 64-bit constant value.
+    value: u64,
+    /// Size in bytes (4 for f32/i32, 8 for f64/i64).
+    size: u8,
+    /// Label for this constant (for LDR literal references).
+    label: MachLabel,
+};
+
 /// Machine code buffer with label resolution and fixups.
 pub const MachBuffer = struct {
     /// Raw bytes of emitted code.
@@ -124,6 +134,10 @@ pub const MachBuffer = struct {
     fixups: std.ArrayList(LabelFixup),
     /// Resolved label offsets (UNKNOWN_OFFSET if not yet bound).
     label_offsets: std.ArrayList(CodeOffset),
+    /// Constant pool entries.
+    const_pool: std.ArrayList(ConstPoolEntry),
+    /// Map from constant value to pool index (for deduplication).
+    const_pool_map: std.AutoHashMap(u64, u32),
     /// Allocator for dynamic allocations.
     allocator: Allocator,
 
@@ -136,6 +150,8 @@ pub const MachBuffer = struct {
             .traps = std.ArrayList(MachTrap){},
             .fixups = std.ArrayList(LabelFixup){},
             .label_offsets = std.ArrayList(CodeOffset){},
+            .const_pool = std.ArrayList(ConstPoolEntry){},
+            .const_pool_map = std.AutoHashMap(u64, u32).init(allocator),
             .allocator = allocator,
         };
     }
@@ -146,6 +162,8 @@ pub const MachBuffer = struct {
         self.traps.deinit(self.allocator);
         self.fixups.deinit(self.allocator);
         self.label_offsets.deinit(self.allocator);
+        self.const_pool.deinit(self.allocator);
+        self.const_pool_map.deinit();
     }
 
     /// Get current code offset.
@@ -237,6 +255,66 @@ pub const MachBuffer = struct {
             .offset = offset,
             .code = code,
         });
+    }
+
+    /// Add a constant to the pool, return its label.
+    /// Deduplicates identical constants.
+    pub fn addConstant(self: *MachBuffer, value: u64, size: u8) !MachLabel {
+        // Check if constant already exists
+        if (self.const_pool_map.get(value)) |index| {
+            return self.const_pool.items[index].label;
+        }
+
+        // Allocate new label for this constant
+        const label = try self.allocLabel();
+
+        // Add to pool
+        const index: u32 = @intCast(self.const_pool.items.len);
+        try self.const_pool.append(self.allocator, .{
+            .value = value,
+            .size = size,
+            .label = label,
+        });
+        try self.const_pool_map.put(value, index);
+
+        return label;
+    }
+
+    /// Emit the constant pool at the current offset.
+    /// Should be called at the end of function emission.
+    pub fn emitConstPool(self: *MachBuffer) !void {
+        if (self.const_pool.items.len == 0) {
+            return;
+        }
+
+        // Align to 8 bytes for constant pool
+        try self.alignTo(8);
+
+        // Emit each constant and bind its label
+        for (self.const_pool.items) |entry| {
+            try self.bindLabel(entry.label);
+
+            if (entry.size == 8) {
+                try self.put8(entry.value);
+            } else if (entry.size == 4) {
+                try self.put4(@intCast(entry.value & 0xFFFFFFFF));
+            } else {
+                return error.InvalidConstantSize;
+            }
+        }
+    }
+
+    /// Align code buffer to specified byte boundary.
+    fn alignTo(self: *MachBuffer, alignment: u8) !void {
+        const offset = self.curOffset();
+        const remainder = offset % alignment;
+        if (remainder != 0) {
+            const padding = alignment - remainder;
+            var i: u8 = 0;
+            while (i < padding) : (i += 1) {
+                try self.put1(0); // NOP or zero padding
+            }
+        }
     }
 
     /// Patch a 19-bit branch offset into an instruction.
