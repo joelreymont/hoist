@@ -22,6 +22,38 @@ pub const VCodeBuildDirection = enum {
     forward,
 };
 
+/// Instruction "color" - tracks side effects and value flow.
+///
+/// Colors help the lowering framework determine when instructions can be
+/// sunk (delayed until their results are used) vs when they must be emitted
+/// immediately due to side effects.
+///
+/// Based on Cranelift's machinst/lower.rs:InsnColor.
+pub const InsnColor = enum {
+    /// Pure value-producing instruction (e.g., iconst, iadd).
+    /// Can be sunk to point of use.
+    get_value,
+
+    /// Instruction that sets/writes a value (e.g., store, call with results).
+    /// Has side effects, cannot be freely reordered.
+    set_output,
+
+    /// Instruction producing multiple results (e.g., iadd_cout).
+    /// May have special handling for multi-def constraints.
+    multi_result,
+
+    pub fn hasSideEffects(self: InsnColor) bool {
+        return switch (self) {
+            .get_value => false,
+            .set_output, .multi_result => true,
+        };
+    }
+
+    pub fn canSink(self: InsnColor) bool {
+        return self == .get_value;
+    }
+};
+
 /// VCodeBuilder - builds VCode incrementally during lowering.
 ///
 /// Wraps a VCode and provides higher-level APIs for instruction emission,
@@ -45,6 +77,10 @@ pub fn VCodeBuilder(comptime Inst: type) type {
         /// Instructions for current block (reversed if backward emission).
         current_block_insns: std.ArrayList(Inst),
 
+        /// Color of each instruction in current block.
+        /// Parallel to current_block_insns.
+        current_block_colors: std.ArrayList(InsnColor),
+
         const Self = @This();
 
         /// Create a new VCodeBuilder.
@@ -58,10 +94,12 @@ pub fn VCodeBuilder(comptime Inst: type) type {
                 .allocator = allocator,
                 .current_block = null,
                 .current_block_insns = .{},
+                .current_block_colors = .{},
             };
         }
 
         pub fn deinit(self: *Self) void {
+            self.current_block_colors.deinit(self.allocator);
             self.current_block_insns.deinit(self.allocator);
             self.vcode.deinit();
         }
@@ -82,8 +120,25 @@ pub fn VCodeBuilder(comptime Inst: type) type {
         ///
         /// If building backwards, instructions are buffered and reversed
         /// when the block is finished.
+        ///
+        /// Default color is get_value (pure value-producing).
         pub fn emit(self: *Self, inst: Inst) !void {
+            try self.emitWithColor(inst, .get_value);
+        }
+
+        /// Emit an instruction with explicit color.
+        ///
+        /// The color tracks side effects and helps determine if the instruction
+        /// can be sunk to its point of use or must be emitted immediately.
+        pub fn emitWithColor(self: *Self, inst: Inst, color: InsnColor) !void {
             try self.current_block_insns.append(self.allocator, inst);
+            try self.current_block_colors.append(self.allocator, color);
+        }
+
+        /// Get the color of the last emitted instruction.
+        pub fn lastInsnColor(self: *const Self) ?InsnColor {
+            if (self.current_block_colors.items.len == 0) return null;
+            return self.current_block_colors.items[self.current_block_colors.items.len - 1];
         }
 
         /// Finish the current block with the given successor blocks.
@@ -103,6 +158,7 @@ pub fn VCodeBuilder(comptime Inst: type) type {
             // Reverse instructions if backward emission.
             if (self.direction == .backward) {
                 std.mem.reverse(Inst, self.current_block_insns.items);
+                std.mem.reverse(InsnColor, self.current_block_colors.items);
             }
 
             // Add all instructions to VCode.
@@ -113,8 +169,9 @@ pub fn VCodeBuilder(comptime Inst: type) type {
             // Finish the block in VCode.
             try self.vcode.finishBlock(block, successors);
 
-            // Clear instruction buffer.
+            // Clear instruction and color buffers.
             self.current_block_insns.clearRetainingCapacity();
+            self.current_block_colors.clearRetainingCapacity();
         }
 
         /// Set the entry block.
@@ -292,4 +349,45 @@ test "VCodeBuilder with block parameters" {
     try testing.expectEqual(@as(usize, 2), block.params.len);
     try testing.expectEqual(@as(u32, 0), block.params[0].index());
     try testing.expectEqual(@as(u32, 1), block.params[1].index());
+}
+
+test "VCodeBuilder instruction color tracking" {
+    const TestInst = struct { opcode: u8 };
+
+    var builder = VCodeBuilder(TestInst).init(
+        testing.allocator,
+        .forward,
+    );
+    defer builder.deinit();
+
+    _ = try builder.startBlock(&.{});
+
+    // Emit pure value-producing instruction (default).
+    try builder.emit(.{ .opcode = 0x01 });
+    try testing.expectEqual(InsnColor.get_value, builder.lastInsnColor().?);
+
+    // Emit instruction with side effects.
+    try builder.emitWithColor(.{ .opcode = 0x02 }, .set_output);
+    try testing.expectEqual(InsnColor.set_output, builder.lastInsnColor().?);
+
+    // Emit multi-result instruction.
+    try builder.emitWithColor(.{ .opcode = 0x03 }, .multi_result);
+    try testing.expectEqual(InsnColor.multi_result, builder.lastInsnColor().?);
+
+    try builder.finishBlock(&.{});
+
+    var vcode = try builder.finish();
+    defer vcode.deinit();
+
+    try testing.expectEqual(@as(usize, 3), vcode.numInsns());
+}
+
+test "InsnColor side effect detection" {
+    try testing.expect(!InsnColor.get_value.hasSideEffects());
+    try testing.expect(InsnColor.set_output.hasSideEffects());
+    try testing.expect(InsnColor.multi_result.hasSideEffects());
+
+    try testing.expect(InsnColor.get_value.canSink());
+    try testing.expect(!InsnColor.set_output.canSink());
+    try testing.expect(!InsnColor.multi_result.canSink());
 }
