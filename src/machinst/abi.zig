@@ -16,18 +16,39 @@ pub const StructField = struct {
     offset: u32,
 };
 
+/// Element type for vectors.
+pub const VectorElementType = enum {
+    i8,
+    i16,
+    i32,
+    i64,
+    f32,
+    f64,
+};
+
 /// Type stub for ABI.
 pub const Type = union(enum) {
     i32,
     i64,
     f32,
     f64,
+    /// 64-bit SIMD vector (e.g., D register on ARM64).
+    v64: struct {
+        elem_type: VectorElementType,
+        lane_count: u8,
+    },
+    /// 128-bit SIMD vector (e.g., Q register on ARM64, XMM on x64).
+    v128: struct {
+        elem_type: VectorElementType,
+        lane_count: u8,
+    },
     @"struct": []const StructField,
 
     pub fn regClass(self: Type) RegClass {
         return switch (self) {
             .i32, .i64 => .int,
             .f32, .f64 => .float,
+            .v64, .v128 => .vector,
             .@"struct" => .int, // Default to int, caller should use classifyStruct
         };
     }
@@ -36,11 +57,51 @@ pub const Type = union(enum) {
         return switch (self) {
             .i32, .f32 => 4,
             .i64, .f64 => 8,
+            .v64 => 8,
+            .v128 => 16,
             .@"struct" => |fields| blk: {
                 if (fields.len == 0) break :blk 0;
                 const last = fields[fields.len - 1];
                 break :blk last.offset + last.ty.bytes();
             },
+        };
+    }
+
+    /// Check if this type is a vector type.
+    pub fn isVector(self: Type) bool {
+        return switch (self) {
+            .v64, .v128 => true,
+            else => false,
+        };
+    }
+
+    /// Get the element type of a vector type.
+    /// Returns null if this is not a vector type.
+    pub fn vectorElementType(self: Type) ?VectorElementType {
+        return switch (self) {
+            .v64 => |v| v.elem_type,
+            .v128 => |v| v.elem_type,
+            else => null,
+        };
+    }
+
+    /// Get the lane count of a vector type.
+    /// Returns null if this is not a vector type.
+    pub fn vectorLaneCount(self: Type) ?u8 {
+        return switch (self) {
+            .v64 => |v| v.lane_count,
+            .v128 => |v| v.lane_count,
+            else => null,
+        };
+    }
+
+    /// Get the size in bytes of a vector element type.
+    pub fn vectorElementBytes(elem_type: VectorElementType) u32 {
+        return switch (elem_type) {
+            .i8 => 1,
+            .i16 => 2,
+            .i32, .f32 => 4,
+            .i64, .f64 => 8,
         };
     }
 };
@@ -583,4 +644,163 @@ test "ABIMachineSpec return values" {
     // Second return in RDX
     try testing.expect(ret_locs[1].slots[0] == .reg);
     try testing.expectEqual(PReg.new(.int, 2), ret_locs[1].slots[0].reg.preg);
+}
+
+test "vector type v64 properties" {
+    const vec_ty = Type{ .v64 = .{ .elem_type = .f32, .lane_count = 2 } };
+
+    // Check type classification
+    try testing.expect(vec_ty.isVector());
+    try testing.expectEqual(RegClass.vector, vec_ty.regClass());
+
+    // Check size
+    try testing.expectEqual(@as(u32, 8), vec_ty.bytes());
+
+    // Check element type and lane count
+    try testing.expectEqual(VectorElementType.f32, vec_ty.vectorElementType().?);
+    try testing.expectEqual(@as(u8, 2), vec_ty.vectorLaneCount().?);
+}
+
+test "vector type v128 properties" {
+    const vec_ty = Type{ .v128 = .{ .elem_type = .i32, .lane_count = 4 } };
+
+    // Check type classification
+    try testing.expect(vec_ty.isVector());
+    try testing.expectEqual(RegClass.vector, vec_ty.regClass());
+
+    // Check size
+    try testing.expectEqual(@as(u32, 16), vec_ty.bytes());
+
+    // Check element type and lane count
+    try testing.expectEqual(VectorElementType.i32, vec_ty.vectorElementType().?);
+    try testing.expectEqual(@as(u8, 4), vec_ty.vectorLaneCount().?);
+}
+
+test "vector type isVector returns false for scalars" {
+    try testing.expect(!Type.i32.isVector());
+    try testing.expect(!Type.i64.isVector());
+    try testing.expect(!Type.f32.isVector());
+    try testing.expect(!Type.f64.isVector());
+
+    const struct_ty = Type{ .@"struct" = &.{} };
+    try testing.expect(!struct_ty.isVector());
+}
+
+test "vector type vectorElementType returns null for non-vectors" {
+    try testing.expectEqual(@as(?VectorElementType, null), Type.i32.vectorElementType());
+    try testing.expectEqual(@as(?VectorElementType, null), Type.f32.vectorElementType());
+    try testing.expectEqual(@as(?VectorElementType, null), Type.i64.vectorElementType());
+}
+
+test "vector type vectorLaneCount returns null for non-vectors" {
+    try testing.expectEqual(@as(?u8, null), Type.i32.vectorLaneCount());
+    try testing.expectEqual(@as(?u8, null), Type.f32.vectorLaneCount());
+    try testing.expectEqual(@as(?u8, null), Type.i64.vectorLaneCount());
+}
+
+test "vectorElementBytes helper function" {
+    try testing.expectEqual(@as(u32, 1), Type.vectorElementBytes(.i8));
+    try testing.expectEqual(@as(u32, 2), Type.vectorElementBytes(.i16));
+    try testing.expectEqual(@as(u32, 4), Type.vectorElementBytes(.i32));
+    try testing.expectEqual(@as(u32, 4), Type.vectorElementBytes(.f32));
+    try testing.expectEqual(@as(u32, 8), Type.vectorElementBytes(.i64));
+    try testing.expectEqual(@as(u32, 8), Type.vectorElementBytes(.f64));
+}
+
+test "vector type v64 with different element types" {
+    // v64 with i8 elements (8 lanes)
+    const v64_i8 = Type{ .v64 = .{ .elem_type = .i8, .lane_count = 8 } };
+    try testing.expectEqual(@as(u32, 8), v64_i8.bytes());
+    try testing.expectEqual(VectorElementType.i8, v64_i8.vectorElementType().?);
+    try testing.expectEqual(@as(u8, 8), v64_i8.vectorLaneCount().?);
+
+    // v64 with i16 elements (4 lanes)
+    const v64_i16 = Type{ .v64 = .{ .elem_type = .i16, .lane_count = 4 } };
+    try testing.expectEqual(@as(u32, 8), v64_i16.bytes());
+    try testing.expectEqual(VectorElementType.i16, v64_i16.vectorElementType().?);
+    try testing.expectEqual(@as(u8, 4), v64_i16.vectorLaneCount().?);
+
+    // v64 with i32 elements (2 lanes)
+    const v64_i32 = Type{ .v64 = .{ .elem_type = .i32, .lane_count = 2 } };
+    try testing.expectEqual(@as(u32, 8), v64_i32.bytes());
+    try testing.expectEqual(VectorElementType.i32, v64_i32.vectorElementType().?);
+    try testing.expectEqual(@as(u8, 2), v64_i32.vectorLaneCount().?);
+
+    // v64 with i64 elements (1 lane)
+    const v64_i64 = Type{ .v64 = .{ .elem_type = .i64, .lane_count = 1 } };
+    try testing.expectEqual(@as(u32, 8), v64_i64.bytes());
+    try testing.expectEqual(VectorElementType.i64, v64_i64.vectorElementType().?);
+    try testing.expectEqual(@as(u8, 1), v64_i64.vectorLaneCount().?);
+}
+
+test "vector type v128 with different element types" {
+    // v128 with i8 elements (16 lanes)
+    const v128_i8 = Type{ .v128 = .{ .elem_type = .i8, .lane_count = 16 } };
+    try testing.expectEqual(@as(u32, 16), v128_i8.bytes());
+    try testing.expectEqual(VectorElementType.i8, v128_i8.vectorElementType().?);
+    try testing.expectEqual(@as(u8, 16), v128_i8.vectorLaneCount().?);
+
+    // v128 with f32 elements (4 lanes)
+    const v128_f32 = Type{ .v128 = .{ .elem_type = .f32, .lane_count = 4 } };
+    try testing.expectEqual(@as(u32, 16), v128_f32.bytes());
+    try testing.expectEqual(VectorElementType.f32, v128_f32.vectorElementType().?);
+    try testing.expectEqual(@as(u8, 4), v128_f32.vectorLaneCount().?);
+
+    // v128 with f64 elements (2 lanes)
+    const v128_f64 = Type{ .v128 = .{ .elem_type = .f64, .lane_count = 2 } };
+    try testing.expectEqual(@as(u32, 16), v128_f64.bytes());
+    try testing.expectEqual(VectorElementType.f64, v128_f64.vectorElementType().?);
+    try testing.expectEqual(@as(u8, 2), v128_f64.vectorLaneCount().?);
+}
+
+test "vector argument allocation in float registers" {
+    const abi = sysv_amd64();
+
+    const vec_ty = Type{ .v128 = .{ .elem_type = .f32, .lane_count = 4 } };
+    const args = [_]Type{ .f32, vec_ty, .f64 };
+    const sig = ABISignature.init(&args, &.{}, .system_v);
+
+    const arg_locs = try abi.computeArgLocs(sig, testing.allocator);
+    defer {
+        for (arg_locs) |arg| {
+            testing.allocator.free(arg.slots);
+        }
+        testing.allocator.free(arg_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 3), arg_locs.len);
+
+    // All should be in float registers (XMM0, XMM1, XMM2)
+    try testing.expect(arg_locs[0].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 0), arg_locs[0].slots[0].reg.preg);
+
+    try testing.expect(arg_locs[1].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 1), arg_locs[1].slots[0].reg.preg);
+    try testing.expectEqual(RegClass.vector, arg_locs[1].slots[0].reg.ty.regClass());
+
+    try testing.expect(arg_locs[2].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 2), arg_locs[2].slots[0].reg.preg);
+}
+
+test "vector return value allocation in float registers" {
+    const abi = sysv_amd64();
+
+    const vec_ty = Type{ .v128 = .{ .elem_type = .f64, .lane_count = 2 } };
+    const rets = [_]Type{vec_ty};
+    const sig = ABISignature.init(&.{}, &rets, .system_v);
+
+    const ret_locs = try abi.computeRetLocs(sig, testing.allocator);
+    defer {
+        for (ret_locs) |ret| {
+            testing.allocator.free(ret.slots);
+        }
+        testing.allocator.free(ret_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 1), ret_locs.len);
+
+    // Vector return in XMM0
+    try testing.expect(ret_locs[0].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 0), ret_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(RegClass.vector, ret_locs[0].slots[0].reg.ty.regClass());
 }
