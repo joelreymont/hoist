@@ -10,6 +10,7 @@ const Type = hoist.types.Type;
 const Block = hoist.entities.Block;
 const ContextBuilder = hoist.context.ContextBuilder;
 const InstructionData = hoist.instruction_data.InstructionData;
+const Imm64 = hoist.immediates.Imm64;
 const Verifier = hoist.verifier.Verifier;
 const IntCC = hoist.condcodes.IntCC;
 

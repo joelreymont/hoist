@@ -9,6 +9,7 @@ const Type = hoist.types.Type;
 const Context = hoist.context.Context;
 const ContextBuilder = hoist.context.ContextBuilder;
 const InstructionData = hoist.instruction_data.InstructionData;
+const Imm64 = hoist.immediates.Imm64;
 
 /// Allocate executable memory for JIT code.
 /// Uses platform-specific APIs to allocate memory with execute permissions.
