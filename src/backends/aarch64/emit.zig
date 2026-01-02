@@ -11699,3 +11699,66 @@ pub fn emitLdrLiteralFp(dst: Reg, label: buffer_mod.MachLabel, fp_size: enum { s
 
     try buffer.useLabel(label, .ldr_literal19);
 }
+
+/// Call external function via PLT.
+/// Emits BL with relocation for linker to resolve.
+pub fn emitCallExternal(func_name: []const u8, buffer: *buffer_mod.MachBuffer) !void {
+    const bl_offset = buffer.curOffset();
+
+    // Emit BL with placeholder offset
+    const bl_insn: u32 = (0b100101 << 26); // BL opcode
+    const bytes = std.mem.toBytes(bl_insn);
+    try buffer.put(&bytes);
+
+    // Record relocation for linker to patch
+    try buffer.addReloc(
+        bl_offset,
+        .aarch64_call26,
+        func_name,
+        0, // addend
+    );
+}
+
+/// Load address of global symbol using ADRP + ADD.
+/// This is the standard AArch64 position-independent sequence.
+pub fn emitLoadSymbolAddr(dst: Reg, symbol: []const u8, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+
+    // ADRP Xd, symbol@PAGE
+    const adrp_offset = buffer.curOffset();
+    const adrp_insn: u32 = (0b1 << 31) | (0b10000 << 24) | rd;
+    try buffer.put(&std.mem.toBytes(adrp_insn));
+    try buffer.addReloc(adrp_offset, .aarch64_adr_prel_pg_hi21, symbol, 0);
+
+    // ADD Xd, Xd, #symbol@PAGEOFF
+    const add_offset = buffer.curOffset();
+    const add_insn: u32 = (0b1 << 31) | (0b10001 << 24) | (rd << 5) | rd;
+    try buffer.put(&std.mem.toBytes(add_insn));
+    try buffer.addReloc(add_offset, .aarch64_add_abs_lo12_nc, symbol, 0);
+}
+
+/// Load from global variable: ADRP + LDR.
+pub fn emitLoadGlobal(dst: Reg, symbol: []const u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+
+    // Use temporary register for address (x9 is caller-saved)
+    const temp_reg: u5 = 9; // x9
+
+    // ADRP Xtemp, symbol@PAGE
+    const adrp_offset = buffer.curOffset();
+    const adrp_insn: u32 = (0b1 << 31) | (0b10000 << 24) | temp_reg;
+    try buffer.put(&std.mem.toBytes(adrp_insn));
+    try buffer.addReloc(adrp_offset, .aarch64_adr_prel_pg_hi21, symbol, 0);
+
+    // LDR Xd, [Xtemp, #symbol@PAGEOFF]
+    const ldr_offset = buffer.curOffset();
+    const opc: u32 = if (size == .size_64) 0b01 else 0b00;
+    const ldr_insn: u32 = (@as(u32, 0b11) << 30) |
+        (opc << 30) |
+        (0b111001 << 24) |
+        (0b01 << 22) | // unsigned offset
+        (temp_reg << 5) |
+        rd;
+    try buffer.put(&std.mem.toBytes(ldr_insn));
+    try buffer.addReloc(ldr_offset, .aarch64_ldst64_abs_lo12_nc, symbol, 0);
+}
