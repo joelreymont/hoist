@@ -332,6 +332,40 @@ pub const SuccIterator = struct {
     }
 };
 
+/// Compute reverse postorder traversal from entry block.
+pub fn reversePostorder(allocator: std.mem.Allocator, cfg: *const ControlFlowGraph, entry: Block) ![]Block {
+    var visited = std.AutoHashMap(Block, void).init(allocator);
+    defer visited.deinit();
+
+    var postorder = std.ArrayList(Block).init(allocator);
+    errdefer postorder.deinit();
+
+    try dfsPostorder(cfg, entry, &visited, &postorder);
+
+    // Reverse to get reverse postorder
+    std.mem.reverse(Block, postorder.items);
+
+    return postorder.toOwnedSlice();
+}
+
+fn dfsPostorder(
+    cfg: *const ControlFlowGraph,
+    block: Block,
+    visited: *std.AutoHashMap(Block, void),
+    postorder: *std.ArrayList(Block),
+) !void {
+    if (visited.contains(block)) return;
+    try visited.put(block, {});
+
+    // Visit successors
+    var succ_iter = cfg.succIter(block);
+    while (succ_iter.next()) |succ| {
+        try dfsPostorder(cfg, succ, visited, postorder);
+    }
+
+    try postorder.append(block);
+}
+
 // Tests
 
 const testing = std.testing;
