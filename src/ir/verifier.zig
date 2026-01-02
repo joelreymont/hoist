@@ -107,7 +107,12 @@ pub const Verifier = struct {
         var block_iter = self.func.layout.blocks();
         while (block_iter.next()) |block| {
             // Block parameters are defined at block entry
-            // TODO: Add block parameters to defined set
+            if (self.func.dfg.blocks.get(block)) |block_data| {
+                const params = block_data.getParams(&self.func.dfg.value_lists);
+                for (params) |param| {
+                    try defined.put(param, {});
+                }
+            }
 
             // Check each instruction
             var inst_iter = self.func.layout.blockInsts(block);
