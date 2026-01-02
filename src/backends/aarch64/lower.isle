@@ -347,6 +347,68 @@
 (rule (lower (return))
       (aarch64_ret))
 
+;; Floating-point conversion lowering
+
+;; fcvt_to_uint: Convert float to unsigned integer (FCVTZU)
+(rule (lower (fcvt_to_uint (value_type $F32) x (value_type $I32)))
+      (aarch64_fcvtzu_32 x))
+
+(rule (lower (fcvt_to_uint (value_type $F32) x (value_type $I64)))
+      (aarch64_fcvtzu_64 x))
+
+(rule (lower (fcvt_to_uint (value_type $F64) x (value_type $I32)))
+      (aarch64_fcvtzu_32 x))
+
+(rule (lower (fcvt_to_uint (value_type $F64) x (value_type $I64)))
+      (aarch64_fcvtzu_64 x))
+
+;; fcvt_to_sint: Convert float to signed integer (FCVTZS)
+(rule (lower (fcvt_to_sint (value_type $F32) x (value_type $I32)))
+      (aarch64_fcvtzs_32 x))
+
+(rule (lower (fcvt_to_sint (value_type $F32) x (value_type $I64)))
+      (aarch64_fcvtzs_64 x))
+
+(rule (lower (fcvt_to_sint (value_type $F64) x (value_type $I32)))
+      (aarch64_fcvtzs_32 x))
+
+(rule (lower (fcvt_to_sint (value_type $F64) x (value_type $I64)))
+      (aarch64_fcvtzs_64 x))
+
+;; fcvt_from_uint: Convert unsigned integer to float (UCVTF)
+(rule (lower (fcvt_from_uint (value_type $I32) x (value_type $F32)))
+      (aarch64_ucvtf_32_to_f32 x))
+
+(rule (lower (fcvt_from_uint (value_type $I32) x (value_type $F64)))
+      (aarch64_ucvtf_32_to_f64 x))
+
+(rule (lower (fcvt_from_uint (value_type $I64) x (value_type $F32)))
+      (aarch64_ucvtf_64_to_f32 x))
+
+(rule (lower (fcvt_from_uint (value_type $I64) x (value_type $F64)))
+      (aarch64_ucvtf_64_to_f64 x))
+
+;; fcvt_from_sint: Convert signed integer to float (SCVTF)
+(rule (lower (fcvt_from_sint (value_type $I32) x (value_type $F32)))
+      (aarch64_scvtf_32_to_f32 x))
+
+(rule (lower (fcvt_from_sint (value_type $I32) x (value_type $F64)))
+      (aarch64_scvtf_32_to_f64 x))
+
+(rule (lower (fcvt_from_sint (value_type $I64) x (value_type $F32)))
+      (aarch64_scvtf_64_to_f32 x))
+
+(rule (lower (fcvt_from_sint (value_type $I64) x (value_type $F64)))
+      (aarch64_scvtf_64_to_f64 x))
+
+;; fdemote: Convert f64 to f32 (FCVT)
+(rule (lower (fdemote x))
+      (aarch64_fcvt_f64_to_f32 x))
+
+;; fpromote: Convert f32 to f64 (FCVT)
+(rule (lower (fpromote x))
+      (aarch64_fcvt_f32_to_f64 x))
+
 ;; Constant materialization
 
 ;; iconst: Integer constant (16-bit immediate via MOVZ)
@@ -507,6 +569,22 @@
 ;; Constants
 (decl aarch64_movz (Type i64) Aarch64Inst)
 (decl aarch64_iconst (Type i64) Aarch64Inst)
+
+;; Floating-point conversions
+(decl aarch64_fcvtzu_32 (Value) Aarch64Inst)  ;; FCVTZU: float to unsigned i32
+(decl aarch64_fcvtzu_64 (Value) Aarch64Inst)  ;; FCVTZU: float to unsigned i64
+(decl aarch64_fcvtzs_32 (Value) Aarch64Inst)  ;; FCVTZS: float to signed i32
+(decl aarch64_fcvtzs_64 (Value) Aarch64Inst)  ;; FCVTZS: float to signed i64
+(decl aarch64_ucvtf_32_to_f32 (Value) Aarch64Inst)  ;; UCVTF: u32 to f32
+(decl aarch64_ucvtf_32_to_f64 (Value) Aarch64Inst)  ;; UCVTF: u32 to f64
+(decl aarch64_ucvtf_64_to_f32 (Value) Aarch64Inst)  ;; UCVTF: u64 to f32
+(decl aarch64_ucvtf_64_to_f64 (Value) Aarch64Inst)  ;; UCVTF: u64 to f64
+(decl aarch64_scvtf_32_to_f32 (Value) Aarch64Inst)  ;; SCVTF: i32 to f32
+(decl aarch64_scvtf_32_to_f64 (Value) Aarch64Inst)  ;; SCVTF: i32 to f64
+(decl aarch64_scvtf_64_to_f32 (Value) Aarch64Inst)  ;; SCVTF: i64 to f32
+(decl aarch64_scvtf_64_to_f64 (Value) Aarch64Inst)  ;; SCVTF: i64 to f64
+(decl aarch64_fcvt_f64_to_f32 (Value) Aarch64Inst)  ;; FCVT: f64 to f32
+(decl aarch64_fcvt_f32_to_f64 (Value) Aarch64Inst)  ;; FCVT: f32 to f64
 
 ;; Helper functions
 (decl negate_i64 (i64) i64)
