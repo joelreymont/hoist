@@ -74,6 +74,36 @@ pub const LivenessInfo = struct {
         const set = self.live_in.get(block) orelse return false;
         return set.contains(vreg);
     }
+
+    /// Calculate live-out set for a block.
+    pub fn calculateLiveOut(self: *LivenessInfo, block: u32, successors: []const u32) !void {
+        var set = std.AutoHashMap(VReg, void).init(self.allocator);
+        errdefer set.deinit();
+
+        // live_out = ∪(live_in of all successors)
+        for (successors) |succ| {
+            const succ_live_in = self.live_in.get(succ);
+            if (succ_live_in) |in_set| {
+                var it = in_set.keyIterator();
+                while (it.next()) |vreg| {
+                    try set.put(vreg.*, {});
+                }
+            }
+        }
+
+        try self.live_out.put(block, set);
+    }
+
+    /// Get live-out set for a block.
+    pub fn getLiveOut(self: *const LivenessInfo, block: u32) ?*const std.AutoHashMap(VReg, void) {
+        return if (self.live_out.getPtr(block)) |ptr| ptr else null;
+    }
+
+    /// Check if a virtual register is live-out at a block.
+    pub fn isLiveOut(self: *const LivenessInfo, block: u32, vreg: VReg) bool {
+        const set = self.live_out.get(block) orelse return false;
+        return set.contains(vreg);
+    }
 };
 
 test "LivenessInfo calculateLiveIn" {
@@ -106,4 +136,45 @@ test "LivenessInfo isLiveIn" {
     try testing.expect(info.isLiveIn(1, VReg.new(5)));
     try testing.expect(!info.isLiveIn(1, VReg.new(99)));
     try testing.expect(!info.isLiveIn(999, VReg.new(5)));
+}
+
+test "LivenessInfo calculateLiveOut" {
+    const allocator = testing.allocator;
+    var info = LivenessInfo.init(allocator);
+    defer info.deinit();
+
+    // Block 1 has v1 live-in
+    const uses1 = [_]VReg{VReg.new(1)};
+    const defs1 = [_]VReg{};
+    try info.calculateLiveIn(1, &uses1, &defs1);
+
+    // Block 2 has v2 live-in
+    const uses2 = [_]VReg{VReg.new(2)};
+    const defs2 = [_]VReg{};
+    try info.calculateLiveIn(2, &uses2, &defs2);
+
+    // Block 0 has successors 1 and 2
+    const successors = [_]u32{ 1, 2 };
+    try info.calculateLiveOut(0, &successors);
+
+    const live_out = info.getLiveOut(0);
+    try testing.expect(live_out != null);
+    try testing.expect(live_out.?.contains(VReg.new(1)));
+    try testing.expect(live_out.?.contains(VReg.new(2)));
+}
+
+test "LivenessInfo isLiveOut" {
+    const allocator = testing.allocator;
+    var info = LivenessInfo.init(allocator);
+    defer info.deinit();
+
+    const uses = [_]VReg{VReg.new(7)};
+    const defs = [_]VReg{};
+    try info.calculateLiveIn(5, &uses, &defs);
+
+    const successors = [_]u32{5};
+    try info.calculateLiveOut(4, &successors);
+
+    try testing.expect(info.isLiveOut(4, VReg.new(7)));
+    try testing.expect(!info.isLiveOut(4, VReg.new(99)));
 }
