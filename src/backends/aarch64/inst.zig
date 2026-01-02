@@ -2375,6 +2375,28 @@ pub const ImmShift = struct {
     }
 };
 
+/// Check if a shift amount is valid for the given register size.
+/// Returns true if the shift amount is within valid range:
+/// - 32-bit registers: 0-31
+/// - 64-bit registers: 0-63
+pub fn isValidShiftAmount(amount: u64, reg_size: OperandSize) bool {
+    return switch (reg_size) {
+        .size32 => amount < 32,
+        .size64 => amount < 64,
+    };
+}
+
+/// Normalize a shift amount to the valid range for the given register size.
+/// For ARM64, shift amounts wrap modulo the register width:
+/// - 32-bit registers: amount % 32
+/// - 64-bit registers: amount % 64
+pub fn normalizeShiftAmount(amount: u64, reg_size: OperandSize) u8 {
+    return switch (reg_size) {
+        .size32 => @intCast(amount % 32),
+        .size64 => @intCast(amount % 64),
+    };
+}
+
 /// Logical immediate encoding for AND/ORR/EOR instructions.
 /// Encodes repeating patterns using N, R, S fields.
 pub const ImmLogic = struct {
@@ -2546,6 +2568,118 @@ pub const BarrierOption = enum(u4) {
     }
 };
 
+/// Addressing mode for load/store instructions.
+/// Encapsulates different ways to address memory on AArch64.
+pub const AMode = union(enum) {
+    /// Base register only: [Xn]
+    base_only: struct {
+        base: Reg,
+    },
+
+    /// Base + immediate offset: [Xn, #imm]
+    base_offset: struct {
+        base: Reg,
+        offset: i16,
+    },
+
+    /// Base + index register: [Xn, Xm]
+    base_index: struct {
+        base: Reg,
+        index: Reg,
+    },
+
+    /// Base + (index << shift): [Xn, Xm, LSL #shift]
+    base_index_shift: struct {
+        base: Reg,
+        index: Reg,
+        shift: u8,
+    },
+
+    /// Pre-indexed: [Xn, #imm]! (update base before access)
+    pre_index: struct {
+        base: WritableReg,
+        offset: i16,
+    },
+
+    /// Post-indexed: [Xn], #imm (update base after access)
+    post_index: struct {
+        base: WritableReg,
+        offset: i16,
+    },
+};
+
+/// Create base-only addressing mode: [base]
+pub fn baseOnly(base: Reg) AMode {
+    return .{ .base_only = .{ .base = base } };
+}
+
+/// Create base+offset addressing mode: [base, #offset]
+pub fn baseOffset(base: Reg, offset: i16) AMode {
+    return .{ .base_offset = .{ .base = base, .offset = offset } };
+}
+
+/// Create base+index addressing mode: [base, index]
+pub fn baseIndex(base: Reg, index: Reg) AMode {
+    return .{ .base_index = .{ .base = base, .index = index } };
+}
+
+/// Create base+(index<<shift) addressing mode: [base, index, LSL #shift]
+pub fn baseIndexShift(base: Reg, index: Reg, shift: u8) AMode {
+    return .{ .base_index_shift = .{ .base = base, .index = index, .shift = shift } };
+}
+
+/// Create pre-indexed addressing mode: [base, #offset]!
+/// Updates base register before memory access.
+pub fn preIndex(base: WritableReg, offset: i16) AMode {
+    return .{ .pre_index = .{ .base = base, .offset = offset } };
+}
+
+/// Create post-indexed addressing mode: [base], #offset
+/// Updates base register after memory access.
+pub fn postIndex(base: WritableReg, offset: i16) AMode {
+    return .{ .post_index = .{ .base = base, .offset = offset } };
+}
+
+/// Check if value fits in 12-bit arithmetic immediate (optionally shifted by 12).
+/// Valid values: 0-4095 or (0-4095)<<12.
+pub fn isValidArithImm12(value: u64) bool {
+    return Imm12.maybeFromU64(value) != null;
+}
+
+/// Check if value is valid as logical immediate for AND/ORR/EOR instructions.
+/// Logical immediates encode repeating bit patterns.
+/// Returns false for all-zeros and all-ones patterns (not encodable).
+pub fn isValidLogicalImm(value: u64, is_64bit: bool) bool {
+    const size: OperandSize = if (is_64bit) .size64 else .size32;
+    return ImmLogic.maybeFromU64(value, size) != null;
+}
+
+/// Check if value is valid load/store offset for given access size.
+/// Offsets must be aligned to access size and fit in 12-bit unsigned immediate.
+/// size: access size in bytes (1, 2, 4, or 8).
+pub fn isValidLoadStoreImm(value: i64, size: u32) bool {
+    // Validate size is power of 2 and <= 8
+    if (size == 0 or size > 8 or (size & (size - 1)) != 0) {
+        return false;
+    }
+
+    // Check alignment
+    const uval: u64 = @bitCast(value);
+    if ((uval & (size - 1)) != 0) {
+        return false;
+    }
+
+    // Check range (unsigned 12-bit scaled)
+    const scale: u6 = @intCast(@ctz(size));
+    const max_offset: u64 = @as(u64, 4095) << scale;
+
+    if (value < 0) {
+        return false;
+    }
+
+    return uval <= max_offset;
+}
+
 test "Inst formatting" {
     const v0 = VReg.new(0, .int);
     const v1 = VReg.new(1, .int);
@@ -2611,6 +2745,64 @@ test "ImmShift encoding" {
     // Invalid - too large
     try testing.expectEqual(@as(?ImmShift, null), ImmShift.maybeFromU64(64));
     try testing.expectEqual(@as(?ImmShift, null), ImmShift.maybeFromU64(100));
+}
+
+test "shift amount validation 32-bit" {
+    // Valid shift amounts for 32-bit registers
+    try testing.expect(isValidShiftAmount(0, .size32));
+    try testing.expect(isValidShiftAmount(1, .size32));
+    try testing.expect(isValidShiftAmount(15, .size32));
+    try testing.expect(isValidShiftAmount(31, .size32));
+
+    // Invalid shift amounts for 32-bit registers
+    try testing.expect(!isValidShiftAmount(32, .size32));
+    try testing.expect(!isValidShiftAmount(33, .size32));
+    try testing.expect(!isValidShiftAmount(63, .size32));
+    try testing.expect(!isValidShiftAmount(64, .size32));
+    try testing.expect(!isValidShiftAmount(100, .size32));
+}
+
+test "shift amount validation 64-bit" {
+    // Valid shift amounts for 64-bit registers
+    try testing.expect(isValidShiftAmount(0, .size64));
+    try testing.expect(isValidShiftAmount(1, .size64));
+    try testing.expect(isValidShiftAmount(31, .size64));
+    try testing.expect(isValidShiftAmount(32, .size64));
+    try testing.expect(isValidShiftAmount(63, .size64));
+
+    // Invalid shift amounts for 64-bit registers
+    try testing.expect(!isValidShiftAmount(64, .size64));
+    try testing.expect(!isValidShiftAmount(65, .size64));
+    try testing.expect(!isValidShiftAmount(100, .size64));
+}
+
+test "normalize shift amount 32-bit" {
+    // In-range values remain unchanged
+    try testing.expectEqual(@as(u8, 0), normalizeShiftAmount(0, .size32));
+    try testing.expectEqual(@as(u8, 1), normalizeShiftAmount(1, .size32));
+    try testing.expectEqual(@as(u8, 15), normalizeShiftAmount(15, .size32));
+    try testing.expectEqual(@as(u8, 31), normalizeShiftAmount(31, .size32));
+
+    // Out-of-range values wrap modulo 32
+    try testing.expectEqual(@as(u8, 0), normalizeShiftAmount(32, .size32));
+    try testing.expectEqual(@as(u8, 1), normalizeShiftAmount(33, .size32));
+    try testing.expectEqual(@as(u8, 0), normalizeShiftAmount(64, .size32));
+    try testing.expectEqual(@as(u8, 4), normalizeShiftAmount(100, .size32));
+}
+
+test "normalize shift amount 64-bit" {
+    // In-range values remain unchanged
+    try testing.expectEqual(@as(u8, 0), normalizeShiftAmount(0, .size64));
+    try testing.expectEqual(@as(u8, 1), normalizeShiftAmount(1, .size64));
+    try testing.expectEqual(@as(u8, 31), normalizeShiftAmount(31, .size64));
+    try testing.expectEqual(@as(u8, 32), normalizeShiftAmount(32, .size64));
+    try testing.expectEqual(@as(u8, 63), normalizeShiftAmount(63, .size64));
+
+    // Out-of-range values wrap modulo 64
+    try testing.expectEqual(@as(u8, 0), normalizeShiftAmount(64, .size64));
+    try testing.expectEqual(@as(u8, 1), normalizeShiftAmount(65, .size64));
+    try testing.expectEqual(@as(u8, 0), normalizeShiftAmount(128, .size64));
+    try testing.expectEqual(@as(u8, 36), normalizeShiftAmount(100, .size64));
 }
 
 test "Multiply instruction formatting" {
@@ -3207,4 +3399,224 @@ test "Extend instruction formatting" {
     str = try std.fmt.bufPrint(&buf, "{}", .{uxth_64});
     try testing.expect(std.mem.indexOf(u8, str, "uxth") != null);
     try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
+}
+
+test "isValidArithImm12: valid immediates" {
+    // Zero
+    try testing.expect(isValidArithImm12(0));
+
+    // Small values (0-4095)
+    try testing.expect(isValidArithImm12(1));
+    try testing.expect(isValidArithImm12(42));
+    try testing.expect(isValidArithImm12(4095));
+
+    // Values with shift (multiples of 4096, up to 4095<<12)
+    try testing.expect(isValidArithImm12(4096));
+    try testing.expect(isValidArithImm12(8192));
+    try testing.expect(isValidArithImm12(0xFFF000));
+}
+
+test "isValidArithImm12: invalid immediates" {
+    // Just above 12-bit range
+    try testing.expect(!isValidArithImm12(4096 + 1));
+
+    // Too large for shifted encoding
+    try testing.expect(!isValidArithImm12(0x1000000));
+
+    // Not aligned to shift boundary
+    try testing.expect(!isValidArithImm12(0x123001));
+}
+
+test "isValidLogicalImm: valid patterns" {
+    // Alternating bits (64-bit)
+    try testing.expect(isValidLogicalImm(0xAAAAAAAAAAAAAAAA, true));
+
+    // Alternating bytes (64-bit)
+    try testing.expect(isValidLogicalImm(0x00FF00FF00FF00FF, true));
+
+    // Low byte mask (32-bit)
+    try testing.expect(isValidLogicalImm(0xFF, false));
+
+    // Repeating pattern (64-bit)
+    try testing.expect(isValidLogicalImm(0x0F0F0F0F0F0F0F0F, true));
+}
+
+test "isValidLogicalImm: invalid patterns" {
+    // All zeros (not encodable)
+    try testing.expect(!isValidLogicalImm(0, true));
+    try testing.expect(!isValidLogicalImm(0, false));
+
+    // All ones (not encodable)
+    try testing.expect(!isValidLogicalImm(0xFFFFFFFFFFFFFFFF, true));
+    try testing.expect(!isValidLogicalImm(0xFFFFFFFF, false));
+
+    // Non-repeating pattern (not encodable)
+    try testing.expect(!isValidLogicalImm(0x123456789ABCDEF0, true));
+}
+
+test "isValidLoadStoreImm: byte access (size=1)" {
+    // Valid byte offsets (0-4095)
+    try testing.expect(isValidLoadStoreImm(0, 1));
+    try testing.expect(isValidLoadStoreImm(1, 1));
+    try testing.expect(isValidLoadStoreImm(4095, 1));
+
+    // Invalid: negative
+    try testing.expect(!isValidLoadStoreImm(-1, 1));
+
+    // Invalid: too large
+    try testing.expect(!isValidLoadStoreImm(4096, 1));
+}
+
+test "isValidLoadStoreImm: halfword access (size=2)" {
+    // Valid halfword offsets (0, 2, 4, ..., 8190)
+    try testing.expect(isValidLoadStoreImm(0, 2));
+    try testing.expect(isValidLoadStoreImm(2, 2));
+    try testing.expect(isValidLoadStoreImm(8190, 2));
+
+    // Invalid: misaligned
+    try testing.expect(!isValidLoadStoreImm(1, 2));
+    try testing.expect(!isValidLoadStoreImm(3, 2));
+
+    // Invalid: too large
+    try testing.expect(!isValidLoadStoreImm(8192, 2));
+}
+
+test "isValidLoadStoreImm: word access (size=4)" {
+    // Valid word offsets (0, 4, 8, ..., 16380)
+    try testing.expect(isValidLoadStoreImm(0, 4));
+    try testing.expect(isValidLoadStoreImm(4, 4));
+    try testing.expect(isValidLoadStoreImm(16380, 4));
+
+    // Invalid: misaligned
+    try testing.expect(!isValidLoadStoreImm(1, 4));
+    try testing.expect(!isValidLoadStoreImm(2, 4));
+
+    // Invalid: too large
+    try testing.expect(!isValidLoadStoreImm(16384, 4));
+}
+
+test "isValidLoadStoreImm: doubleword access (size=8)" {
+    // Valid doubleword offsets (0, 8, 16, ..., 32760)
+    try testing.expect(isValidLoadStoreImm(0, 8));
+    try testing.expect(isValidLoadStoreImm(8, 8));
+    try testing.expect(isValidLoadStoreImm(32760, 8));
+
+    // Invalid: misaligned
+    try testing.expect(!isValidLoadStoreImm(4, 8));
+    try testing.expect(!isValidLoadStoreImm(12, 8));
+
+    // Invalid: too large
+    try testing.expect(!isValidLoadStoreImm(32768, 8));
+}
+
+test "isValidLoadStoreImm: invalid size" {
+    // Invalid size (not power of 2)
+    try testing.expect(!isValidLoadStoreImm(0, 3));
+    try testing.expect(!isValidLoadStoreImm(0, 5));
+
+    // Invalid size (too large)
+    try testing.expect(!isValidLoadStoreImm(0, 16));
+
+    // Invalid size (zero)
+    try testing.expect(!isValidLoadStoreImm(0, 0));
+}
+
+test "isValidShiftAmount: 32-bit operands" {
+    // Valid range (0-31)
+    try testing.expect(isValidShiftAmount(0, .size32));
+    try testing.expect(isValidShiftAmount(15, .size32));
+    try testing.expect(isValidShiftAmount(31, .size32));
+
+    // Invalid: too large
+    try testing.expect(!isValidShiftAmount(32, .size32));
+    try testing.expect(!isValidShiftAmount(63, .size32));
+}
+
+test "isValidShiftAmount: 64-bit operands" {
+    // Valid range (0-63)
+    try testing.expect(isValidShiftAmount(0, .size64));
+    try testing.expect(isValidShiftAmount(31, .size64));
+    try testing.expect(isValidShiftAmount(63, .size64));
+
+    // Invalid: too large
+    try testing.expect(!isValidShiftAmount(64, .size64));
+    try testing.expect(!isValidShiftAmount(100, .size64));
+}
+
+test "Addressing mode: baseOnly" {
+    const v0 = VReg.new(0, .int);
+    const r0 = Reg.fromVReg(v0);
+
+    const amode = baseOnly(r0);
+    try testing.expectEqual(AMode.base_only, @as(std.meta.Tag(AMode), amode));
+    try testing.expectEqual(r0, amode.base_only.base);
+}
+
+test "Addressing mode: baseOffset" {
+    const v1 = VReg.new(1, .int);
+    const r1 = Reg.fromVReg(v1);
+
+    const amode = baseOffset(r1, 16);
+    try testing.expectEqual(AMode.base_offset, @as(std.meta.Tag(AMode), amode));
+    try testing.expectEqual(r1, amode.base_offset.base);
+    try testing.expectEqual(@as(i16, 16), amode.base_offset.offset);
+
+    const amode_neg = baseOffset(r1, -8);
+    try testing.expectEqual(@as(i16, -8), amode_neg.base_offset.offset);
+}
+
+test "Addressing mode: baseIndex" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+
+    const amode = baseIndex(r0, r1);
+    try testing.expectEqual(AMode.base_index, @as(std.meta.Tag(AMode), amode));
+    try testing.expectEqual(r0, amode.base_index.base);
+    try testing.expectEqual(r1, amode.base_index.index);
+}
+
+test "Addressing mode: baseIndexShift" {
+    const v2 = VReg.new(2, .int);
+    const v3 = VReg.new(3, .int);
+    const r2 = Reg.fromVReg(v2);
+    const r3 = Reg.fromVReg(v3);
+
+    const amode = baseIndexShift(r2, r3, 3);
+    try testing.expectEqual(AMode.base_index_shift, @as(std.meta.Tag(AMode), amode));
+    try testing.expectEqual(r2, amode.base_index_shift.base);
+    try testing.expectEqual(r3, amode.base_index_shift.index);
+    try testing.expectEqual(@as(u8, 3), amode.base_index_shift.shift);
+
+    const amode_zero_shift = baseIndexShift(r2, r3, 0);
+    try testing.expectEqual(@as(u8, 0), amode_zero_shift.base_index_shift.shift);
+}
+
+test "Addressing mode: preIndex" {
+    const v4 = VReg.new(4, .int);
+    const r4 = Reg.fromVReg(v4);
+    const wr4 = WritableReg.fromReg(r4);
+
+    const amode = preIndex(wr4, 32);
+    try testing.expectEqual(AMode.pre_index, @as(std.meta.Tag(AMode), amode));
+    try testing.expectEqual(wr4, amode.pre_index.base);
+    try testing.expectEqual(@as(i16, 32), amode.pre_index.offset);
+
+    const amode_neg = preIndex(wr4, -16);
+    try testing.expectEqual(@as(i16, -16), amode_neg.pre_index.offset);
+}
+
+test "Addressing mode: postIndex" {
+    const v5 = VReg.new(5, .int);
+    const r5 = Reg.fromVReg(v5);
+    const wr5 = WritableReg.fromReg(r5);
+
+    const amode = postIndex(wr5, 24);
+    try testing.expectEqual(AMode.post_index, @as(std.meta.Tag(AMode), amode));
+    try testing.expectEqual(wr5, amode.post_index.base);
+    try testing.expectEqual(@as(i16, 24), amode.post_index.offset);
+
+    const amode_neg = postIndex(wr5, -12);
+    try testing.expectEqual(@as(i16, -12), amode_neg.post_index.offset);
 }
