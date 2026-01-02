@@ -328,6 +328,15 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+
+    /// ABS (absolute value): ABS Xd, Xn
+    /// Computes absolute value of signed integer
+    abs: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
     /// NGC - Negate with carry (implemented as SBC Xd, XZR, Xm)
     ngc: struct {
         dst: WritableReg,
@@ -1543,6 +1552,23 @@ pub const Inst = union(enum) {
         size: VectorSize,
     },
 
+
+    /// Vector ABS (absolute value): ABS Vd.T, Vn.T
+    /// Computes absolute value of each signed element
+    vec_abs: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector NEG (negate): NEG Vd.T, Vn.T
+    /// Negates each element
+    vec_neg: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VectorSize,
+    },
+
     /// Vector ADDV (add across vector): ADDV Vd, Vn.T
     /// Sums all lanes of src into dst (scalar result in lane 0)
     addv: struct {
@@ -1826,6 +1852,7 @@ pub const Inst = union(enum) {
             .orn_rr => |i| try writer.print("orn.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .eon_rr => |i| try writer.print("eon.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .neg => |i| try writer.print("neg.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .abs => |i| try writer.print("abs.{} {}, {}", .{ i.size, i.dst, i.src }),
             .ngc => |i| try writer.print("ngc.{} {}, {}", .{ i.size, i.dst, i.src }),
             .sxtb => |i| try writer.print("sxtb.{} {}, {}", .{ i.size, i.dst, i.src }),
             .sxth => |i| try writer.print("sxth.{} {}, {}", .{ i.size, i.dst, i.src }),
@@ -2002,6 +2029,8 @@ pub const Inst = union(enum) {
             .vec_smax => |i| try writer.print("smax.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_umin => |i| try writer.print("umin.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_umax => |i| try writer.print("umax.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_abs => |i| try writer.print("abs.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .vec_neg => |i| try writer.print("neg.{} {}, {}", .{ i.size, i.dst, i.src }),
             .addv => |i| try writer.print("addv.{} {}, {}", .{ i.size, i.dst, i.src }),
             .sminv => |i| try writer.print("sminv.{} {}, {}", .{ i.size, i.dst, i.src }),
             .smaxv => |i| try writer.print("smaxv.{} {}, {}", .{ i.size, i.dst, i.src }),

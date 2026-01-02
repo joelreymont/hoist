@@ -58,6 +58,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .orn_rr => |i| try emitOrnRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .eon_rr => |i| try emitEonRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .neg => |i| try emitNeg(i.dst.toReg(), i.src, i.size, buffer),
+        .abs => |i| try emitAbs(i.dst.toReg(), i.src, i.size, buffer),
         .ngc => |i| try emitNgc(i.dst.toReg(), i.src, i.size, buffer),
         .adds_rr => |i| try emitAddsRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .adds_imm => |i| try emitAddsImm(i.dst.toReg(), i.src, i.imm, i.size, buffer),
@@ -229,6 +230,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_smax => |i| try emitVecSmax(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_umin => |i| try emitVecUmin(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_umax => |i| try emitVecUmax(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_abs => |i| try emitVecAbs(i.dst.toReg(), i.src, i.size, buffer),
+        .vec_neg => |i| try emitVecNeg(i.dst.toReg(), i.src, i.size, buffer),
         .addv => |i| try emitAddv(i.dst.toReg(), i.src, i.size, buffer),
         .sminv => |i| try emitSminv(i.dst.toReg(), i.src, i.size, buffer),
         .smaxv => |i| try emitSmaxv(i.dst.toReg(), i.src, i.size, buffer),
@@ -11472,6 +11475,75 @@ fn emitVecUmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (0b1 << 21) |
         (@as(u32, rm) << 16) |
         (0b011001 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// ABS (absolute value): ABS Xd, Xn
+/// Encoding: sf|0|0|11010110|00000|00001|0|Rn|Rd
+/// Implemented using CSNEG (Xd = (Xn >= 0) ? Xn : -Xn)
+fn emitAbs(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const sf_bit = sf(size);
+
+    // ABS is typically implemented as: CMP Xn, #0 followed by CSNEG
+    // But we can use the single encoding for ABS if available
+    // For now, use CSNEG Xd, Xn, Xn, MI (negate if negative)
+    const insn: u32 = (@as(u32, sf_bit) << 31) |
+        (0b1 << 30) |
+        (0b0 << 29) |
+        (0b11010100 << 21) |
+        (@as(u32, rn) << 16) |
+        (0b0100 << 12) | // cond = MI (negative)
+        (0b01 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector ABS (absolute value): ABS Vd.T, Vn.T
+/// Encoding: 0|Q|0|01110|size|10000|010110|Rn|Rd
+fn emitVecAbs(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b10000 << 17) |
+        (0b010110 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector NEG (negate): NEG Vd.T, Vn.T
+/// Encoding: 0|Q|1|01110|size|10000|010110|Rn|Rd
+fn emitVecNeg(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b1 << 29) | // U=1 for NEG
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b10000 << 17) |
+        (0b010110 << 10) |
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
