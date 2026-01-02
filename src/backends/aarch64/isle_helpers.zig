@@ -130,6 +130,116 @@ pub fn in_neg_uimm12_range(val: i64) bool {
     return val >= -4095 and val <= -1;
 }
 
+/// Convert IntCC to aarch64 CondCode.
+/// Maps IR condition codes to ARM condition codes.
+pub fn intccToCondCode(cc: root.condcodes.IntCC) root.aarch64_inst.CondCode {
+    return switch (cc) {
+        .eq => .eq,
+        .ne => .ne,
+        .slt => .lt,
+        .sge => .ge,
+        .sgt => .gt,
+        .sle => .le,
+        .ult => .lo,
+        .uge => .hs,
+        .ugt => .hi,
+        .ule => .ls,
+    };
+}
+
+/// Constructor: Create CMP instruction (register, register).
+/// CMP is an alias for SUBS with XZR as destination.
+pub fn aarch64_cmp_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Value, cc: root.condcodes.IntCC, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const size = typeToOperandSize(ty);
+    const reg_x = try getValueReg(ctx, x);
+    const reg_y = try getValueReg(ctx, y);
+    _ = cc; // Condition code stored separately for branch
+    return Inst{ .cmp_rr = .{
+        .src1 = reg_x,
+        .src2 = reg_y,
+        .size = size,
+    } };
+}
+
+/// Constructor: Create CMP instruction (register, immediate).
+/// CMP is an alias for SUBS with XZR as destination.
+pub fn aarch64_cmp_imm(ty: root.types.Type, x: lower_mod.Value, imm: i64, cc: root.condcodes.IntCC, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const size = typeToOperandSize(ty);
+    const reg_x = try getValueReg(ctx, x);
+    _ = cc; // Condition code stored separately for branch
+    return Inst{ .cmp_imm = .{
+        .src = reg_x,
+        .imm = @intCast(imm),
+        .size = size,
+    } };
+}
+
+/// Constructor: Create CMN instruction (register, register).
+/// CMN is an alias for ADDS with XZR as destination.
+pub fn aarch64_cmn_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const size = typeToOperandSize(ty);
+    const reg_x = try getValueReg(ctx, x);
+    const reg_y = try getValueReg(ctx, y);
+    return Inst{ .cmn_rr = .{
+        .src1 = reg_x,
+        .src2 = reg_y,
+        .size = size,
+    } };
+}
+
+/// Constructor: Create CMN instruction (register, immediate).
+/// CMN is an alias for ADDS with XZR as destination.
+pub fn aarch64_cmn_imm(ty: root.types.Type, x: lower_mod.Value, imm: i64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const size = typeToOperandSize(ty);
+    const reg_x = try getValueReg(ctx, x);
+    return Inst{ .cmn_imm = .{
+        .src = reg_x,
+        .imm = @intCast(imm),
+        .size = size,
+    } };
+}
+
+/// Constructor: Create TST instruction (register, register).
+/// TST is an alias for ANDS with XZR as destination.
+pub fn aarch64_tst_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const size = typeToOperandSize(ty);
+    const reg_x = try getValueReg(ctx, x);
+    const reg_y = try getValueReg(ctx, y);
+    return Inst{ .tst_rr = .{
+        .src1 = reg_x,
+        .src2 = reg_y,
+        .size = size,
+    } };
+}
+
+/// Constructor: Create TST instruction (register, immediate).
+/// TST is an alias for ANDS with XZR as destination.
+pub fn aarch64_tst_imm(ty: root.types.Type, x: lower_mod.Value, imm: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const size = typeToOperandSize(ty);
+    const reg_x = try getValueReg(ctx, x);
+    const imm_logic = ImmLogic.maybeFromU64(imm, size) orelse return error.InvalidLogicalImmediate;
+    return Inst{ .tst_imm = .{
+        .src = reg_x,
+        .imm = imm_logic,
+        .size = size,
+    } };
+}
+
+/// Helper: Convert IR type to aarch64 operand size.
+fn typeToOperandSize(ty: root.types.Type) root.aarch64_inst.OperandSize {
+    if (ty.bits() <= 32) {
+        return .size32;
+    } else {
+        return .size64;
+    }
+}
+
+/// Helper: Get register for IR value.
+fn getValueReg(ctx: *lower_mod.LowerCtx(Inst), value: lower_mod.Value) !lower_mod.Reg {
+    const vreg = try ctx.getValueReg(value, .int);
+    return lower_mod.Reg.fromVReg(vreg);
+}
+
 test "imm12_from_u64" {
     const testing = std.testing;
 
@@ -162,4 +272,154 @@ test "u8_into_imm12" {
     const imm = u8_into_imm12(255);
     try testing.expectEqual(@as(u16, 255), imm.bits);
     try testing.expectEqual(false, imm.shift12);
+}
+
+test "intccToCondCode: equality conditions" {
+    const testing = std.testing;
+
+    try testing.expectEqual(root.aarch64_inst.CondCode.eq, intccToCondCode(.eq));
+    try testing.expectEqual(root.aarch64_inst.CondCode.ne, intccToCondCode(.ne));
+}
+
+test "intccToCondCode: signed conditions" {
+    const testing = std.testing;
+
+    try testing.expectEqual(root.aarch64_inst.CondCode.lt, intccToCondCode(.slt));
+    try testing.expectEqual(root.aarch64_inst.CondCode.ge, intccToCondCode(.sge));
+    try testing.expectEqual(root.aarch64_inst.CondCode.gt, intccToCondCode(.sgt));
+    try testing.expectEqual(root.aarch64_inst.CondCode.le, intccToCondCode(.sle));
+}
+
+test "intccToCondCode: unsigned conditions" {
+    const testing = std.testing;
+
+    try testing.expectEqual(root.aarch64_inst.CondCode.lo, intccToCondCode(.ult));
+    try testing.expectEqual(root.aarch64_inst.CondCode.hs, intccToCondCode(.uge));
+    try testing.expectEqual(root.aarch64_inst.CondCode.hi, intccToCondCode(.ugt));
+    try testing.expectEqual(root.aarch64_inst.CondCode.ls, intccToCondCode(.ule));
+}
+
+test "aarch64_cmp_rr: creates compare instruction" {
+    const testing = std.testing;
+
+    var func = lower_mod.Function.init(testing.allocator);
+    defer func.deinit();
+
+    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    const v1 = lower_mod.Value.new(0);
+    const v2 = lower_mod.Value.new(1);
+
+    const inst = try aarch64_cmp_rr(root.types.Type.I64, v1, v2, .eq, &ctx);
+
+    try testing.expectEqual(Inst.cmp_rr, @as(std.meta.Tag(Inst), inst));
+    try testing.expectEqual(root.aarch64_inst.OperandSize.size64, inst.cmp_rr.size);
+}
+
+test "aarch64_cmp_imm: creates compare immediate instruction" {
+    const testing = std.testing;
+
+    var func = lower_mod.Function.init(testing.allocator);
+    defer func.deinit();
+
+    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    const v1 = lower_mod.Value.new(0);
+
+    const inst = try aarch64_cmp_imm(root.types.Type.I32, v1, 42, .ne, &ctx);
+
+    try testing.expectEqual(Inst.cmp_imm, @as(std.meta.Tag(Inst), inst));
+    try testing.expectEqual(root.aarch64_inst.OperandSize.size32, inst.cmp_imm.size);
+    try testing.expectEqual(@as(u16, 42), inst.cmp_imm.imm);
+}
+
+test "aarch64_cmn_rr: creates compare negative instruction" {
+    const testing = std.testing;
+
+    var func = lower_mod.Function.init(testing.allocator);
+    defer func.deinit();
+
+    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    const v1 = lower_mod.Value.new(0);
+    const v2 = lower_mod.Value.new(1);
+
+    const inst = try aarch64_cmn_rr(root.types.Type.I64, v1, v2, &ctx);
+
+    try testing.expectEqual(Inst.cmn_rr, @as(std.meta.Tag(Inst), inst));
+    try testing.expectEqual(root.aarch64_inst.OperandSize.size64, inst.cmn_rr.size);
+}
+
+test "aarch64_cmn_imm: creates compare negative immediate instruction" {
+    const testing = std.testing;
+
+    var func = lower_mod.Function.init(testing.allocator);
+    defer func.deinit();
+
+    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    const v1 = lower_mod.Value.new(0);
+
+    const inst = try aarch64_cmn_imm(root.types.Type.I32, v1, 100, &ctx);
+
+    try testing.expectEqual(Inst.cmn_imm, @as(std.meta.Tag(Inst), inst));
+    try testing.expectEqual(root.aarch64_inst.OperandSize.size32, inst.cmn_imm.size);
+    try testing.expectEqual(@as(u16, 100), inst.cmn_imm.imm);
+}
+
+test "aarch64_tst_rr: creates test bits instruction" {
+    const testing = std.testing;
+
+    var func = lower_mod.Function.init(testing.allocator);
+    defer func.deinit();
+
+    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    const v1 = lower_mod.Value.new(0);
+    const v2 = lower_mod.Value.new(1);
+
+    const inst = try aarch64_tst_rr(root.types.Type.I64, v1, v2, &ctx);
+
+    try testing.expectEqual(Inst.tst_rr, @as(std.meta.Tag(Inst), inst));
+    try testing.expectEqual(root.aarch64_inst.OperandSize.size64, inst.tst_rr.size);
+}
+
+test "aarch64_tst_imm: creates test bits immediate instruction" {
+    const testing = std.testing;
+
+    var func = lower_mod.Function.init(testing.allocator);
+    defer func.deinit();
+
+    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    const v1 = lower_mod.Value.new(0);
+
+    const inst = try aarch64_tst_imm(root.types.Type.I64, v1, 0xFF, &ctx);
+
+    try testing.expectEqual(Inst.tst_imm, @as(std.meta.Tag(Inst), inst));
+    try testing.expectEqual(root.aarch64_inst.OperandSize.size64, inst.tst_imm.imm.size);
 }
