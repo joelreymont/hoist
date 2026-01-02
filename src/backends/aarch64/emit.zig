@@ -209,6 +209,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_cmeq => |i| try emitVecCmeq(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_cmgt => |i| try emitVecCmgt(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_cmge => |i| try emitVecCmge(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_and => |i| try emitVecAnd(i.dst.toReg(), i.src1, i.src2, buffer),
+        .vec_orr => |i| try emitVecOrr(i.dst.toReg(), i.src1, i.src2, buffer),
+        .vec_eor => |i| try emitVecEor(i.dst.toReg(), i.src1, i.src2, buffer),
     }
 }
 
@@ -10268,6 +10271,69 @@ fn emitVecCmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (0b1 << 20) |
         (@as(u32, rm) << 16) |
         (0b001111 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector AND (bitwise): AND Vd.16B, Vn.16B, Vm.16B
+/// Encoding: 0|Q|0|01110|00|1|Rm|000111|Rn|Rd (Q=1 for 128-bit)
+fn emitVecAnd(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+
+    const insn: u32 = (0b1 << 30) | // Q=1 for 128-bit
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (0b00 << 22) |
+        (0b1 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b000111 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector ORR (bitwise OR): ORR Vd.16B, Vn.16B, Vm.16B
+/// Encoding: 0|Q|0|01110|10|1|Rm|000111|Rn|Rd
+fn emitVecOrr(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+
+    const insn: u32 = (0b1 << 30) | // Q=1 for 128-bit
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (0b10 << 22) |
+        (0b1 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b000111 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector EOR (bitwise XOR): EOR Vd.16B, Vn.16B, Vm.16B
+/// Encoding: 0|Q|1|01110|00|1|Rm|000111|Rn|Rd
+fn emitVecEor(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+
+    const insn: u32 = (0b1 << 30) | // Q=1 for 128-bit
+        (0b1 << 29) |
+        (0b01110 << 24) |
+        (0b00 << 22) |
+        (0b1 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b000111 << 10) |
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 

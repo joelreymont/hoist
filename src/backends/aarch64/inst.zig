@@ -1419,6 +1419,27 @@ pub const Inst = union(enum) {
         size: VectorSize,
     },
 
+    /// Vector AND (NEON): AND Vd.16B, Vn.16B, Vm.16B
+    vec_and: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    /// Vector ORR (NEON): ORR Vd.16B, Vn.16B, Vm.16B
+    vec_orr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    /// Vector EOR (NEON): EOR Vd.16B, Vn.16B, Vm.16B (XOR)
+    vec_eor: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
 
     pub fn format(
         self: Inst,
@@ -1622,6 +1643,9 @@ pub const Inst = union(enum) {
             .vec_cmeq => |i| try writer.print("cmeq.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_cmgt => |i| try writer.print("cmgt.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_cmge => |i| try writer.print("cmge.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_and => |i| try writer.print("and.16b {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .vec_orr => |i| try writer.print("orr.16b {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .vec_eor => |i| try writer.print("eor.16b {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
         }
     }
 };
