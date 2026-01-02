@@ -1040,5 +1040,24 @@
 (rule (lower (fence AtomicOrdering.acq_rel))
       (aarch64_dmb ShareabilityDomain.ISH))
 
+;; System register access lowering
+
+;; SystemReg enum type for system registers
+(type SystemReg (enum
+  nzcv         ;; Condition flags (Negative, Zero, Carry, Overflow)
+  fpcr         ;; Floating-point Control Register
+  fpsr         ;; Floating-point Status Register
+  tpidr_el0    ;; Thread Pointer/ID Register (User Read/Write)
+  tpidrro_el0  ;; Thread Pointer/ID Register (User Read-Only)
+))
+
+;; Constructor declarations for system register access
+
+;; MRS - Move from System Register (read system register)
+(decl aarch64_mrs (SystemReg) Aarch64Inst)
+
+;; MSR - Move to System Register (write system register)
+(decl aarch64_msr (SystemReg Value) Aarch64Inst)
+
 ;; Helper functions
 (decl negate_i64 (i64) i64)

@@ -273,6 +273,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .ldaxr => |i| try emitLdaxr(i.dst.toReg(), i.addr, i.size, buffer),
         .stlxr => |i| try emitStlxr(i.status.toReg(), i.src, i.addr, i.size, buffer),
         .clrex => try emitClrex(buffer),
+        .mrs => |i| try emitMrs(i.dst.toReg(), i.sysreg, buffer),
+        .msr => |i| try emitMsr(i.sysreg, i.src, buffer),
         .asm_bytes => |i| try emitAsmBytes(i.bytes, buffer),
     }
 }
@@ -11761,4 +11763,34 @@ pub fn emitLoadGlobal(dst: Reg, symbol: []const u8, size: OperandSize, buffer: *
         rd;
     try buffer.put(&std.mem.toBytes(ldr_insn));
     try buffer.addReloc(ldr_offset, .aarch64_ldst64_abs_lo12_nc, symbol, 0);
+}
+
+/// MRS - Move from System Register
+/// Encoding: 1101 0101 0011 SSSSSSS SSSSS Rt
+/// where S is the system register encoding and Rt is the destination register
+fn emitMrs(dst: Reg, sysreg: root.aarch64_inst.SystemReg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const sys_enc: u15 = sysreg.encoding();
+
+    const insn: u32 =
+        (0b1101010100110 << 19) | // MRS opcode
+        (@as(u32, sys_enc) << 5) |
+        rd;
+
+    try buffer.put(&std.mem.toBytes(insn));
+}
+
+/// MSR - Move to System Register
+/// Encoding: 1101 0101 0001 SSSSSSS SSSSS Rt
+/// where S is the system register encoding and Rt is the source register
+fn emitMsr(sysreg: root.aarch64_inst.SystemReg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(src);
+    const sys_enc: u15 = sysreg.encoding();
+
+    const insn: u32 =
+        (0b1101010100010 << 19) | // MSR opcode
+        (@as(u32, sys_enc) << 5) |
+        rt;
+
+    try buffer.put(&std.mem.toBytes(insn));
 }

@@ -1316,6 +1316,22 @@ pub const Inst = union(enum) {
         src: Reg,
     },
 
+    /// MRS - Move from System Register (read system register).
+    /// Reads a system register into a general-purpose register.
+    /// Example: MRS X0, TPIDR_EL0
+    mrs: struct {
+        dst: WritableReg,
+        sysreg: SystemReg,
+    },
+
+    /// MSR - Move to System Register (write system register).
+    /// Writes a general-purpose register to a system register.
+    /// Example: MSR TPIDR_EL0, X0
+    msr: struct {
+        sysreg: SystemReg,
+        src: Reg,
+    },
+
     /// Epilogue placeholder - updated by prologue/epilogue insertion.
     epilogue_placeholder: void,
 
@@ -1496,6 +1512,8 @@ pub const Inst = union(enum) {
             .zext8 => |i| try writer.print("zext8.{} {}, {}", .{ i.size, i.dst, i.src }),
             .zext16 => |i| try writer.print("zext16.{} {}, {}", .{ i.size, i.dst, i.src }),
             .zext32 => |i| try writer.print("zext32 {}, {}", .{ i.dst, i.src }),
+            .mrs => |i| try writer.print("mrs {}, {}", .{ i.dst, i.sysreg }),
+            .msr => |i| try writer.print("msr {}, {}", .{ i.sysreg, i.src }),
             .epilogue_placeholder => try writer.print("epilogue_placeholder", .{}),
         }
     }
@@ -1717,6 +1735,35 @@ pub const BarrierOp = enum(u4) {
             .osh => try writer.print("osh", .{}),
             .oshst => try writer.print("oshst", .{}),
             .oshld => try writer.print("oshld", .{}),
+        }
+    }
+};
+
+/// System registers accessible via MRS/MSR instructions.
+pub const SystemReg = enum(u16) {
+    /// NZCV - Condition flags (Negative, Zero, Carry, Overflow)
+    nzcv = 0b11_011_0100_0010_000,
+    /// FPCR - Floating-point Control Register
+    fpcr = 0b11_011_0100_0100_000,
+    /// FPSR - Floating-point Status Register
+    fpsr = 0b11_011_0100_0100_001,
+    /// TPIDR_EL0 - Thread Pointer/ID Register (User Read/Write)
+    tpidr_el0 = 0b11_011_1101_0000_010,
+    /// TPIDRRO_EL0 - Thread Pointer/ID Register (User Read-Only)
+    tpidrro_el0 = 0b11_011_1101_0000_011,
+
+    /// Get the encoding for MRS/MSR instructions.
+    pub fn encoding(self: SystemReg) u15 {
+        return @intFromEnum(self);
+    }
+
+    pub fn format(self: SystemReg, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        switch (self) {
+            .nzcv => try writer.print("nzcv", .{}),
+            .fpcr => try writer.print("fpcr", .{}),
+            .fpsr => try writer.print("fpsr", .{}),
+            .tpidr_el0 => try writer.print("tpidr_el0", .{}),
+            .tpidrro_el0 => try writer.print("tpidrro_el0", .{}),
         }
     }
 };
@@ -2294,6 +2341,24 @@ pub fn aarch64_umaxv(dst: WritableReg, src: Reg, size: VecElemSize) Inst {
         .dst = dst,
         .src = src,
         .size = size,
+    } };
+}
+
+/// MRS - Move from System Register
+/// Read a system register value into a general-purpose register.
+pub fn aarch64_mrs(dst: WritableReg, sysreg: SystemReg) Inst {
+    return .{ .mrs = .{
+        .dst = dst,
+        .sysreg = sysreg,
+    } };
+}
+
+/// MSR - Move to System Register
+/// Write a general-purpose register value to a system register.
+pub fn aarch64_msr(sysreg: SystemReg, src: Reg) Inst {
+    return .{ .msr = .{
+        .sysreg = sysreg,
+        .src = src,
     } };
 }
 
