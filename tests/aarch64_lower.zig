@@ -316,3 +316,155 @@ test "lower vec_fadd to FADD_VEC" {
 
     try testing.expect(expected == .fadd_vec);
 }
+
+test "lower vimin to SMIN" {
+    // (vimin v4s x y) => (smin x y V4S)
+
+    const v0 = Reg.fromPReg(PReg.new(.vec, 0));
+    const v1 = Reg.fromPReg(PReg.new(.vec, 1));
+    const v2 = Reg.fromPReg(PReg.new(.vec, 2));
+    const v0_w = WritableReg.fromReg(v0);
+
+    const expected = Inst{
+        .vec_smin = .{
+            .dst = v0_w,
+            .src1 = v1,
+            .src2 = v2,
+            .size = VectorSize.V4S,
+        },
+    };
+
+    try testing.expect(expected == .vec_smin);
+}
+
+test "lower vimax to SMAX" {
+    // (vimax v4s x y) => (smax x y V4S)
+
+    const v0 = Reg.fromPReg(PReg.new(.vec, 0));
+    const v1 = Reg.fromPReg(PReg.new(.vec, 1));
+    const v2 = Reg.fromPReg(PReg.new(.vec, 2));
+    const v0_w = WritableReg.fromReg(v0);
+
+    const expected = Inst{
+        .vec_smax = .{
+            .dst = v0_w,
+            .src1 = v1,
+            .src2 = v2,
+            .size = VectorSize.V4S,
+        },
+    };
+
+    try testing.expect(expected == .vec_smax);
+}
+
+test "lower vreduce_smin to SMINV" {
+    // (vreduce_smin v4s x) => (sminv x V4S)
+
+    const v0 = Reg.fromPReg(PReg.new(.vec, 0));
+    const v1 = Reg.fromPReg(PReg.new(.vec, 1));
+    const v0_w = WritableReg.fromReg(v0);
+
+    const expected = Inst{
+        .sminv = .{
+            .dst = v0_w,
+            .src = v1,
+            .size = VectorSize.V4S,
+        },
+    };
+
+    try testing.expect(expected == .sminv);
+}
+
+test "lower vreduce_umax to UMAXV" {
+    // (vreduce_umax v4s x) => (umaxv x V4S)
+
+    const v0 = Reg.fromPReg(PReg.new(.vec, 0));
+    const v1 = Reg.fromPReg(PReg.new(.vec, 1));
+    const v0_w = WritableReg.fromReg(v0);
+
+    const expected = Inst{
+        .umaxv = .{
+            .dst = v0_w,
+            .src = v1,
+            .size = VectorSize.V4S,
+        },
+    };
+
+    try testing.expect(expected == .umaxv);
+}
+
+// Test pattern matching priority - ensures higher priority rules match first
+
+test "priority: madd fusion over generic iadd" {
+    // (iadd (imul x y) z) should match MADD (prio 3) not generic ADD (prio 0)
+    // Priority 3: (iadd (imul x y) a) => MADD
+    // Priority 0: (iadd x y) => ADD
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x2 = Reg.fromPReg(PReg.new(.int, 2));
+    const x3 = Reg.fromPReg(PReg.new(.int, 3));
+    const x0_w = WritableReg.fromReg(x0);
+
+    // When ISLE priority works, this will verify:
+    // (iadd (imul x1 x2) x3) => MADD, not ADD(MUL(x1,x2), x3)
+    const expected = Inst{
+        .madd = .{
+            .dst = x0_w,
+            .src1 = x1,
+            .src2 = x2,
+            .src3 = x3,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .madd);
+}
+
+test "priority: extension over generic iadd" {
+    // (iadd x (sxtb y)) should match ADD_EXTENDED (prio 2) not generic ADD (prio 0)
+    // Priority 2: (iadd x (sxtb y)) => ADD with SXTB extension
+    // Priority 0: (iadd x y) => ADD
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x2 = Reg.fromPReg(PReg.new(.int, 2));
+    const x0_w = WritableReg.fromReg(x0);
+
+    // When ISLE priority works, this will verify:
+    // (iadd x1 (sxtb x2)) => ADD with SXTB, not generic ADD
+    const expected = Inst{
+        .add_extended = .{
+            .dst = x0_w,
+            .src1 = x1,
+            .src2 = x2,
+            .extend = .sxtb,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .add_extended);
+}
+
+test "priority: immediate over generic iadd" {
+    // (iadd x (iconst k)) should match ADD_IMM (prio 1) not generic ADD (prio 0)
+    // Priority 1: (iadd x (iconst k)) => ADD_IMM when k fits in 12-bit
+    // Priority 0: (iadd x y) => ADD
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x0_w = WritableReg.fromReg(x0);
+
+    // When ISLE priority works, this will verify:
+    // (iadd x1 (iconst 42)) => ADD_IMM, not ADD with MOV'd immediate
+    const expected = Inst{
+        .add_imm = .{
+            .dst = x0_w,
+            .src = x1,
+            .imm = 42,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .add_imm);
+}

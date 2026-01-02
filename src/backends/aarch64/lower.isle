@@ -3,62 +3,62 @@
 
 ;; Integer arithmetic lowering
 
-;; iadd: Add two integers
-(rule (lower (iadd ty x y))
+;; iadd: Add two integers (default, lowest priority)
+(rule 0 (lower (iadd ty x y))
       (aarch64_add_rr ty x y))
 
-;; iadd with sign-extended byte operand
+;; iadd with sign-extended byte operand (higher priority than generic)
 ;; Pattern: iadd(x, sextb(y)) => ADD Xd, Xn, Wm, SXTB
-(rule (lower (iadd ty x (aarch64_sxtb ext_ty y)))
+(rule 2 (lower (iadd ty x (aarch64_sxtb ext_ty y)))
       (if-let $I64 ty)
       (aarch64_add_extended ty x y ExtendOp.sxtb))
 
-;; iadd with sign-extended halfword operand
+;; iadd with sign-extended halfword operand (higher priority than generic)
 ;; Pattern: iadd(x, sexth(y)) => ADD Xd, Xn, Wm, SXTH
-(rule (lower (iadd ty x (aarch64_sxth ext_ty y)))
+(rule 2 (lower (iadd ty x (aarch64_sxth ext_ty y)))
       (if-let $I64 ty)
       (aarch64_add_extended ty x y ExtendOp.sxth))
 
-;; iadd with sign-extended word operand
+;; iadd with sign-extended word operand (higher priority than generic)
 ;; Pattern: iadd(x, sextw(y)) => ADD Xd, Xn, Wm, SXTW
-(rule (lower (iadd ty x (aarch64_sxtw y)))
+(rule 2 (lower (iadd ty x (aarch64_sxtw y)))
       (if-let $I64 ty)
       (aarch64_add_extended ty x y ExtendOp.sxtw))
 
-;; iadd with zero-extended byte operand
+;; iadd with zero-extended byte operand (higher priority than generic)
 ;; Pattern: iadd(x, uextb(y)) => ADD Xd, Xn, Wm, UXTB
-(rule (lower (iadd ty x (aarch64_uxtb ext_ty y)))
+(rule 2 (lower (iadd ty x (aarch64_uxtb ext_ty y)))
       (if-let $I64 ty)
       (aarch64_add_extended ty x y ExtendOp.uxtb))
 
-;; iadd with zero-extended halfword operand
+;; iadd with zero-extended halfword operand (higher priority than generic)
 ;; Pattern: iadd(x, uexth(y)) => ADD Xd, Xn, Wm, UXTH
-(rule (lower (iadd ty x (aarch64_uxth ext_ty y)))
+(rule 2 (lower (iadd ty x (aarch64_uxth ext_ty y)))
       (if-let $I64 ty)
       (aarch64_add_extended ty x y ExtendOp.uxth))
 
-;; iadd with commuted operands (sign-extended byte)
-(rule (lower (iadd ty (aarch64_sxtb ext_ty y) x))
+;; iadd with commuted operands (sign-extended byte, higher priority)
+(rule 2 (lower (iadd ty (aarch64_sxtb ext_ty y) x))
       (if-let $I64 ty)
       (aarch64_add_extended ty x y ExtendOp.sxtb))
 
-;; iadd with commuted operands (sign-extended halfword)
-(rule (lower (iadd ty (aarch64_sxth ext_ty y) x))
+;; iadd with commuted operands (sign-extended halfword, higher priority)
+(rule 2 (lower (iadd ty (aarch64_sxth ext_ty y) x))
       (if-let $I64 ty)
       (aarch64_add_extended ty x y ExtendOp.sxth))
 
-;; iadd with commuted operands (sign-extended word)
-(rule (lower (iadd ty (aarch64_sxtw y) x))
+;; iadd with commuted operands (sign-extended word, higher priority)
+(rule 2 (lower (iadd ty (aarch64_sxtw y) x))
       (if-let $I64 ty)
       (aarch64_add_extended ty x y ExtendOp.sxtw))
 
-;; iadd with commuted operands (zero-extended byte)
-(rule (lower (iadd ty (aarch64_uxtb ext_ty y) x))
+;; iadd with commuted operands (zero-extended byte, higher priority)
+(rule 2 (lower (iadd ty (aarch64_uxtb ext_ty y) x))
       (if-let $I64 ty)
       (aarch64_add_extended ty x y ExtendOp.uxtb))
 
-;; iadd with commuted operands (zero-extended halfword)
-(rule (lower (iadd ty (aarch64_uxth ext_ty y) x))
+;; iadd with commuted operands (zero-extended halfword, higher priority)
+(rule 2 (lower (iadd ty (aarch64_uxth ext_ty y) x))
       (if-let $I64 ty)
       (aarch64_add_extended ty x y ExtendOp.uxth))
 
@@ -70,17 +70,17 @@
 (rule (lower (imul ty x y))
       (aarch64_mul_rr ty x y))
 
-;; Multiply-add fusion patterns
+;; Multiply-add fusion patterns (highest priority - fuse before generic ops)
 ;; iadd(a, imul(x, y)) => madd(x, y, a)
-(rule (lower (iadd ty (imul ty x y) a))
+(rule 3 (lower (iadd ty (imul ty x y) a))
       (aarch64_madd ty x y a))
 
-(rule (lower (iadd ty a (imul ty x y)))
+(rule 3 (lower (iadd ty a (imul ty x y)))
       (aarch64_madd ty x y a))
 
-;; Multiply-subtract fusion patterns
+;; Multiply-subtract fusion patterns (highest priority - fuse before generic ops)
 ;; isub(a, imul(x, y)) => msub(x, y, a)
-(rule (lower (isub ty a (imul ty x y)))
+(rule 3 (lower (isub ty a (imul ty x y)))
       (aarch64_msub ty x y a))
 
 ;; smul_hi: Signed multiply returning upper bits (64×64→128, return high 64)
@@ -234,8 +234,8 @@
 
 ;; Immediate forms
 
-;; iadd with 12-bit immediate
-(rule (lower (iadd ty x (iconst k)))
+;; iadd with 12-bit immediate (priority 1 - higher than generic, lower than extensions/fusions)
+(rule 1 (lower (iadd ty x (iconst k)))
       (if-let $true (uimm12 k))
       (aarch64_add_imm ty x k))
 
