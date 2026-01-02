@@ -53,9 +53,9 @@ test "E2E: while loop with phi node" {
 
     // Compare: loop_counter > 0
     const zero_data = InstructionData{
-        .nullary = .{
+        .unary_imm = .{
             .opcode = .iconst,
-            .imm = 0,
+            .imm = Imm64.new(0),
         },
     };
     const zero_inst = try func.dfg.makeInst(zero_data);
@@ -87,9 +87,9 @@ test "E2E: while loop with phi node" {
 
     // Loop body: decrement counter
     const one_data = InstructionData{
-        .nullary = .{
+        .unary_imm = .{
             .opcode = .iconst,
-            .imm = 1,
+            .imm = Imm64.new(1),
         },
     };
     const one_inst = try func.dfg.makeInst(one_data);
@@ -195,9 +195,9 @@ test "E2E: nested loops with phi nodes" {
     const outer_counter = try func.dfg.appendBlockParam(outer_header, Type.I32);
 
     const zero_data = InstructionData{
-        .nullary = .{
+        .unary_imm = .{
             .opcode = .iconst,
-            .imm = 0,
+            .imm = Imm64.new(0),
         },
     };
     const zero_inst = try func.dfg.makeInst(zero_data);
@@ -253,9 +253,9 @@ test "E2E: nested loops with phi nodes" {
 
     // Inner body: decrement inner counter
     const one_data = InstructionData{
-        .nullary = .{
+        .unary_imm = .{
             .opcode = .iconst,
-            .imm = 1,
+            .imm = Imm64.new(1),
         },
     };
     const one_inst = try func.dfg.makeInst(one_data);
@@ -363,9 +363,9 @@ test "E2E: loop with accumulator phi" {
 
     // Entry: initialize sum = 0, jump to header
     const zero_data = InstructionData{
-        .nullary = .{
+        .unary_imm = .{
             .opcode = .iconst,
-            .imm = 0,
+            .imm = Imm64.new(0),
         },
     };
     const zero_inst = try func.dfg.makeInst(zero_data);
@@ -386,9 +386,9 @@ test "E2E: loop with accumulator phi" {
     const sum = try func.dfg.appendBlockParam(loop_header, Type.I32);
 
     const zero_cmp_data = InstructionData{
-        .nullary = .{
+        .unary_imm = .{
             .opcode = .iconst,
-            .imm = 0,
+            .imm = Imm64.new(0),
         },
     };
     const zero_cmp_inst = try func.dfg.makeInst(zero_cmp_data);
@@ -429,9 +429,9 @@ test "E2E: loop with accumulator phi" {
     try func.layout.appendInst(add_inst, loop_body);
 
     const one_data = InstructionData{
-        .nullary = .{
+        .unary_imm = .{
             .opcode = .iconst,
-            .imm = 1,
+            .imm = Imm64.new(1),
         },
     };
     const one_inst = try func.dfg.makeInst(one_data);

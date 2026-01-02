@@ -26,6 +26,7 @@ const BlockCall = block_call.BlockCall;
 /// Instruction data - core instruction representation.
 pub const InstructionData = union(enum) {
     nullary: NullaryData,
+    unary_imm: UnaryImmData,
     unary: UnaryData,
     binary: BinaryData,
     int_compare: IntCompareData,
@@ -50,6 +51,15 @@ pub const NullaryData = struct {
 
     pub fn init(op: Opcode) NullaryData {
         return .{ .opcode = op };
+    }
+};
+
+pub const UnaryImmData = struct {
+    opcode: Opcode,
+    imm: Imm64,
+
+    pub fn init(op: Opcode, imm: Imm64) UnaryImmData {
+        return .{ .opcode = op, .imm = imm };
     }
 };
 

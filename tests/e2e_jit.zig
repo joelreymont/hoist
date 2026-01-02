@@ -99,9 +99,9 @@ test "JIT: compile and execute return constant i32" {
     try func.layout.appendBlock(entry);
 
     const const_data = InstructionData{
-        .nullary = .{
+        .unary_imm = .{
             .opcode = .iconst,
-            .imm = 42,
+            .imm = Imm64.new(42),
         },
     };
     const const_inst = try func.dfg.makeInst(const_data);

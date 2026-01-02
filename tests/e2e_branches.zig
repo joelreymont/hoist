@@ -35,9 +35,9 @@ test "E2E: conditional branch if-then-else" {
     const param = func.dfg.blockParams(entry)[0];
 
     const zero_data = InstructionData{
-        .nullary = .{
+        .unary_imm = .{
             .opcode = .iconst,
-            .imm = 0,
+            .imm = Imm64.new(0),
         },
     };
     const zero_inst = try func.dfg.makeInst(zero_data);
