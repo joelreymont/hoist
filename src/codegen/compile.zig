@@ -23,6 +23,9 @@ const ir = struct {
     pub const I64 = @import("../ir/types.zig").Type.I64;
     pub const Signature = @import("../ir/signature.zig").Signature;
     pub const Verifier = @import("../ir/verifier.zig").Verifier;
+    pub const Inst = @import("../ir/entities.zig").Inst;
+    pub const Value = @import("../ir/entities.zig").Value;
+    pub const ValueData = @import("../ir/dfg.zig").ValueData;
 };
 const MachBuffer = @import("../machinst/buffer.zig").MachBuffer;
 
@@ -375,9 +378,66 @@ fn legalize(ctx: *Context) CodegenError!void {
 
 /// Lower IR to VCode via ISLE.
 fn lower(ctx: *Context, target: *const Target) CodegenError!void {
-    // TODO: Implement lowering phase
-    _ = ctx;
+    const LowerCtx = @import("isle_ctx.zig").LowerCtx;
+    const VCodeBuilder = @import("../machinst/vcode.zig").VCodeBuilder;
+
+    // Create VCode builder for the target architecture
+    var vcode_builder = VCodeBuilder.init(ctx.allocator, &ctx.func) catch |err| {
+        std.debug.print("Failed to create VCode builder: {}\n", .{err});
+        return error.LoweringFailed;
+    };
+    defer vcode_builder.deinit();
+
+    // Create ISLE lowering context
+    var lower_ctx = LowerCtx.init(ctx.allocator, &ctx.func, &vcode_builder) catch |err| {
+        std.debug.print("Failed to create lowering context: {}\n", .{err});
+        return error.LoweringFailed;
+    };
+    defer lower_ctx.deinit();
+
+    // Lower each block in layout order
+    var block_iter = ctx.func.layout.blockIter();
+    while (block_iter.next()) |block| {
+        // Start lowering this block
+        lower_ctx.startBlock(block) catch |err| {
+            std.debug.print("Failed to start block lowering: {}\n", .{err});
+            return error.LoweringFailed;
+        };
+
+        // Lower each instruction in the block
+        var inst_iter = ctx.func.layout.blockInstIter(block);
+        while (inst_iter.next()) |inst| {
+            // Set current instruction for diagnostics
+            lower_ctx.setCurrentInst(inst);
+
+            // Lower instruction via ISLE rules or backend-specific lowering
+            lowerInstruction(&lower_ctx, inst, target) catch |err| {
+                std.debug.print("Failed to lower instruction: {}\n", .{err});
+                return error.LoweringFailed;
+            };
+        }
+
+        // End block lowering
+        lower_ctx.endBlock() catch |err| {
+            std.debug.print("Failed to end block lowering: {}\n", .{err});
+            return error.LoweringFailed;
+        };
+    }
+
+    // Store the built VCode in context for register allocation
+    ctx.vcode = vcode_builder.finish() catch |err| {
+        std.debug.print("Failed to finish VCode: {}\n", .{err});
+        return error.LoweringFailed;
+    };
+}
+
+/// Lower a single instruction.
+fn lowerInstruction(lower_ctx: anytype, inst: ir.Inst, target: *const Target) CodegenError!void {
+    _ = lower_ctx;
+    _ = inst;
     _ = target;
+    // TODO: Call ISLE-generated lowering rules or backend-specific lowering
+    // For now, this is a stub that will be connected to the ISLE compiler output
 }
 
 /// Allocate registers.
