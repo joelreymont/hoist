@@ -816,6 +816,177 @@ pub const Compiler = struct {
             else => return error.UnsupportedExpr,
         }
     }
+
+    /// Group rules by their root term and sort by descending priority.
+    /// Rules with the same priority will maintain declaration order.
+    pub fn prioritizeRules(self: *Self) !void {
+        // Group rules by their root term
+        var term_rules = std.AutoHashMap(TermId, std.ArrayList(usize)).init(self.allocator);
+        defer {
+            var it = term_rules.valueIterator();
+            while (it.next()) |list| {
+                list.deinit();
+            }
+            term_rules.deinit();
+        }
+
+        // Collect rule indices by term
+        for (self.rules.items, 0..) |rule, idx| {
+            const root_term = self.extractRootTerm(rule.pattern);
+            const entry = try term_rules.getOrPut(root_term);
+            if (!entry.found_existing) {
+                entry.value_ptr.* = std.ArrayList(usize).init(self.allocator);
+            }
+            try entry.value_ptr.append(idx);
+        }
+
+        // Sort each term's rules by descending priority (higher priority first)
+        // Break ties by maintaining original declaration order
+        var it = term_rules.valueIterator();
+        while (it.next()) |rule_indices| {
+            std.mem.sort(usize, rule_indices.items, self, compareRulePriority);
+        }
+    }
+
+    /// Compare two rules by priority (descending) then by index (ascending).
+    fn compareRulePriority(self: *const Self, a: usize, b: usize) bool {
+        const rule_a = self.rules.items[a];
+        const rule_b = self.rules.items[b];
+
+        // Higher priority comes first
+        if (rule_a.prio != rule_b.prio) {
+            return rule_a.prio > rule_b.prio;
+        }
+
+        // Same priority: maintain declaration order (lower index first)
+        return a < b;
+    }
+
+    /// Extract the root term ID from a pattern.
+    fn extractRootTerm(self: *const Self, pattern: Pattern) TermId {
+        return switch (pattern) {
+            .term => |t| t.term_id,
+            .bind_pattern => |b| self.extractRootTerm(b.subpat.*),
+            .and_pat => |a| if (a.subpats.len > 0)
+                self.extractRootTerm(a.subpats[0])
+            else
+                TermId.new(0), // fallback
+            else => TermId.new(0), // wildcards/vars/constants have no specific term
+        };
+    }
+
+    /// Detect cycles in the extractor call graph.
+    /// Returns error if any extractor recursively calls itself.
+    pub fn detectCycles(self: *Self) !void {
+        // Build extractor call graph
+        var call_graph = std.AutoHashMap(TermId, std.ArrayList(TermId)).init(self.allocator);
+        defer {
+            var it = call_graph.valueIterator();
+            while (it.next()) |list| {
+                list.deinit();
+            }
+            call_graph.deinit();
+        }
+
+        // Populate call graph by analyzing extractor templates
+        for (self.term_env.terms.items) |term| {
+            if (term.kind == .extractor) {
+                const callees = try self.findExtractorCalls(term.kind.extractor.template);
+                defer self.allocator.free(callees);
+
+                if (callees.len > 0) {
+                    try call_graph.put(term.id, std.ArrayList(TermId).init(self.allocator));
+                    for (callees) |callee| {
+                        try call_graph.get(term.id).?.append(callee);
+                    }
+                }
+            }
+        }
+
+        // DFS-based cycle detection for each extractor
+        var visited = std.AutoHashMap(TermId, void).init(self.allocator);
+        defer visited.deinit();
+
+        var rec_stack = std.AutoHashMap(TermId, void).init(self.allocator);
+        defer rec_stack.deinit();
+
+        for (self.term_env.terms.items) |term| {
+            if (term.kind != .extractor) continue;
+
+            if (!visited.contains(term.id)) {
+                try self.detectCyclesDfs(term.id, &call_graph, &visited, &rec_stack);
+            }
+        }
+    }
+
+    /// DFS helper for cycle detection.
+    fn detectCyclesDfs(
+        self: *Self,
+        node: TermId,
+        call_graph: *std.AutoHashMap(TermId, std.ArrayList(TermId)),
+        visited: *std.AutoHashMap(TermId, void),
+        rec_stack: *std.AutoHashMap(TermId, void),
+    ) !void {
+        try visited.put(node, {});
+        try rec_stack.put(node, {});
+
+        if (call_graph.get(node)) |callees| {
+            for (callees.items) |callee| {
+                if (!visited.contains(callee)) {
+                    try self.detectCyclesDfs(callee, call_graph, visited, rec_stack);
+                } else if (rec_stack.contains(callee)) {
+                    // Cycle detected!
+                    const term = self.term_env.getTerm(node);
+                    const callee_term = self.term_env.getTerm(callee);
+                    std.log.err("Extractor cycle detected: {s} -> {s}", .{
+                        self.type_env.symName(term.name),
+                        self.type_env.symName(callee_term.name),
+                    });
+                    return error.ExtractorCycle;
+                }
+            }
+        }
+
+        _ = rec_stack.remove(node);
+    }
+
+    /// Find all extractor calls in a pattern.
+    fn findExtractorCalls(self: *const Self, pattern: Pattern) ![]TermId {
+        var calls = std.ArrayList(TermId).init(self.allocator);
+        errdefer calls.deinit();
+
+        try self.collectExtractorCalls(pattern, &calls);
+        return calls.toOwnedSlice();
+    }
+
+    /// Recursively collect extractor calls from a pattern.
+    fn collectExtractorCalls(
+        self: *const Self,
+        pattern: Pattern,
+        calls: *std.ArrayList(TermId),
+    ) !void {
+        switch (pattern) {
+            .term => |t| {
+                const term = self.term_env.getTerm(t.term_id);
+                if (term.kind == .extractor) {
+                    try calls.append(t.term_id);
+                }
+                // Recurse into arguments
+                for (t.args) |arg| {
+                    try self.collectExtractorCalls(arg, calls);
+                }
+            },
+            .bind_pattern => |b| {
+                try self.collectExtractorCalls(b.subpat.*, calls);
+            },
+            .and_pat => |a| {
+                for (a.subpats) |subpat| {
+                    try self.collectExtractorCalls(subpat, calls);
+                }
+            },
+            else => {}, // var_pat, const_*, wildcard don't call extractors
+        }
+    }
 };
 
 test "Compiler basic type registration" {
