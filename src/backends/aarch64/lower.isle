@@ -659,5 +659,231 @@
 (decl aarch64_fcvt_f64_to_f32 (Value) Aarch64Inst)  ;; FCVT: f64 to f32
 (decl aarch64_fcvt_f32_to_f64 (Value) Aarch64Inst)  ;; FCVT: f32 to f64
 
+;; Floating-point arithmetic
+(decl aarch64_fadd (Type Value Value) Aarch64Inst)
+(decl aarch64_fsub (Type Value Value) Aarch64Inst)
+(decl aarch64_fmul (Type Value Value) Aarch64Inst)
+(decl aarch64_fdiv (Type Value Value) Aarch64Inst)
+(decl aarch64_fsqrt (Type Value) Aarch64Inst)
+(decl aarch64_fmadd (Type Value Value Value) Aarch64Inst)
+(decl aarch64_fcmp (Value Value) Aarch64Inst)
+(decl aarch64_fabs (Type Value) Aarch64Inst)
+(decl aarch64_fneg (Type Value) Aarch64Inst)
+
+;; SIMD/Vector operations
+(decl aarch64_vec_add (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_sub (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_mul (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_smin (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_smax (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_umin (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_umax (VectorSize Value Value) Aarch64Inst)
+
+;; SIMD/Vector reductions (horizontal operations)
+(decl aarch64_addv (VectorSize Value) Aarch64Inst)     ;; Horizontal add across vector
+(decl aarch64_sminv (VectorSize Value) Aarch64Inst)    ;; Horizontal signed min
+(decl aarch64_smaxv (VectorSize Value) Aarch64Inst)    ;; Horizontal signed max
+(decl aarch64_uminv (VectorSize Value) Aarch64Inst)    ;; Horizontal unsigned min
+(decl aarch64_umaxv (VectorSize Value) Aarch64Inst)    ;; Horizontal unsigned max
+
+;; Vector type enum
+(type VectorSize (enum
+  V8B   ;; 8 bytes (8x i8)
+  V16B  ;; 16 bytes (16x i8)
+  V4H   ;; 4 halfwords (4x i16)
+  V8H   ;; 8 halfwords (8x i16)
+  V2S   ;; 2 singles (2x i32/f32)
+  V4S   ;; 4 singles (4x i32/f32)
+  V2D   ;; 2 doubles (2x i64/f64)
+))
+
+;; SIMD/Vector lowering rules
+
+;; viadd: Vector integer addition
+(rule (lower (viadd (vector_type V8B) x y))
+      (aarch64_vec_add V8B x y))
+
+(rule (lower (viadd (vector_type V16B) x y))
+      (aarch64_vec_add V16B x y))
+
+(rule (lower (viadd (vector_type V4H) x y))
+      (aarch64_vec_add V4H x y))
+
+(rule (lower (viadd (vector_type V8H) x y))
+      (aarch64_vec_add V8H x y))
+
+(rule (lower (viadd (vector_type V2S) x y))
+      (aarch64_vec_add V2S x y))
+
+(rule (lower (viadd (vector_type V4S) x y))
+      (aarch64_vec_add V4S x y))
+
+(rule (lower (viadd (vector_type V2D) x y))
+      (aarch64_vec_add V2D x y))
+
+;; visub: Vector integer subtraction
+(rule (lower (visub (vector_type V8B) x y))
+      (aarch64_vec_sub V8B x y))
+
+(rule (lower (visub (vector_type V16B) x y))
+      (aarch64_vec_sub V16B x y))
+
+(rule (lower (visub (vector_type V4H) x y))
+      (aarch64_vec_sub V4H x y))
+
+(rule (lower (visub (vector_type V8H) x y))
+      (aarch64_vec_sub V8H x y))
+
+(rule (lower (visub (vector_type V2S) x y))
+      (aarch64_vec_sub V2S x y))
+
+(rule (lower (visub (vector_type V4S) x y))
+      (aarch64_vec_sub V4S x y))
+
+(rule (lower (visub (vector_type V2D) x y))
+      (aarch64_vec_sub V2D x y))
+
+;; vimul: Vector integer multiplication
+(rule (lower (vimul (vector_type V8B) x y))
+      (aarch64_vec_mul V8B x y))
+
+(rule (lower (vimul (vector_type V16B) x y))
+      (aarch64_vec_mul V16B x y))
+
+(rule (lower (vimul (vector_type V4H) x y))
+      (aarch64_vec_mul V4H x y))
+
+(rule (lower (vimul (vector_type V8H) x y))
+      (aarch64_vec_mul V8H x y))
+
+(rule (lower (vimul (vector_type V2S) x y))
+      (aarch64_vec_mul V2S x y))
+
+(rule (lower (vimul (vector_type V4S) x y))
+      (aarch64_vec_mul V4S x y))
+
+;; vimin: Vector signed minimum
+(rule (lower (vimin (vector_type V8B) x y))
+      (aarch64_vec_smin V8B x y))
+
+(rule (lower (vimin (vector_type V16B) x y))
+      (aarch64_vec_smin V16B x y))
+
+(rule (lower (vimin (vector_type V4H) x y))
+      (aarch64_vec_smin V4H x y))
+
+(rule (lower (vimin (vector_type V8H) x y))
+      (aarch64_vec_smin V8H x y))
+
+(rule (lower (vimin (vector_type V2S) x y))
+      (aarch64_vec_smin V2S x y))
+
+(rule (lower (vimin (vector_type V4S) x y))
+      (aarch64_vec_smin V4S x y))
+
+;; vimax: Vector signed maximum
+(rule (lower (vimax (vector_type V8B) x y))
+      (aarch64_vec_smax V8B x y))
+
+(rule (lower (vimax (vector_type V16B) x y))
+      (aarch64_vec_smax V16B x y))
+
+(rule (lower (vimax (vector_type V4H) x y))
+      (aarch64_vec_smax V4H x y))
+
+(rule (lower (vimax (vector_type V8H) x y))
+      (aarch64_vec_smax V8H x y))
+
+(rule (lower (vimax (vector_type V2S) x y))
+      (aarch64_vec_smax V2S x y))
+
+(rule (lower (vimax (vector_type V4S) x y))
+      (aarch64_vec_smax V4S x y))
+
+;; Vector reduction lowering rules
+
+;; vreduce_add: Horizontal vector addition (sum all elements)
+(rule (lower (vreduce_add (vector_type V8B) x))
+      (aarch64_addv V8B x))
+
+(rule (lower (vreduce_add (vector_type V16B) x))
+      (aarch64_addv V16B x))
+
+(rule (lower (vreduce_add (vector_type V4H) x))
+      (aarch64_addv V4H x))
+
+(rule (lower (vreduce_add (vector_type V8H) x))
+      (aarch64_addv V8H x))
+
+(rule (lower (vreduce_add (vector_type V2S) x))
+      (aarch64_addv V2S x))
+
+(rule (lower (vreduce_add (vector_type V4S) x))
+      (aarch64_addv V4S x))
+
+;; vreduce_smin: Horizontal signed minimum
+(rule (lower (vreduce_smin (vector_type V8B) x))
+      (aarch64_sminv V8B x))
+
+(rule (lower (vreduce_smin (vector_type V16B) x))
+      (aarch64_sminv V16B x))
+
+(rule (lower (vreduce_smin (vector_type V4H) x))
+      (aarch64_sminv V4H x))
+
+(rule (lower (vreduce_smin (vector_type V8H) x))
+      (aarch64_sminv V8H x))
+
+(rule (lower (vreduce_smin (vector_type V4S) x))
+      (aarch64_sminv V4S x))
+
+;; vreduce_smax: Horizontal signed maximum
+(rule (lower (vreduce_smax (vector_type V8B) x))
+      (aarch64_smaxv V8B x))
+
+(rule (lower (vreduce_smax (vector_type V16B) x))
+      (aarch64_smaxv V16B x))
+
+(rule (lower (vreduce_smax (vector_type V4H) x))
+      (aarch64_smaxv V4H x))
+
+(rule (lower (vreduce_smax (vector_type V8H) x))
+      (aarch64_smaxv V8H x))
+
+(rule (lower (vreduce_smax (vector_type V4S) x))
+      (aarch64_smaxv V4S x))
+
+;; vreduce_umin: Horizontal unsigned minimum
+(rule (lower (vreduce_umin (vector_type V8B) x))
+      (aarch64_uminv V8B x))
+
+(rule (lower (vreduce_umin (vector_type V16B) x))
+      (aarch64_uminv V16B x))
+
+(rule (lower (vreduce_umin (vector_type V4H) x))
+      (aarch64_uminv V4H x))
+
+(rule (lower (vreduce_umin (vector_type V8H) x))
+      (aarch64_uminv V8H x))
+
+(rule (lower (vreduce_umin (vector_type V4S) x))
+      (aarch64_uminv V4S x))
+
+;; vreduce_umax: Horizontal unsigned maximum
+(rule (lower (vreduce_umax (vector_type V8B) x))
+      (aarch64_umaxv V8B x))
+
+(rule (lower (vreduce_umax (vector_type V16B) x))
+      (aarch64_umaxv V16B x))
+
+(rule (lower (vreduce_umax (vector_type V4H) x))
+      (aarch64_umaxv V4H x))
+
+(rule (lower (vreduce_umax (vector_type V8H) x))
+      (aarch64_umaxv V8H x))
+
+(rule (lower (vreduce_umax (vector_type V4S) x))
+      (aarch64_umaxv V4S x))
+
 ;; Helper functions
 (decl negate_i64 (i64) i64)
