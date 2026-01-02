@@ -122,6 +122,82 @@ pub const Parser = struct {
     }
 
     fn parseTypeValue(self: *Self) !ast.TypeValue {
+        // Check if this is an enum type: (variant1 variant2 ...)
+        if (self.peek()) |tok| {
+            if (tok == .lparen) {
+                // Parse enum variants
+                try self.advance(); // consume lparen
+
+                var variants = std.ArrayList(ast.Variant){};
+                errdefer {
+                    for (variants.items) |*v| {
+                        self.allocator.free(v.fields);
+                    }
+                    variants.deinit();
+                }
+
+                while (true) {
+                    const peek_tok = self.peek() orelse break;
+                    if (peek_tok == .rparen) break;
+
+                    // Each variant is either:
+                    // - A symbol (variant name with no fields)
+                    // - (variant_name (field_name field_type) ...)
+                    if (peek_tok == .lparen) {
+                        try self.advance(); // consume lparen
+                        const var_name = try self.expectSymbol();
+
+                        var fields = std.ArrayList(ast.Field){};
+                        errdefer fields.deinit();
+
+                        // Parse fields: (field_name field_type)
+                        while (true) {
+                            const field_tok = self.peek() orelse break;
+                            if (field_tok == .rparen) break;
+
+                            if (field_tok == .lparen) {
+                                try self.advance(); // consume lparen
+                                const field_name = try self.expectSymbol();
+                                const field_type = try self.expectSymbol();
+                                _ = try self.expect(.rparen);
+
+                                try fields.append(ast.Field{
+                                    .name = field_name,
+                                    .ty = field_type,
+                                    .pos = field_name.pos,
+                                });
+                            } else {
+                                return error.ExpectedFieldDefinition;
+                            }
+                        }
+
+                        _ = try self.expect(.rparen); // close variant
+
+                        try variants.append(ast.Variant{
+                            .name = var_name,
+                            .fields = try fields.toOwnedSlice(),
+                            .pos = var_name.pos,
+                        });
+                    } else if (peek_tok == .symbol) {
+                        // Simple variant with no fields
+                        const var_name = try self.expectSymbol();
+                        try variants.append(ast.Variant{
+                            .name = var_name,
+                            .fields = &[_]ast.Field{},
+                            .pos = var_name.pos,
+                        });
+                    } else {
+                        return error.UnexpectedToken;
+                    }
+                }
+
+                _ = try self.expect(.rparen); // close enum variants list
+
+                return ast.TypeValue{ .enum_type = try variants.toOwnedSlice() };
+            }
+        }
+
+        // Otherwise, it's a primitive type
         const prim = try self.expectSymbol();
         return ast.TypeValue{ .primitive = prim };
     }
