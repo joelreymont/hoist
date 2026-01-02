@@ -120,7 +120,8 @@ test "JIT: compile and execute return constant i32" {
     try func.layout.appendInst(ret_inst, entry);
 
     // Compile function
-    var ctx = ContextBuilder.init(testing.allocator)
+    var builder = ContextBuilder.init(testing.allocator);
+    var ctx = builder
         .target(.x86_64, .linux)
         .optLevel(.none)
         .build();
@@ -191,7 +192,8 @@ test "JIT: compile and execute i32 add" {
     try func.layout.appendInst(ret_inst, entry);
 
     // Compile function
-    var ctx = ContextBuilder.init(testing.allocator)
+    var builder = ContextBuilder.init(testing.allocator);
+    var ctx = builder
         .target(.x86_64, .linux)
         .optLevel(.none)
         .build();
@@ -263,7 +265,8 @@ test "JIT: compile and execute i64 multiply" {
     try func.layout.appendInst(ret_inst, entry);
 
     // Compile function
-    var ctx = ContextBuilder.init(testing.allocator)
+    var builder = ContextBuilder.init(testing.allocator);
+    var ctx = builder
         .target(.x86_64, .linux)
         .optLevel(.none)
         .build();

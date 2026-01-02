@@ -87,7 +87,7 @@ pub const ControlFlowGraph = struct {
         }
 
         // Build edges by visiting all blocks
-        var block_iter = func.layout.blocks();
+        var block_iter = func.layout.blockIter();
         while (block_iter.next()) |block| {
             try self.computeBlock(func, block);
         }

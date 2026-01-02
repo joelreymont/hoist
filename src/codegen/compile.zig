@@ -660,7 +660,7 @@ test "compile: target initialization" {
 }
 
 test "IRBuilder: initialization" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -669,7 +669,7 @@ test "IRBuilder: initialization" {
 }
 
 test "IRBuilder: create and append block" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -681,7 +681,7 @@ test "IRBuilder: create and append block" {
 }
 
 test "IRBuilder: emit instructions" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -701,7 +701,7 @@ test "IRBuilder: emit instructions" {
 }
 
 test "IRBuilder: emit control flow" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -722,7 +722,7 @@ test "IRBuilder: emit control flow" {
 }
 
 test "buildIR: basic function" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -804,7 +804,7 @@ test "convertRelocKind: all variants" {
 // Comprehensive IRBuilder tests
 
 test "IRBuilder: create multiple blocks" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -828,7 +828,7 @@ test "IRBuilder: create multiple blocks" {
 }
 
 test "IRBuilder: switch to block" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -847,7 +847,7 @@ test "IRBuilder: switch to block" {
 }
 
 test "IRBuilder: emit iconst with different types" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -869,7 +869,7 @@ test "IRBuilder: emit iconst with different types" {
 }
 
 test "IRBuilder: emit multiple iconsts" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -888,7 +888,7 @@ test "IRBuilder: emit multiple iconsts" {
 }
 
 test "IRBuilder: emit iadd" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -906,7 +906,7 @@ test "IRBuilder: emit iadd" {
 }
 
 test "IRBuilder: emit isub" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -924,7 +924,7 @@ test "IRBuilder: emit isub" {
 }
 
 test "IRBuilder: emit imul" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -942,7 +942,7 @@ test "IRBuilder: emit imul" {
 }
 
 test "IRBuilder: emit chained arithmetic" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -965,7 +965,7 @@ test "IRBuilder: emit chained arithmetic" {
 }
 
 test "IRBuilder: emit return" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -980,7 +980,7 @@ test "IRBuilder: emit return" {
 }
 
 test "IRBuilder: emit jump" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -998,7 +998,7 @@ test "IRBuilder: emit jump" {
 }
 
 test "IRBuilder: emit control flow with multiple blocks" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -1024,7 +1024,7 @@ test "IRBuilder: emit control flow with multiple blocks" {
 }
 
 test "IRBuilder: value tracking with simple expression" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -1049,7 +1049,7 @@ test "IRBuilder: value tracking with simple expression" {
 }
 
 test "IRBuilder: value types are preserved" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -1069,7 +1069,7 @@ test "IRBuilder: value types are preserved" {
 }
 
 test "IRBuilder: build simple function" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -1091,7 +1091,7 @@ test "IRBuilder: build simple function" {
 }
 
 test "IRBuilder: build function with conditional flow" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -1130,7 +1130,7 @@ test "IRBuilder: build function with conditional flow" {
 }
 
 test "IRBuilder: build function with loop structure" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -1167,7 +1167,7 @@ test "IRBuilder: build function with loop structure" {
 }
 
 test "IRBuilder: emit instructions in different blocks" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -1190,7 +1190,7 @@ test "IRBuilder: emit instructions in different blocks" {
 }
 
 test "IRBuilder: empty function with just return" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -1205,7 +1205,7 @@ test "IRBuilder: empty function with just return" {
 }
 
 test "IRBuilder: multiple jumps to same block" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -1236,7 +1236,7 @@ test "IRBuilder: multiple jumps to same block" {
 }
 
 test "buildIR: creates entry block" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -1246,7 +1246,7 @@ test "buildIR: creates entry block" {
 }
 
 test "buildIR: emits return instruction" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -1256,7 +1256,7 @@ test "buildIR: emits return instruction" {
 }
 
 test "buildIR: function is valid" {
-    const sig = try ir.Signature.init(testing.allocator);
+    const sig = ir.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
