@@ -163,7 +163,11 @@ pub fn encodeLogicalImmediate(value: u64, is_64bit: bool) ?u13 {
     var element_size: u7 = size;
 
     // Find smallest repeating element size
-    while (element_size > 2) : (element_size /= 2) {
+    // We check from largest to smallest, but DON'T break on first match
+    // because we want the SMALLEST repeating pattern
+    var found_element_size: u7 = size;
+
+    while (element_size >= 2) : (element_size /= 2) {
         // For element_size=64, we need all bits, so use special handling
         const mask: u64 = if (element_size == 64)
             std.math.maxInt(u64)
@@ -171,6 +175,11 @@ pub fn encodeLogicalImmediate(value: u64, is_64bit: bool) ?u13 {
             (@as(u64, 1) << @as(u6, @intCast(element_size))) - 1;
 
         const element = value & mask;
+
+        // Skip if element_size equals full size (can't be repeating pattern)
+        if (element_size == size) {
+            continue;
+        }
 
         var matches = true;
         var i: u7 = element_size;
@@ -195,8 +204,13 @@ pub fn encodeLogicalImmediate(value: u64, is_64bit: bool) ?u13 {
             }
         }
 
-        if (matches) break;
+        if (matches) {
+            found_element_size = element_size;
+            // Continue to find smaller repeating pattern
+        }
     }
+
+    element_size = found_element_size;
 
     const element: u64 = if (element_size == 64)
         value
