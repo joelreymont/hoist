@@ -212,6 +212,10 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_and => |i| try emitVecAnd(i.dst.toReg(), i.src1, i.src2, buffer),
         .vec_orr => |i| try emitVecOrr(i.dst.toReg(), i.src1, i.src2, buffer),
         .vec_eor => |i| try emitVecEor(i.dst.toReg(), i.src1, i.src2, buffer),
+        .vec_fadd => |i| try emitVecFadd(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_fsub => |i| try emitVecFsub(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_fmul => |i| try emitVecFmul(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_fdiv => |i| try emitVecFdiv(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
     }
 }
 
@@ -10334,6 +10338,124 @@ fn emitVecEor(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !v
         (0b1 << 21) |
         (@as(u32, rm) << 16) |
         (0b000111 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector FADD (FP add): FADD Vd.T, Vn.T, Vm.T
+/// Encoding: 0|Q|0|01110|0|sz|1|Rm|110101|Rn|Rd
+/// sz: 0 for .2s/.4s, 1 for .2d
+fn emitVecFadd(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+
+    // sz bit: 0 for single, 1 for double
+    const sz: u1 = switch (vec_size) {
+        .s2, .s4 => 0,
+        .d2 => 1,
+        else => unreachable, // Only .2s/.4s/.2d valid for FP
+    };
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (0b0 << 23) |
+        (@as(u32, sz) << 22) |
+        (0b1 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b110101 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector FSUB (FP subtract): FSUB Vd.T, Vn.T, Vm.T
+/// Encoding: 0|Q|0|01110|1|sz|1|Rm|110101|Rn|Rd
+fn emitVecFsub(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+
+    const sz: u1 = switch (vec_size) {
+        .s2, .s4 => 0,
+        .d2 => 1,
+        else => unreachable,
+    };
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (0b1 << 23) | // U=1 for FSUB
+        (@as(u32, sz) << 22) |
+        (0b1 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b110101 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector FMUL (FP multiply): FMUL Vd.T, Vn.T, Vm.T
+/// Encoding: 0|Q|1|01110|0|sz|1|Rm|110111|Rn|Rd
+fn emitVecFmul(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+
+    const sz: u1 = switch (vec_size) {
+        .s2, .s4 => 0,
+        .d2 => 1,
+        else => unreachable,
+    };
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b1 << 29) | // bit 29 = 1 for FMUL
+        (0b01110 << 24) |
+        (0b0 << 23) |
+        (@as(u32, sz) << 22) |
+        (0b1 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b110111 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector FDIV (FP divide): FDIV Vd.T, Vn.T, Vm.T
+/// Encoding: 0|Q|1|01110|1|sz|1|Rm|111111|Rn|Rd
+fn emitVecFdiv(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+
+    const sz: u1 = switch (vec_size) {
+        .s2, .s4 => 0,
+        .d2 => 1,
+        else => unreachable,
+    };
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b1 << 29) |
+        (0b01110 << 24) |
+        (0b1 << 23) | // U=1 for FDIV
+        (@as(u32, sz) << 22) |
+        (0b1 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b111111 << 10) |
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 

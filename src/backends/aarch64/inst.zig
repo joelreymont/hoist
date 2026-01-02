@@ -1440,6 +1440,38 @@ pub const Inst = union(enum) {
         src2: Reg,
     },
 
+    /// Vector floating-point add: FADD Vd.T, Vn.T, Vm.T (.2s/.4s/.2d only)
+    vec_fadd: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize, // Must be .s2, .s4, or .d2
+    },
+
+    /// Vector floating-point subtract: FSUB Vd.T, Vn.T, Vm.T
+    vec_fsub: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector floating-point multiply: FMUL Vd.T, Vn.T, Vm.T
+    vec_fmul: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector floating-point divide: FDIV Vd.T, Vn.T, Vm.T
+    vec_fdiv: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
 
     pub fn format(
         self: Inst,
@@ -1646,6 +1678,10 @@ pub const Inst = union(enum) {
             .vec_and => |i| try writer.print("and.16b {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
             .vec_orr => |i| try writer.print("orr.16b {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
             .vec_eor => |i| try writer.print("eor.16b {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .vec_fadd => |i| try writer.print("fadd.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fsub => |i| try writer.print("fsub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fmul => |i| try writer.print("fmul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fdiv => |i| try writer.print("fdiv.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
         }
     }
 };
