@@ -106,6 +106,64 @@ pub const LivenessInfo = struct {
     }
 };
 
+/// Live range for a virtual register.
+pub const LiveRange = struct {
+    vreg: VReg,
+    ranges: std.ArrayList(InstRange),
+    allocator: Allocator,
+
+    pub fn init(allocator: Allocator, vreg: VReg) LiveRange {
+        return .{
+            .vreg = vreg,
+            .ranges = .{},
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *LiveRange) void {
+        self.ranges.deinit(self.allocator);
+    }
+
+    /// Add an instruction range to this live range.
+    pub fn addRange(self: *LiveRange, range: InstRange) !void {
+        try self.ranges.append(self.allocator, range);
+    }
+
+    /// Check if an instruction is in this live range.
+    pub fn contains(self: *const LiveRange, inst: u32) bool {
+        for (self.ranges.items) |range| {
+            if (range.contains(inst)) return true;
+        }
+        return false;
+    }
+
+    /// Merge overlapping ranges.
+    pub fn merge(self: *LiveRange) void {
+        if (self.ranges.items.len <= 1) return;
+
+        // Sort ranges by start position
+        std.mem.sort(InstRange, self.ranges.items, {}, struct {
+            fn lessThan(_: void, a: InstRange, b: InstRange) bool {
+                return a.start < b.start;
+            }
+        }.lessThan);
+
+        var i: usize = 0;
+        while (i + 1 < self.ranges.items.len) {
+            const curr = self.ranges.items[i];
+            const next = self.ranges.items[i + 1];
+
+            // Merge if overlapping or adjacent
+            if (curr.end >= next.start) {
+                self.ranges.items[i].end = @max(curr.end, next.end);
+                _ = self.ranges.orderedRemove(i + 1);
+            } else {
+                i += 1;
+            }
+        }
+    }
+};
+
 test "LivenessInfo calculateLiveIn" {
     const allocator = testing.allocator;
     var info = LivenessInfo.init(allocator);
@@ -177,4 +235,36 @@ test "LivenessInfo isLiveOut" {
 
     try testing.expect(info.isLiveOut(4, VReg.new(7)));
     try testing.expect(!info.isLiveOut(4, VReg.new(99)));
+}
+
+test "LiveRange addRange" {
+    const allocator = testing.allocator;
+    var lr = LiveRange.init(allocator, VReg.new(10));
+    defer lr.deinit();
+
+    try lr.addRange(InstRange.init(0, 10));
+    try lr.addRange(InstRange.init(20, 30));
+
+    try testing.expectEqual(@as(usize, 2), lr.ranges.items.len);
+    try testing.expect(lr.contains(5));
+    try testing.expect(lr.contains(25));
+    try testing.expect(!lr.contains(15));
+}
+
+test "LiveRange merge" {
+    const allocator = testing.allocator;
+    var lr = LiveRange.init(allocator, VReg.new(15));
+    defer lr.deinit();
+
+    try lr.addRange(InstRange.init(0, 10));
+    try lr.addRange(InstRange.init(5, 15));
+    try lr.addRange(InstRange.init(20, 30));
+
+    lr.merge();
+
+    try testing.expectEqual(@as(usize, 2), lr.ranges.items.len);
+    try testing.expectEqual(@as(u32, 0), lr.ranges.items[0].start);
+    try testing.expectEqual(@as(u32, 15), lr.ranges.items[0].end);
+    try testing.expectEqual(@as(u32, 20), lr.ranges.items[1].start);
+    try testing.expectEqual(@as(u32, 30), lr.ranges.items[1].end);
 }
