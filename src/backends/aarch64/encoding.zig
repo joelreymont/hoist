@@ -210,7 +210,12 @@ pub fn encodeLogicalImmediate(value: u64, is_64bit: bool) ?u13 {
     // Check if element is contiguous ones (possibly rotated)
     var rotation: u7 = 0;
     while (rotation < element_size) : (rotation += 1) {
-        const rotated = std.math.rotr(u64, element, rotation) & ((@as(u64, 1) << element_shift) - 1);
+        const element_mask: u64 = if (element_size == 64)
+            std.math.maxInt(u64)
+        else
+            (@as(u64, 1) << @as(u6, @intCast(element_size))) - 1;
+
+        const rotated = std.math.rotr(u64, element, rotation) & element_mask;
         const ones_shift: u6 = @truncate(ones);
         const expected = (@as(u64, 1) << ones_shift) - 1;
         if (rotated == expected) break;
