@@ -81,7 +81,7 @@ pub const ValueData = packed struct {
     const Y_MAX = (1 << Y_BITS) - 1;
 
     fn encodeNarrow(x: u32, bits: u8) u32 {
-        const max = (1 << bits) - 1;
+        const max = (@as(u32, 1) << @as(u5, @intCast(bits))) - 1;
         if (x == 0xffffffff) return max;
         std.debug.assert(x < max);
         return x;
