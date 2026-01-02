@@ -3803,7 +3803,6 @@ fn emitFnmsubD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod
     try buffer.put(&bytes);
 }
 
-
 /// ADR Xd, #offset
 /// Form PC-relative address: Xd = PC + offset (±1MB range)
 /// Encoding: op|immlo|10000|immhi|Rd
@@ -11173,7 +11172,6 @@ fn emitTbx(dst: Reg, table: Reg, index: Reg, buffer: *buffer_mod.MachBuffer) !vo
     try buffer.put(&bytes);
 }
 
-
 /// LDAXR (load-acquire exclusive register): LDAXR Xt, [Xn]
 /// Encoding: size|001000|0|1|0|11111|0|11111|Rn|Rt
 /// size: 11 for 64-bit, 10 for 32-bit
@@ -11586,9 +11584,118 @@ fn emitVecFcmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *b
     const bytes = std.mem.toBytes(insn);
     try buffer.put(&bytes);
 }
-fn emitVecFcmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void { const rd = hwEnc(dst); const rn = hwEnc(src1); const rm = hwEnc(src2); const q = vec_size.qBit(); const sz: u1 = switch (vec_size) { .s2, .s4 => 0, .d2 => 1, else => unreachable, }; const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111001 << 10) | (@as(u32, rn) << 5) | @as(u32, rd); const bytes = std.mem.toBytes(insn); try buffer.put(&bytes); }
-fn emitVecFcmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void { const rd = hwEnc(dst); const rn = hwEnc(src1); const rm = hwEnc(src2); const q = vec_size.qBit(); const sz: u1 = switch (vec_size) { .s2, .s4 => 0, .d2 => 1, else => unreachable, }; const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b0 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111001 << 10) | (@as(u32, rn) << 5) | @as(u32, rd); const bytes = std.mem.toBytes(insn); try buffer.put(&bytes); }
-fn emitVecFmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void { const rd = hwEnc(dst); const rn = hwEnc(src1); const rm = hwEnc(src2); const q = vec_size.qBit(); const sz: u1 = switch (vec_size) { .s2, .s4 => 0, .d2 => 1, else => unreachable, }; const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111101 << 10) | (@as(u32, rn) << 5) | @as(u32, rd); const bytes = std.mem.toBytes(insn); try buffer.put(&bytes); }
-fn emitVecFmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void { const rd = hwEnc(dst); const rn = hwEnc(src1); const rm = hwEnc(src2); const q = vec_size.qBit(); const sz: u1 = switch (vec_size) { .s2, .s4 => 0, .d2 => 1, else => unreachable, }; const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b0 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111101 << 10) | (@as(u32, rn) << 5) | @as(u32, rd); const bytes = std.mem.toBytes(insn); try buffer.put(&bytes); }
-fn emitVecFabs(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void { const rd = hwEnc(dst); const rn = hwEnc(src); const q = vec_size.qBit(); const sz: u1 = switch (vec_size) { .s2, .s4 => 0, .d2 => 1, else => unreachable, }; const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b10000 << 17) | (0b011110 << 10) | (@as(u32, rn) << 5) | @as(u32, rd); const bytes = std.mem.toBytes(insn); try buffer.put(&bytes); }
-fn emitVecFneg(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void { const rd = hwEnc(dst); const rn = hwEnc(src); const q = vec_size.qBit(); const sz: u1 = switch (vec_size) { .s2, .s4 => 0, .d2 => 1, else => unreachable, }; const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b10000 << 17) | (0b011110 << 10) | (@as(u32, rn) << 5) | @as(u32, rd); const bytes = std.mem.toBytes(insn); try buffer.put(&bytes); }
+fn emitVecFcmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const sz: u1 = switch (vec_size) {
+        .s2, .s4 => 0,
+        .d2 => 1,
+        else => unreachable,
+    };
+    const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111001 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+fn emitVecFcmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const sz: u1 = switch (vec_size) {
+        .s2, .s4 => 0,
+        .d2 => 1,
+        else => unreachable,
+    };
+    const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b0 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111001 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+fn emitVecFmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const sz: u1 = switch (vec_size) {
+        .s2, .s4 => 0,
+        .d2 => 1,
+        else => unreachable,
+    };
+    const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111101 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+fn emitVecFmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const sz: u1 = switch (vec_size) {
+        .s2, .s4 => 0,
+        .d2 => 1,
+        else => unreachable,
+    };
+    const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b0 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111101 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+fn emitVecFabs(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q = vec_size.qBit();
+    const sz: u1 = switch (vec_size) {
+        .s2, .s4 => 0,
+        .d2 => 1,
+        else => unreachable,
+    };
+    const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b10000 << 17) | (0b011110 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+fn emitVecFneg(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q = vec_size.qBit();
+    const sz: u1 = switch (vec_size) {
+        .s2, .s4 => 0,
+        .d2 => 1,
+        else => unreachable,
+    };
+    const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b10000 << 17) | (0b011110 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Emit LDR (literal) instruction to load from constant pool.
+/// Format: LDR Xt, label  OR  LDR Wt, label
+pub fn emitLdrLiteral(dst: Reg, label: buffer_mod.MachLabel, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(dst);
+
+    // LDR (literal) encoding:
+    // - For 64-bit: opc=01
+    // - For 32-bit: opc=00
+    // Format: opc|011|V=0|00|imm19|Rt
+    const opc: u32 = if (size == .size_64) 0b01 else 0b00;
+    const insn: u32 = (opc << 30) | (0b011 << 27) | (0b00 << 24) | rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+
+    // Add fixup for literal offset (will be patched during finalization)
+    try buffer.useLabel(label, .ldr_literal19);
+}
+
+/// Emit LDR (literal, SIMD&FP) instruction.
+pub fn emitLdrLiteralFp(dst: Reg, label: buffer_mod.MachLabel, fp_size: enum { s, d }, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(dst);
+
+    // LDR (literal, SIMD&FP): opc|011|V=1|00|imm19|Rt
+    const opc: u32 = if (fp_size == .d) 0b01 else 0b00;
+    const insn: u32 = (opc << 30) | (0b011 << 27) | (0b1 << 26) | (0b00 << 24) | rt;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+
+    try buffer.useLabel(label, .ldr_literal19);
+}
