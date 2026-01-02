@@ -143,7 +143,7 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
     // TODO: Implement constant phi removal
 
     // 6. Resolve value aliases
-    // TODO: ctx.func.dfg.resolveAllAliases();
+    ctx.func.dfg.resolveAllAliases();
 
     // 7. E-graph optimization (if opt_level > 0)
     // TODO: Implement e-graph pass

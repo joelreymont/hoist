@@ -312,6 +312,68 @@ pub const DataFlowGraph = struct {
             data.setType(ty);
         }
     }
+
+    pub fn resolveAllAliases(self: *Self) void {
+        const block_call = @import("block_call.zig");
+
+        for (self.insts.elems.items) |*inst_data| {
+            switch (inst_data.*) {
+                .unary => |*data| {
+                    data.arg = self.resolveAliases(data.arg);
+                },
+                .binary => |*data| {
+                    data.args[0] = self.resolveAliases(data.args[0]);
+                    data.args[1] = self.resolveAliases(data.args[1]);
+                },
+                .int_compare => |*data| {
+                    data.args[0] = self.resolveAliases(data.args[0]);
+                    data.args[1] = self.resolveAliases(data.args[1]);
+                },
+                .float_compare => |*data| {
+                    data.args[0] = self.resolveAliases(data.args[0]);
+                    data.args[1] = self.resolveAliases(data.args[1]);
+                },
+                .branch => |*data| {
+                    const slice = self.value_lists.asMutSlice(data.destination.values);
+                    if (slice.len > 1) {
+                        var i: usize = 1;
+                        while (i < slice.len) : (i += 1) {
+                            var v: Value = undefined;
+                            var index: u32 = undefined;
+                            const tag = block_call.BlockArg.decodeFromValue(slice[i], &v, &index);
+                            if (tag == .value) {
+                                const resolved = self.resolveAliases(v);
+                                slice[i] = block_call.BlockArg.fromValue(resolved).encodeAsValue(resolved, 0);
+                            }
+                        }
+                    }
+                },
+                .branch_table => |*data| {
+                    data.arg = self.resolveAliases(data.arg);
+                },
+                .call => |*data| {
+                    const slice = self.value_lists.asMutSlice(data.args);
+                    for (slice) |*val| {
+                        val.* = self.resolveAliases(val.*);
+                    }
+                },
+                .call_indirect => |*data| {
+                    const slice = self.value_lists.asMutSlice(data.args);
+                    for (slice) |*val| {
+                        val.* = self.resolveAliases(val.*);
+                    }
+                },
+                .load => |*data| {
+                    data.arg = self.resolveAliases(data.arg);
+                },
+                .store => |*data| {
+                    data.args[0] = self.resolveAliases(data.args[0]);
+                    data.args[1] = self.resolveAliases(data.args[1]);
+                },
+                .jump, .nullary => {},
+            }
+        }
+    }
 };
 
 test "DataFlowGraph makeInst" {
