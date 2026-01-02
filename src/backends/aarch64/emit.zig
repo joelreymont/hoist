@@ -146,6 +146,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .dmb => |i| try emitDmb(i.option, buffer),
         .dsb => |i| try emitDsb(i.option, buffer),
         .isb => try emitIsb(buffer),
+        .ldaxr => |i| try emitLdaxr(i.dst.toReg(), i.addr, i.size, buffer),
+        .stlxr => |i| try emitStlxr(i.status.toReg(), i.src, i.addr, i.size, buffer),
+        .clrex => try emitClrex(buffer),
         .b => |i| try emitB(i.target.label, buffer),
         .b_cond => |i| try emitBCond(@intFromEnum(i.cond), i.target.label, buffer),
         .bl => |i| switch (i.target) {
@@ -246,6 +249,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .dmb => |i| try emitDmb(i.option, buffer),
         .dsb => |i| try emitDsb(i.option, buffer),
         .isb => try emitIsb(buffer),
+        .ldaxr => |i| try emitLdaxr(i.dst.toReg(), i.addr, i.size, buffer),
+        .stlxr => |i| try emitStlxr(i.status.toReg(), i.src, i.addr, i.size, buffer),
+        .clrex => try emitClrex(buffer),
     }
 }
 
@@ -11145,3 +11151,62 @@ fn emitTbx(dst: Reg, table: Reg, index: Reg, buffer: *buffer_mod.MachBuffer) !vo
     try buffer.put(&bytes);
 }
 
+
+/// LDAXR (load-acquire exclusive register): LDAXR Xt, [Xn]
+/// Encoding: size|001000|0|1|0|11111|0|11111|Rn|Rt
+/// size: 11 for 64-bit, 10 for 32-bit
+fn emitLdaxr(dst: Reg, addr: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(dst);
+    const rn = hwEnc(addr);
+    const sz: u2 = if (size == .size64) 0b11 else 0b10;
+
+    const insn: u32 = (@as(u32, sz) << 30) |
+        (0b001000 << 24) |
+        (0b0 << 23) |
+        (0b1 << 22) | // L=1 for load
+        (0b0 << 21) |
+        (0b11111 << 16) | // Rs=11111 (not used for load)
+        (0b0 << 15) |
+        (0b11111 << 10) | // Rt2=11111 (single register)
+        (@as(u32, rn) << 5) |
+        @as(u32, rt);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// STLXR (store-release exclusive register): STLXR Ws, Xt, [Xn]
+/// Encoding: size|001000|0|0|0|Rs|0|11111|Rn|Rt
+/// Returns 0 in Ws on success, 1 on failure
+fn emitStlxr(status: Reg, src: Reg, addr: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rs = hwEnc(status);
+    const rt = hwEnc(src);
+    const rn = hwEnc(addr);
+    const sz: u2 = if (size == .size64) 0b11 else 0b10;
+
+    const insn: u32 = (@as(u32, sz) << 30) |
+        (0b001000 << 24) |
+        (0b0 << 23) |
+        (0b0 << 22) | // L=0 for store
+        (0b0 << 21) |
+        (@as(u32, rs) << 16) | // Status register
+        (0b0 << 15) |
+        (0b11111 << 10) | // Rt2=11111 (single register)
+        (@as(u32, rn) << 5) |
+        @as(u32, rt);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// CLREX (clear exclusive): CLREX
+/// Encoding: 1101010100000011001111|CRm|01011111
+/// CRm typically 1111 for full system
+fn emitClrex(buffer: *buffer_mod.MachBuffer) !void {
+    const insn: u32 = (0b1101010100000011001111 << 10) |
+        (0b1111 << 8) | // CRm=1111
+        (0b01011111);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}

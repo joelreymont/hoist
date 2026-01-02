@@ -1827,6 +1827,9 @@ pub const Inst = union(enum) {
             .dmb => |i| try writer.print("dmb {}", .{i.option}),
             .dsb => |i| try writer.print("dsb {}", .{i.option}),
             .isb => try writer.writeAll("isb"),
+            .ldaxr => |i| try writer.print("ldaxr.{} {}, [{}]", .{ i.size, i.dst, i.addr }),
+            .stlxr => |i| try writer.print("stlxr.{} {}, {}, [{}]", .{ i.size, i.status, i.src, i.addr }),
+            .clrex => try writer.writeAll("clrex"),
             .b => |i| try writer.print("b {}", .{i.target}),
             .b_cond => |i| try writer.print("b.{} {}", .{ i.cond, i.target }),
             .bl => |i| try writer.print("bl {}", .{i.target}),
@@ -1932,6 +1935,9 @@ pub const Inst = union(enum) {
             .dmb => |i| try writer.print("dmb {}", .{i.option}),
             .dsb => |i| try writer.print("dsb {}", .{i.option}),
             .isb => try writer.writeAll("isb"),
+            .ldaxr => |i| try writer.print("ldaxr.{} {}, [{}]", .{ i.size, i.dst, i.addr }),
+            .stlxr => |i| try writer.print("stlxr.{} {}, {}, [{}]", .{ i.size, i.status, i.src, i.addr }),
+            .clrex => try writer.writeAll("clrex"),
         }
     }
 };
