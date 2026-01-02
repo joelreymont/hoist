@@ -5,7 +5,7 @@ const Allocator = std.mem.Allocator;
 const root = @import("root");
 const Function = root.function.Function;
 const compile_mod = root.compile;
-const abi_mod = root.abi;
+const signature_mod = root.signature;
 
 /// Compiler configuration and context.
 /// Central API for configuring and invoking the compiler.
@@ -20,7 +20,7 @@ pub const Context = struct {
     opt_level: OptLevel,
 
     /// Calling convention.
-    call_conv: abi_mod.CallConv,
+    call_conv: signature_mod.CallConv,
 
     /// Enable verification.
     verify: bool,
@@ -96,7 +96,7 @@ pub const Context = struct {
     }
 
     /// Get default calling convention for target.
-    fn defaultCallConv(arch: Arch, os: OS) abi_mod.CallConv {
+    fn defaultCallConv(arch: Arch, os: OS) signature_mod.CallConv {
         return switch (arch) {
             .x86_64 => switch (os) {
                 .linux, .macos => .system_v,
@@ -162,7 +162,7 @@ pub const ContextBuilder = struct {
         return self;
     }
 
-    pub fn callConv(self: *ContextBuilder, conv: abi_mod.CallConv) *ContextBuilder {
+    pub fn callConv(self: *ContextBuilder, conv: signature_mod.CallConv) *ContextBuilder {
         self.ctx.call_conv = conv;
         return self;
     }
@@ -198,7 +198,7 @@ test "Context with target" {
 
     try testing.expectEqual(Arch.aarch64, ctx.target.arch);
     try testing.expectEqual(OS.macos, ctx.target.os);
-    try testing.expectEqual(abi_mod.CallConv.aapcs64, ctx.call_conv);
+    try testing.expectEqual(signature_mod.CallConv.aapcs64, ctx.call_conv);
 }
 
 test "Context optimization level" {
@@ -242,17 +242,17 @@ test "Context compile function" {
 
 test "Context default calling convention" {
     try testing.expectEqual(
-        abi_mod.CallConv.system_v,
+        signature_mod.CallConv.system_v,
         Context.defaultCallConv(.x86_64, .linux),
     );
 
     try testing.expectEqual(
-        abi_mod.CallConv.windows_fastcall,
+        signature_mod.CallConv.windows_fastcall,
         Context.defaultCallConv(.x86_64, .windows),
     );
 
     try testing.expectEqual(
-        abi_mod.CallConv.aapcs64,
+        signature_mod.CallConv.aapcs64,
         Context.defaultCallConv(.aarch64, .linux),
     );
 }
