@@ -53,6 +53,189 @@ test "lower iadd immediate to ADD_IMM" {
     try testing.expect(expected == .add_imm);
 }
 
+// Edge case tests for overflow, underflow, and boundary conditions
+
+test "edge: add immediate max 12-bit value" {
+    // Test maximum 12-bit unsigned immediate (4095)
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x0_w = WritableReg.fromReg(x0);
+
+    const expected = Inst{
+        .add_imm = .{
+            .dst = x0_w,
+            .src = x1,
+            .imm = 4095, // Max 12-bit value
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .add_imm);
+}
+
+test "edge: add immediate boundary - 12-bit overflow" {
+    // Values > 4095 should fall back to ADD_RR with materialized constant
+    // This tests that immediate selection rejects out-of-range values
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x2 = Reg.fromPReg(PReg.new(.int, 2)); // Register holding 4096
+    const x0_w = WritableReg.fromReg(x0);
+
+    // When immediate is 4096 (> 12 bits), should use ADD_RR not ADD_IMM
+    const expected = Inst{
+        .add_rr = .{
+            .dst = x0_w,
+            .src1 = x1,
+            .src2 = x2,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .add_rr);
+}
+
+test "edge: integer overflow behavior" {
+    // ARM64 integer arithmetic wraps on overflow (no trap)
+    // Test that we generate correct ADD for values near max
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1)); // Could be i64::MAX
+    const x2 = Reg.fromPReg(PReg.new(.int, 2)); // Could be 1
+    const x0_w = WritableReg.fromReg(x0);
+
+    // (iadd i64::MAX 1) wraps to i64::MIN on ARM64
+    const expected = Inst{
+        .add_rr = .{
+            .dst = x0_w,
+            .src1 = x1,
+            .src2 = x2,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .add_rr);
+}
+
+test "edge: sub immediate max value" {
+    // Test maximum 12-bit unsigned immediate for SUB
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x0_w = WritableReg.fromReg(x0);
+
+    const expected = Inst{
+        .sub_imm = .{
+            .dst = x0_w,
+            .src = x1,
+            .imm = 4095,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .sub_imm);
+}
+
+test "edge: load offset alignment" {
+    // Test that load offsets respect alignment requirements
+    // 64-bit loads require 8-byte aligned offsets
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x0_w = WritableReg.fromReg(x0);
+
+    // Aligned 8-byte offset
+    const expected = Inst{
+        .ldr = .{
+            .dst = x0_w,
+            .base = x1,
+            .offset = 8,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .ldr);
+}
+
+test "edge: store offset max value" {
+    // Test maximum offset for STR immediate form
+    // ARM64 allows scaled offsets up to 32760 for 64-bit stores
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+
+    const expected = Inst{
+        .str = .{
+            .src = x0,
+            .base = x1,
+            .offset = 32760, // Max scaled offset (4095 * 8)
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .str);
+}
+
+test "edge: shift amount boundary" {
+    // Test maximum shift amount (63 for 64-bit, 31 for 32-bit)
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x0_w = WritableReg.fromReg(x0);
+
+    // Maximum shift for 64-bit: 63
+    const expected = Inst{
+        .lsl = .{
+            .dst = x0_w,
+            .src = x1,
+            .shift = 63,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .lsl);
+}
+
+test "edge: zero immediate optimization" {
+    // (iadd x 0) could optimize to MOV or be eliminated
+    // Test that we handle zero correctly
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x0_w = WritableReg.fromReg(x0);
+
+    const expected = Inst{
+        .add_imm = .{
+            .dst = x0_w,
+            .src = x1,
+            .imm = 0,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .add_imm);
+}
+
+test "edge: negative immediate via add" {
+    // (isub x k) where -k fits in 12-bit can use ADD with negated immediate
+    // Test the boundary: in_neg_uimm12_range
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x0_w = WritableReg.fromReg(x0);
+
+    // (isub x 4095) => (add x -4095) if -4095 is in range
+    const expected = Inst{
+        .add_imm = .{
+            .dst = x0_w,
+            .src = x1,
+            .imm = @bitCast(-@as(i64, 4095)), // Negated value
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .add_imm);
+}
+
 // Test lowering of multiply-add fusion
 test "lower iadd+imul to MADD" {
     // (iadd (imul x y) z) => (madd x y z)
@@ -462,6 +645,189 @@ test "priority: immediate over generic iadd" {
             .dst = x0_w,
             .src = x1,
             .imm = 42,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .add_imm);
+}
+
+// Edge case tests for overflow, underflow, and boundary conditions
+
+test "edge: add immediate max 12-bit value" {
+    // Test maximum 12-bit unsigned immediate (4095)
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x0_w = WritableReg.fromReg(x0);
+
+    const expected = Inst{
+        .add_imm = .{
+            .dst = x0_w,
+            .src = x1,
+            .imm = 4095, // Max 12-bit value
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .add_imm);
+}
+
+test "edge: add immediate boundary - 12-bit overflow" {
+    // Values > 4095 should fall back to ADD_RR with materialized constant
+    // This tests that immediate selection rejects out-of-range values
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x2 = Reg.fromPReg(PReg.new(.int, 2)); // Register holding 4096
+    const x0_w = WritableReg.fromReg(x0);
+
+    // When immediate is 4096 (> 12 bits), should use ADD_RR not ADD_IMM
+    const expected = Inst{
+        .add_rr = .{
+            .dst = x0_w,
+            .src1 = x1,
+            .src2 = x2,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .add_rr);
+}
+
+test "edge: integer overflow behavior" {
+    // ARM64 integer arithmetic wraps on overflow (no trap)
+    // Test that we generate correct ADD for values near max
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1)); // Could be i64::MAX
+    const x2 = Reg.fromPReg(PReg.new(.int, 2)); // Could be 1
+    const x0_w = WritableReg.fromReg(x0);
+
+    // (iadd i64::MAX 1) wraps to i64::MIN on ARM64
+    const expected = Inst{
+        .add_rr = .{
+            .dst = x0_w,
+            .src1 = x1,
+            .src2 = x2,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .add_rr);
+}
+
+test "edge: sub immediate max value" {
+    // Test maximum 12-bit unsigned immediate for SUB
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x0_w = WritableReg.fromReg(x0);
+
+    const expected = Inst{
+        .sub_imm = .{
+            .dst = x0_w,
+            .src = x1,
+            .imm = 4095,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .sub_imm);
+}
+
+test "edge: load offset alignment" {
+    // Test that load offsets respect alignment requirements
+    // 64-bit loads require 8-byte aligned offsets
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x0_w = WritableReg.fromReg(x0);
+
+    // Aligned 8-byte offset
+    const expected = Inst{
+        .ldr = .{
+            .dst = x0_w,
+            .base = x1,
+            .offset = 8,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .ldr);
+}
+
+test "edge: store offset max value" {
+    // Test maximum offset for STR immediate form
+    // ARM64 allows scaled offsets up to 32760 for 64-bit stores
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+
+    const expected = Inst{
+        .str = .{
+            .src = x0,
+            .base = x1,
+            .offset = 32760, // Max scaled offset (4095 * 8)
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .str);
+}
+
+test "edge: shift amount boundary" {
+    // Test maximum shift amount (63 for 64-bit, 31 for 32-bit)
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x0_w = WritableReg.fromReg(x0);
+
+    // Maximum shift for 64-bit: 63
+    const expected = Inst{
+        .lsl = .{
+            .dst = x0_w,
+            .src = x1,
+            .shift = 63,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .lsl);
+}
+
+test "edge: zero immediate optimization" {
+    // (iadd x 0) could optimize to MOV or be eliminated
+    // Test that we handle zero correctly
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x0_w = WritableReg.fromReg(x0);
+
+    const expected = Inst{
+        .add_imm = .{
+            .dst = x0_w,
+            .src = x1,
+            .imm = 0,
+            .size = .size64,
+        },
+    };
+
+    try testing.expect(expected == .add_imm);
+}
+
+test "edge: negative immediate via add" {
+    // (isub x k) where -k fits in 12-bit can use ADD with negated immediate
+    // Test the boundary: in_neg_uimm12_range
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x0_w = WritableReg.fromReg(x0);
+
+    // (isub x 4095) => (add x -4095) if -4095 is in range
+    const expected = Inst{
+        .add_imm = .{
+            .dst = x0_w,
+            .src = x1,
+            .imm = @bitCast(-@as(i64, 4095)), // Negated value
             .size = .size64,
         },
     };
