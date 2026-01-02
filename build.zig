@@ -127,6 +127,18 @@ pub fn build(b: *std.Build) void {
     const run_e2e_jit = b.addRunArtifact(e2e_jit);
     test_step.dependOn(&run_e2e_jit.step);
 
+    const test_legalize_ops = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/test_legalize_ops.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    test_legalize_ops.root_module.addImport("hoist", lib.root_module);
+    applyFlags(test_legalize_ops, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_test_legalize_ops = b.addRunArtifact(test_legalize_ops);
+    test_step.dependOn(&run_test_legalize_ops.step);
+
     // Integration tests (future: full pipeline tests)
     const integration_step = b.step("test-integration", "Run integration tests");
     integration_step.dependOn(&run_tests.step);
