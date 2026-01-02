@@ -1646,6 +1646,23 @@ pub const Inst = union(enum) {
     },
 
 
+    /// DUP (duplicate general-purpose register to vector): DUP Vd.T, Xn
+    /// Duplicates scalar register to all vector lanes
+    dup_scalar: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VectorSize,
+    },
+
+    /// MOVI (move immediate to vector): MOVI Vd.T, #imm
+    /// Moves immediate value to all vector lanes
+    movi: struct {
+        dst: WritableReg,
+        imm: u8,
+        size: VectorSize,
+    },
+
+
     /// SXTL (signed extend long): SXTL Vd.T, Vn.Tb
     /// Extends lower half elements with sign extension
     sxtl: struct {
@@ -1964,6 +1981,8 @@ pub const Inst = union(enum) {
             .ins => |i| try writer.print("ins.{} {{}}[{d}], {{}}[0]", .{ i.size, i.dst, i.index, i.src }),
             .ext => |i| try writer.print("ext.16b {}, {}, {}, #{d}", .{ i.dst, i.src1, i.src2, i.imm }),
             .dup_elem => |i| try writer.print("dup.{} {}, {{}}[{d}]", .{ i.size, i.dst, i.src, i.index }),
+            .dup_scalar => |i| try writer.print("dup.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .movi => |i| try writer.print("movi.{} {}, #{d}", .{ i.size, i.dst, i.imm }),
             .sxtl => |i| try writer.print("sxtl.{} {}, {}", .{ i.size, i.dst, i.src }),
             .uxtl => |i| try writer.print("uxtl.{} {}, {}", .{ i.size, i.dst, i.src }),
             .saddl => |i| try writer.print("saddl.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),

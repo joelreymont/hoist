@@ -241,6 +241,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .ins => |i| try emitIns(i.dst.toReg(), i.src, i.index, i.size, buffer),
         .ext => |i| try emitExt(i.dst.toReg(), i.src1, i.src2, i.imm, buffer),
         .dup_elem => |i| try emitDupElem(i.dst.toReg(), i.src, i.index, i.size, buffer),
+        .dup_scalar => |i| try emitDupScalar(i.dst.toReg(), i.src, i.size, buffer),
+        .movi => |i| try emitMovi(i.dst.toReg(), i.imm, i.size, buffer),
         .sxtl => |i| try emitSxtl(i.dst.toReg(), i.src, i.size, buffer),
         .uxtl => |i| try emitUxtl(i.dst.toReg(), i.src, i.size, buffer),
         .saddl => |i| try emitSaddl(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -11314,6 +11316,63 @@ fn emitRev(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
         (0b0000 << 12) |
         (@as(u32, opc) << 10) |
         (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// DUP (duplicate general-purpose register to vector): DUP Vd.T, Xn
+/// Encoding: 0|Q|0|01110000|imm5|0|00011|Rn|Rd
+/// imm5 encodes element size
+fn emitDupScalar(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q = vec_size.qBit();
+
+    // imm5: 1 << size_bits
+    const size_bits: u3 = switch (vec_size) {
+        .b8, .b16 => 0,
+        .h4, .h8 => 1,
+        .s2, .s4 => 2,
+        .d2 => 3,
+    };
+    const imm5 = @as(u5, 1) << size_bits;
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110000 << 21) |
+        (@as(u32, imm5) << 16) |
+        (0b0 << 15) |
+        (0b00011 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// MOVI (move immediate to vector): MOVI Vd.T, #imm
+/// Encoding: 0|Q|0|0111100000|abc|cmode|01|defgh|Rd
+/// Simplified encoding for byte replication
+fn emitMovi(dst: Reg, imm: u8, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const q = vec_size.qBit();
+
+    // For simplicity, use cmode=1110 which replicates imm8 to all bytes
+    const abc = @as(u3, @truncate(imm >> 5));
+    const defgh = @as(u5, @truncate(imm & 0x1F));
+    const cmode: u4 = 0b1110;
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b0111100000 << 19) |
+        (@as(u32, abc) << 16) |
+        (@as(u32, cmode) << 12) |
+        (0b01 << 10) |
+        (@as(u32, defgh) << 5) |
         @as(u32, rd);
 
     const bytes = std.mem.toBytes(insn);
