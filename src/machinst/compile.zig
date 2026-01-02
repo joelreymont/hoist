@@ -175,11 +175,17 @@ pub fn compile(
         };
     }
 
+    // Compute stack frame size from spill slots
+    // Each spill slot is 8 bytes (pointer size), aligned to 16 bytes
+    const num_spills = allocation.spills.count();
+    const spill_bytes = num_spills * 8;
+    const stack_frame_size: u32 = @intCast((spill_bytes + 15) & ~@as(usize, 15)); // Align to 16 bytes
+
     return CompiledCode{
         .code = code,
         .relocations = relocs,
         .traps = traps,
-        .stack_frame_size = 0, // TODO: Compute from VCode
+        .stack_frame_size = stack_frame_size,
         .allocator = ctx.allocator,
     };
 }
