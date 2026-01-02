@@ -154,8 +154,26 @@ pub fn compile(
     try buffer.finalize();
 
     const code = try ctx.allocator.dupe(u8, buffer.data.items);
-    const relocs = try ctx.allocator.dupe(Relocation, &.{}); // TODO: Extract from buffer
-    const traps = try ctx.allocator.dupe(TrapRecord, &.{}); // TODO: Extract from buffer
+
+    // Convert MachReloc to Relocation
+    var relocs = try ctx.allocator.alloc(Relocation, buffer.relocs.items.len);
+    for (buffer.relocs.items, 0..) |mreloc, i| {
+        relocs[i] = .{
+            .offset = mreloc.offset,
+            .kind = convertRelocKind(mreloc.kind),
+            .symbol = try ctx.allocator.dupe(u8, mreloc.name),
+            .addend = mreloc.addend,
+        };
+    }
+
+    // Convert MachTrap to TrapRecord
+    var traps = try ctx.allocator.alloc(TrapRecord, buffer.traps.items.len);
+    for (buffer.traps.items, 0..) |mtrap, i| {
+        traps[i] = .{
+            .offset = mtrap.offset,
+            .code = mtrap.code,
+        };
+    }
 
     return CompiledCode{
         .code = code,
@@ -194,6 +212,16 @@ fn testLowerBranch(
     _: lower_mod.Inst,
 ) !bool {
     return true;
+}
+
+/// Convert MachBuffer relocation kind to public Relocation kind.
+fn convertRelocKind(kind: buffer_mod.Reloc) RelocationKind {
+    return switch (kind) {
+        .abs8, .aarch64_abs64 => .abs64,
+        .x86_pc_rel_32, .aarch64_call26, .aarch64_jump26 => .pc_rel32,
+        .aarch64_adr_prel_pg_hi21, .aarch64_add_abs_lo12_nc, .aarch64_ldst64_abs_lo12_nc => .got_pc_rel32,
+        .abs4 => .abs64, // Treat 4-byte as 8-byte for simplicity
+    };
 }
 
 test "compile basic" {
