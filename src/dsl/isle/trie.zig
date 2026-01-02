@@ -463,6 +463,58 @@ pub const DecisionTree = union(enum) {
     }
 };
 
+/// Working set of rules still being matched.
+const RuleSubset = struct {
+    indices: std.ArrayList(usize),
+    allocator: Allocator,
+
+    pub fn init(allocator: Allocator) RuleSubset {
+        return .{ .indices = std.ArrayList(usize).init(allocator), .allocator = allocator };
+    }
+
+    pub fn deinit(self: *RuleSubset) void {
+        self.indices.deinit();
+    }
+
+    pub fn clone(self: *const RuleSubset) !RuleSubset {
+        var new = RuleSubset.init(self.allocator);
+        try new.indices.appendSlice(self.indices.items);
+        return new;
+    }
+
+    pub fn isEmpty(self: *const RuleSubset) bool {
+        return self.indices.items.len == 0;
+    }
+
+    pub fn single(self: *const RuleSubset) ?usize {
+        if (self.indices.items.len == 1) {
+            return self.indices.items[0];
+        }
+        return null;
+    }
+};
+
+/// Score for selecting the best constraint to test.
+const SplitScore = struct {
+    /// Number of rules eliminated by this constraint.
+    eliminated: usize,
+    /// Total constraints in remaining rules.
+    total_constraints: usize,
+    /// Binding being tested.
+    binding: BindingId,
+    /// Constraint being tested.
+    constraint: Constraint,
+
+    pub fn lessThan(_: void, a: SplitScore, b: SplitScore) bool {
+        // Prefer splits that eliminate more rules
+        if (a.eliminated != b.eliminated) {
+            return a.eliminated > b.eliminated;
+        }
+        // Break ties by total constraint complexity
+        return a.total_constraints < b.total_constraints;
+    }
+};
+
 /// Build a decision tree from a rule set.
 pub fn buildDecisionTree(
     ruleset: *const RuleSet,
@@ -474,14 +526,185 @@ pub fn buildDecisionTree(
         return tree;
     }
 
-    // For now, simple linear matching (no optimization)
-    // TODO: Implement proper decision tree compilation with:
-    // - Constraint frequency analysis
-    // - Optimal split point selection
-    // - Subsumption elimination
-    const tree = try allocator.create(DecisionTree);
-    tree.* = .{ .leaf = .{ .rule_index = 0 } };
-    return tree;
+    // Initialize with all rules
+    var initial = RuleSubset.init(allocator);
+    defer initial.deinit();
+    for (0..ruleset.rules.items.len) |i| {
+        try initial.indices.append(i);
+    }
+
+    return try buildSubtree(ruleset, &initial, allocator);
+}
+
+/// Recursively build decision tree for a subset of rules.
+fn buildSubtree(
+    ruleset: *const RuleSet,
+    subset: *const RuleSubset,
+    allocator: Allocator,
+) error{OutOfMemory}!*DecisionTree {
+    // Base case: no rules match
+    if (subset.isEmpty()) {
+        const tree = try allocator.create(DecisionTree);
+        tree.* = .fail;
+        return tree;
+    }
+
+    // Base case: single rule
+    if (subset.single()) |rule_idx| {
+        const tree = try allocator.create(DecisionTree);
+        tree.* = .{ .leaf = .{ .rule_index = rule_idx } };
+        return tree;
+    }
+
+    // Find the best constraint to test
+    const best_split = try findBestSplit(ruleset, subset, allocator);
+
+    if (best_split) |split| {
+        // Build switch on this constraint
+        const tree = try allocator.create(DecisionTree);
+        tree.* = .{ .switch_constraint = .{
+            .binding = split.binding,
+            .cases = std.AutoHashMap(Constraint, *DecisionTree).init(allocator),
+            .default = null,
+        } };
+
+        // Partition rules based on this constraint
+        var matches = RuleSubset.init(allocator);
+        defer matches.deinit();
+        var non_matches = RuleSubset.init(allocator);
+        defer non_matches.deinit();
+
+        for (subset.indices.items) |rule_idx| {
+            const rule = &ruleset.rules.items[rule_idx];
+            if (rule.getConstraint(split.binding)) |constraint| {
+                if (std.meta.eql(constraint, split.constraint)) {
+                    try matches.indices.append(rule_idx);
+                } else {
+                    try non_matches.indices.append(rule_idx);
+                }
+            } else {
+                try non_matches.indices.append(rule_idx);
+            }
+        }
+
+        // Recursively build subtrees
+        const match_tree = try buildSubtree(ruleset, &matches, allocator);
+        try tree.switch_constraint.cases.put(split.constraint, match_tree);
+
+        if (!non_matches.isEmpty()) {
+            tree.switch_constraint.default = try buildSubtree(ruleset, &non_matches, allocator);
+        }
+
+        return tree;
+    } else {
+        // No good split found, try equality constraints
+        const best_eq = try findBestEquality(ruleset, subset, allocator);
+
+        if (best_eq) |eq| {
+            const tree = try allocator.create(DecisionTree);
+            tree.* = .{ .test_equal = .{
+                .a = eq.a,
+                .b = eq.b,
+                .on_equal = undefined,
+                .on_not_equal = undefined,
+            } };
+
+            // Partition rules
+            var equal = RuleSubset.init(allocator);
+            defer equal.deinit();
+            var not_equal = RuleSubset.init(allocator);
+            defer not_equal.deinit();
+
+            for (subset.indices.items) |rule_idx| {
+                const rule = &ruleset.rules.items[rule_idx];
+                const canonical_a = rule.equals.find(eq.a);
+                const canonical_b = rule.equals.find(eq.b);
+
+                if (std.meta.eql(canonical_a, canonical_b)) {
+                    try equal.indices.append(rule_idx);
+                } else {
+                    try not_equal.indices.append(rule_idx);
+                }
+            }
+
+            tree.test_equal.on_equal = try buildSubtree(ruleset, &equal, allocator);
+            tree.test_equal.on_not_equal = try buildSubtree(ruleset, &not_equal, allocator);
+
+            return tree;
+        } else {
+            // No splits possible - return first rule by priority
+            const tree = try allocator.create(DecisionTree);
+            tree.* = .{ .leaf = .{ .rule_index = subset.indices.items[0] } };
+            return tree;
+        }
+    }
+}
+
+/// Find the best constraint to test for splitting rules.
+fn findBestSplit(
+    ruleset: *const RuleSet,
+    subset: *const RuleSubset,
+    allocator: Allocator,
+) !?SplitScore {
+    var candidates = std.ArrayList(SplitScore).init(allocator);
+    defer candidates.deinit();
+
+    // Collect all constraints from rules in subset
+    for (subset.indices.items) |rule_idx| {
+        const rule = &ruleset.rules.items[rule_idx];
+        var it = rule.constraints.iterator();
+        while (it.next()) |entry| {
+            const binding = entry.key_ptr.*;
+            const constraint = entry.value_ptr.*;
+
+            // Count how many rules this would eliminate
+            var eliminated: usize = 0;
+            var total_constraints: usize = 0;
+
+            for (subset.indices.items) |other_idx| {
+                const other = &ruleset.rules.items[other_idx];
+                total_constraints += other.totalConstraints();
+
+                if (other.getConstraint(binding)) |other_constraint| {
+                    if (!std.meta.eql(constraint, other_constraint)) {
+                        eliminated += 1;
+                    }
+                } else {
+                    eliminated += 1;
+                }
+            }
+
+            if (eliminated > 0) {
+                try candidates.append(.{
+                    .eliminated = eliminated,
+                    .total_constraints = total_constraints,
+                    .binding = binding,
+                    .constraint = constraint,
+                });
+            }
+        }
+    }
+
+    if (candidates.items.len == 0) {
+        return null;
+    }
+
+    // Sort and pick best
+    std.mem.sort(SplitScore, candidates.items, {}, SplitScore.lessThan);
+    return candidates.items[0];
+}
+
+/// Find the best equality constraint to test.
+fn findBestEquality(
+    ruleset: *const RuleSet,
+    subset: *const RuleSubset,
+    allocator: Allocator,
+) !?struct { a: BindingId, b: BindingId } {
+    _ = ruleset;
+    _ = subset;
+    _ = allocator;
+    // TODO: Implement equality constraint selection
+    return null;
 }
 
 test "Binding hash-consing" {
