@@ -93,7 +93,18 @@ pub const FloatCompareData = struct {
 
 pub const BranchData = struct {
     opcode: Opcode,
-    destination: BlockCall,
+    condition: Value,
+    then_dest: ?entities.Block,
+    else_dest: ?entities.Block,
+
+    pub fn init(op: Opcode, cond: Value, then_dst: entities.Block, else_dst: entities.Block) BranchData {
+        return .{
+            .opcode = op,
+            .condition = cond,
+            .then_dest = then_dst,
+            .else_dest = else_dst,
+        };
+    }
 };
 
 pub const JumpData = struct {
