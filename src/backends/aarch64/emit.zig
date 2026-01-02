@@ -54,6 +54,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .eor_rr => |i| try emitEorRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .eor_imm => |i| try emitEorImm(i.dst.toReg(), i.src, i.imm, buffer),
         .mvn_rr => |i| try emitMvnRR(i.dst.toReg(), i.src, i.size, buffer),
+        .bic_rr => |i| try emitBicRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .orn_rr => |i| try emitOrnRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .eon_rr => |i| try emitEonRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .neg => |i| try emitNeg(i.dst.toReg(), i.src, i.size, buffer),
         .ngc => |i| try emitNgc(i.dst.toReg(), i.src, i.size, buffer),
         .adds_rr => |i| try emitAddsRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -11217,4 +11220,76 @@ fn emitClrex(buffer: *buffer_mod.MachBuffer) !void {
 /// Used for inline asm or custom instruction sequences
 fn emitAsmBytes(bytes: []const u8, buffer: *buffer_mod.MachBuffer) !void {
     try buffer.put(bytes);
+}
+
+/// BIC (bit clear): BIC Xd, Xn, Xm
+/// Encoding: sf|0|0|01010|shift|0|Rm|000000|Rn|Rd
+/// Computes Xd = Xn & ~Xm
+fn emitBicRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const sf_bit = sf(size);
+
+    const insn: u32 = (@as(u32, sf_bit) << 31) |
+        (0b0 << 30) |
+        (0b0 << 29) |
+        (0b01010 << 24) |
+        (0b00 << 22) | // shift=00 (no shift)
+        (0b0 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b000000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// ORN (OR NOT): ORN Xd, Xn, Xm
+/// Encoding: sf|0|1|01010|shift|0|Rm|000000|Rn|Rd
+/// Computes Xd = Xn | ~Xm
+fn emitOrnRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const sf_bit = sf(size);
+
+    const insn: u32 = (@as(u32, sf_bit) << 31) |
+        (0b0 << 30) |
+        (0b1 << 29) | // opc=01 for ORN
+        (0b01010 << 24) |
+        (0b00 << 22) |
+        (0b0 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b000000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// EON (XOR NOT): EON Xd, Xn, Xm
+/// Encoding: sf|1|0|01010|shift|0|Rm|000000|Rn|Rd
+/// Computes Xd = Xn ^ ~Xm
+fn emitEonRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const sf_bit = sf(size);
+
+    const insn: u32 = (@as(u32, sf_bit) << 31) |
+        (0b1 << 30) | // opc=10 for EON
+        (0b0 << 29) |
+        (0b01010 << 24) |
+        (0b00 << 22) |
+        (0b0 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b000000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
 }
