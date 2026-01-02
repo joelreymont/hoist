@@ -4,6 +4,7 @@ const testing = std.testing;
 const root = @import("../root.zig");
 const ir = @import("../ir.zig");
 const Function = ir.Function;
+const Signature = root.signature.Signature;
 const Block = root.entities.Block;
 const Inst = root.entities.Inst;
 const Value = root.entities.Value;
@@ -25,7 +26,8 @@ const CFG = @import("domtree.zig").CFG;
 // Test: SSA form verification - basic linear code
 
 test "SSA: linear code in SSA form" {
-    var func = Function.init(testing.allocator);
+    const sig = try Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
     // Create simple linear code:
@@ -84,7 +86,8 @@ test "SSA: linear code in SSA form" {
 // Test: Block parameters as phi nodes
 
 test "SSA: block parameters represent phi nodes" {
-    var func = Function.init(testing.allocator);
+    const sig = try Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
     // Create diamond CFG with phi:
@@ -305,7 +308,8 @@ test "SSA: variable renaming with VRegRenameMap" {
 // Test: SSA verification catches use-before-def
 
 test "SSA: verifier catches use before definition" {
-    var func = Function.init(testing.allocator);
+    const sig = try Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
     const b0 = try func.dfg.blocks.add();
@@ -334,7 +338,8 @@ test "SSA: verifier catches use before definition" {
 // Test: Constant phi removal
 
 test "SSA: constant phi removal optimization" {
-    var func = Function.init(testing.allocator);
+    const sig = try Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
     // Create CFG where all paths to b3 pass same constant:
@@ -403,7 +408,8 @@ test "SSA: constant phi removal optimization" {
 // Test: Multiple block parameters (multiple phi nodes)
 
 test "SSA: multiple block parameters in same block" {
-    var func = Function.init(testing.allocator);
+    const sig = try Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
     // b0:
@@ -588,7 +594,8 @@ test "SSA: complex CFG with nested diamonds" {
 // Test: Value aliasing for SSA optimization
 
 test "SSA: value aliasing mechanism" {
-    var func = Function.init(testing.allocator);
+    const sig = try Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
     const b0 = try func.dfg.blocks.add();

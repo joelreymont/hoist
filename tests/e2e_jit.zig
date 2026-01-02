@@ -13,8 +13,9 @@ const Imm64 = hoist.immediates.Imm64;
 
 /// Allocate executable memory for JIT code.
 /// Uses platform-specific APIs to allocate memory with execute permissions.
-fn allocExecutableMemory(allocator: std.mem.Allocator, size: usize) ![]align(std.mem.page_size) u8 {
-    const aligned_size = std.mem.alignForward(usize, size, std.mem.page_size);
+fn allocExecutableMemory(_: std.mem.Allocator, size: usize) ![]align(std.heap.page_size_min) u8 {
+    const page_size = std.heap.pageSize();
+    const aligned_size = std.mem.alignForward(usize, size, page_size);
 
     switch (builtin.os.tag) {
         .linux, .macos => {
@@ -38,14 +39,14 @@ fn allocExecutableMemory(allocator: std.mem.Allocator, size: usize) ![]align(std
                 windows.MEM_COMMIT | windows.MEM_RESERVE,
                 windows.PAGE_READWRITE,
             );
-            return @as([*]align(std.mem.page_size) u8, @ptrCast(@alignCast(addr)))[0..aligned_size];
+            return @as([*]align(std.heap.page_size_min) u8, @ptrCast(@alignCast(addr)))[0..aligned_size];
         },
         else => return error.UnsupportedPlatform,
     }
 }
 
 /// Make memory executable.
-fn makeExecutable(memory: []align(std.mem.page_size) u8) !void {
+fn makeExecutable(memory: []align(std.heap.page_size_min) u8) !void {
     switch (builtin.os.tag) {
         .linux, .macos => {
             const prot = std.posix.PROT.READ | std.posix.PROT.EXEC;
@@ -68,7 +69,7 @@ fn makeExecutable(memory: []align(std.mem.page_size) u8) !void {
 }
 
 /// Free executable memory.
-fn freeExecutableMemory(memory: []align(std.mem.page_size) u8) void {
+fn freeExecutableMemory(memory: []align(std.heap.page_size_min) u8) void {
     switch (builtin.os.tag) {
         .linux, .macos => {
             std.posix.munmap(memory);
@@ -322,11 +323,12 @@ test "JIT: executable memory boundaries" {
     }
 
     // Test allocation of different sizes
+    const page_size = std.heap.pageSize();
     const test_sizes = [_]usize{
         1, // Minimum
-        std.mem.page_size, // Exactly one page
-        std.mem.page_size + 1, // Just over one page
-        std.mem.page_size * 4, // Multiple pages
+        page_size, // Exactly one page
+        page_size + 1, // Just over one page
+        page_size * 4, // Multiple pages
     };
 
     for (test_sizes) |size| {
@@ -334,7 +336,7 @@ test "JIT: executable memory boundaries" {
         defer freeExecutableMemory(mem);
 
         // Verify size is page-aligned
-        const aligned_size = std.mem.alignForward(usize, size, std.mem.page_size);
+        const aligned_size = std.mem.alignForward(usize, size, page_size);
         try testing.expectEqual(aligned_size, mem.len);
 
         // Verify we can write to the entire allocated region

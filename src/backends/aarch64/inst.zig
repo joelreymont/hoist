@@ -1,8 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-const root = @import("root");
-const reg_mod = root.reg;
+const reg_mod = @import("../../machinst/reg.zig");
 
 pub const Reg = reg_mod.Reg;
 pub const PReg = reg_mod.PReg;

@@ -2,13 +2,17 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
-const root = @import("root");
-const Function = root.function.Function;
-const Block = root.entities.Block;
-const Inst = root.entities.Inst;
-const Value = root.entities.Value;
+const root = @import("../root.zig");
+const function_mod = @import("function.zig");
+const entities_mod = @import("entities.zig");
+const cfg_mod = @import("cfg.zig");
+
+const Function = function_mod.Function;
+const Block = entities_mod.Block;
+const Inst = entities_mod.Inst;
+const Value = entities_mod.Value;
 const Type = root.types.Type;
-const ControlFlowGraph = root.cfg.ControlFlowGraph;
+const ControlFlowGraph = cfg_mod.ControlFlowGraph;
 
 /// IR verification errors.
 pub const VerifyError = error{
