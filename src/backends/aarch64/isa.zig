@@ -239,12 +239,102 @@ pub const Aarch64ISA = struct {
         ctx: compile_mod.CompileCtx,
         func: *const lower_mod.Function,
     ) !compile_mod.CompiledCode {
-        return compile_mod.compile(
+        return compileWithRegalloc2(ctx, func);
+    }
+
+    /// Compile function using regalloc2 for register allocation.
+    fn compileWithRegalloc2(
+        ctx: compile_mod.CompileCtx,
+        func: *const lower_mod.Function,
+    ) !compile_mod.CompiledCode {
+        const RegAllocBridge = @import("regalloc_bridge.zig").RegAllocBridge;
+        const regalloc2_types = @import("../../machinst/regalloc2/types.zig");
+        const buffer_mod = @import("../../machinst/buffer.zig");
+
+        // Phase 1: Lower IR to VCode
+        var vcode = try lower_mod.lowerFunction(
             Inst,
-            ctx,
+            ctx.allocator,
             func,
             lower(),
         );
+        defer vcode.deinit();
+
+        // Phase 2: Register allocation using regalloc2
+        var bridge = RegAllocBridge.init(ctx.allocator);
+        defer bridge.deinit();
+
+        // Convert VCode to regalloc2 representation
+        try bridge.convertVCode(&vcode);
+
+        // TODO: Actually run regalloc2 algorithm here
+        // For now, we do a dummy allocation: v0 -> p0, v1 -> p1, etc.
+        const num_vregs = bridge.adapter.num_vregs;
+        var i: u32 = 0;
+        while (i < num_vregs) : (i += 1) {
+            const vreg = regalloc2_types.VReg.new(i);
+            const preg = regalloc2_types.PhysReg.new(@intCast(i));
+            try bridge.adapter.setAllocation(vreg, regalloc2_types.Allocation{ .reg = preg });
+        }
+
+        // Apply allocations back to VCode
+        try bridge.applyAllocations(&vcode);
+
+        // Phase 3: Emit machine code
+        const emit_mod = @import("emit.zig");
+        var buffer = buffer_mod.MachBuffer.init(ctx.allocator);
+        defer buffer.deinit();
+
+        // Emit each instruction
+        for (vcode.insns.items) |inst| {
+            try emit_mod.emit(inst, &buffer);
+        }
+
+        // Phase 4: Finalize and extract code
+        try buffer.finalize();
+
+        const code = try ctx.allocator.dupe(u8, buffer.data.items);
+
+        // Convert relocations
+        var relocs = try ctx.allocator.alloc(compile_mod.Relocation, buffer.relocs.items.len);
+        for (buffer.relocs.items, 0..) |mreloc, idx| {
+            relocs[idx] = .{
+                .offset = mreloc.offset,
+                .kind = convertRelocKind(mreloc.kind),
+                .symbol = try ctx.allocator.dupe(u8, mreloc.name),
+                .addend = mreloc.addend,
+            };
+        }
+
+        // Convert traps
+        var traps = try ctx.allocator.alloc(compile_mod.TrapRecord, buffer.traps.items.len);
+        for (buffer.traps.items, 0..) |mtrap, idx| {
+            traps[idx] = .{
+                .offset = mtrap.offset,
+                .code = mtrap.code,
+            };
+        }
+
+        // Stack frame size (no spills yet in dummy allocator)
+        const stack_frame_size: u32 = 0;
+
+        return compile_mod.CompiledCode{
+            .code = code,
+            .relocations = relocs,
+            .traps = traps,
+            .stack_frame_size = stack_frame_size,
+            .allocator = ctx.allocator,
+        };
+    }
+
+    /// Convert MachBuffer relocation kind to public Relocation kind.
+    fn convertRelocKind(kind: @import("../../machinst/buffer.zig").Reloc) compile_mod.RelocationKind {
+        return switch (kind) {
+            .abs8, .aarch64_abs64 => .abs64,
+            .x86_pc_rel_32, .aarch64_call26, .aarch64_jump26 => .pc_rel32,
+            .aarch64_adr_prel_pg_hi21, .aarch64_add_abs_lo12_nc, .aarch64_ldst64_abs_lo12_nc => .got_pc_rel32,
+            .abs4 => .abs64,
+        };
     }
 
     /// Check if branch target identification is enabled.
@@ -444,4 +534,20 @@ test "Capabilities page alignment" {
     try testing.expectEqual(@as(u8, 14), Capabilities.pageAlignmentLog2(.ios));
     try testing.expectEqual(@as(u8, 16), Capabilities.pageAlignmentLog2(.linux));
     try testing.expectEqual(@as(u8, 16), Capabilities.pageAlignmentLog2(.freestanding));
+}
+
+test "Aarch64ISA compile function with regalloc2" {
+    var func = lower_mod.Function.init(testing.allocator);
+    defer func.deinit();
+
+    const ctx = compile_mod.CompileCtx.init(testing.allocator, "aarch64");
+
+    var code = try Aarch64ISA.compileFunction(ctx, &func);
+    defer code.deinit();
+
+    // Empty function produces minimal code
+    try testing.expect(code.code.len == 0);
+    try testing.expectEqual(@as(usize, 0), code.relocations.len);
+    try testing.expectEqual(@as(usize, 0), code.traps.len);
+    try testing.expectEqual(@as(u32, 0), code.stack_frame_size);
 }
