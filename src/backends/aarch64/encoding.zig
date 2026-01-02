@@ -164,16 +164,32 @@ pub fn encodeLogicalImmediate(value: u64, is_64bit: bool) ?u13 {
 
     // Find smallest repeating element size
     while (element_size > 2) : (element_size /= 2) {
-        const shift_amt: u6 = @truncate(element_size);
-        const mask = (@as(u64, 1) << shift_amt) - 1;
+        // For element_size=64, we need all bits, so use special handling
+        const mask: u64 = if (element_size == 64)
+            std.math.maxInt(u64)
+        else
+            (@as(u64, 1) << @as(u6, @intCast(element_size))) - 1;
+
         const element = value & mask;
 
         var matches = true;
         var i: u7 = element_size;
         while (i < size) : (i += element_size) {
-            const i_shift: u6 = @truncate(i);
-            const shifted_mask = mask << i_shift;
-            if ((value & shifted_mask) != (element << i_shift)) {
+            const shifted_mask: u64 = if (i >= 64)
+                0
+            else if (element_size == 64)
+                mask
+            else
+                mask << @as(u6, @intCast(i));
+
+            const shifted_element: u64 = if (i >= 64)
+                0
+            else if (element_size == 64)
+                element
+            else
+                element << @as(u6, @intCast(i));
+
+            if ((value & shifted_mask) != shifted_element) {
                 matches = false;
                 break;
             }
@@ -182,8 +198,10 @@ pub fn encodeLogicalImmediate(value: u64, is_64bit: bool) ?u13 {
         if (matches) break;
     }
 
-    const element_shift: u6 = @truncate(element_size);
-    const element = value & ((@as(u64, 1) << element_shift) - 1);
+    const element: u64 = if (element_size == 64)
+        value
+    else
+        value & ((@as(u64, 1) << @as(u6, @intCast(element_size))) - 1);
 
     // Count ones in element
     const ones = @popCount(element);
@@ -201,9 +219,26 @@ pub fn encodeLogicalImmediate(value: u64, is_64bit: bool) ?u13 {
     }
 
     // Encode N:immr:imms
+    // N = 1 for 64-bit, 0 for smaller elements
     const n: u1 = if (element_size == 64) 1 else 0;
-    const immr: u6 = @intCast((element_size - rotation) & (element_size - 1));
-    const imms: u6 = @intCast(ones - 1);
+
+    // immr = (element_size - rotation) mod element_size
+    const immr: u6 = @intCast((element_size - rotation) % element_size);
+
+    // imms encodes both element size and number of ones
+    // Pattern: NOT(size_bits) : (ones - 1)
+    // For element_size=16: imms = 0b110xxx (high 3 bits encode size via leading 1s)
+    // For element_size=8:  imms = 0b1110xx (4 leading 1s when inverted gives size)
+    const size_encoding: u6 = switch (element_size) {
+        64 => @intCast(ones - 1),
+        32 => @intCast((0b100000) | (ones - 1)),
+        16 => @intCast((0b110000) | (ones - 1)),
+        8 => @intCast((0b111000) | (ones - 1)),
+        4 => @intCast((0b111100) | (ones - 1)),
+        2 => @intCast((0b111110) | (ones - 1)),
+        else => return null,
+    };
+    const imms: u6 = size_encoding;
 
     return (@as(u13, n) << 12) | (@as(u13, immr) << 6) | @as(u13, imms);
 }
