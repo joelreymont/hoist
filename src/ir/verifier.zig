@@ -8,6 +8,7 @@ const Block = root.entities.Block;
 const Inst = root.entities.Inst;
 const Value = root.entities.Value;
 const Type = root.types.Type;
+const ControlFlowGraph = root.cfg.ControlFlowGraph;
 
 /// IR verification errors.
 pub const VerifyError = error{
@@ -68,11 +69,36 @@ pub const Verifier = struct {
 
     /// Verify basic structural properties.
     fn verifyStructure(self: *Verifier) !void {
-        // Check that all blocks in layout exist
+        // Build CFG for validation
+        var cfg = ControlFlowGraph.init(self.allocator);
+        defer cfg.deinit();
+        try cfg.compute(self.func);
+
+        // Check that all blocks in layout exist in CFG
         var block_iter = self.func.layout.blocks();
         while (block_iter.next()) |block| {
-            _ = block;
-            // TODO: Verify block is in CFG, has valid predecessors/successors
+            const block_idx = block.index();
+
+            // Verify block is in CFG
+            if (block_idx >= cfg.data.items.len) {
+                const msg = try std.fmt.allocPrint(
+                    self.allocator,
+                    "Block {d} not in CFG (CFG size: {d})",
+                    .{ block_idx, cfg.data.items.len },
+                );
+                try self.errors.append(msg);
+                continue;
+            }
+
+            // Verify predecessor/successor consistency
+            cfg.validateBlock(self.func, block) catch |err| {
+                const msg = try std.fmt.allocPrint(
+                    self.allocator,
+                    "CFG validation failed for block {d}: {s}",
+                    .{ block_idx, @errorName(err) },
+                );
+                try self.errors.append(msg);
+            };
         }
 
         // Check that all instructions are in some block
