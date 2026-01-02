@@ -165,10 +165,50 @@ pub const OptimizationPass = struct {
 
     /// Optimize unary operations.
     fn optimizeUnary(self: *OptimizationPass, inst: Inst, data: anytype) !void {
-        _ = self;
-        _ = inst;
-        _ = data;
-        // TODO: Implement unary optimizations (not, neg, etc.)
+        const opcode = data.opcode;
+        const arg = data.arg;
+
+        // Check for constant operand
+        const arg_const = self.getConstValue(arg);
+
+        // Algebraic simplifications
+        switch (opcode) {
+            .bnot => {
+                // not(not(x)) => x
+                const arg_def = self.func.dfg.valueDef(arg);
+                if (arg_def.inst) |arg_inst| {
+                    const arg_data = self.func.dfg.insts.get(arg_inst) orelse return;
+                    if (arg_data.* == .unary and arg_data.unary.opcode == .bnot) {
+                        try self.replaceWithValue(inst, arg_data.unary.arg);
+                        return;
+                    }
+                }
+                // Constant folding: not(c) => ~c
+                if (arg_const) |val| {
+                    const result = ~val;
+                    try self.replaceWithConst(inst, result);
+                    return;
+                }
+            },
+            .ineg => {
+                // neg(neg(x)) => x
+                const arg_def = self.func.dfg.valueDef(arg);
+                if (arg_def.inst) |arg_inst| {
+                    const arg_data = self.func.dfg.insts.get(arg_inst) orelse return;
+                    if (arg_data.* == .unary and arg_data.unary.opcode == .ineg) {
+                        try self.replaceWithValue(inst, arg_data.unary.arg);
+                        return;
+                    }
+                }
+                // Constant folding: neg(c) => -c
+                if (arg_const) |val| {
+                    const result = -%val;
+                    try self.replaceWithConst(inst, result);
+                    return;
+                }
+            },
+            else => {},
+        }
     }
 
     /// Get constant value if operand is iconst.
