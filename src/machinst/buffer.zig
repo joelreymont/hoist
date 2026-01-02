@@ -16,6 +16,20 @@ pub const Reloc = enum {
     x86_pc_rel_32,
     /// Absolute 4-byte pointer.
     abs4,
+
+    // AArch64 relocations (ELF relocation types)
+    /// R_AARCH64_CALL26 - BL to external function.
+    aarch64_call26,
+    /// R_AARCH64_JUMP26 - B to external target.
+    aarch64_jump26,
+    /// R_AARCH64_ADR_PREL_PG_HI21 - ADRP for GOT/PLT access (high 21 bits).
+    aarch64_adr_prel_pg_hi21,
+    /// R_AARCH64_ADD_ABS_LO12_NC - ADD for GOT/PLT access (low 12 bits).
+    aarch64_add_abs_lo12_nc,
+    /// R_AARCH64_LDST64_ABS_LO12_NC - LDR/STR offset (low 12 bits).
+    aarch64_ldst64_abs_lo12_nc,
+    /// R_AARCH64_ABS64 - Absolute 64-bit address.
+    aarch64_abs64,
 };
 
 /// Addend for relocations.
@@ -538,4 +552,38 @@ test "MachBuffer trap records" {
     try testing.expectEqual(@as(usize, 1), buf.traps.items.len);
     try testing.expectEqual(@as(CodeOffset, 0), buf.traps.items[0].offset);
     try testing.expectEqual(TrapCode.unreachable_code_reached, buf.traps.items[0].code);
+}
+
+/// ELF Rela entry for relocations.
+pub const ElfRela = struct {
+    /// Offset in code where relocation applies.
+    r_offset: u64,
+    /// Symbol index and relocation type.
+    r_info: u64,
+    /// Addend.
+    r_addend: i64,
+
+    /// Convert MachReloc to ELF Rela format.
+    pub fn fromMachReloc(reloc: MachReloc, sym_index: u32) ElfRela {
+        const r_type = relocTypeToElf(reloc.kind);
+        return .{
+            .r_offset = reloc.offset,
+            .r_info = (@as(u64, sym_index) << 32) | r_type,
+            .r_addend = reloc.addend,
+        };
+    }
+};
+
+/// Convert Reloc enum to ELF relocation type number.
+fn relocTypeToElf(kind: Reloc) u32 {
+    return switch (kind) {
+        .aarch64_call26 => 283, // R_AARCH64_CALL26
+        .aarch64_jump26 => 282, // R_AARCH64_JUMP26
+        .aarch64_adr_prel_pg_hi21 => 275, // R_AARCH64_ADR_PREL_PG_HI21
+        .aarch64_add_abs_lo12_nc => 277, // R_AARCH64_ADD_ABS_LO12_NC
+        .aarch64_ldst64_abs_lo12_nc => 286, // R_AARCH64_LDST64_ABS_LO12_NC
+        .aarch64_abs64 => 257, // R_AARCH64_ABS64
+        .abs8, .abs4 => 257, // Generic absolute
+        .x86_pc_rel_32 => 2, // R_X86_64_PC32
+    };
 }
