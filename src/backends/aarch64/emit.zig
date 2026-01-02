@@ -236,6 +236,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .uxtl => |i| try emitUxtl(i.dst.toReg(), i.src, i.size, buffer),
         .saddl => |i| try emitSaddl(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .uaddl => |i| try emitUaddl(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .xtn => |i| try emitXtn(i.dst.toReg(), i.src, i.size, buffer),
+        .sqxtn => |i| try emitSqxtn(i.dst.toReg(), i.src, i.size, buffer),
+        .uqxtn => |i| try emitUqxtn(i.dst.toReg(), i.src, i.size, buffer),
     }
 }
 
@@ -10980,6 +10983,88 @@ fn emitUaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buff
         (0b1 << 21) |
         (@as(u32, rm) << 16) |
         (0b000000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// XTN (extract narrow): XTN Vd.Tb, Vn.T
+/// Encoding: 0|Q|0|01110|size|100001|010010|Rn|Rd
+/// size encodes source element size
+fn emitXtn(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    const size: u2 = switch (vec_size) {
+        .h8 => 0b00, // 8h -> 8b
+        .s4 => 0b01, // 4s -> 4h
+        .d2 => 0b10, // 2d -> 2s
+        else => unreachable,
+    };
+
+    const insn: u32 = (0b0 << 31) |
+        (0b0 << 30) | // Q=0 for lower half
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b100001 << 16) |
+        (0b010010 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// SQXTN (signed saturating extract narrow): SQXTN Vd.Tb, Vn.T
+/// Encoding: 0|Q|0|01110|size|100001|010010|Rn|Rd (with U=0)
+fn emitSqxtn(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    const size: u2 = switch (vec_size) {
+        .h8 => 0b00,
+        .s4 => 0b01,
+        .d2 => 0b10,
+        else => unreachable,
+    };
+
+    const insn: u32 = (0b0 << 31) |
+        (0b0 << 30) |
+        (0b0 << 29) | // U=0 for signed
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b100001 << 16) |
+        (0b010010 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// UQXTN (unsigned saturating extract narrow): UQXTN Vd.Tb, Vn.T
+/// Encoding: 0|Q|1|01110|size|100001|010010|Rn|Rd (with U=1)
+fn emitUqxtn(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    const size: u2 = switch (vec_size) {
+        .h8 => 0b00,
+        .s4 => 0b01,
+        .d2 => 0b10,
+        else => unreachable,
+    };
+
+    const insn: u32 = (0b0 << 31) |
+        (0b0 << 30) |
+        (0b1 << 29) | // U=1 for unsigned
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b100001 << 16) |
+        (0b010010 << 10) |
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 

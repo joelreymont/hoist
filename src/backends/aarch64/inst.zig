@@ -1643,6 +1643,31 @@ pub const Inst = union(enum) {
     },
 
 
+    /// XTN (extract narrow): XTN Vd.Tb, Vn.T
+    /// Narrows upper half of elements
+    xtn: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VectorSize, // Source size (.8h, .4s, .2d)
+    },
+
+    /// SQXTN (signed saturating extract narrow): SQXTN Vd.Tb, Vn.T
+    /// Narrows with signed saturation
+    sqxtn: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VectorSize, // Source size (.8h, .4s, .2d)
+    },
+
+    /// UQXTN (unsigned saturating extract narrow): UQXTN Vd.Tb, Vn.T
+    /// Narrows with unsigned saturation
+    uqxtn: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VectorSize, // Source size (.8h, .4s, .2d)
+    },
+
+
     pub fn format(
         self: Inst,
         comptime _: []const u8,
@@ -1872,6 +1897,9 @@ pub const Inst = union(enum) {
             .uxtl => |i| try writer.print("uxtl.{} {}, {}", .{ i.size, i.dst, i.src }),
             .saddl => |i| try writer.print("saddl.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .uaddl => |i| try writer.print("uaddl.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .xtn => |i| try writer.print("xtn.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .sqxtn => |i| try writer.print("sqxtn.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .uqxtn => |i| try writer.print("uqxtn.{} {}, {}", .{ i.size, i.dst, i.src }),
         }
     }
 };
