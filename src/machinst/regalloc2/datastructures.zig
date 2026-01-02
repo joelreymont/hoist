@@ -115,7 +115,7 @@ pub const BitSet = struct {
     allocator: Allocator,
 
     pub fn init(allocator: Allocator, size: usize) !BitSet {
-        var bits = try std.DynamicBitSetUnmanaged.initEmpty(allocator, size);
+        const bits = try std.DynamicBitSetUnmanaged.initEmpty(allocator, size);
         return .{
             .bits = bits,
             .allocator = allocator,
