@@ -312,7 +312,7 @@ test "JIT: memory management with multiple allocations" {
         try makeExecutable(mem);
 
         // Verify alignment
-        try testing.expect(@intFromPtr(mem.ptr) % std.mem.page_size == 0);
+        try testing.expect(@intFromPtr(mem.ptr) % std.heap.page_size_min == 0);
     }
 }
 

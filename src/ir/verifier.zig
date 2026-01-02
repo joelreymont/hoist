@@ -47,7 +47,7 @@ pub const Verifier = struct {
         return .{
             .func = func,
             .allocator = allocator,
-            .errors = std.ArrayList([]const u8).init(allocator),
+            .errors = .{},
         };
     }
 

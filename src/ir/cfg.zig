@@ -55,7 +55,7 @@ pub const ControlFlowGraph = struct {
     pub fn init(allocator: std.mem.Allocator) ControlFlowGraph {
         return .{
             .allocator = allocator,
-            .data = std.ArrayList(CFGNode).init(allocator),
+            .data = .{},
             .valid = false,
         };
     }
@@ -80,8 +80,8 @@ pub const ControlFlowGraph = struct {
         self.clear();
 
         // Resize data to hold all blocks
-        const num_blocks = func.dfg.num_blocks;
-        try self.data.resize(num_blocks);
+        const num_blocks = func.dfg.blocks.len();
+        try self.data.resize(self.allocator, num_blocks);
         for (0..num_blocks) |i| {
             self.data.items[i] = CFGNode.init(self.allocator);
         }

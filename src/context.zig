@@ -2,9 +2,9 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
-const root = @import("root");
-const Function = root.function.Function;
-const compile_mod = root.compile;
+const root = @import("root.zig");
+const Function = root.ir.function.Function;
+const compile_mod = root.codegen.compile;
 const signature_mod = root.signature;
 
 /// Compiler configuration and context.
@@ -64,14 +64,14 @@ pub const Context = struct {
     ) !compile_mod.CompiledCode {
         // Run verification if enabled
         if (self.verify) {
-            var verifier = root.verifier.Verifier.init(self.allocator, func);
+            var verifier = root.ir.verifier.Verifier.init(self.allocator, func);
             defer verifier.deinit();
             try verifier.verify();
         }
 
         // Run optimization passes if enabled
         if (self.optimize) {
-            var opt_pass = root.optimize.OptimizationPass.init(self.allocator, func);
+            var opt_pass = root.passes.optimize.OptimizationPass.init(self.allocator, func);
             _ = try opt_pass.run();
         }
 
@@ -82,8 +82,8 @@ pub const Context = struct {
         );
 
         return switch (self.target.arch) {
-            .x86_64 => root.x64_isa.X64ISA.compileFunction(compile_ctx, func),
-            .aarch64 => root.aarch64_isa.Aarch64ISA.compileFunction(compile_ctx, func),
+            .x86_64 => root.backends.x64.isa.X64ISA.compileFunction(compile_ctx, func),
+            .aarch64 => root.backends.aarch64.isa.Aarch64ISA.compileFunction(compile_ctx, func),
         };
     }
 
