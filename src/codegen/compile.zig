@@ -15,9 +15,15 @@ const Context = @import("context.zig").Context;
 const CompiledCode = @import("context.zig").CompiledCode;
 const Relocation = @import("context.zig").Relocation;
 const RelocKind = @import("context.zig").RelocKind;
-const Function = @import("../ir.zig").Function;
-const Block = @import("../ir.zig").Block;
-const ir = @import("../ir.zig");
+const Function = @import("../ir/function.zig").Function;
+const Block = @import("../ir/entities.zig").Block;
+const ir = struct {
+    pub const Type = @import("../ir/types.zig").Type;
+    pub const I32 = @import("../ir/types.zig").Type.I32;
+    pub const I64 = @import("../ir/types.zig").Type.I64;
+    pub const Signature = @import("../ir/signature.zig").Signature;
+    pub const Verifier = @import("../ir/verifier.zig").Verifier;
+};
 const MachBuffer = @import("../machinst/buffer.zig").MachBuffer;
 
 /// Compilation error with context.
@@ -496,7 +502,7 @@ test "IRBuilder: initialization" {
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
-    var builder = IRBuilder.init(testing.allocator, &func);
+    const builder = IRBuilder.init(testing.allocator, &func);
     try testing.expectEqual(&func, builder.func);
 }
 
@@ -631,4 +637,469 @@ test "convertRelocKind: all variants" {
 
     const aarch64_add_kind = convertRelocKind(.aarch64_add_abs_lo12_nc);
     try testing.expectEqual(RelocKind.aarch64_add_abs_lo12_nc, aarch64_add_kind);
+}
+
+// Comprehensive IRBuilder tests
+
+test "IRBuilder: create multiple blocks" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block1 = try builder.createBlock();
+    const block2 = try builder.createBlock();
+    const block3 = try builder.createBlock();
+
+    try builder.appendBlock(block1);
+    try builder.appendBlock(block2);
+    try builder.appendBlock(block3);
+
+    try testing.expectEqual(block1, func.layout.entryBlock().?);
+
+    var count: usize = 0;
+    var iter = func.layout.blockIter();
+    while (iter.next()) |_| {
+        count += 1;
+    }
+    try testing.expectEqual(@as(usize, 3), count);
+}
+
+test "IRBuilder: switch to block" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block1 = try builder.createBlock();
+    const block2 = try builder.createBlock();
+
+    try builder.appendBlock(block1);
+    try builder.appendBlock(block2);
+
+    builder.switchToBlock(block1);
+    try testing.expectEqual(block1, builder.builder.current_block.?);
+
+    builder.switchToBlock(block2);
+    try testing.expectEqual(block2, builder.builder.current_block.?);
+}
+
+test "IRBuilder: emit iconst with different types" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block = try builder.createBlock();
+    try builder.appendBlock(block);
+    builder.switchToBlock(block);
+
+    const v1 = try builder.emitIconst(ir.Type.I32, 42);
+    const v2 = try builder.emitIconst(ir.Type.I64, 100);
+
+    try testing.expect(func.dfg.values.get(v1) != null);
+    try testing.expect(func.dfg.values.get(v2) != null);
+
+    const v1_data = func.dfg.values.get(v1).?;
+    const v2_data = func.dfg.values.get(v2).?;
+    try testing.expectEqual(ir.Type.I32, v1_data.getType());
+    try testing.expectEqual(ir.Type.I64, v2_data.getType());
+}
+
+test "IRBuilder: emit multiple iconsts" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block = try builder.createBlock();
+    try builder.appendBlock(block);
+    builder.switchToBlock(block);
+
+    _ = try builder.emitIconst(ir.Type.I32, 1);
+    _ = try builder.emitIconst(ir.Type.I32, 2);
+    _ = try builder.emitIconst(ir.Type.I32, 3);
+    _ = try builder.emitIconst(ir.Type.I32, 4);
+    _ = try builder.emitIconst(ir.Type.I32, 5);
+
+    try testing.expectEqual(@as(usize, 5), func.dfg.insts.elems.items.len);
+}
+
+test "IRBuilder: emit iadd" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block = try builder.createBlock();
+    try builder.appendBlock(block);
+    builder.switchToBlock(block);
+
+    const v1 = try builder.emitIconst(ir.Type.I32, 10);
+    const v2 = try builder.emitIconst(ir.Type.I32, 20);
+    const v3 = try builder.emitIadd(ir.Type.I32, v1, v2);
+
+    try testing.expect(func.dfg.values.get(v3) != null);
+    try testing.expectEqual(@as(usize, 3), func.dfg.insts.elems.items.len);
+}
+
+test "IRBuilder: emit isub" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block = try builder.createBlock();
+    try builder.appendBlock(block);
+    builder.switchToBlock(block);
+
+    const v1 = try builder.emitIconst(ir.Type.I32, 100);
+    const v2 = try builder.emitIconst(ir.Type.I32, 30);
+    const v3 = try builder.emitIsub(ir.Type.I32, v1, v2);
+
+    try testing.expect(func.dfg.values.get(v3) != null);
+    try testing.expectEqual(@as(usize, 3), func.dfg.insts.elems.items.len);
+}
+
+test "IRBuilder: emit imul" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block = try builder.createBlock();
+    try builder.appendBlock(block);
+    builder.switchToBlock(block);
+
+    const v1 = try builder.emitIconst(ir.Type.I32, 5);
+    const v2 = try builder.emitIconst(ir.Type.I32, 7);
+    const v3 = try builder.emitImul(ir.Type.I32, v1, v2);
+
+    try testing.expect(func.dfg.values.get(v3) != null);
+    try testing.expectEqual(@as(usize, 3), func.dfg.insts.elems.items.len);
+}
+
+test "IRBuilder: emit chained arithmetic" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block = try builder.createBlock();
+    try builder.appendBlock(block);
+    builder.switchToBlock(block);
+
+    const v1 = try builder.emitIconst(ir.Type.I32, 10);
+    const v2 = try builder.emitIconst(ir.Type.I32, 20);
+    const v3 = try builder.emitIconst(ir.Type.I32, 30);
+    const v4 = try builder.emitIconst(ir.Type.I32, 5);
+
+    const sum = try builder.emitIadd(ir.Type.I32, v1, v2);
+    const diff = try builder.emitIsub(ir.Type.I32, v3, v4);
+    const product = try builder.emitImul(ir.Type.I32, sum, diff);
+
+    try testing.expect(func.dfg.values.get(product) != null);
+    try testing.expectEqual(@as(usize, 7), func.dfg.insts.elems.items.len);
+}
+
+test "IRBuilder: emit return" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block = try builder.createBlock();
+    try builder.appendBlock(block);
+    builder.switchToBlock(block);
+
+    try builder.emitReturn();
+
+    try testing.expectEqual(@as(usize, 1), func.dfg.insts.elems.items.len);
+}
+
+test "IRBuilder: emit jump" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block1 = try builder.createBlock();
+    const block2 = try builder.createBlock();
+
+    try builder.appendBlock(block1);
+    try builder.appendBlock(block2);
+
+    builder.switchToBlock(block1);
+    try builder.emitJump(block2);
+
+    try testing.expectEqual(@as(usize, 1), func.dfg.insts.elems.items.len);
+}
+
+test "IRBuilder: emit control flow with multiple blocks" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const entry = try builder.createBlock();
+    const middle = try builder.createBlock();
+    const exit = try builder.createBlock();
+
+    try builder.appendBlock(entry);
+    try builder.appendBlock(middle);
+    try builder.appendBlock(exit);
+
+    builder.switchToBlock(entry);
+    try builder.emitJump(middle);
+
+    builder.switchToBlock(middle);
+    try builder.emitJump(exit);
+
+    builder.switchToBlock(exit);
+    try builder.emitReturn();
+
+    try testing.expectEqual(@as(usize, 3), func.dfg.insts.elems.items.len);
+}
+
+test "IRBuilder: value tracking with simple expression" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block = try builder.createBlock();
+    try builder.appendBlock(block);
+    builder.switchToBlock(block);
+
+    const v1 = try builder.emitIconst(ir.Type.I32, 10);
+    const v2 = try builder.emitIconst(ir.Type.I32, 20);
+    const v3 = try builder.emitIadd(ir.Type.I32, v1, v2);
+    const v4 = try builder.emitIsub(ir.Type.I32, v3, v1);
+    const v5 = try builder.emitImul(ir.Type.I32, v1, v2);
+
+    try testing.expect(func.dfg.values.get(v1) != null);
+    try testing.expect(func.dfg.values.get(v2) != null);
+    try testing.expect(func.dfg.values.get(v3) != null);
+    try testing.expect(func.dfg.values.get(v4) != null);
+    try testing.expect(func.dfg.values.get(v5) != null);
+
+    try testing.expectEqual(@as(usize, 5), func.dfg.values.elems.items.len);
+}
+
+test "IRBuilder: value types are preserved" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block = try builder.createBlock();
+    try builder.appendBlock(block);
+    builder.switchToBlock(block);
+
+    const v_i32 = try builder.emitIconst(ir.Type.I32, 42);
+    const v_i64 = try builder.emitIconst(ir.Type.I64, 100);
+
+    const v_i32_data = func.dfg.values.get(v_i32).?;
+    const v_i64_data = func.dfg.values.get(v_i64).?;
+
+    try testing.expectEqual(ir.Type.I32, v_i32_data.getType());
+    try testing.expectEqual(ir.Type.I64, v_i64_data.getType());
+}
+
+test "IRBuilder: build simple function" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const entry = try builder.createBlock();
+    try builder.appendBlock(entry);
+    builder.switchToBlock(entry);
+
+    const a = try builder.emitIconst(ir.Type.I32, 5);
+    const b = try builder.emitIconst(ir.Type.I32, 3);
+    const c = try builder.emitIconst(ir.Type.I32, 2);
+
+    const sum = try builder.emitIadd(ir.Type.I32, a, b);
+    _ = try builder.emitImul(ir.Type.I32, sum, c);
+    try builder.emitReturn();
+
+    try testing.expectEqual(entry, func.layout.entryBlock().?);
+    try testing.expectEqual(@as(usize, 6), func.dfg.insts.elems.items.len);
+}
+
+test "IRBuilder: build function with conditional flow" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+
+    const entry = try builder.createBlock();
+    const then_block = try builder.createBlock();
+    const else_block = try builder.createBlock();
+    const merge = try builder.createBlock();
+
+    try builder.appendBlock(entry);
+    try builder.appendBlock(then_block);
+    try builder.appendBlock(else_block);
+    try builder.appendBlock(merge);
+
+    builder.switchToBlock(entry);
+    const val = try builder.emitIconst(ir.Type.I32, 10);
+    _ = val;
+    try builder.emitJump(then_block);
+
+    builder.switchToBlock(then_block);
+    const t1 = try builder.emitIconst(ir.Type.I32, 5);
+    _ = try builder.emitIadd(ir.Type.I32, t1, t1);
+    try builder.emitJump(merge);
+
+    builder.switchToBlock(else_block);
+    const e1 = try builder.emitIconst(ir.Type.I32, 20);
+    _ = try builder.emitIsub(ir.Type.I32, e1, e1);
+    try builder.emitJump(merge);
+
+    builder.switchToBlock(merge);
+    try builder.emitReturn();
+
+    try testing.expectEqual(@as(usize, 4), func.layout.blocks.elems.items.len);
+    try testing.expectEqual(@as(usize, 8), func.dfg.insts.elems.items.len);
+}
+
+test "IRBuilder: build function with loop structure" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+
+    const entry = try builder.createBlock();
+    const loop_header = try builder.createBlock();
+    const loop_body = try builder.createBlock();
+    const loop_exit = try builder.createBlock();
+
+    try builder.appendBlock(entry);
+    try builder.appendBlock(loop_header);
+    try builder.appendBlock(loop_body);
+    try builder.appendBlock(loop_exit);
+
+    builder.switchToBlock(entry);
+    _ = try builder.emitIconst(ir.Type.I32, 0);
+    try builder.emitJump(loop_header);
+
+    builder.switchToBlock(loop_header);
+    try builder.emitJump(loop_body);
+
+    builder.switchToBlock(loop_body);
+    const v1 = try builder.emitIconst(ir.Type.I32, 1);
+    const v2 = try builder.emitIconst(ir.Type.I32, 2);
+    _ = try builder.emitIadd(ir.Type.I32, v1, v2);
+    try builder.emitJump(loop_header);
+
+    builder.switchToBlock(loop_exit);
+    try builder.emitReturn();
+
+    try testing.expectEqual(@as(usize, 4), func.layout.blocks.elems.items.len);
+    try testing.expectEqual(@as(usize, 7), func.dfg.insts.elems.items.len);
+}
+
+test "IRBuilder: emit instructions in different blocks" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block1 = try builder.createBlock();
+    const block2 = try builder.createBlock();
+
+    try builder.appendBlock(block1);
+    try builder.appendBlock(block2);
+
+    builder.switchToBlock(block1);
+    _ = try builder.emitIconst(ir.Type.I32, 10);
+    _ = try builder.emitIconst(ir.Type.I32, 20);
+
+    builder.switchToBlock(block2);
+    _ = try builder.emitIconst(ir.Type.I32, 30);
+    try builder.emitReturn();
+
+    try testing.expectEqual(@as(usize, 4), func.dfg.insts.elems.items.len);
+}
+
+test "IRBuilder: empty function with just return" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block = try builder.createBlock();
+    try builder.appendBlock(block);
+    builder.switchToBlock(block);
+
+    try builder.emitReturn();
+
+    try testing.expectEqual(@as(usize, 1), func.dfg.insts.elems.items.len);
+}
+
+test "IRBuilder: multiple jumps to same block" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const entry = try builder.createBlock();
+    const b1 = try builder.createBlock();
+    const b2 = try builder.createBlock();
+    const merge = try builder.createBlock();
+
+    try builder.appendBlock(entry);
+    try builder.appendBlock(b1);
+    try builder.appendBlock(b2);
+    try builder.appendBlock(merge);
+
+    builder.switchToBlock(entry);
+    try builder.emitJump(b1);
+
+    builder.switchToBlock(b1);
+    try builder.emitJump(merge);
+
+    builder.switchToBlock(b2);
+    try builder.emitJump(merge);
+
+    builder.switchToBlock(merge);
+    try builder.emitReturn();
+
+    try testing.expectEqual(@as(usize, 4), func.dfg.insts.elems.items.len);
+}
+
+test "buildIR: creates entry block" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    try buildIR(testing.allocator, &func);
+
+    try testing.expect(func.layout.entryBlock() != null);
+}
+
+test "buildIR: emits return instruction" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    try buildIR(testing.allocator, &func);
+
+    try testing.expect(func.dfg.insts.elems.items.len > 0);
+}
+
+test "buildIR: function is valid" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    try buildIR(testing.allocator, &func);
+
+    try testing.expect(func.layout.entryBlock() != null);
+    try testing.expect(func.layout.blocks.elems.items.len > 0);
 }

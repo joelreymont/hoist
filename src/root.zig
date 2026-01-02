@@ -45,6 +45,7 @@ pub const abi = @import("machinst/abi.zig");
 pub const regalloc = @import("machinst/regalloc.zig");
 pub const lower = @import("machinst/lower.zig");
 pub const compile = @import("machinst/compile.zig");
+pub const codegen_compile = @import("codegen/compile.zig");
 
 pub const x64_inst = @import("backends/x64/inst.zig");
 pub const x64_emit = @import("backends/x64/emit.zig");
