@@ -162,6 +162,42 @@ pub const LiveRange = struct {
             }
         }
     }
+
+    /// Split live range at a given instruction position.
+    pub fn split(self: *LiveRange, allocator: Allocator, at: u32) !?LiveRange {
+        var before = LiveRange.init(allocator, self.vreg);
+        errdefer before.deinit();
+
+        var after = LiveRange.init(allocator, self.vreg);
+        errdefer after.deinit();
+
+        for (self.ranges.items) |range| {
+            if (range.end <= at) {
+                // Entirely before split point
+                try before.addRange(range);
+            } else if (range.start >= at) {
+                // Entirely after split point
+                try after.addRange(range);
+            } else {
+                // Spans split point - split it
+                try before.addRange(InstRange.init(range.start, at));
+                try after.addRange(InstRange.init(at, range.end));
+            }
+        }
+
+        // Replace self with before ranges
+        self.ranges.deinit(self.allocator);
+        self.ranges = before.ranges;
+        before.ranges = .{};
+
+        // Return after ranges if non-empty
+        if (after.ranges.items.len > 0) {
+            return after;
+        } else {
+            after.deinit();
+            return null;
+        }
+    }
 };
 
 test "LivenessInfo calculateLiveIn" {
@@ -267,4 +303,29 @@ test "LiveRange merge" {
     try testing.expectEqual(@as(u32, 15), lr.ranges.items[0].end);
     try testing.expectEqual(@as(u32, 20), lr.ranges.items[1].start);
     try testing.expectEqual(@as(u32, 30), lr.ranges.items[1].end);
+}
+
+test "LiveRange split" {
+    const allocator = testing.allocator;
+    var lr = LiveRange.init(allocator, VReg.new(20));
+    defer lr.deinit();
+
+    try lr.addRange(InstRange.init(0, 20));
+    try lr.addRange(InstRange.init(30, 40));
+
+    var after = try lr.split(allocator, 15);
+    defer if (after) |*a| a.deinit();
+
+    // Before should have [0, 15) and no part of [30, 40)
+    try testing.expectEqual(@as(usize, 1), lr.ranges.items.len);
+    try testing.expectEqual(@as(u32, 0), lr.ranges.items[0].start);
+    try testing.expectEqual(@as(u32, 15), lr.ranges.items[0].end);
+
+    // After should have [15, 20) and [30, 40)
+    try testing.expect(after != null);
+    try testing.expectEqual(@as(usize, 2), after.?.ranges.items.len);
+    try testing.expectEqual(@as(u32, 15), after.?.ranges.items[0].start);
+    try testing.expectEqual(@as(u32, 20), after.?.ranges.items[0].end);
+    try testing.expectEqual(@as(u32, 30), after.?.ranges.items[1].start);
+    try testing.expectEqual(@as(u32, 40), after.?.ranges.items[1].end);
 }
