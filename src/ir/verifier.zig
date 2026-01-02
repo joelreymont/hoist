@@ -207,9 +207,28 @@ pub const Verifier = struct {
                 continue;
             }
 
-            // TODO: Check that last instruction is a terminator
-            // (jump, brif, return, etc.)
+            // Check that last instruction is a terminator
+            const inst = last_inst.?;
+            const inst_data = self.func.dfg.insts.get(inst) orelse continue;
+            const opcode = inst_data.opcode();
+
+            if (!isTerminator(opcode)) {
+                const msg = try std.fmt.allocPrint(
+                    self.allocator,
+                    "Block {d} does not end with terminator (last opcode: {s})",
+                    .{ block.index, @tagName(opcode) },
+                );
+                try self.errors.append(msg);
+            }
         }
+    }
+
+    /// Check if an opcode is a terminator instruction.
+    fn isTerminator(opcode: root.opcodes.Opcode) bool {
+        return switch (opcode) {
+            .jump, .brif, .br_table, .@"return", .return_call, .return_call_indirect, .trap, .trapz, .trapnz, .debugtrap => true,
+            else => false,
+        };
     }
 
     /// Get collected error messages.
