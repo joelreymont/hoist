@@ -69,11 +69,23 @@ pub const LabelUseKind = enum {
     pc_rel8,
     /// PC-relative 32-bit signed offset.
     pc_rel32,
+    /// AArch64 conditional branch - 19-bit PC-relative (±1MB range).
+    /// Used by: B.cond, CBZ, CBNZ, TBZ, TBNZ
+    branch19,
+    /// AArch64 unconditional branch - 26-bit PC-relative (±128MB range).
+    /// Used by: B, BL
+    branch26,
+    /// AArch64 ADR - 21-bit PC-relative (±1MB range).
+    adr21,
+    /// AArch64 LDR literal - 19-bit PC-relative word offset (±1MB range).
+    /// Used for constant pool access.
+    ldr_literal19,
 
     pub fn patchSize(self: LabelUseKind) CodeOffset {
         return switch (self) {
             .pc_rel8 => 1,
             .pc_rel32 => 4,
+            .branch19, .branch26, .adr21, .ldr_literal19 => 4,
         };
     }
 
@@ -81,6 +93,10 @@ pub const LabelUseKind = enum {
         return switch (self) {
             .pc_rel8 => 127,
             .pc_rel32 => 0x7FFF_FFFF,
+            .branch19 => 1 << 20,
+            .branch26 => 1 << 27,
+            .adr21 => 1 << 20,
+            .ldr_literal19 => 1 << 20,
         };
     }
 
@@ -88,6 +104,10 @@ pub const LabelUseKind = enum {
         return switch (self) {
             .pc_rel8 => 128,
             .pc_rel32 => 0x8000_0000,
+            .branch19 => 1 << 20,
+            .branch26 => 1 << 27,
+            .adr21 => 1 << 20,
+            .ldr_literal19 => 1 << 20,
         };
     }
 };
@@ -188,6 +208,12 @@ pub const MachBuffer = struct {
         });
     }
 
+    /// Convenience wrapper - use label at current offset.
+    pub fn useLabel(self: *MachBuffer, label: MachLabel, kind: LabelUseKind) !void {
+        const offset = self.curOffset();
+        try self.useLabelAtOffset(offset, label, kind);
+    }
+
     /// Add an external relocation.
     pub fn addReloc(
         self: *MachBuffer,
@@ -211,6 +237,50 @@ pub const MachBuffer = struct {
             .offset = offset,
             .code = code,
         });
+    }
+
+    /// Patch a 19-bit branch offset into an instruction.
+    /// Used by B.cond (bits [23:5]), CBZ/CBNZ, TBZ/TBNZ
+    fn patchBranch19(insn_bytes: *[4]u8, offset: i64) !void {
+        const offset_bits: u32 = @bitCast(@as(i32, @intCast(offset & 0x7FFFF)));
+        var insn = std.mem.readInt(u32, insn_bytes, .little);
+        // Clear bits [23:5], insert offset
+        insn &= ~(@as(u32, 0x7FFFF) << 5);
+        insn |= offset_bits << 5;
+        std.mem.writeInt(u32, insn_bytes, insn, .little);
+    }
+
+    /// Patch a 26-bit branch offset into an instruction.
+    /// Used by B, BL (bits [25:0])
+    fn patchBranch26(insn_bytes: *[4]u8, offset: i64) !void {
+        const offset_bits: u32 = @bitCast(@as(i32, @intCast(offset & 0x3FFFFFF)));
+        var insn = std.mem.readInt(u32, insn_bytes, .little);
+        // Clear bits [25:0], insert offset
+        insn &= ~@as(u32, 0x3FFFFFF);
+        insn |= offset_bits;
+        std.mem.writeInt(u32, insn_bytes, insn, .little);
+    }
+
+    /// Patch ADR instruction with 21-bit byte offset.
+    fn patchAdr21(insn_bytes: *[4]u8, offset: i64) !void {
+        var insn = std.mem.readInt(u32, insn_bytes, .little);
+        const offset_u: u32 = @bitCast(@as(i32, @intCast(offset)));
+        // ADR encoding: immlo [30:29], immhi [23:5]
+        const immlo = offset_u & 0x3;
+        const immhi = (offset_u >> 2) & 0x7FFFF;
+        insn &= ~((@as(u32, 0x3) << 29) | (@as(u32, 0x7FFFF) << 5));
+        insn |= (immlo << 29) | (immhi << 5);
+        std.mem.writeInt(u32, insn_bytes, insn, .little);
+    }
+
+    /// Patch LDR literal instruction with 19-bit word offset.
+    fn patchLdrLiteral19(insn_bytes: *[4]u8, offset: i64) !void {
+        const offset_bits: u32 = @bitCast(@as(i32, @intCast(offset & 0x7FFFF)));
+        var insn = std.mem.readInt(u32, insn_bytes, .little);
+        // LDR literal: bits [23:5]
+        insn &= ~(@as(u32, 0x7FFFF) << 5);
+        insn |= offset_bits << 5;
+        std.mem.writeInt(u32, insn_bytes, insn, .little);
     }
 
     /// Resolve all label fixups.
@@ -240,6 +310,55 @@ pub const MachBuffer = struct {
                     }
                     const val: u32 = @bitCast(@as(i32, @intCast(delta)));
                     std.mem.writeInt(u32, self.data.items[fixup.offset..][0..4], val, .little);
+                },
+                .branch19 => {
+                    // B.cond, CBZ, CBNZ: 19-bit signed offset in instructions (word offset)
+                    // For AArch64, PC points to the instruction itself
+                    const pc_aarch64 = fixup.offset;
+                    const delta_aarch64: i64 = @as(i64, @intCast(label_offset)) - @as(i64, @intCast(pc_aarch64));
+                    if (@rem(delta_aarch64, 4) != 0) {
+                        return error.UnalignedBranchTarget;
+                    }
+                    const offset_words = @divTrunc(delta_aarch64, 4);
+                    if (offset_words < -(1 << 18) or offset_words >= (1 << 18)) {
+                        return error.BranchOutOfRange;
+                    }
+                    try patchBranch19(self.data.items[fixup.offset..][0..4], offset_words);
+                },
+                .branch26 => {
+                    // B, BL: 26-bit signed offset in instructions (word offset)
+                    const pc_aarch64 = fixup.offset;
+                    const delta_aarch64: i64 = @as(i64, @intCast(label_offset)) - @as(i64, @intCast(pc_aarch64));
+                    if (@rem(delta_aarch64, 4) != 0) {
+                        return error.UnalignedBranchTarget;
+                    }
+                    const offset_words = @divTrunc(delta_aarch64, 4);
+                    if (offset_words < -(1 << 25) or offset_words >= (1 << 25)) {
+                        return error.BranchOutOfRange;
+                    }
+                    try patchBranch26(self.data.items[fixup.offset..][0..4], offset_words);
+                },
+                .adr21 => {
+                    // ADR: 21-bit signed byte offset
+                    const pc_aarch64 = fixup.offset;
+                    const delta_aarch64: i64 = @as(i64, @intCast(label_offset)) - @as(i64, @intCast(pc_aarch64));
+                    if (delta_aarch64 < -(1 << 20) or delta_aarch64 >= (1 << 20)) {
+                        return error.AdrOutOfRange;
+                    }
+                    try patchAdr21(self.data.items[fixup.offset..][0..4], delta_aarch64);
+                },
+                .ldr_literal19 => {
+                    // LDR literal: 19-bit signed word offset
+                    const pc_aarch64 = fixup.offset;
+                    const delta_aarch64: i64 = @as(i64, @intCast(label_offset)) - @as(i64, @intCast(pc_aarch64));
+                    if (@rem(delta_aarch64, 4) != 0) {
+                        return error.UnalignedLiteralTarget;
+                    }
+                    const offset_words = @divTrunc(delta_aarch64, 4);
+                    if (offset_words < -(1 << 18) or offset_words >= (1 << 18)) {
+                        return error.LiteralOutOfRange;
+                    }
+                    try patchLdrLiteral19(self.data.items[fixup.offset..][0..4], offset_words);
                 },
             }
         }
