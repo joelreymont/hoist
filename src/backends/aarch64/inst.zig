@@ -1569,6 +1569,61 @@ pub const Inst = union(enum) {
         size: VectorSize,
     },
 
+
+    /// Vector FP FCMEQ (compare equal): FCMEQ Vd.T, Vn.T, Vm.T
+    vec_fcmeq: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize, // .2s, .4s, or .2d
+    },
+
+    /// Vector FP FCMGT (compare greater than): FCMGT Vd.T, Vn.T, Vm.T
+    vec_fcmgt: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector FP FCMGE (compare greater or equal): FCMGE Vd.T, Vn.T, Vm.T
+    vec_fcmge: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector FP FMIN (minimum): FMIN Vd.T, Vn.T, Vm.T
+    vec_fmin: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector FP FMAX (maximum): FMAX Vd.T, Vn.T, Vm.T
+    vec_fmax: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector FP FABS (absolute value): FABS Vd.T, Vn.T
+    vec_fabs: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector FP FNEG (negate): FNEG Vd.T, Vn.T
+    vec_fneg: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VectorSize,
+    },
+
     /// Vector ADDV (add across vector): ADDV Vd, Vn.T
     /// Sums all lanes of src into dst (scalar result in lane 0)
     addv: struct {
@@ -2031,6 +2086,13 @@ pub const Inst = union(enum) {
             .vec_umax => |i| try writer.print("umax.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_abs => |i| try writer.print("abs.{} {}, {}", .{ i.size, i.dst, i.src }),
             .vec_neg => |i| try writer.print("neg.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .vec_fcmeq => |i| try writer.print("fcmeq.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fcmgt => |i| try writer.print("fcmgt.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fcmge => |i| try writer.print("fcmge.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fmin => |i| try writer.print("fmin.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fmax => |i| try writer.print("fmax.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fabs => |i| try writer.print("fabs.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .vec_fneg => |i| try writer.print("fneg.{} {}, {}", .{ i.size, i.dst, i.src }),
             .addv => |i| try writer.print("addv.{} {}, {}", .{ i.size, i.dst, i.src }),
             .sminv => |i| try writer.print("sminv.{} {}, {}", .{ i.size, i.dst, i.src }),
             .smaxv => |i| try writer.print("smaxv.{} {}, {}", .{ i.size, i.dst, i.src }),
