@@ -221,6 +221,12 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .smaxv => |i| try emitSmaxv(i.dst.toReg(), i.src, i.size, buffer),
         .uminv => |i| try emitUminv(i.dst.toReg(), i.src, i.size, buffer),
         .umaxv => |i| try emitUmaxv(i.dst.toReg(), i.src, i.size, buffer),
+        .zip1 => |i| try emitZip1(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .zip2 => |i| try emitZip2(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .uzp1 => |i| try emitUzp1(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .uzp2 => |i| try emitUzp2(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .trn1 => |i| try emitTrn1(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .trn2 => |i| try emitTrn2(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
     }
 }
 
@@ -10571,6 +10577,150 @@ fn emitUmaxv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachB
         (@as(u32, size) << 22) |
         (0b11000 << 17) |
         (0b110100 << 11) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// ZIP1 (zip vectors, primary): ZIP1 Vd.T, Vn.T, Vm.T
+/// Encoding: 0|Q|0|01110|size|0|Rm|001110|Rn|Rd
+fn emitZip1(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b0 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b001110 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// ZIP2 (zip vectors, secondary): ZIP2 Vd.T, Vn.T, Vm.T
+/// Encoding: 0|Q|0|01110|size|0|Rm|011110|Rn|Rd
+fn emitZip2(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b0 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b011110 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// UZP1 (unzip vectors, primary): UZP1 Vd.T, Vn.T, Vm.T
+/// Encoding: 0|Q|0|01110|size|0|Rm|000110|Rn|Rd
+fn emitUzp1(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b0 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b000110 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// UZP2 (unzip vectors, secondary): UZP2 Vd.T, Vn.T, Vm.T
+/// Encoding: 0|Q|0|01110|size|0|Rm|010110|Rn|Rd
+fn emitUzp2(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b0 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b010110 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// TRN1 (transpose vectors, primary): TRN1 Vd.T, Vn.T, Vm.T
+/// Encoding: 0|Q|0|01110|size|0|Rm|001010|Rn|Rd
+fn emitTrn1(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b0 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b001010 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// TRN2 (transpose vectors, secondary): TRN2 Vd.T, Vn.T, Vm.T
+/// Encoding: 0|Q|0|01110|size|0|Rm|011010|Rn|Rd
+fn emitTrn2(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b0 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b011010 << 10) |
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 

@@ -21274,3 +21274,158 @@ Launched 4 parallel agents working on different files to avoid conflicts:
 **Claude:** Now let me start with the highest-priority task: fixing the emit gaps for already-defined instructions. I'll launch parallel agents to work on independent instruction categories:
 
 ---
+
+## Session - 2026-01-02 07:50:50
+
+### Active Work (bd)
+
+```
+(bd not available)
+```
+
+### Conversation
+
+**User:** dot the simd implementation with full context
+
+**Claude:** I'll create comprehensive dot tasks for the SIMD implementation work. Let me first examine the current state of the codebase to capture full context.
+
+**Claude:** Now let me check the SIMD-related dots and examine the lower.isle file:
+
+**Claude:** Now let me check if there are actual VectorSize or SIMD definitions in inst.zig:
+
+**Claude:** Let me check the complete list of vector-related dots and close the ones that are already completed:
+
+**Claude:** Now let me create comprehensive SIMD implementation dots with full context. Let me first check what's actually in the codebase:
+
+**Claude:** Now let me create comprehensive SIMD implementation dots. I'll break down the work into specific, actionable tasks:
+
+**Claude:** Now let me close the old SIMD dots that have been superseded by these detailed ones:
+
+**Claude:** Let me check what's happening with the dot command and properly organize the dots:
+
+**Claude:** I see the issue - the `-t` flag didn't work as expected. Let me use the proper syntax to update the dots with their titles:
+
+**Claude:** I see that `dot edit` creates new dots instead of editing. Let me close the old ones and check the final result:
+
+**Claude:** Let me clean this up properly - it seems dot close didn't work. Let me view one of the "edit" dots to confirm they have the right content:
+
+**Claude:** The dot tool's edit command doesn't actually edit - it creates new dots with title "edit". Let me start over with a cleaner approach, using dot's body field for the detailed information:
+
+**Claude:** Good! Now let me create single comprehensive dots for major SIMD implementation areas:
+
+**Claude:** Perfect! Now let me verify the dots were created correctly and clean up the remaining stale ones:
+
+**Claude:** I see that `dot new` with a heredoc doesn't set the title properly. Let me check the dot tool's actual capabilities and finish up:
+
+**Claude:** Created 8 comprehensive SIMD implementation dots with full context:
+
+**Core Infrastructure**
+- VectorSize enum + VReg encoding (hoist-47602d6e75e4f360)
+
+**Instruction Groups** 
+- Arithmetic: vec_add/sub/mul (hoist-47602d821c2744f2)
+- Bitwise/Movement: and/orr/dup/movi (hoist-47602d948b265c57)
+- Comparisons/Shifts/MinMax (hoist-47602da19e8d48b1)
+- Load/Store/Permute: ld1/st1/tbl/zip/ext (hoist-47602db0417fe575)
+- Reductions/FP/Widen: addv/fadd/sxtl/xtn (hoist-47602dc3a5c0cf48)
+
+**Integration & Tests**
+- ISLE lowering patterns (hoist-47602de0a919e707)
+- Comprehensive test suite (hoist-47602df802ab350a)
+
+Each dot contains:
+- File paths with line numbers
+- Instruction encodings (Q|size|opcode format)
+- Struct definitions
+- Implementation details
+
+Summary at `/tmp/simd_summary.md` with dependencies and recommended implementation order. Old/duplicate SIMD dots closed.
+
+**User:** go
+
+**Claude:** I'll examine the current state and continue work on the SIMD implementation, starting with committing the existing FP changes and then beginning SIMD core infrastructure.
+
+**Claude:** Duplicate functions in emit.zig. Let me fix this:
+
+**Claude:** Duplicated functions at lines 3392-3732 and 3736-4076. Delete the duplicates:
+
+**Claude:** Delete duplicate functions from lines 3734-4076 (first copy at 3390-3732):
+
+**Claude:** Now add VectorSize enum:
+
+**Claude:** VReg is virtual register - need to check how hw encoding works for vector registers:
+
+**Claude:** Good - hwEnc works for all register classes. Now add vec_add/sub/mul instructions:
+
+**Claude:** Now add format() cases:
+
+**Claude:** Now implement the emit functions at end of file:
+
+**Claude:** Tests pass! Now commit and create basic SIMD tests:
+
+**Claude:** SIMD Core complete:
+- VectorSize enum with 7 variants
+- vec_add/sub/mul instructions + emit functions
+- Tests pass
+- Ready for additional SIMD groups (bitwise, comparisons, load/store, permute, FP, etc.) tracked in remaining dots
+
+**User:** clean up dots, then pick a dot and work on it
+
+**Claude:** Pick vector comparisons - builds on vec_add foundation. Add vec_cmeq/cmgt/cmge:
+
+**Claude:** Emit functions need to be added:
+
+**Claude:** Committed but tests don't pass - the EOF heredoc failed. Let me check and fix:
+
+**Claude:** Perfect! Vector comparisons complete:
+- vec_cmeq, vec_cmgt, vec_cmge instructions
+- Emit functions with NEON encodings
+- Format support
+- Tests pass
+- Committed
+
+Next available SIMD dots: vector moves, load/store, element ops, extends, narrows, reductions, table lookup, FP ops, or shuffles.
+
+**User:** clean up dots, then pick a dot and work on it
+
+**Claude:** Work on vector moves - add bitwise ops (AND/ORR/EOR) first as they're similar to comparisons:
+
+**Claude:** Perfect! SIMD progress summary:
+- ✓ VectorSize enum (7 variants)
+- ✓ vec_add/sub/mul arithmetic
+- ✓ vec_cmeq/cmgt/cmge comparisons  
+- ✓ vec_and/orr/eor bitwise ops
+
+All committed and tested. Ready for next SIMD group (FP ops, load/store, shuffles, etc.)
+
+**User:** clean up dots, then pick a dot and work on it
+
+**Claude:** Work on vector FP ops - similar to scalar FP but with VectorSize. Note: only .2s/.4s/.2d are valid for FP:
+
+**Claude:** Excellent progress! Completed 5 SIMD instruction groups:
+- ✓ VectorSize enum infrastructure
+- ✓ vec_add/sub/mul arithmetic
+- ✓ vec_cmeq/cmgt/cmge comparisons
+- ✓ vec_and/orr/eor bitwise
+- ✓ vec_fadd/fsub/fmul/fdiv floating-point
+
+All committed and tested. Ready for next group (load/store, shuffles, reductions, etc.)
+
+**User:** clean up dots, then pick a dot and work on it
+
+**Claude:** Work on vector reductions - these are horizontal operations that reduce a vector to a scalar. Start with addv/sminv/smaxv/uminv/umaxv:
+
+**Claude:** Perfect! Completed 6 SIMD instruction groups with 5 commits in this session:
+- ✓ VectorSize enum + vec_add/sub/mul
+- ✓ vec_cmeq/cmgt/cmge comparisons
+- ✓ vec_and/orr/eor bitwise
+- ✓ vec_fadd/fsub/fmul/fdiv floating-point
+- ✓ addv/sminv/smaxv/uminv/umaxv reductions
+
+All tested and committed. 8 SIMD dots remaining (load/store, shuffles, extends/narrows, table lookup, element ops).
+
+**User:** clean up dots, then pick a dot and work on it
+
+**Claude:** Work on vector shuffles - ZIP/UZP/TRN for lane interleaving/deinterleaving:
+
+---

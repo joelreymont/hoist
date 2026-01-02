@@ -1508,6 +1508,60 @@ pub const Inst = union(enum) {
         size: VectorSize,
     },
 
+    /// ZIP1 (zip vectors, primary): ZIP1 Vd.T, Vn.T, Vm.T
+    /// Interleaves lower halves: d[0]=n[0], d[1]=m[0], d[2]=n[1], d[3]=m[1], ...
+    zip1: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// ZIP2 (zip vectors, secondary): ZIP2 Vd.T, Vn.T, Vm.T
+    /// Interleaves upper halves
+    zip2: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// UZP1 (unzip vectors, primary): UZP1 Vd.T, Vn.T, Vm.T
+    /// Deinterleaves even lanes: d[0]=n[0], d[1]=n[2], d[2]=m[0], d[3]=m[2], ...
+    uzp1: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// UZP2 (unzip vectors, secondary): UZP2 Vd.T, Vn.T, Vm.T
+    /// Deinterleaves odd lanes
+    uzp2: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// TRN1 (transpose vectors, primary): TRN1 Vd.T, Vn.T, Vm.T
+    /// Transposes even-numbered elements
+    trn1: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// TRN2 (transpose vectors, secondary): TRN2 Vd.T, Vn.T, Vm.T
+    /// Transposes odd-numbered elements
+    trn2: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
 
     pub fn format(
         self: Inst,
@@ -1723,6 +1777,12 @@ pub const Inst = union(enum) {
             .smaxv => |i| try writer.print("smaxv.{} {}, {}", .{ i.size, i.dst, i.src }),
             .uminv => |i| try writer.print("uminv.{} {}, {}", .{ i.size, i.dst, i.src }),
             .umaxv => |i| try writer.print("umaxv.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .zip1 => |i| try writer.print("zip1.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .zip2 => |i| try writer.print("zip2.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .uzp1 => |i| try writer.print("uzp1.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .uzp2 => |i| try writer.print("uzp2.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .trn1 => |i| try writer.print("trn1.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .trn2 => |i| try writer.print("trn2.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
         }
     }
 };
