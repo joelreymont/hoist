@@ -2640,6 +2640,30 @@ pub fn postIndex(base: WritableReg, offset: i16) AMode {
     return .{ .post_index = .{ .base = base, .offset = offset } };
 }
 
+/// Create logical shift left instruction: LSL dst, src, #imm
+/// Computes dst = src << imm.
+pub fn aarch64_lsl(dst: WritableReg, src: Reg, imm: u8, size: OperandSize) Inst {
+    return .{ .lsl_imm = .{ .dst = dst, .src = src, .imm = imm, .size = size } };
+}
+
+/// Create logical shift right instruction: LSR dst, src, #imm
+/// Computes dst = src >> imm (logical/unsigned).
+pub fn aarch64_lsr(dst: WritableReg, src: Reg, imm: u8, size: OperandSize) Inst {
+    return .{ .lsr_imm = .{ .dst = dst, .src = src, .imm = imm, .size = size } };
+}
+
+/// Create arithmetic shift right instruction: ASR dst, src, #imm
+/// Computes dst = src >> imm (arithmetic/signed).
+pub fn aarch64_asr(dst: WritableReg, src: Reg, imm: u8, size: OperandSize) Inst {
+    return .{ .asr_imm = .{ .dst = dst, .src = src, .imm = imm, .size = size } };
+}
+
+/// Create rotate right instruction: ROR dst, src, #imm
+/// Computes dst = rotate_right(src, imm).
+pub fn aarch64_ror(dst: WritableReg, src: Reg, imm: u8, size: OperandSize) Inst {
+    return .{ .ror_imm = .{ .dst = dst, .src = src, .imm = imm, .size = size } };
+}
+
 /// Check if value fits in 12-bit arithmetic immediate (optionally shifted by 12).
 /// Valid values: 0-4095 or (0-4095)<<12.
 pub fn isValidArithImm12(value: u64) bool {
@@ -2678,6 +2702,86 @@ pub fn isValidLoadStoreImm(value: i64, size: u32) bool {
     }
 
     return uval <= max_offset;
+}
+
+/// Create AND register-register instruction.
+/// Computes dst = src1 & src2.
+pub fn aarch64_and(dst: WritableReg, src1: Reg, src2: Reg, size: OperandSize) Inst {
+    return .{ .and_rr = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// Create AND immediate instruction.
+/// Computes dst = src & imm.
+/// Returns null if immediate cannot be encoded as logical immediate.
+pub fn aarch64_and_imm(dst: WritableReg, src: Reg, imm: u64, size: OperandSize) ?Inst {
+    const imm_logic = ImmLogic.maybeFromU64(imm, size) orelse return null;
+    return .{ .and_imm = .{
+        .dst = dst,
+        .src = src,
+        .imm = imm_logic,
+    } };
+}
+
+/// Create ORR register-register instruction.
+/// Computes dst = src1 | src2.
+pub fn aarch64_orr(dst: WritableReg, src1: Reg, src2: Reg, size: OperandSize) Inst {
+    return .{ .orr_rr = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// Create ORR immediate instruction.
+/// Computes dst = src | imm.
+/// Returns null if immediate cannot be encoded as logical immediate.
+pub fn aarch64_orr_imm(dst: WritableReg, src: Reg, imm: u64, size: OperandSize) ?Inst {
+    const imm_logic = ImmLogic.maybeFromU64(imm, size) orelse return null;
+    return .{ .orr_imm = .{
+        .dst = dst,
+        .src = src,
+        .imm = imm_logic,
+    } };
+}
+
+/// Create EOR register-register instruction.
+/// Computes dst = src1 ^ src2.
+pub fn aarch64_eor(dst: WritableReg, src1: Reg, src2: Reg, size: OperandSize) Inst {
+    return .{ .eor_rr = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// Create EOR immediate instruction.
+/// Computes dst = src ^ imm.
+/// Returns null if immediate cannot be encoded as logical immediate.
+pub fn aarch64_eor_imm(dst: WritableReg, src: Reg, imm: u64, size: OperandSize) ?Inst {
+    const imm_logic = ImmLogic.maybeFromU64(imm, size) orelse return null;
+    return .{ .eor_imm = .{
+        .dst = dst,
+        .src = src,
+        .imm = imm_logic,
+    } };
+}
+
+/// Create BIC register-register instruction.
+/// Computes dst = src1 & ~src2 (bit clear).
+pub fn aarch64_bic(dst: WritableReg, src1: Reg, src2: Reg, size: OperandSize) Inst {
+    return .{ .bic_rr = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
 }
 
 test "Inst formatting" {
@@ -3619,4 +3723,245 @@ test "Addressing mode: postIndex" {
 
     const amode_neg = postIndex(wr5, -12);
     try testing.expectEqual(@as(i16, -12), amode_neg.post_index.offset);
+}
+
+test "aarch64_and: register-register" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst64 = aarch64_and(wr0, r1, r2, .size64);
+    try testing.expectEqual(Inst.and_rr, @as(std.meta.Tag(Inst), inst64));
+    try testing.expectEqual(wr0, inst64.and_rr.dst);
+    try testing.expectEqual(r1, inst64.and_rr.src1);
+    try testing.expectEqual(r2, inst64.and_rr.src2);
+    try testing.expectEqual(OperandSize.size64, inst64.and_rr.size);
+
+    const inst32 = aarch64_and(wr0, r1, r2, .size32);
+    try testing.expectEqual(OperandSize.size32, inst32.and_rr.size);
+}
+
+test "aarch64_and_imm: valid immediate" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst = aarch64_and_imm(wr0, r1, 0xAAAAAAAAAAAAAAAA, .size64);
+    try testing.expect(inst != null);
+    try testing.expectEqual(Inst.and_imm, @as(std.meta.Tag(Inst), inst.?));
+    try testing.expectEqual(wr0, inst.?.and_imm.dst);
+    try testing.expectEqual(r1, inst.?.and_imm.src);
+    try testing.expectEqual(@as(u64, 0xAAAAAAAAAAAAAAAA), inst.?.and_imm.imm.value);
+}
+
+test "aarch64_and_imm: invalid immediate" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst = aarch64_and_imm(wr0, r1, 0, .size64);
+    try testing.expectEqual(@as(?Inst, null), inst);
+
+    const inst2 = aarch64_and_imm(wr0, r1, 0xFFFFFFFFFFFFFFFF, .size64);
+    try testing.expectEqual(@as(?Inst, null), inst2);
+}
+
+test "aarch64_orr: register-register" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst64 = aarch64_orr(wr0, r1, r2, .size64);
+    try testing.expectEqual(Inst.orr_rr, @as(std.meta.Tag(Inst), inst64));
+    try testing.expectEqual(wr0, inst64.orr_rr.dst);
+    try testing.expectEqual(r1, inst64.orr_rr.src1);
+    try testing.expectEqual(r2, inst64.orr_rr.src2);
+    try testing.expectEqual(OperandSize.size64, inst64.orr_rr.size);
+
+    const inst32 = aarch64_orr(wr0, r1, r2, .size32);
+    try testing.expectEqual(OperandSize.size32, inst32.orr_rr.size);
+}
+
+test "aarch64_orr_imm: valid immediate" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst = aarch64_orr_imm(wr0, r1, 0x00FF00FF00FF00FF, .size64);
+    try testing.expect(inst != null);
+    try testing.expectEqual(Inst.orr_imm, @as(std.meta.Tag(Inst), inst.?));
+    try testing.expectEqual(wr0, inst.?.orr_imm.dst);
+    try testing.expectEqual(r1, inst.?.orr_imm.src);
+    try testing.expectEqual(@as(u64, 0x00FF00FF00FF00FF), inst.?.orr_imm.imm.value);
+}
+
+test "aarch64_orr_imm: invalid immediate" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst = aarch64_orr_imm(wr0, r1, 0, .size64);
+    try testing.expectEqual(@as(?Inst, null), inst);
+}
+
+test "aarch64_eor: register-register" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst64 = aarch64_eor(wr0, r1, r2, .size64);
+    try testing.expectEqual(Inst.eor_rr, @as(std.meta.Tag(Inst), inst64));
+    try testing.expectEqual(wr0, inst64.eor_rr.dst);
+    try testing.expectEqual(r1, inst64.eor_rr.src1);
+    try testing.expectEqual(r2, inst64.eor_rr.src2);
+    try testing.expectEqual(OperandSize.size64, inst64.eor_rr.size);
+
+    const inst32 = aarch64_eor(wr0, r1, r2, .size32);
+    try testing.expectEqual(OperandSize.size32, inst32.eor_rr.size);
+}
+
+test "aarch64_eor_imm: valid immediate" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst = aarch64_eor_imm(wr0, r1, 0x0F0F0F0F0F0F0F0F, .size64);
+    try testing.expect(inst != null);
+    try testing.expectEqual(Inst.eor_imm, @as(std.meta.Tag(Inst), inst.?));
+    try testing.expectEqual(wr0, inst.?.eor_imm.dst);
+    try testing.expectEqual(r1, inst.?.eor_imm.src);
+    try testing.expectEqual(@as(u64, 0x0F0F0F0F0F0F0F0F), inst.?.eor_imm.imm.value);
+}
+
+test "aarch64_eor_imm: invalid immediate" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst = aarch64_eor_imm(wr0, r1, 0xFFFFFFFFFFFFFFFF, .size64);
+    try testing.expectEqual(@as(?Inst, null), inst);
+}
+
+test "aarch64_bic: register-register" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst64 = aarch64_bic(wr0, r1, r2, .size64);
+    try testing.expectEqual(Inst.bic_rr, @as(std.meta.Tag(Inst), inst64));
+    try testing.expectEqual(wr0, inst64.bic_rr.dst);
+    try testing.expectEqual(r1, inst64.bic_rr.src1);
+    try testing.expectEqual(r2, inst64.bic_rr.src2);
+    try testing.expectEqual(OperandSize.size64, inst64.bic_rr.size);
+
+    const inst32 = aarch64_bic(wr0, r1, r2, .size32);
+    try testing.expectEqual(OperandSize.size32, inst32.bic_rr.size);
+}
+
+test "aarch64_lsl constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_32 = aarch64_lsl(wr0, r1, 5, .size32);
+    try testing.expectEqual(Inst.lsl_imm, @as(std.meta.Tag(Inst), inst_32));
+    try testing.expectEqual(wr0, inst_32.lsl_imm.dst);
+    try testing.expectEqual(r1, inst_32.lsl_imm.src);
+    try testing.expectEqual(@as(u8, 5), inst_32.lsl_imm.imm);
+    try testing.expectEqual(OperandSize.size32, inst_32.lsl_imm.size);
+
+    const inst_64 = aarch64_lsl(wr0, r1, 42, .size64);
+    try testing.expectEqual(Inst.lsl_imm, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(@as(u8, 42), inst_64.lsl_imm.imm);
+    try testing.expectEqual(OperandSize.size64, inst_64.lsl_imm.size);
+}
+
+test "aarch64_lsr constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_32 = aarch64_lsr(wr0, r1, 13, .size32);
+    try testing.expectEqual(Inst.lsr_imm, @as(std.meta.Tag(Inst), inst_32));
+    try testing.expectEqual(wr0, inst_32.lsr_imm.dst);
+    try testing.expectEqual(r1, inst_32.lsr_imm.src);
+    try testing.expectEqual(@as(u8, 13), inst_32.lsr_imm.imm);
+    try testing.expectEqual(OperandSize.size32, inst_32.lsr_imm.size);
+
+    const inst_64 = aarch64_lsr(wr0, r1, 57, .size64);
+    try testing.expectEqual(Inst.lsr_imm, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(@as(u8, 57), inst_64.lsr_imm.imm);
+    try testing.expectEqual(OperandSize.size64, inst_64.lsr_imm.size);
+}
+
+test "aarch64_asr constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_32 = aarch64_asr(wr0, r1, 7, .size32);
+    try testing.expectEqual(Inst.asr_imm, @as(std.meta.Tag(Inst), inst_32));
+    try testing.expectEqual(wr0, inst_32.asr_imm.dst);
+    try testing.expectEqual(r1, inst_32.asr_imm.src);
+    try testing.expectEqual(@as(u8, 7), inst_32.asr_imm.imm);
+    try testing.expectEqual(OperandSize.size32, inst_32.asr_imm.size);
+
+    const inst_64 = aarch64_asr(wr0, r1, 35, .size64);
+    try testing.expectEqual(Inst.asr_imm, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(@as(u8, 35), inst_64.asr_imm.imm);
+    try testing.expectEqual(OperandSize.size64, inst_64.asr_imm.size);
+}
+
+test "aarch64_ror constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_32 = aarch64_ror(wr0, r1, 24, .size32);
+    try testing.expectEqual(Inst.ror_imm, @as(std.meta.Tag(Inst), inst_32));
+    try testing.expectEqual(wr0, inst_32.ror_imm.dst);
+    try testing.expectEqual(r1, inst_32.ror_imm.src);
+    try testing.expectEqual(@as(u8, 24), inst_32.ror_imm.imm);
+    try testing.expectEqual(OperandSize.size32, inst_32.ror_imm.size);
+
+    const inst_64 = aarch64_ror(wr0, r1, 16, .size64);
+    try testing.expectEqual(Inst.ror_imm, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(@as(u8, 16), inst_64.ror_imm.imm);
+    try testing.expectEqual(OperandSize.size64, inst_64.ror_imm.size);
 }
