@@ -372,8 +372,51 @@ pub fn buildIR(allocator: std.mem.Allocator, func: *Function) CodegenError!void 
 
 /// Legalize IR for target.
 fn legalize(ctx: *Context) CodegenError!void {
-    // TODO: Implement legalization
-    _ = ctx;
+    const TypeLegalizer = @import("legalize_types.zig").TypeLegalizer;
+    const OpLegalizer = @import("legalize_ops.zig").OpLegalizer;
+
+    // Create type legalizer (TODO: make target-specific)
+    const type_legalizer = TypeLegalizer.default64();
+
+    // Create operation legalizer (TODO: make target-specific)
+    const op_legalizer = OpLegalizer.default64();
+
+    // Iterate over all values in the function
+    var value_iter = ctx.func.dfg.values.iterator();
+    while (value_iter.next()) |entry| {
+        const value = entry.key;
+        const value_type = ctx.func.dfg.valueType(value);
+
+        // Check if type needs legalization
+        const type_action = type_legalizer.legalizeType(value_type);
+        switch (type_action) {
+            .legal => {}, // No action needed
+            .promote => {
+                // TODO: Widen narrow types to legal width
+            },
+            .expand => {
+                // TODO: Split wide types into multiple operations
+            },
+            .split_vector, .widen_vector => {
+                // TODO: Legalize vector types
+            },
+        }
+    }
+
+    // Iterate over all instructions
+    var inst_iter = ctx.func.layout.instIter();
+    while (inst_iter.next()) |inst| {
+        const inst_data = ctx.func.dfg.insts.get(inst) orelse continue;
+
+        // Check if operation needs legalization based on opcode
+        // TODO: Map instruction data to operation type and check legalization
+        _ = inst_data;
+        _ = op_legalizer;
+    }
+
+    // Note: Full legalization will expand illegal operations and insert
+    // new instructions. For now, this is a framework that will be
+    // expanded as the IR instruction set is finalized.
 }
 
 /// Lower IR to VCode via ISLE.
