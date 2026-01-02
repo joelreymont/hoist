@@ -611,12 +611,42 @@ pub const Compiler = struct {
     }
 
     fn checkPattern(self: *Self, pat: ast.Pattern, bound_vars: *std.ArrayList(BoundVar)) !Pattern {
+        return self.checkPatternWithType(pat, bound_vars, null);
+    }
+
+    fn checkPatternWithType(
+        self: *Self,
+        pat: ast.Pattern,
+        bound_vars: *std.ArrayList(BoundVar),
+        expected_ty: ?TypeId,
+    ) !Pattern {
         switch (pat) {
             .var_pat => |v| {
-                // Variable binding - infer type from context (placeholder)
-                const var_id = bound_vars.items.len;
+                // Variable binding - check if already bound, otherwise infer type
                 const name_sym = try self.type_env.internSym(v.var_name.name);
-                const ty = TypeId.new(0); // Placeholder
+
+                // Check if variable is already bound in this pattern
+                for (bound_vars.items, 0..) |bv, i| {
+                    if (bv.name.index() == name_sym.index()) {
+                        // Variable re-use - must have same type
+                        // If we have an expected type, verify it matches
+                        if (expected_ty) |exp_ty| {
+                            if (bv.ty.index() != exp_ty.index()) {
+                                return error.TypeMismatch;
+                            }
+                        }
+                        return Pattern{ .var_pat = .{
+                            .var_id = i,
+                            .name = name_sym,
+                            .ty = bv.ty,
+                            .pos = v.pos,
+                        } };
+                    }
+                }
+
+                // New variable binding - use expected type if available
+                const var_id = bound_vars.items.len;
+                const ty = expected_ty orelse TypeId.new(0); // Placeholder if no type hint
 
                 try bound_vars.append(self.allocator, BoundVar{
                     .name = name_sym,
@@ -636,11 +666,27 @@ pub const Compiler = struct {
                 const term_id = self.term_env.lookupTerm(term_sym) orelse return error.UndefinedTerm;
                 const term = self.term_env.getTerm(term_id);
 
+                // Get expected argument types from term signature
+                const arg_tys = switch (term.kind) {
+                    .decl => |d| d.arg_tys,
+                    .extractor => |e| e.arg_tys,
+                    .extern_func => |e| e.arg_tys,
+                };
+
+                if (t.args.len != arg_tys.len) {
+                    return error.ArityMismatch;
+                }
+
                 var args = std.ArrayList(Pattern){};
                 defer args.deinit(self.allocator);
 
-                for (t.args) |arg| {
-                    try args.append(self.allocator, try self.checkPattern(arg, bound_vars));
+                // Type-check each argument with expected type from signature
+                for (t.args, 0..) |arg, i| {
+                    const expected_arg_ty = arg_tys[i];
+                    try args.append(
+                        self.allocator,
+                        try self.checkPatternWithType(arg, bound_vars, expected_arg_ty),
+                    );
                 }
 
                 const ret_ty = switch (term.kind) {
@@ -648,6 +694,13 @@ pub const Compiler = struct {
                     .extractor => |e| e.ret_ty,
                     .extern_func => |e| e.ret_ty,
                 };
+
+                // Verify return type matches expected type if provided
+                if (expected_ty) |exp_ty| {
+                    if (ret_ty.index() != exp_ty.index()) {
+                        return error.TypeMismatch;
+                    }
+                }
 
                 return Pattern{ .term = .{
                     .term_id = term_id,
