@@ -78,8 +78,6 @@ pub const ExtendedValue = struct {
 /// Extractor: Try to extract ExtendedValue from a Value.
 /// Looks for patterns like sext/zext applied to narrower loads.
 pub fn extended_value_from_value(value: lower_mod.Value, ctx: *const lower_mod.LowerCtx(Inst)) ?ExtendedValue {
-    const Opcode = @import("../../ir/opcodes.zig").Opcode;
-
     // Get the value definition
     const def = ctx.func.dfg.valueDef(value) orelse return null;
 
@@ -91,12 +89,12 @@ pub fn extended_value_from_value(value: lower_mod.Value, ctx: *const lower_mod.L
 
     // Check if this is an extending load operation
     const extend_op: ExtendOp = switch (inst_data.opcode()) {
-        .sload8 => .sxtb,   // Sign-extend byte
-        .sload16 => .sxth,  // Sign-extend halfword
-        .sload32 => .sxtw,  // Sign-extend word
-        .uload8 => .uxtb,   // Zero-extend byte
-        .uload16 => .uxth,  // Zero-extend halfword
-        .uload32 => .uxtw,  // Zero-extend word
+        .sload8 => .sxtb, // Sign-extend byte
+        .sload16 => .sxth, // Sign-extend halfword
+        .sload32 => .sxtw, // Sign-extend word
+        .uload8 => .uxtb, // Zero-extend byte
+        .uload16 => .uxth, // Zero-extend halfword
+        .uload32 => .uxtw, // Zero-extend word
         else => return null,
     };
 

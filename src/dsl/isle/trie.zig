@@ -122,8 +122,8 @@ pub const Constraint = union(enum) {
     /// Returns the bindings created by matching this constraint.
     pub fn bindingsFor(self: Constraint, source: BindingId, allocator: Allocator) ![]Binding {
         return switch (self) {
-            .const_bool, .const_int, .const_prim => &[_]Binding{},
-            .some => &[_]Binding{.{ .match_some = .{ .source = source } }},
+            .const_bool, .const_int, .const_prim => try allocator.dupe(Binding, &[_]Binding{}),
+            .some => try allocator.dupe(Binding, &[_]Binding{.{ .match_some = .{ .source = source } }}),
             .variant => |v| blk: {
                 var bindings = std.ArrayList(Binding){};
                 var i: u8 = 0;
@@ -803,4 +803,95 @@ test "DisjointSets" {
 
     try ds.merge(b, c);
     try testing.expectEqual(ds.find(a), ds.find(c));
+}
+
+test "Constraint: variant field extraction" {
+    const type_id = sema.TypeId.new(2);
+    const variant_id = sema.VariantId.new(type_id, 0);
+    const source = BindingId.new(5);
+
+    const constraint = Constraint{
+        .variant = .{
+            .ty = type_id,
+            .variant = variant_id,
+            .field_count = TupleIndex.new(3),
+        },
+    };
+
+    const bindings = try Constraint.bindingsFor(constraint, source, testing.allocator);
+    defer testing.allocator.free(bindings);
+
+    try testing.expectEqual(@as(usize, 3), bindings.len);
+    for (bindings, 0..) |binding, i| {
+        try testing.expectEqual(source, binding.match_variant.source);
+        try testing.expectEqual(@as(u8, @intCast(i)), binding.match_variant.field.index);
+    }
+}
+
+test "Constraint: Option::Some binding" {
+    const source = BindingId.new(7);
+    const constraint = Constraint.some;
+
+    const bindings = try Constraint.bindingsFor(constraint, source, testing.allocator);
+    defer testing.allocator.free(bindings);
+
+    try testing.expectEqual(@as(usize, 1), bindings.len);
+    try testing.expectEqual(source, bindings[0].match_some.source);
+}
+
+test "Binding: constructor instance tracking" {
+    var ruleset = RuleSet.init(testing.allocator);
+    defer ruleset.deinit();
+
+    const term_id = sema.TermId.new(4);
+    const params = try testing.allocator.dupe(BindingId, &[_]BindingId{BindingId.new(1)});
+
+    const binding1 = Binding{
+        .constructor = .{
+            .term = term_id,
+            .parameters = params,
+            .instance = 0,
+        },
+    };
+
+    const params2 = try testing.allocator.dupe(BindingId, &[_]BindingId{BindingId.new(1)});
+    const binding2 = Binding{
+        .constructor = .{
+            .term = term_id,
+            .parameters = params2,
+            .instance = 1,
+        },
+    };
+
+    const id1 = try ruleset.internBinding(binding1);
+    const id2 = try ruleset.internBinding(binding2);
+
+    try testing.expect(!std.meta.eql(id1, id2));
+}
+
+test "Overlap: subset with more constraints" {
+    var r1 = Rule.init(testing.allocator, sema.Pos.new(0, 0));
+    defer r1.deinit();
+    var r2 = Rule.init(testing.allocator, sema.Pos.new(0, 0));
+    defer r2.deinit();
+
+    const b1 = BindingId.new(0);
+    const b2 = BindingId.new(1);
+    const type_id = sema.TypeId.new(0);
+
+    try r1.setConstraint(b1, .{ .const_int = .{
+        .val = 42,
+        .ty = type_id,
+    } });
+
+    try r2.setConstraint(b1, .{ .const_int = .{
+        .val = 42,
+        .ty = type_id,
+    } });
+    try r2.setConstraint(b2, .{ .const_bool = .{
+        .val = true,
+        .ty = type_id,
+    } });
+
+    try testing.expectEqual(Overlap.yes_subset, Overlap.check(&r1, &r2));
 }
