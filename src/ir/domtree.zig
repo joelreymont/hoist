@@ -38,24 +38,158 @@ pub const DominatorTree = struct {
         self.children.deinit();
     }
 
-    /// Compute dominator tree using Lengauer-Tarjan algorithm.
-    /// This is a simplified version - full implementation needs reverse postorder.
+    /// Compute dominator tree using Semi-NCA algorithm.
+    /// Based on "A Simple, Fast Dominance Algorithm" by Cooper, Harvey, Kennedy.
     pub fn compute(
         self: *DominatorTree,
         allocator: Allocator,
         entry: Block,
         cfg: *const CFG,
     ) !void {
-        _ = cfg;
+        // Clear existing dominator tree
+        self.idom.deinit(allocator);
+        var child_iter = self.children.valueIterator();
+        while (child_iter.next()) |list| {
+            list.deinit();
+        }
+        self.children.clearRetainingCapacity();
+        self.idom = PrimaryMap(Block, ?Block).init();
 
-        // For bootstrap: entry block dominates itself, has no idom
+        // Entry block has no immediate dominator
         try self.idom.set(allocator, entry, null);
 
-        // TODO: Implement full Lengauer-Tarjan algorithm
-        // 1. Compute reverse postorder traversal
-        // 2. Initialize semi-dominators
-        // 3. Compute immediate dominators
-        // 4. Build dominator tree
+        // Compute reverse postorder (approximated by iterating over blocks)
+        var blocks = std.ArrayList(Block).init(allocator);
+        defer blocks.deinit();
+
+        // Collect all blocks reachable from entry via DFS
+        try self.collectReachableBlocks(allocator, &blocks, entry, cfg);
+
+        if (blocks.items.len == 0) return;
+
+        // Initialize all blocks' idoms to null
+        for (blocks.items) |block| {
+            if (!std.meta.eql(block, entry)) {
+                try self.idom.set(allocator, block, null);
+            }
+        }
+
+        // Iterate until convergence (simple fixed-point iteration)
+        var changed = true;
+        while (changed) {
+            changed = false;
+
+            for (blocks.items) |block| {
+                if (std.meta.eql(block, entry)) continue;
+
+                // Find first processed predecessor
+                const preds = cfg.predecessors(block);
+                if (preds.len == 0) continue;
+
+                var new_idom: ?Block = null;
+                for (preds) |pred| {
+                    if (self.idom.get(pred)) |_| {
+                        new_idom = pred;
+                        break;
+                    }
+                }
+
+                // Intersect with all other processed predecessors
+                for (preds) |pred| {
+                    if (new_idom) |idom| {
+                        if (!std.meta.eql(pred, idom) and self.idom.get(pred) != null) {
+                            new_idom = self.intersect(pred, idom);
+                        }
+                    }
+                }
+
+                // Update if changed
+                const old_idom = self.idom.get(block) orelse null;
+                if (new_idom) |idom| {
+                    if (old_idom == null or !std.meta.eql(idom, old_idom.?)) {
+                        try self.idom.set(allocator, block, idom);
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        // Build dominator tree children
+        for (blocks.items) |block| {
+            if (self.idom.get(block)) |maybe_idom| {
+                if (maybe_idom) |idom_block| {
+                    const entry_result = try self.children.getOrPut(idom_block);
+                    if (!entry_result.found_existing) {
+                        entry_result.value_ptr.* = std.ArrayList(Block).init(allocator);
+                    }
+                    try entry_result.value_ptr.append(block);
+                }
+            }
+        }
+    }
+
+    fn collectReachableBlocks(
+        self: *DominatorTree,
+        allocator: Allocator,
+        blocks: *std.ArrayList(Block),
+        entry: Block,
+        cfg: *const CFG,
+    ) !void {
+        _ = self;
+        var visited = std.AutoHashMap(Block, void).init(allocator);
+        defer visited.deinit();
+
+        var worklist = std.ArrayList(Block).init(allocator);
+        defer worklist.deinit();
+
+        try worklist.append(entry);
+        try visited.put(entry, {});
+
+        while (worklist.items.len > 0) {
+            const block = worklist.pop();
+            try blocks.append(block);
+
+            for (cfg.successors(block)) |succ| {
+                if (!visited.contains(succ)) {
+                    try visited.put(succ, {});
+                    try worklist.append(succ);
+                }
+            }
+        }
+    }
+
+    fn intersect(self: *const DominatorTree, b1: Block, b2: Block) Block {
+        var finger1 = b1;
+        var finger2 = b2;
+
+        while (!std.meta.eql(finger1, finger2)) {
+            while (self.blockDepth(finger1) > self.blockDepth(finger2)) {
+                finger1 = self.idom.get(finger1) orelse break;
+            }
+            while (self.blockDepth(finger2) > self.blockDepth(finger1)) {
+                finger2 = self.idom.get(finger2) orelse break;
+            }
+
+            if (std.meta.eql(finger1, finger2)) break;
+
+            const idom1 = self.idom.get(finger1) orelse break;
+            const idom2 = self.idom.get(finger2) orelse break;
+
+            finger1 = idom1 orelse break;
+            finger2 = idom2 orelse break;
+        }
+
+        return finger1;
+    }
+
+    fn blockDepth(self: *const DominatorTree, block: Block) u32 {
+        var depth: u32 = 0;
+        var current = block;
+        while (self.idom.get(current)) |maybe_idom| {
+            const idom_block = maybe_idom orelse return depth;
+            depth += 1;
+            current = idom_block;
+        }
     }
 
     /// Check if block `a` dominates block `b`.
