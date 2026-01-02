@@ -225,6 +225,10 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_fsub => |i| try emitVecFsub(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_fmul => |i| try emitVecFmul(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_fdiv => |i| try emitVecFdiv(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_smin => |i| try emitVecSmin(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_smax => |i| try emitVecSmax(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_umin => |i| try emitVecUmin(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_umax => |i| try emitVecUmax(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .addv => |i| try emitAddv(i.dst.toReg(), i.src, i.size, buffer),
         .sminv => |i| try emitSminv(i.dst.toReg(), i.src, i.size, buffer),
         .smaxv => |i| try emitSmaxv(i.dst.toReg(), i.src, i.size, buffer),
@@ -11373,6 +11377,102 @@ fn emitMovi(dst: Reg, imm: u8, vec_size: VectorSize, buffer: *buffer_mod.MachBuf
         (@as(u32, cmode) << 12) |
         (0b01 << 10) |
         (@as(u32, defgh) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector SMIN (signed minimum element-wise): SMIN Vd.T, Vn.T, Vm.T
+/// Encoding: 0|Q|0|01110|size|1|Rm|011011|Rn|Rd
+fn emitVecSmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b1 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b011011 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector SMAX (signed maximum element-wise): SMAX Vd.T, Vn.T, Vm.T
+/// Encoding: 0|Q|0|01110|size|1|Rm|011001|Rn|Rd
+fn emitVecSmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b1 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b011001 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector UMIN (unsigned minimum element-wise): UMIN Vd.T, Vn.T, Vm.T
+/// Encoding: 0|Q|1|01110|size|1|Rm|011011|Rn|Rd
+fn emitVecUmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b1 << 29) | // U=1 for unsigned
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b1 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b011011 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector UMAX (unsigned maximum element-wise): UMAX Vd.T, Vn.T, Vm.T
+/// Encoding: 0|Q|1|01110|size|1|Rm|011001|Rn|Rd
+fn emitVecUmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b1 << 29) | // U=1 for unsigned
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b1 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b011001 << 10) |
+        (@as(u32, rn) << 5) |
         @as(u32, rd);
 
     const bytes = std.mem.toBytes(insn);

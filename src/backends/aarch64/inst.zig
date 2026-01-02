@@ -1510,6 +1510,39 @@ pub const Inst = union(enum) {
         size: VectorSize,
     },
 
+
+    /// Vector SMIN (signed minimum element-wise): SMIN Vd.T, Vn.T, Vm.T
+    vec_smin: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector SMAX (signed maximum element-wise): SMAX Vd.T, Vn.T, Vm.T
+    vec_smax: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector UMIN (unsigned minimum element-wise): UMIN Vd.T, Vn.T, Vm.T
+    vec_umin: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector UMAX (unsigned maximum element-wise): UMAX Vd.T, Vn.T, Vm.T
+    vec_umax: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
     /// Vector ADDV (add across vector): ADDV Vd, Vn.T
     /// Sums all lanes of src into dst (scalar result in lane 0)
     addv: struct {
@@ -1965,6 +1998,10 @@ pub const Inst = union(enum) {
             .vec_fsub => |i| try writer.print("fsub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_fmul => |i| try writer.print("fmul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_fdiv => |i| try writer.print("fdiv.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_smin => |i| try writer.print("smin.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_smax => |i| try writer.print("smax.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_umin => |i| try writer.print("umin.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_umax => |i| try writer.print("umax.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .addv => |i| try writer.print("addv.{} {}, {}", .{ i.size, i.dst, i.src }),
             .sminv => |i| try writer.print("sminv.{} {}, {}", .{ i.size, i.dst, i.src }),
             .smaxv => |i| try writer.print("smaxv.{} {}, {}", .{ i.size, i.dst, i.src }),
