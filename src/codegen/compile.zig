@@ -91,10 +91,23 @@ pub fn compile(
 
 /// Verify function if verification is enabled.
 fn verifyIf(ctx: *Context, target: *const Target) CodegenError!void {
-    _ = target;
-    // TODO: Implement verification
-    // For now, skip verification
-    _ = ctx;
+    if (!target.verify) return;
+
+    var verifier = ir.Verifier.init(ctx.allocator, &ctx.func);
+    defer verifier.deinit();
+
+    verifier.verify() catch {
+        // Verification failed - print errors
+        const errors = verifier.getErrors();
+        if (errors.len > 0) {
+            std.debug.print("IR Verification failed:\n", .{});
+            for (errors) |err| {
+                std.debug.print("  {s}\n", .{err});
+            }
+            return error.VerificationFailed;
+        }
+        return error.VerificationFailed;
+    };
 }
 
 /// Optimize the function.
