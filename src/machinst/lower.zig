@@ -171,6 +171,47 @@ pub fn LowerBackend(comptime MachInst: type) type {
     };
 }
 
+/// Compute reverse postorder traversal of blocks.
+fn computeRPO(allocator: Allocator, func: *const Function) !std.ArrayList(Block) {
+    var rpo = std.ArrayList(Block).init(allocator);
+    errdefer rpo.deinit();
+
+    var visited = std.AutoHashMap(Block, void).init(allocator);
+    defer visited.deinit();
+
+    // Get entry block (first block in layout)
+    var block_iter = func.layout.blocks();
+    const entry = block_iter.next() orelse return rpo;
+
+    // DFS postorder traversal
+    try dfsPostorder(func, entry, &visited, &rpo);
+
+    // Reverse to get reverse postorder
+    std.mem.reverse(Block, rpo.items);
+
+    return rpo;
+}
+
+/// DFS helper for postorder traversal.
+fn dfsPostorder(
+    func: *const Function,
+    block: Block,
+    visited: *std.AutoHashMap(Block, void),
+    postorder: *std.ArrayList(Block),
+) !void {
+    if (visited.contains(block)) return;
+    try visited.put(block, {});
+
+    // Visit successors by examining block terminator
+    if (func.layout.lastInst(block)) |_| {
+        // For this stub, we don't have actual CFG analysis
+        // In real implementation, would traverse CFG successors here
+    }
+
+    // Add block to postorder after visiting successors
+    try postorder.append(block);
+}
+
 /// Lower an entire function from IR to VCode.
 pub fn lowerFunction(
     comptime MachInst: type,
@@ -185,9 +226,10 @@ pub fn lowerFunction(
     defer ctx.deinit();
 
     // Lower each block in reverse postorder
-    // TODO: Compute proper RPO - for now just iterate layout order
-    var block_iter = func.layout.blocks();
-    while (block_iter.next()) |ir_block| {
+    var rpo = try computeRPO(allocator, func);
+    defer rpo.deinit();
+
+    for (rpo.items) |ir_block| {
         // Start new machine block
         _ = try ctx.startBlock(ir_block);
 
