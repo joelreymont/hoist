@@ -343,6 +343,26 @@
 (rule (lower (brif cond target))
       (aarch64_b_cond cond target))
 
+;; cbz: Compare-and-branch-zero optimization
+;; Pattern: if (x == 0) goto target
+(rule (lower (brif (icmp eq x (iconst 0)) target))
+      (aarch64_cbz x target))
+
+;; cbnz: Compare-and-branch-nonzero optimization
+;; Pattern: if (x != 0) goto target
+(rule (lower (brif (icmp ne x (iconst 0)) target))
+      (aarch64_cbnz x target))
+
+;; tbz: Test-bit-and-branch-zero optimization
+;; Pattern: if ((x & (1 << bit)) == 0) goto target
+(rule (lower (brif (icmp eq (band x (ishl (iconst 1) bit)) (iconst 0)) target))
+      (aarch64_tbz x bit target))
+
+;; tbnz: Test-bit-and-branch-nonzero optimization
+;; Pattern: if ((x & (1 << bit)) != 0) goto target
+(rule (lower (brif (icmp ne (band x (ishl (iconst 1) bit)) (iconst 0)) target))
+      (aarch64_tbnz x bit target))
+
 ;; return: Return from function
 (rule (lower (return))
       (aarch64_ret))
