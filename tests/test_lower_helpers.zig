@@ -3,7 +3,7 @@ const testing = std.testing;
 const hoist = @import("hoist");
 
 const lower_helpers = hoist.codegen.lower_helpers;
-const Type = hoist.ir.types.Type;
+const Type = hoist.ir_ns.types.Type;
 
 test "ValueRegs basic operations" {
     const V = lower_helpers.ValueRegs(u32);
