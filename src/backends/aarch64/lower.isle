@@ -429,6 +429,45 @@
 (rule (lower (fpromote x))
       (aarch64_fcvt_f32_to_f64 x))
 
+;; Floating-point arithmetic
+
+;; fadd: FP addition (FADD)
+(rule (lower (fadd ty x y))
+      (aarch64_fadd ty x y))
+
+;; fsub: FP subtraction (FSUB)
+(rule (lower (fsub ty x y))
+      (aarch64_fsub ty x y))
+
+;; fmul: FP multiplication (FMUL)
+(rule (lower (fmul ty x y))
+      (aarch64_fmul ty x y))
+
+;; fdiv: FP division (FDIV)
+(rule (lower (fdiv ty x y))
+      (aarch64_fdiv ty x y))
+
+;; fsqrt: FP square root (FSQRT)
+(rule (lower (fsqrt ty x))
+      (aarch64_fsqrt ty x))
+
+;; fma: FP fused multiply-add (FMADD)
+;; fma(x, y, z) = x * y + z
+(rule (lower (fma ty x y z))
+      (aarch64_fmadd ty x y z))
+
+;; fcmp: FP comparison (FCMP)
+(rule (lower (fcmp cond x y))
+      (aarch64_fcmp x y))
+
+;; fabs: FP absolute value (FABS)
+(rule (lower (fabs ty x))
+      (aarch64_fabs ty x))
+
+;; fneg: FP negation (FNEG)
+(rule (lower (fneg ty x))
+      (aarch64_fneg ty x))
+
 ;; Constant materialization
 
 ;; iconst: Integer constant (16-bit immediate via MOVZ)
