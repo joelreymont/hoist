@@ -13,9 +13,12 @@
 const std = @import("std");
 const Context = @import("context.zig").Context;
 const CompiledCode = @import("context.zig").CompiledCode;
+const Relocation = @import("context.zig").Relocation;
+const RelocKind = @import("context.zig").RelocKind;
 const Function = @import("../ir.zig").Function;
 const Block = @import("../ir.zig").Block;
 const ir = @import("../ir.zig");
+const MachBuffer = @import("../machinst/buffer.zig").MachBuffer;
 
 /// Compilation error with context.
 pub const CompileError = struct {
@@ -50,6 +53,8 @@ pub const CodegenError = error{
     EmissionFailed,
     /// Out of memory.
     OutOfMemory,
+    /// IR building failed.
+    IRBuildFailed,
 };
 
 /// Compilation result type.
@@ -275,6 +280,87 @@ fn eliminateUnreachableCode(ctx: *Context) CodegenError!bool {
     return changed;
 }
 
+/// IR building infrastructure for converting frontend input to IR.
+pub const IRBuilder = struct {
+    allocator: std.mem.Allocator,
+    func: *Function,
+    builder: ir.FunctionBuilder,
+
+    const Self = @This();
+
+    /// Initialize IR builder for a function.
+    pub fn init(allocator: std.mem.Allocator, func: *Function) Self {
+        return .{
+            .allocator = allocator,
+            .func = func,
+            .builder = ir.FunctionBuilder.init(func),
+        };
+    }
+
+    /// Create a new basic block.
+    pub fn createBlock(self: *Self) !Block {
+        return try self.builder.createBlock();
+    }
+
+    /// Append a block to the function layout.
+    pub fn appendBlock(self: *Self, block: Block) !void {
+        try self.builder.appendBlock(block);
+    }
+
+    /// Switch to building into a specific block.
+    pub fn switchToBlock(self: *Self, block: Block) void {
+        self.builder.switchToBlock(block);
+    }
+
+    /// Emit iconst instruction.
+    pub fn emitIconst(self: *Self, ty: ir.Type, value: i64) !ir.Value {
+        return try self.builder.iconst(ty, value);
+    }
+
+    /// Emit iadd instruction.
+    pub fn emitIadd(self: *Self, ty: ir.Type, lhs: ir.Value, rhs: ir.Value) !ir.Value {
+        return try self.builder.iadd(ty, lhs, rhs);
+    }
+
+    /// Emit isub instruction.
+    pub fn emitIsub(self: *Self, ty: ir.Type, lhs: ir.Value, rhs: ir.Value) !ir.Value {
+        return try self.builder.isub(ty, lhs, rhs);
+    }
+
+    /// Emit imul instruction.
+    pub fn emitImul(self: *Self, ty: ir.Type, lhs: ir.Value, rhs: ir.Value) !ir.Value {
+        return try self.builder.imul(ty, lhs, rhs);
+    }
+
+    /// Emit jump instruction.
+    pub fn emitJump(self: *Self, dest: Block) !void {
+        try self.builder.jump(dest);
+    }
+
+    /// Emit return instruction.
+    pub fn emitReturn(self: *Self) !void {
+        try self.builder.ret();
+    }
+};
+
+/// Build IR from frontend representation.
+///
+/// This is the entry point for converting frontend AST or other
+/// representation to Cranelift IR. Currently a placeholder that
+/// demonstrates the IR building infrastructure.
+pub fn buildIR(allocator: std.mem.Allocator, func: *Function) CodegenError!void {
+    var ir_builder = IRBuilder.init(allocator, func);
+
+    // Create entry block
+    const entry = ir_builder.createBlock() catch return error.IRBuildFailed;
+    ir_builder.appendBlock(entry) catch return error.IRBuildFailed;
+    ir_builder.switchToBlock(entry);
+
+    // TODO: Convert frontend AST/input to IR instructions
+    // For now, just emit a return instruction
+    ir_builder.emitReturn() catch return error.IRBuildFailed;
+}
+
 /// Legalize IR for target.
 fn legalize(ctx: *Context) CodegenError!void {
     // TODO: Implement legalization
@@ -305,12 +391,64 @@ fn insertPrologueEpilogue(ctx: *Context, target: *const Target) CodegenError!voi
 /// Emit machine code.
 fn emit(ctx: *Context, target: *const Target) CodegenError!void {
     // TODO: Implement code emission
-    _ = ctx;
     _ = target;
 
     // Allocate compiled code result
-    var code = CompiledCode.init(ctx.allocator);
+    const code = CompiledCode.init(ctx.allocator);
     ctx.compiled_code = code;
+}
+
+/// Assemble final result from MachBuffer.
+///
+/// Performs final assembly phase:
+/// - Finalizes label fixups and resolves relocations
+/// - Emits constant pool
+/// - Copies machine code to result buffer
+/// - Copies relocation entries
+/// - Optionally generates disassembly
+pub fn assembleResult(
+    allocator: std.mem.Allocator,
+    buffer: *const MachBuffer,
+    want_disasm: bool,
+) CodegenError!CompiledCode {
+    var result = CompiledCode.init(allocator);
+    errdefer result.deinit();
+
+    // Copy machine code bytes
+    try result.code.appendSlice(allocator, buffer.finish());
+
+    // Copy relocations, converting to output format
+    try result.relocs.ensureTotalCapacity(allocator, buffer.relocs.items.len);
+    for (buffer.relocs.items) |mach_reloc| {
+        const reloc = Relocation{
+            .offset = mach_reloc.offset,
+            .kind = convertRelocKind(mach_reloc.kind),
+            .name = try allocator.dupe(u8, mach_reloc.name),
+            .addend = mach_reloc.addend,
+        };
+        result.relocs.appendAssumeCapacity(reloc);
+    }
+
+    // Generate disassembly if requested
+    if (want_disasm) {
+        var disasm_buf = std.ArrayList(u8).init(allocator);
+        try disasm_buf.writer().print("; Machine code ({d} bytes)\n", .{result.code.items.len});
+        try disasm_buf.writer().print("; {d} relocations\n", .{result.relocs.items.len});
+        result.disasm = disasm_buf;
+    }
+
+    return result;
+}
+
+/// Convert MachBuffer relocation to output relocation kind.
+fn convertRelocKind(kind: MachBuffer.Reloc) RelocKind {
+    return switch (kind) {
+        .abs8, .aarch64_abs64 => .abs8,
+        .x86_pc_rel_32 => .pcrel4,
+        .aarch64_adr_prel_pg_hi21 => .aarch64_adr_prel_pg_hi21,
+        .aarch64_add_abs_lo12_nc => .aarch64_add_abs_lo12_nc,
+        else => .pcrel4, // Default fallback
+    };
 }
 
 /// Target ISA configuration.
@@ -351,4 +489,146 @@ test "compile: target initialization" {
     try testing.expectEqual(Target.Architecture.aarch64, target.arch);
     try testing.expectEqual(Target.OptLevel.none, target.opt_level);
     try testing.expect(!target.verify);
+}
+
+test "IRBuilder: initialization" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    try testing.expectEqual(&func, builder.func);
+}
+
+test "IRBuilder: create and append block" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block = try builder.createBlock();
+    try builder.appendBlock(block);
+
+    try testing.expectEqual(block, func.layout.entryBlock().?);
+}
+
+test "IRBuilder: emit instructions" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block = try builder.createBlock();
+    try builder.appendBlock(block);
+    builder.switchToBlock(block);
+
+    const v1 = try builder.emitIconst(ir.Type.I32, 10);
+    const v2 = try builder.emitIconst(ir.Type.I32, 20);
+    const v3 = try builder.emitIadd(ir.Type.I32, v1, v2);
+    _ = try builder.emitIsub(ir.Type.I32, v3, v1);
+    _ = try builder.emitImul(ir.Type.I32, v1, v2);
+    try builder.emitReturn();
+
+    try testing.expectEqual(@as(usize, 5), func.dfg.insts.elems.items.len);
+}
+
+test "IRBuilder: emit control flow" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var builder = IRBuilder.init(testing.allocator, &func);
+    const block1 = try builder.createBlock();
+    const block2 = try builder.createBlock();
+
+    try builder.appendBlock(block1);
+    try builder.appendBlock(block2);
+
+    builder.switchToBlock(block1);
+    try builder.emitJump(block2);
+
+    builder.switchToBlock(block2);
+    try builder.emitReturn();
+
+    try testing.expectEqual(@as(usize, 2), func.dfg.insts.elems.items.len);
+}
+
+test "buildIR: basic function" {
+    const sig = try ir.Signature.init(testing.allocator);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    try buildIR(testing.allocator, &func);
+
+    try testing.expect(func.layout.entryBlock() != null);
+    try testing.expect(func.dfg.insts.elems.items.len > 0);
+}
+
+test "assembleResult: basic assembly" {
+    var buffer = MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    // Emit some machine code
+    try buffer.put4(0xD65F03C0); // RET instruction (aarch64)
+    try buffer.put4(0xD503201F); // NOP instruction (aarch64)
+
+    // Add a relocation
+    try buffer.addReloc(0, .aarch64_call26, "external_func", 0);
+
+    // Finalize buffer
+    try buffer.finalize();
+
+    // Assemble result without disassembly
+    var result = try assembleResult(testing.allocator, &buffer, false);
+    defer result.deinit();
+
+    try testing.expectEqual(@as(usize, 8), result.code.items.len);
+    try testing.expectEqual(@as(usize, 1), result.relocs.items.len);
+    try testing.expect(result.disasm == null);
+
+    const reloc = result.relocs.items[0];
+    try testing.expectEqual(@as(u32, 0), reloc.offset);
+    try testing.expectEqualStrings("external_func", reloc.name);
+}
+
+test "assembleResult: with disassembly" {
+    var buffer = MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try buffer.put4(0xD65F03C0); // RET
+    try buffer.finalize();
+
+    var result = try assembleResult(testing.allocator, &buffer, true);
+    defer result.deinit();
+
+    try testing.expect(result.disasm != null);
+    const disasm = result.disasm.?;
+    try testing.expect(disasm.items.len > 0);
+}
+
+test "assembleResult: empty buffer" {
+    var buffer = MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try buffer.finalize();
+
+    var result = try assembleResult(testing.allocator, &buffer, false);
+    defer result.deinit();
+
+    try testing.expectEqual(@as(usize, 0), result.code.items.len);
+    try testing.expectEqual(@as(usize, 0), result.relocs.items.len);
+}
+
+test "convertRelocKind: all variants" {
+    const abs8_kind = convertRelocKind(.abs8);
+    try testing.expectEqual(RelocKind.abs8, abs8_kind);
+
+    const pcrel_kind = convertRelocKind(.x86_pc_rel_32);
+    try testing.expectEqual(RelocKind.pcrel4, pcrel_kind);
+
+    const aarch64_adr_kind = convertRelocKind(.aarch64_adr_prel_pg_hi21);
+    try testing.expectEqual(RelocKind.aarch64_adr_prel_pg_hi21, aarch64_adr_kind);
+
+    const aarch64_add_kind = convertRelocKind(.aarch64_add_abs_lo12_nc);
+    try testing.expectEqual(RelocKind.aarch64_add_abs_lo12_nc, aarch64_add_kind);
 }
