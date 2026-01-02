@@ -38,7 +38,9 @@ pub const Type = packed struct {
 
     // Common vector types
     pub const I8X16 = Type{ .raw = 0xc4 };
+    pub const I16X8 = Type{ .raw = 0xb5 };
     pub const I32X4 = Type{ .raw = 0x96 };
+    pub const I64X2 = Type{ .raw = 0x87 };
     pub const F32X4 = Type{ .raw = 0x9a };
     pub const F64X2 = Type{ .raw = 0x8b };
 
