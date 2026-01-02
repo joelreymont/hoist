@@ -63,7 +63,18 @@ pub const regalloc2_liveness = @import("machinst/regalloc2/liveness.zig");
 pub const regalloc2_datastructures = @import("machinst/regalloc2/datastructures.zig");
 pub const lower = @import("machinst/lower.zig");
 pub const compile = @import("machinst/compile.zig");
+
+// Codegen pipeline
 pub const codegen_compile = @import("codegen/compile.zig");
+pub const codegen_context = @import("codegen/context.zig");
+pub const codegen_optimize = @import("codegen/optimize.zig");
+
+// Codegen tests
+test {
+    _ = @import("codegen/compile.zig");
+    _ = @import("codegen/context.zig");
+    _ = @import("codegen/optimize.zig");
+}
 
 pub const x64_inst = @import("backends/x64/inst.zig");
 pub const x64_emit = @import("backends/x64/emit.zig");
