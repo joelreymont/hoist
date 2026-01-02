@@ -33,6 +33,12 @@ pub const loops = @import("ir/loops.zig");
 pub const verifier = @import("ir/verifier.zig");
 pub const cfg = @import("ir/cfg.zig");
 
+// SSA tests
+// TODO: Fix ssa_tests.zig import paths
+// test {
+//     _ = @import("ir/ssa_tests.zig");
+// }
+
 pub const isle_sema = @import("dsl/isle/sema.zig");
 pub const isle_trie = @import("dsl/isle/trie.zig");
 pub const isle_codegen = @import("dsl/isle/codegen.zig");
