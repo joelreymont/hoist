@@ -589,9 +589,65 @@ pub const Compiler = struct {
         _ = try self.term_env.addTerm(term);
     }
 
-    fn registerExtractor(_: *Self, _: ast.Extractor) !void {
-        // TODO: Implement extractor registration
-        return error.NotImplemented;
+    fn registerExtractor(self: *Self, extractor: ast.Extractor) !void {
+        const name_sym = try self.type_env.internSym(extractor.term.name);
+
+        // Type-check the template pattern to infer extractor signature
+        var bound_vars = std.ArrayList(BoundVar){};
+        defer bound_vars.deinit(self.allocator);
+
+        // Add extractor arguments as bound variables
+        var arg_syms = std.ArrayList(Sym){};
+        defer arg_syms.deinit(self.allocator);
+
+        for (extractor.args) |arg| {
+            const arg_sym = try self.type_env.internSym(arg.name);
+            try arg_syms.append(self.allocator, arg_sym);
+
+            // Extractor args get placeholder types - will be refined from usage
+            try bound_vars.append(self.allocator, BoundVar{
+                .name = arg_sym,
+                .ty = TypeId.new(0),
+                .pos = arg.pos,
+            });
+        }
+
+        // Type-check the template pattern
+        const template = try self.checkPattern(extractor.template, &bound_vars);
+
+        // Build arg_tys from bound variables (first N are the args)
+        var arg_tys = std.ArrayList(TypeId){};
+        defer arg_tys.deinit(self.allocator);
+
+        for (0..extractor.args.len) |i| {
+            try arg_tys.append(self.allocator, bound_vars.items[i].ty);
+        }
+
+        // Return type is the type of the template pattern
+        const ret_ty = switch (template) {
+            .var_pat => |v| v.ty,
+            .term => |t| t.ty,
+            .const_bool => TypeId.new(0), // bool type
+            .const_int => |c| c.ty,
+            .const_prim => |c| c.ty,
+            .bind_pattern => |b| b.ty,
+            .wildcard => |w| w.ty,
+            .and_pat => |a| a.ty,
+        };
+
+        const term_id = TermId.new(@intCast(self.term_env.terms.items.len));
+        const term = Term{
+            .name = name_sym,
+            .id = term_id,
+            .kind = .{ .extractor = .{
+                .arg_tys = try arg_tys.toOwnedSlice(self.allocator),
+                .ret_ty = ret_ty,
+                .template = template,
+            } },
+            .pos = extractor.pos,
+        };
+
+        _ = try self.term_env.addTerm(term);
     }
 
     fn compileRule(self: *Self, rule: ast.Rule) !Rule {
