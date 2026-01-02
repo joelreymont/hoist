@@ -2,13 +2,48 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
     // Optimization levels (use -Doptimize=<level>):
     //   Debug        - No optimizations, safety checks enabled (default)
     //   ReleaseSafe  - Optimizations enabled, safety checks enabled
     //   ReleaseSmall - Optimize for small binary size
     //   ReleaseFast  - Optimize for execution speed, safety checks disabled
-    const optimize = b.standardOptimizeOption(.{});
+
+    // Additional compilation flags
+    const enable_lto = b.option(
+        bool,
+        "lto",
+        "Enable link-time optimization (requires LLD linker, default: false)",
+    ) orelse false;
+
+    const strip_debug = b.option(
+        bool,
+        "strip-debug",
+        "Strip debug information from binaries (default: false)",
+    ) orelse false;
+
+    const pic = b.option(
+        bool,
+        "pic",
+        "Build position-independent code (default: true on macOS)",
+    ) orelse (target.result.os.tag == .macos);
+
+    const single_threaded = b.option(
+        bool,
+        "single-threaded",
+        "Build for single-threaded execution (default: false)",
+    ) orelse false;
+
+    // Helper to apply flags to a compile step
+    const applyFlags = struct {
+        fn apply(step: *std.Build.Step.Compile, lto: bool, strip_flag: bool, pic_flag: bool, single_thread: bool) void {
+            step.want_lto = lto;
+            step.root_module.strip = strip_flag;
+            step.root_module.pic = pic_flag;
+            step.root_module.single_threaded = single_thread;
+        }
+    }.apply;
 
     // Library
     const lib = b.addLibrary(.{
@@ -20,6 +55,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    applyFlags(lib, enable_lto, strip_debug, pic, single_threaded);
     b.installArtifact(lib);
 
     // Unit tests
@@ -30,6 +66,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    applyFlags(tests, enable_lto, strip_debug, pic, single_threaded);
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
@@ -43,6 +80,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     e2e_branches.root_module.addImport("hoist", lib.root_module);
+    applyFlags(e2e_branches, enable_lto, strip_debug, pic, single_threaded);
     const run_e2e_branches = b.addRunArtifact(e2e_branches);
     test_step.dependOn(&run_e2e_branches.step);
 
@@ -54,6 +92,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     e2e_loops.root_module.addImport("hoist", lib.root_module);
+    applyFlags(e2e_loops, enable_lto, strip_debug, pic, single_threaded);
     const run_e2e_loops = b.addRunArtifact(e2e_loops);
     test_step.dependOn(&run_e2e_loops.step);
 
@@ -65,6 +104,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     e2e_jit.root_module.addImport("hoist", lib.root_module);
+    applyFlags(e2e_jit, enable_lto, strip_debug, pic, single_threaded);
     const run_e2e_jit = b.addRunArtifact(e2e_jit);
     test_step.dependOn(&run_e2e_jit.step);
 
@@ -82,6 +122,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     bench_fib.root_module.addImport("root", lib.root_module);
+    applyFlags(bench_fib, enable_lto, strip_debug, pic, single_threaded);
 
     const bench_large = b.addExecutable(.{
         .name = "bench_large",
@@ -92,6 +133,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     bench_large.root_module.addImport("root", lib.root_module);
+    applyFlags(bench_large, enable_lto, strip_debug, pic, single_threaded);
 
     const bench_aarch64 = b.addExecutable(.{
         .name = "bench_aarch64",
@@ -102,6 +144,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     bench_aarch64.root_module.addImport("root", lib.root_module);
+    applyFlags(bench_aarch64, enable_lto, strip_debug, pic, single_threaded);
 
     const bench_step = b.step("bench", "Run benchmarks");
     const run_bench_fib = b.addRunArtifact(bench_fib);
@@ -121,6 +164,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     fuzz_compile.root_module.addImport("root", lib.root_module);
+    applyFlags(fuzz_compile, enable_lto, strip_debug, pic, single_threaded);
 
     const fuzz_regalloc = b.addExecutable(.{
         .name = "fuzz_regalloc",
@@ -131,6 +175,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     fuzz_regalloc.root_module.addImport("root", lib.root_module);
+    applyFlags(fuzz_regalloc, enable_lto, strip_debug, pic, single_threaded);
 
     const fuzz_step = b.step("fuzz", "Run fuzzers");
     const run_fuzz_compile = b.addRunArtifact(fuzz_compile);
@@ -147,6 +192,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    applyFlags(isle_compiler, enable_lto, strip_debug, pic, single_threaded);
 
     // Add isle module to the compiler
     const isle_module = b.createModule(.{
