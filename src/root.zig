@@ -62,7 +62,13 @@ pub const regalloc2_moves = @import("machinst/regalloc2/moves.zig");
 pub const regalloc2_liveness = @import("machinst/regalloc2/liveness.zig");
 pub const regalloc2_datastructures = @import("machinst/regalloc2/datastructures.zig");
 pub const lower = @import("machinst/lower.zig");
+pub const backend = @import("machinst/backend.zig");
 pub const compile = @import("machinst/compile.zig");
+
+// Machinst tests
+test {
+    _ = @import("machinst/backend.zig");
+}
 
 // Codegen pipeline
 pub const codegen_compile = @import("codegen/compile.zig");
@@ -70,6 +76,19 @@ pub const codegen_context = @import("codegen/context.zig");
 pub const codegen_optimize = @import("codegen/optimize.zig");
 pub const legalize_types = @import("codegen/legalize_types.zig");
 pub const legalize_ops = @import("codegen/legalize_ops.zig");
+pub const lower_helpers = @import("codegen/lower_helpers.zig");
+
+pub const codegen = struct {
+    pub const compile = codegen_compile;
+    pub const context = codegen_context;
+    pub const optimize = codegen_optimize;
+    pub const lower_helpers = @import("codegen/lower_helpers.zig");
+};
+
+pub const ir = struct {
+    pub const types = @import("ir/types.zig");
+    pub const entities = @import("ir/entities.zig");
+};
 
 // Codegen tests
 test {
@@ -78,6 +97,12 @@ test {
     _ = @import("codegen/optimize.zig");
     _ = @import("codegen/legalize_types.zig");
     _ = @import("codegen/legalize_ops.zig");
+    _ = @import("codegen/lower_helpers.zig");
+}
+
+// Backend tests
+test {
+    _ = @import("backends/aarch64/legalize.zig");
 }
 
 pub const x64_inst = @import("backends/x64/inst.zig");
@@ -92,5 +117,6 @@ pub const aarch64_abi = @import("backends/aarch64/abi.zig");
 pub const aarch64_lower = @import("backends/aarch64/lower.zig");
 pub const aarch64_isle_helpers = @import("backends/aarch64/isle_helpers.zig");
 pub const aarch64_isa = @import("backends/aarch64/isa.zig");
+pub const aarch64_legalize = @import("backends/aarch64/legalize.zig");
 
 pub const ir = @import("ir/function.zig");
