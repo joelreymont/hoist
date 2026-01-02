@@ -337,8 +337,8 @@ test "ArgForwardingPlan basic" {
     defer plan.deinit();
 
     const move = ArgForwardingPlan.ArgMove{
-        .src = .{ .reg = PReg.new(0, .int) },
-        .dst = .{ .reg = PReg.new(1, .int) },
+        .src = .{ .reg = PReg.new(.int, 0) },
+        .dst = .{ .reg = PReg.new(.int, 1) },
         .ty = .i64,
     };
 
@@ -353,7 +353,7 @@ test "planArgForwarding simple" {
     // Create simple ABI args
     var callee_slots = [_]ABIArgSlot{.{
         .reg = .{
-            .preg = PReg.new(0, .int),
+            .preg = PReg.new(.int, 0),
             .ty = .i64,
             .extension = .none,
         },
@@ -361,7 +361,7 @@ test "planArgForwarding simple" {
 
     var callee_args = [_]ABIArg{.{ .slots = &callee_slots }};
 
-    var src_regs = [_]Reg{Reg.fromPReg(PReg.new(5, .int))};
+    var src_regs = [_]Reg{Reg.fromPReg(PReg.new(.int, 5))};
 
     const plan = try planArgForwarding(
         allocator,
@@ -375,5 +375,5 @@ test "planArgForwarding simple" {
     }
 
     try testing.expectEqual(@as(usize, 1), plan.moves.items.len);
-    try testing.expectEqual(PReg.new(0, .int), plan.moves.items[0].dst.reg);
+    try testing.expectEqual(PReg.new(.int, 0), plan.moves.items[0].dst.reg);
 }

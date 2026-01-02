@@ -572,7 +572,7 @@ test "backend trait creation" {
 test "RegHint variants" {
     const hint_none = RegHint.none;
     const hint_reuse = RegHint{ .reuse_input = 0 };
-    const hint_fixed = RegHint{ .fixed = PReg.new(5, .int) };
+    const hint_fixed = RegHint{ .fixed = PReg.new(.int, 5) };
 
     try testing.expect(hint_none == .none);
     try testing.expect(hint_reuse == .reuse_input);
