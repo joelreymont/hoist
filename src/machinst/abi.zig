@@ -213,56 +213,139 @@ pub fn ABIMachineSpec(comptime WordSize: type) type {
             var stack_offset: i64 = 0;
 
             for (sig.args) |arg_ty| {
-                const rc = arg_ty.regClass();
                 var slots = std.ArrayList(ABIArgSlot){};
                 errdefer slots.deinit(allocator);
 
-                switch (rc) {
-                    .int => {
-                        if (int_reg_idx < self.int_arg_regs.len) {
-                            const preg = self.int_arg_regs[int_reg_idx];
-                            try slots.append(allocator, .{ .reg = .{
-                                .preg = preg,
-                                .ty = arg_ty,
-                                .extension = .none,
-                            } });
-                            int_reg_idx += 1;
-                        } else {
-                            // Spill to stack.
-                            try slots.append(allocator, .{ .stack = .{
-                                .offset = stack_offset,
-                                .ty = arg_ty,
-                                .extension = .none,
-                            } });
-                            stack_offset += @as(i64, @intCast(arg_ty.bytes()));
-                            stack_offset = std.mem.alignForward(i64, stack_offset, self.stack_align);
-                        }
-                    },
-                    .float, .vector => {
-                        if (float_reg_idx < self.float_arg_regs.len) {
-                            const preg = self.float_arg_regs[float_reg_idx];
-                            try slots.append(allocator, .{ .reg = .{
-                                .preg = preg,
-                                .ty = arg_ty,
-                                .extension = .none,
-                            } });
-                            float_reg_idx += 1;
-                        } else {
-                            try slots.append(allocator, .{ .stack = .{
-                                .offset = stack_offset,
-                                .ty = arg_ty,
-                                .extension = .none,
-                            } });
-                            stack_offset += @as(i64, @intCast(arg_ty.bytes()));
-                            stack_offset = std.mem.alignForward(i64, stack_offset, self.stack_align);
-                        }
-                    },
+                // Handle struct classification for ARM64
+                if (arg_ty == .@"struct") {
+                    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+                    const classification = aarch64_abi.classifyStruct(arg_ty);
+
+                    switch (classification.class) {
+                        .indirect => {
+                            // Pass pointer in integer register or on stack
+                            if (int_reg_idx < self.int_arg_regs.len) {
+                                const preg = self.int_arg_regs[int_reg_idx];
+                                try slots.append(allocator, .{
+                                    .reg = .{
+                                        .preg = preg,
+                                        .ty = .i64, // Pointer type
+                                        .extension = .none,
+                                    },
+                                });
+                                int_reg_idx += 1;
+                            } else {
+                                try slots.append(allocator, .{ .stack = .{
+                                    .offset = stack_offset,
+                                    .ty = .i64,
+                                    .extension = .none,
+                                } });
+                                stack_offset += 8;
+                                stack_offset = std.mem.alignForward(i64, stack_offset, self.stack_align);
+                            }
+                        },
+                        .hfa => {
+                            // HFA: allocate to consecutive float registers
+                            const fields = arg_ty.@"struct";
+                            const num_members = fields.len;
+
+                            if (float_reg_idx + num_members <= self.float_arg_regs.len) {
+                                for (0..num_members) |i| {
+                                    const preg = self.float_arg_regs[float_reg_idx + i];
+                                    try slots.append(allocator, .{ .reg = .{
+                                        .preg = preg,
+                                        .ty = classification.elem_ty.?,
+                                        .extension = .none,
+                                    } });
+                                }
+                                float_reg_idx += num_members;
+                            } else {
+                                // Entire HFA spills to stack
+                                float_reg_idx = self.float_arg_regs.len; // Exhaust float regs
+                                const struct_size = arg_ty.bytes();
+                                try slots.append(allocator, .{ .stack = .{
+                                    .offset = stack_offset,
+                                    .ty = arg_ty,
+                                    .extension = .none,
+                                } });
+                                stack_offset += @intCast(struct_size);
+                                stack_offset = std.mem.alignForward(i64, stack_offset, 8);
+                            }
+                        },
+                        .hva => {
+                            // HVA: similar to HFA but for vector types
+                            // TODO: implement when vector types are added
+                            return error.UnsupportedHVA;
+                        },
+                        .general => {
+                            // General struct ≤16 bytes: treat as composite integer
+                            // Fall through to normal handling
+                            const rc = arg_ty.regClass();
+                            try handleRegClass(rc, arg_ty, &int_reg_idx, &float_reg_idx, &stack_offset, &slots, self, allocator);
+                        },
+                    }
+                } else {
+                    const rc = arg_ty.regClass();
+                    try handleRegClass(rc, arg_ty, &int_reg_idx, &float_reg_idx, &stack_offset, &slots, self, allocator);
                 }
 
                 try args.append(allocator, .{ .slots = try slots.toOwnedSlice(allocator) });
             }
 
             return args.toOwnedSlice(allocator);
+        }
+
+        fn handleRegClass(
+            rc: RegClass,
+            arg_ty: Type,
+            int_reg_idx: *usize,
+            float_reg_idx: *usize,
+            stack_offset: *i64,
+            slots: *std.ArrayList(ABIArgSlot),
+            self: *const Self,
+            allocator: Allocator,
+        ) !void {
+            switch (rc) {
+                .int => {
+                    if (int_reg_idx < self.int_arg_regs.len) {
+                        const preg = self.int_arg_regs[int_reg_idx];
+                        try slots.append(allocator, .{ .reg = .{
+                            .preg = preg,
+                            .ty = arg_ty,
+                            .extension = .none,
+                        } });
+                        int_reg_idx += 1;
+                    } else {
+                        // Spill to stack.
+                        try slots.append(allocator, .{ .stack = .{
+                            .offset = stack_offset,
+                            .ty = arg_ty,
+                            .extension = .none,
+                        } });
+                        stack_offset += @as(i64, @intCast(arg_ty.bytes()));
+                        stack_offset = std.mem.alignForward(i64, stack_offset, self.stack_align);
+                    }
+                },
+                .float, .vector => {
+                    if (float_reg_idx < self.float_arg_regs.len) {
+                        const preg = self.float_arg_regs[float_reg_idx];
+                        try slots.append(allocator, .{ .reg = .{
+                            .preg = preg,
+                            .ty = arg_ty,
+                            .extension = .none,
+                        } });
+                        float_reg_idx += 1;
+                    } else {
+                        try slots.append(allocator, .{ .stack = .{
+                            .offset = stack_offset,
+                            .ty = arg_ty,
+                            .extension = .none,
+                        } });
+                        stack_offset += @as(i64, @intCast(arg_ty.bytes()));
+                        stack_offset = std.mem.alignForward(i64, stack_offset, self.stack_align);
+                    }
+                },
+            }
         }
 
         /// Compute return value locations for a signature.
