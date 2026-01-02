@@ -469,16 +469,16 @@ const RuleSubset = struct {
     allocator: Allocator,
 
     pub fn init(allocator: Allocator) RuleSubset {
-        return .{ .indices = std.ArrayList(usize).init(allocator), .allocator = allocator };
+        return .{ .indices = std.ArrayList(usize){}, .allocator = allocator };
     }
 
     pub fn deinit(self: *RuleSubset) void {
-        self.indices.deinit();
+        self.indices.deinit(self.allocator);
     }
 
     pub fn clone(self: *const RuleSubset) !RuleSubset {
         var new = RuleSubset.init(self.allocator);
-        try new.indices.appendSlice(self.indices.items);
+        try new.indices.appendSlice(self.allocator, self.indices.items);
         return new;
     }
 
@@ -530,7 +530,7 @@ pub fn buildDecisionTree(
     var initial = RuleSubset.init(allocator);
     defer initial.deinit();
     for (0..ruleset.rules.items.len) |i| {
-        try initial.indices.append(i);
+        try initial.indices.append(allocator, i);
     }
 
     return try buildSubtree(ruleset, &initial, allocator);
@@ -578,12 +578,12 @@ fn buildSubtree(
             const rule = &ruleset.rules.items[rule_idx];
             if (rule.getConstraint(split.binding)) |constraint| {
                 if (std.meta.eql(constraint, split.constraint)) {
-                    try matches.indices.append(rule_idx);
+                    try matches.indices.append(allocator, rule_idx);
                 } else {
-                    try non_matches.indices.append(rule_idx);
+                    try non_matches.indices.append(allocator, rule_idx);
                 }
             } else {
-                try non_matches.indices.append(rule_idx);
+                try non_matches.indices.append(allocator, rule_idx);
             }
         }
 
@@ -621,9 +621,9 @@ fn buildSubtree(
                 const canonical_b = rule.equals.find(eq.b);
 
                 if (std.meta.eql(canonical_a, canonical_b)) {
-                    try equal.indices.append(rule_idx);
+                    try equal.indices.append(allocator, rule_idx);
                 } else {
-                    try not_equal.indices.append(rule_idx);
+                    try not_equal.indices.append(allocator, rule_idx);
                 }
             }
 
@@ -646,8 +646,8 @@ fn findBestSplit(
     subset: *const RuleSubset,
     allocator: Allocator,
 ) !?SplitScore {
-    var candidates = std.ArrayList(SplitScore).init(allocator);
-    defer candidates.deinit();
+    var candidates = std.ArrayList(SplitScore){};
+    defer candidates.deinit(allocator);
 
     // Collect all constraints from rules in subset
     for (subset.indices.items) |rule_idx| {
@@ -675,7 +675,7 @@ fn findBestSplit(
             }
 
             if (eliminated > 0) {
-                try candidates.append(.{
+                try candidates.append(allocator, .{
                     .eliminated = eliminated,
                     .total_constraints = total_constraints,
                     .binding = binding,

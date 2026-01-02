@@ -13,6 +13,14 @@ pub const Compiler = sema_mod.Compiler;
 pub const Codegen = codegen_mod.Codegen;
 pub const CodegenOptions = codegen_mod.CodegenOptions;
 
+// Match tree generation module
+pub const match = struct {
+    const match_mod = @import("codegen/match.zig");
+    pub const MatchCompiler = match_mod.MatchCompiler;
+    pub const optimizeTree = match_mod.optimizeTree;
+    pub const estimateCost = match_mod.estimateCost;
+};
+
 /// Source input for compilation.
 pub const Source = struct {
     /// Source file name (for error messages).
@@ -200,4 +208,62 @@ test "compile error handling" {
 
     const result = compile(testing.allocator, &[_]Source{source}, .{});
     try testing.expectError(error.ParseError, result);
+}
+
+test "match tree: basic compilation" {
+
+    var typeenv = sema_mod.TypeEnv.init(testing.allocator);
+    defer typeenv.deinit();
+
+    var termenv = sema_mod.TermEnv.init(testing.allocator);
+    defer termenv.deinit();
+
+    // Create a simple type and term for testing
+    const i32_sym = try typeenv.internSym("i32");
+    const i32_ty = try typeenv.addType(.{
+        .primitive = .{
+            .id = sema_mod.TypeId.new(0),
+            .name = i32_sym,
+            .pos = sema_mod.Pos.new(0, 0),
+        },
+    });
+
+    // Create a simple rule: true => 1
+    const rule = sema_mod.Rule{
+        .pattern = .{
+            .const_bool = .{
+                .val = true,
+                .pos = sema_mod.Pos.new(0, 0),
+            },
+        },
+        .iflets = &.{},
+        .expr = .{
+            .const_int = .{
+                .val = 1,
+                .ty = i32_ty,
+                .pos = sema_mod.Pos.new(0, 0),
+            },
+        },
+        .prio = 0,
+        .pos = sema_mod.Pos.new(0, 0),
+    };
+
+    var compiler = match.MatchCompiler.init(testing.allocator, &typeenv, &termenv);
+
+    const rules = [_]sema_mod.Rule{rule};
+    var ruleset = try compiler.buildRuleSet(&rules);
+    defer ruleset.deinit();
+
+    var tree = try compiler.compile(&ruleset);
+    defer {
+        tree.deinit(testing.allocator);
+        testing.allocator.destroy(tree);
+    }
+
+    // Verify tree is not fail
+    try testing.expect(tree.* != .fail);
+
+    // Verify cost estimation works
+    const cost = match.estimateCost(tree);
+    try testing.expect(cost > 0);
 }
