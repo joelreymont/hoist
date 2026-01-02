@@ -149,6 +149,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .ldaxr => |i| try emitLdaxr(i.dst.toReg(), i.addr, i.size, buffer),
         .stlxr => |i| try emitStlxr(i.status.toReg(), i.src, i.addr, i.size, buffer),
         .clrex => try emitClrex(buffer),
+        .asm_bytes => |i| try emitAsmBytes(i.bytes, buffer),
         .b => |i| try emitB(i.target.label, buffer),
         .b_cond => |i| try emitBCond(@intFromEnum(i.cond), i.target.label, buffer),
         .bl => |i| switch (i.target) {
@@ -252,6 +253,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .ldaxr => |i| try emitLdaxr(i.dst.toReg(), i.addr, i.size, buffer),
         .stlxr => |i| try emitStlxr(i.status.toReg(), i.src, i.addr, i.size, buffer),
         .clrex => try emitClrex(buffer),
+        .asm_bytes => |i| try emitAsmBytes(i.bytes, buffer),
     }
 }
 
@@ -11209,4 +11211,10 @@ fn emitClrex(buffer: *buffer_mod.MachBuffer) !void {
 
     const bytes = std.mem.toBytes(insn);
     try buffer.put(&bytes);
+}
+
+/// Inline assembly - emit raw pre-encoded bytes
+/// Used for inline asm or custom instruction sequences
+fn emitAsmBytes(bytes: []const u8, buffer: *buffer_mod.MachBuffer) !void {
+    try buffer.put(bytes);
 }

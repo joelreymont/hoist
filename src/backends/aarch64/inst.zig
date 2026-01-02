@@ -1830,6 +1830,7 @@ pub const Inst = union(enum) {
             .ldaxr => |i| try writer.print("ldaxr.{} {}, [{}]", .{ i.size, i.dst, i.addr }),
             .stlxr => |i| try writer.print("stlxr.{} {}, {}, [{}]", .{ i.size, i.status, i.src, i.addr }),
             .clrex => try writer.writeAll("clrex"),
+            .asm_bytes => |i| try writer.print("asm <{d} bytes>", .{i.bytes.len}),
             .b => |i| try writer.print("b {}", .{i.target}),
             .b_cond => |i| try writer.print("b.{} {}", .{ i.cond, i.target }),
             .bl => |i| try writer.print("bl {}", .{i.target}),
