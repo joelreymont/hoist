@@ -81,6 +81,10 @@ pub fn VCodeBuilder(comptime Inst: type) type {
         /// Parallel to current_block_insns.
         current_block_colors: std.ArrayList(InsnColor),
 
+        /// Use counts for each VReg - tracks remaining uses.
+        /// When count reaches 0, the vreg's defining instruction can be emitted.
+        vreg_use_counts: std.AutoHashMap(VReg, usize),
+
         const Self = @This();
 
         /// Create a new VCodeBuilder.
@@ -95,10 +99,12 @@ pub fn VCodeBuilder(comptime Inst: type) type {
                 .current_block = null,
                 .current_block_insns = .{},
                 .current_block_colors = .{},
+                .vreg_use_counts = std.AutoHashMap(VReg, usize).init(allocator),
             };
         }
 
         pub fn deinit(self: *Self) void {
+            self.vreg_use_counts.deinit();
             self.current_block_colors.deinit(self.allocator);
             self.current_block_insns.deinit(self.allocator);
             self.vcode.deinit();
@@ -141,6 +147,35 @@ pub fn VCodeBuilder(comptime Inst: type) type {
             return self.current_block_colors.items[self.current_block_colors.items.len - 1];
         }
 
+        /// Record a use of a VReg.
+        ///
+        /// For value sinking: tracks total number of uses of each vreg.
+        /// When lowering in backward mode, instructions producing values
+        /// can be delayed until their last use.
+        pub fn useVReg(self: *Self, vreg: VReg) !void {
+            const entry = try self.vreg_use_counts.getOrPut(vreg);
+            if (!entry.found_existing) {
+                entry.value_ptr.* = 0;
+            }
+            entry.value_ptr.* += 1;
+        }
+
+        /// Record that a VReg use was consumed.
+        ///
+        /// Returns true if this was the last use of the vreg.
+        /// In backward lowering, the defining instruction should be emitted now.
+        pub fn consumeVRegUse(self: *Self, vreg: VReg) bool {
+            const entry = self.vreg_use_counts.getPtr(vreg) orelse return false;
+            if (entry.* == 0) return false;
+            entry.* -= 1;
+            return entry.* == 0;
+        }
+
+        /// Get remaining use count for a VReg.
+        pub fn getVRegUseCount(self: *const Self, vreg: VReg) usize {
+            return self.vreg_use_counts.get(vreg) orelse 0;
+        }
+
         /// Finish the current block with the given successor blocks.
         pub fn finishBlock(self: *Self, successors: []const BlockIndex) !void {
             if (self.current_block) |block| {
@@ -172,6 +207,7 @@ pub fn VCodeBuilder(comptime Inst: type) type {
             // Clear instruction and color buffers.
             self.current_block_insns.clearRetainingCapacity();
             self.current_block_colors.clearRetainingCapacity();
+            self.vreg_use_counts.clearRetainingCapacity();
         }
 
         /// Set the entry block.
@@ -390,4 +426,64 @@ test "InsnColor side effect detection" {
     try testing.expect(InsnColor.get_value.canSink());
     try testing.expect(!InsnColor.set_output.canSink());
     try testing.expect(!InsnColor.multi_result.canSink());
+}
+
+test "VCodeBuilder value use tracking" {
+    const TestInst = struct { opcode: u8 };
+
+    var builder = VCodeBuilder(TestInst).init(
+        testing.allocator,
+        .backward,
+    );
+    defer builder.deinit();
+
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+
+    // Record multiple uses of v0.
+    try builder.useVReg(v0);
+    try builder.useVReg(v0);
+    try builder.useVReg(v0);
+    try testing.expectEqual(@as(usize, 3), builder.getVRegUseCount(v0));
+
+    // Record one use of v1.
+    try builder.useVReg(v1);
+    try testing.expectEqual(@as(usize, 1), builder.getVRegUseCount(v1));
+
+    // Consume uses.
+    try testing.expect(!builder.consumeVRegUse(v0)); // Still 2 uses left
+    try testing.expectEqual(@as(usize, 2), builder.getVRegUseCount(v0));
+
+    try testing.expect(!builder.consumeVRegUse(v0)); // Still 1 use left
+    try testing.expectEqual(@as(usize, 1), builder.getVRegUseCount(v0));
+
+    try testing.expect(builder.consumeVRegUse(v0)); // Last use!
+    try testing.expectEqual(@as(usize, 0), builder.getVRegUseCount(v0));
+
+    // v1 consumed in one shot.
+    try testing.expect(builder.consumeVRegUse(v1)); // Last use!
+    try testing.expectEqual(@as(usize, 0), builder.getVRegUseCount(v1));
+}
+
+test "VCodeBuilder use tracking clears between blocks" {
+    const TestInst = struct { opcode: u8 };
+
+    var builder = VCodeBuilder(TestInst).init(
+        testing.allocator,
+        .forward,
+    );
+    defer builder.deinit();
+
+    const v0 = VReg.new(0, .int);
+
+    // Block 0
+    _ = try builder.startBlock(&.{});
+    try builder.useVReg(v0);
+    try testing.expectEqual(@as(usize, 1), builder.getVRegUseCount(v0));
+    try builder.finishBlock(&.{});
+
+    // Block 1 - use counts should be cleared
+    _ = try builder.startBlock(&.{});
+    try testing.expectEqual(@as(usize, 0), builder.getVRegUseCount(v0));
+    try builder.finishBlock(&.{});
 }
