@@ -1395,31 +1395,6 @@ pub const Inst = union(enum) {
         size: VectorSize,
     },
 
-    /// Vector compare equal (NEON): CMEQ Vd.T, Vn.T, Vm.T
-    vec_cmeq: struct {
-        dst: WritableReg,
-        src1: Reg,
-        src2: Reg,
-        size: VectorSize,
-    },
-
-    /// Vector compare greater than (NEON): CMGT Vd.T, Vn.T, Vm.T
-    vec_cmgt: struct {
-        dst: WritableReg,
-        src1: Reg,
-        src2: Reg,
-        size: VectorSize,
-    },
-
-    /// Vector compare greater or equal (NEON): CMGE Vd.T, Vn.T, Vm.T
-    vec_cmge: struct {
-        dst: WritableReg,
-        src1: Reg,
-        src2: Reg,
-        size: VectorSize,
-    },
-
-
     pub fn format(
         self: Inst,
         comptime _: []const u8,
@@ -1619,9 +1594,6 @@ pub const Inst = union(enum) {
             .vec_add => |i| try writer.print("add.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_sub => |i| try writer.print("sub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_mul => |i| try writer.print("mul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_cmeq => |i| try writer.print("cmeq.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_cmgt => |i| try writer.print("cmgt.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_cmge => |i| try writer.print("cmge.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
         }
     }
 };

@@ -206,6 +206,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_add => |i| try emitVecAdd(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_sub => |i| try emitVecSub(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_mul => |i| try emitVecMul(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_cmeq => |i| try emitVecCmeq(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_cmgt => |i| try emitVecCmgt(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_cmge => |i| try emitVecCmge(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
     }
 }
 
@@ -10193,6 +10196,78 @@ fn emitVecMul(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buf
         (0b1 << 20) |
         (@as(u32, rm) << 16) |
         (0b100111 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector CMEQ (compare equal): CMEQ Vd.T, Vn.T, Vm.T
+/// Encoding: Q|1|0|01110|size|1|Rm|100011|Rn|Rd
+fn emitVecCmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b1 << 29) |
+        (0b0 << 28) |
+        (0b01110 << 23) |
+        (@as(u32, size) << 21) |
+        (0b1 << 20) |
+        (@as(u32, rm) << 16) |
+        (0b100011 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector CMGT (compare greater than, signed): CMGT Vd.T, Vn.T, Vm.T
+/// Encoding: Q|0|0|01110|size|1|Rm|001101|Rn|Rd
+fn emitVecCmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b0 << 28) |
+        (0b01110 << 23) |
+        (@as(u32, size) << 21) |
+        (0b1 << 20) |
+        (@as(u32, rm) << 16) |
+        (0b001101 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector CMGE (compare greater or equal, signed): CMGE Vd.T, Vn.T, Vm.T
+/// Encoding: Q|0|0|01110|size|1|Rm|001111|Rn|Rd
+fn emitVecCmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b0 << 28) |
+        (0b01110 << 23) |
+        (@as(u32, size) << 21) |
+        (0b1 << 20) |
+        (@as(u32, rm) << 16) |
+        (0b001111 << 10) |
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
