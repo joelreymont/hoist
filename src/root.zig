@@ -68,12 +68,14 @@ pub const compile = @import("machinst/compile.zig");
 pub const codegen_compile = @import("codegen/compile.zig");
 pub const codegen_context = @import("codegen/context.zig");
 pub const codegen_optimize = @import("codegen/optimize.zig");
+pub const legalize_types = @import("codegen/legalize_types.zig");
 
 // Codegen tests
 test {
     _ = @import("codegen/compile.zig");
     _ = @import("codegen/context.zig");
     _ = @import("codegen/optimize.zig");
+    _ = @import("codegen/legalize_types.zig");
 }
 
 pub const x64_inst = @import("backends/x64/inst.zig");
