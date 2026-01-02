@@ -1132,6 +1132,100 @@ pub const Inst = union(enum) {
         size: FpuOperandSize,
     },
 
+    /// Vector bitwise AND (AND Vd, Vn, Vm).
+    /// Computes dst = src1 & src2 (element-wise bitwise AND).
+    vec_and: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: FpuOperandSize,
+    },
+
+    /// Vector bitwise OR (ORR Vd, Vn, Vm).
+    /// Computes dst = src1 | src2 (element-wise bitwise OR).
+    vec_orr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: FpuOperandSize,
+    },
+
+    /// Vector bitwise XOR (EOR Vd, Vn, Vm).
+    /// Computes dst = src1 ^ src2 (element-wise bitwise XOR).
+    vec_eor: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: FpuOperandSize,
+    },
+
+    /// Vector addition (ADD Vd, Vn, Vm).
+    /// Computes dst = src1 + src2 (element-wise addition).
+    vec_add: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// Vector subtraction (SUB Vd, Vn, Vm).
+    /// Computes dst = src1 - src2 (element-wise subtraction).
+    vec_sub: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// Vector multiplication (MUL Vd, Vn, Vm).
+    /// Computes dst = src1 * src2 (element-wise multiplication).
+    vec_mul: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// Vector add across lanes (ADDV).
+    /// Reduces vector to scalar by adding all lanes: dst = sum(src[i]).
+    vec_addv: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VecElemSize,
+    },
+
+    /// Vector signed minimum across lanes (SMINV).
+    /// Reduces vector to scalar by finding minimum: dst = min(src[i]).
+    vec_sminv: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VecElemSize,
+    },
+
+    /// Vector signed maximum across lanes (SMAXV).
+    /// Reduces vector to scalar by finding maximum: dst = max(src[i]).
+    vec_smaxv: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VecElemSize,
+    },
+
+    /// Vector unsigned minimum across lanes (UMINV).
+    /// Reduces vector to scalar by finding minimum: dst = min(src[i]).
+    vec_uminv: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VecElemSize,
+    },
+
+    /// Vector unsigned maximum across lanes (UMAXV).
+    /// Reduces vector to scalar by finding maximum: dst = max(src[i]).
+    vec_umaxv: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VecElemSize,
+    },
+
     /// Call - saves return address to link register and jumps.
     /// Pseudo-instruction that becomes BL.
     call: struct {
@@ -1369,6 +1463,17 @@ pub const Inst = union(enum) {
             .vstr => |i| try writer.print("vstr.{} {}, [{}, #{d}]", .{ i.size, i.src, i.base, i.offset }),
             .vldp => |i| try writer.print("vldp.{} {}, {}, [{}, #{d}]", .{ i.size, i.dst1, i.dst2, i.base, i.offset }),
             .vstp => |i| try writer.print("vstp.{} {}, {}, [{}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
+            .vec_and => |i| try writer.print("vec_and.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_orr => |i| try writer.print("vec_orr.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_eor => |i| try writer.print("vec_eor.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_add => |i| try writer.print("vec_add.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_sub => |i| try writer.print("vec_sub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_mul => |i| try writer.print("vec_mul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_addv => |i| try writer.print("vec_addv.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .vec_sminv => |i| try writer.print("vec_sminv.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .vec_smaxv => |i| try writer.print("vec_smaxv.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .vec_uminv => |i| try writer.print("vec_uminv.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .vec_umaxv => |i| try writer.print("vec_umaxv.{} {}, {}", .{ i.size, i.dst, i.src }),
             .call => |i| try writer.print("call {}", .{i.target}),
             .call_indirect => |i| try writer.print("call {}", .{i.target}),
             .ret_call => try writer.print("ret", .{}),
@@ -1440,6 +1545,62 @@ pub const FpuOperandSize = enum {
             .size32 => try writer.print("s", .{}),
             .size64 => try writer.print("d", .{}),
             .size128 => try writer.print("q", .{}),
+        }
+    }
+};
+
+/// Vector element size for SIMD operations.
+pub const VecElemSize = enum {
+    size8x8,
+    size8x16,
+    size16x4,
+    size16x8,
+    size32x2,
+    size32x4,
+    size64x2,
+
+    pub fn bits(self: VecElemSize) u32 {
+        return switch (self) {
+            .size8x8 => 64,
+            .size8x16 => 128,
+            .size16x4 => 64,
+            .size16x8 => 128,
+            .size32x2 => 64,
+            .size32x4 => 128,
+            .size64x2 => 128,
+        };
+    }
+
+    pub fn elemBits(self: VecElemSize) u32 {
+        return switch (self) {
+            .size8x8, .size8x16 => 8,
+            .size16x4, .size16x8 => 16,
+            .size32x2, .size32x4 => 32,
+            .size64x2 => 64,
+        };
+    }
+
+    pub fn laneCount(self: VecElemSize) u32 {
+        return switch (self) {
+            .size8x8 => 8,
+            .size8x16 => 16,
+            .size16x4 => 4,
+            .size16x8 => 8,
+            .size32x2 => 2,
+            .size32x4 => 4,
+            .size64x2 => 2,
+        };
+    }
+
+    pub fn format(self: VecElemSize, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        switch (self) {
+            .size8x8 => try writer.print("8b", .{}),
+            .size8x16 => try writer.print("16b", .{}),
+            .size16x4 => try writer.print("4h", .{}),
+            .size16x8 => try writer.print("8h", .{}),
+            .size32x2 => try writer.print("2s", .{}),
+            .size32x4 => try writer.print("4s", .{}),
+            .size64x2 => try writer.print("2d", .{}),
         }
     }
 };
@@ -2004,6 +2165,122 @@ pub fn aarch64_fabs(dst: WritableReg, src: Reg, size: FpuOperandSize) Inst {
 /// Computes dst = -src.
 pub fn aarch64_fneg(dst: WritableReg, src: Reg, size: FpuOperandSize) Inst {
     return .{ .fneg = .{
+        .dst = dst,
+        .src = src,
+        .size = size,
+    } };
+}
+
+/// Create vector bitwise AND instruction: AND Vd, Vn, Vm
+/// Computes dst = src1 & src2 (element-wise bitwise AND).
+pub fn aarch64_vec_and(dst: WritableReg, src1: Reg, src2: Reg, size: FpuOperandSize) Inst {
+    return .{ .vec_and = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// Create vector bitwise OR instruction: ORR Vd, Vn, Vm
+/// Computes dst = src1 | src2 (element-wise bitwise OR).
+pub fn aarch64_vec_orr(dst: WritableReg, src1: Reg, src2: Reg, size: FpuOperandSize) Inst {
+    return .{ .vec_orr = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// Create vector bitwise XOR instruction: EOR Vd, Vn, Vm
+/// Computes dst = src1 ^ src2 (element-wise bitwise XOR).
+pub fn aarch64_vec_eor(dst: WritableReg, src1: Reg, src2: Reg, size: FpuOperandSize) Inst {
+    return .{ .vec_eor = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// Create vector addition instruction: ADD Vd, Vn, Vm
+/// Computes dst = src1 + src2 (element-wise addition on SIMD vectors).
+pub fn aarch64_vec_add(dst: WritableReg, src1: Reg, src2: Reg, size: VecElemSize) Inst {
+    return .{ .vec_add = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// Create vector subtraction instruction: SUB Vd, Vn, Vm
+/// Computes dst = src1 - src2 (element-wise subtraction on SIMD vectors).
+pub fn aarch64_vec_sub(dst: WritableReg, src1: Reg, src2: Reg, size: VecElemSize) Inst {
+    return .{ .vec_sub = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// Create vector multiplication instruction: MUL Vd, Vn, Vm
+/// Computes dst = src1 * src2 (element-wise multiplication on SIMD vectors).
+pub fn aarch64_vec_mul(dst: WritableReg, src1: Reg, src2: Reg, size: VecElemSize) Inst {
+    return .{ .vec_mul = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// Create vector add across lanes instruction: ADDV
+/// Reduces vector to scalar by adding all lanes: dst = sum(src[i]).
+pub fn aarch64_addv(dst: WritableReg, src: Reg, size: VecElemSize) Inst {
+    return .{ .vec_addv = .{
+        .dst = dst,
+        .src = src,
+        .size = size,
+    } };
+}
+
+/// Create vector signed minimum across lanes instruction: SMINV
+/// Reduces vector to scalar by finding signed minimum: dst = min(src[i]).
+pub fn aarch64_sminv(dst: WritableReg, src: Reg, size: VecElemSize) Inst {
+    return .{ .vec_sminv = .{
+        .dst = dst,
+        .src = src,
+        .size = size,
+    } };
+}
+
+/// Create vector signed maximum across lanes instruction: SMAXV
+/// Reduces vector to scalar by finding signed maximum: dst = max(src[i]).
+pub fn aarch64_smaxv(dst: WritableReg, src: Reg, size: VecElemSize) Inst {
+    return .{ .vec_smaxv = .{
+        .dst = dst,
+        .src = src,
+        .size = size,
+    } };
+}
+
+/// Create vector unsigned minimum across lanes instruction: UMINV
+/// Reduces vector to scalar by finding unsigned minimum: dst = min(src[i]).
+pub fn aarch64_uminv(dst: WritableReg, src: Reg, size: VecElemSize) Inst {
+    return .{ .vec_uminv = .{
+        .dst = dst,
+        .src = src,
+        .size = size,
+    } };
+}
+
+/// Create vector unsigned maximum across lanes instruction: UMAXV
+/// Reduces vector to scalar by finding unsigned maximum: dst = max(src[i]).
+pub fn aarch64_umaxv(dst: WritableReg, src: Reg, size: VecElemSize) Inst {
+    return .{ .vec_umaxv = .{
         .dst = dst,
         .src = src,
         .size = size,
@@ -2744,4 +3021,138 @@ test "aarch64_fneg constructor" {
     const inst_64 = aarch64_fneg(wr0, r1, .size64);
     try testing.expectEqual(Inst.fneg, @as(std.meta.Tag(Inst), inst_64));
     try testing.expectEqual(FpuOperandSize.size64, inst_64.fneg.size);
+}
+
+test "aarch64_vec_and constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_64 = aarch64_vec_and(wr0, r1, r2, .size64);
+    try testing.expectEqual(Inst.vec_and, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(wr0, inst_64.vec_and.dst);
+    try testing.expectEqual(r1, inst_64.vec_and.src1);
+    try testing.expectEqual(r2, inst_64.vec_and.src2);
+    try testing.expectEqual(FpuOperandSize.size64, inst_64.vec_and.size);
+
+    const inst_128 = aarch64_vec_and(wr0, r1, r2, .size128);
+    try testing.expectEqual(Inst.vec_and, @as(std.meta.Tag(Inst), inst_128));
+    try testing.expectEqual(FpuOperandSize.size128, inst_128.vec_and.size);
+}
+
+test "aarch64_vec_orr constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_64 = aarch64_vec_orr(wr0, r1, r2, .size64);
+    try testing.expectEqual(Inst.vec_orr, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(wr0, inst_64.vec_orr.dst);
+    try testing.expectEqual(r1, inst_64.vec_orr.src1);
+    try testing.expectEqual(r2, inst_64.vec_orr.src2);
+    try testing.expectEqual(FpuOperandSize.size64, inst_64.vec_orr.size);
+
+    const inst_128 = aarch64_vec_orr(wr0, r1, r2, .size128);
+    try testing.expectEqual(Inst.vec_orr, @as(std.meta.Tag(Inst), inst_128));
+    try testing.expectEqual(FpuOperandSize.size128, inst_128.vec_orr.size);
+}
+
+test "aarch64_vec_eor constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_64 = aarch64_vec_eor(wr0, r1, r2, .size64);
+    try testing.expectEqual(Inst.vec_eor, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(wr0, inst_64.vec_eor.dst);
+    try testing.expectEqual(r1, inst_64.vec_eor.src1);
+    try testing.expectEqual(r2, inst_64.vec_eor.src2);
+    try testing.expectEqual(FpuOperandSize.size64, inst_64.vec_eor.size);
+
+    const inst_128 = aarch64_vec_eor(wr0, r1, r2, .size128);
+    try testing.expectEqual(Inst.vec_eor, @as(std.meta.Tag(Inst), inst_128));
+    try testing.expectEqual(FpuOperandSize.size128, inst_128.vec_eor.size);
+}
+
+test "aarch64_vec_add constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_8x8 = aarch64_vec_add(wr0, r1, r2, .size8x8);
+    try testing.expectEqual(Inst.vec_add, @as(std.meta.Tag(Inst), inst_8x8));
+    try testing.expectEqual(wr0, inst_8x8.vec_add.dst);
+    try testing.expectEqual(r1, inst_8x8.vec_add.src1);
+    try testing.expectEqual(r2, inst_8x8.vec_add.src2);
+    try testing.expectEqual(VecElemSize.size8x8, inst_8x8.vec_add.size);
+
+    const inst_16x8 = aarch64_vec_add(wr0, r1, r2, .size16x8);
+    try testing.expectEqual(Inst.vec_add, @as(std.meta.Tag(Inst), inst_16x8));
+    try testing.expectEqual(VecElemSize.size16x8, inst_16x8.vec_add.size);
+
+    const inst_32x4 = aarch64_vec_add(wr0, r1, r2, .size32x4);
+    try testing.expectEqual(Inst.vec_add, @as(std.meta.Tag(Inst), inst_32x4));
+    try testing.expectEqual(VecElemSize.size32x4, inst_32x4.vec_add.size);
+
+    const inst_64x2 = aarch64_vec_add(wr0, r1, r2, .size64x2);
+    try testing.expectEqual(Inst.vec_add, @as(std.meta.Tag(Inst), inst_64x2));
+    try testing.expectEqual(VecElemSize.size64x2, inst_64x2.vec_add.size);
+}
+
+test "aarch64_vec_sub constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_8x16 = aarch64_vec_sub(wr0, r1, r2, .size8x16);
+    try testing.expectEqual(Inst.vec_sub, @as(std.meta.Tag(Inst), inst_8x16));
+    try testing.expectEqual(wr0, inst_8x16.vec_sub.dst);
+    try testing.expectEqual(r1, inst_8x16.vec_sub.src1);
+    try testing.expectEqual(r2, inst_8x16.vec_sub.src2);
+    try testing.expectEqual(VecElemSize.size8x16, inst_8x16.vec_sub.size);
+
+    const inst_32x2 = aarch64_vec_sub(wr0, r1, r2, .size32x2);
+    try testing.expectEqual(Inst.vec_sub, @as(std.meta.Tag(Inst), inst_32x2));
+    try testing.expectEqual(VecElemSize.size32x2, inst_32x2.vec_sub.size);
+}
+
+test "aarch64_vec_mul constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_16x4 = aarch64_vec_mul(wr0, r1, r2, .size16x4);
+    try testing.expectEqual(Inst.vec_mul, @as(std.meta.Tag(Inst), inst_16x4));
+    try testing.expectEqual(wr0, inst_16x4.vec_mul.dst);
+    try testing.expectEqual(r1, inst_16x4.vec_mul.src1);
+    try testing.expectEqual(r2, inst_16x4.vec_mul.src2);
+    try testing.expectEqual(VecElemSize.size16x4, inst_16x4.vec_mul.size);
+
+    const inst_32x4 = aarch64_vec_mul(wr0, r1, r2, .size32x4);
+    try testing.expectEqual(Inst.vec_mul, @as(std.meta.Tag(Inst), inst_32x4));
+    try testing.expectEqual(VecElemSize.size32x4, inst_32x4.vec_mul.size);
 }
