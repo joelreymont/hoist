@@ -11,7 +11,6 @@ pub const WritableReg = reg_mod.WritableReg;
 
 /// ARM64 machine instruction.
 /// Minimal bootstrap set - full aarch64 backend needs ~100+ variants.
-
 pub const Inst = union(enum) {
     /// Move register to register (MOV Xd, Xn).
     mov_rr: struct {
@@ -293,7 +292,6 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
-
     /// BIC (bit clear): BIC Xd, Xn, Xm
     /// Bitwise AND NOT: Xd = Xn & ~Xm
     bic_rr: struct {
@@ -327,7 +325,6 @@ pub const Inst = union(enum) {
         src: Reg,
         size: OperandSize,
     },
-
 
     /// ABS (absolute value): ABS Xd, Xn
     /// Computes absolute value of signed integer
@@ -406,7 +403,6 @@ pub const Inst = union(enum) {
         src: Reg,
         size: OperandSize,
     },
-
 
     /// REV (reverse bytes): REV Xd, Xn
     /// Reverses byte order in register
@@ -1519,7 +1515,6 @@ pub const Inst = union(enum) {
         size: VectorSize,
     },
 
-
     /// Vector SMIN (signed minimum element-wise): SMIN Vd.T, Vn.T, Vm.T
     vec_smin: struct {
         dst: WritableReg,
@@ -1552,7 +1547,6 @@ pub const Inst = union(enum) {
         size: VectorSize,
     },
 
-
     /// Vector ABS (absolute value): ABS Vd.T, Vn.T
     /// Computes absolute value of each signed element
     vec_abs: struct {
@@ -1568,7 +1562,6 @@ pub const Inst = union(enum) {
         src: Reg,
         size: VectorSize,
     },
-
 
     /// Vector FP FCMEQ (compare equal): FCMEQ Vd.T, Vn.T, Vm.T
     vec_fcmeq: struct {
@@ -1714,7 +1707,6 @@ pub const Inst = union(enum) {
         size: VectorSize,
     },
 
-
     /// LD1 (load single structure, one register): LD1 {Vt.T}, [Xn]
     /// Loads entire vector from memory
     ld1: struct {
@@ -1730,7 +1722,6 @@ pub const Inst = union(enum) {
         addr: Reg,
         size: VectorSize,
     },
-
 
     /// INS (insert element from register): INS Vd.T[index], Vn.T[0]
     /// Inserts element from source lane 0 into destination lane
@@ -1759,7 +1750,6 @@ pub const Inst = union(enum) {
         size: VectorSize,
     },
 
-
     /// DUP (duplicate general-purpose register to vector): DUP Vd.T, Xn
     /// Duplicates scalar register to all vector lanes
     dup_scalar: struct {
@@ -1775,7 +1765,6 @@ pub const Inst = union(enum) {
         imm: u8,
         size: VectorSize,
     },
-
 
     /// SXTL (signed extend long): SXTL Vd.T, Vn.Tb
     /// Extends lower half elements with sign extension
@@ -1811,7 +1800,6 @@ pub const Inst = union(enum) {
         size: VectorSize, // Result size (.8h, .4s, .2d)
     },
 
-
     /// XTN (extract narrow): XTN Vd.Tb, Vn.T
     /// Narrows upper half of elements
     xtn: struct {
@@ -1836,7 +1824,6 @@ pub const Inst = union(enum) {
         size: VectorSize, // Source size (.8h, .4s, .2d)
     },
 
-
     /// TBL (table lookup, 1 register): TBL Vd.16B, {Vn.16B}, Vm.16B
     /// Looks up bytes using single table register
     tbl: struct {
@@ -1849,7 +1836,7 @@ pub const Inst = union(enum) {
     /// Looks up bytes using two consecutive table registers
     tbl2: struct {
         dst: WritableReg,
-        table: Reg,  // First of two consecutive registers
+        table: Reg, // First of two consecutive registers
         index: Reg,
     },
 
@@ -1860,7 +1847,6 @@ pub const Inst = union(enum) {
         table: Reg,
         index: Reg,
     },
-
 
     pub fn format(
         self: Inst,
@@ -2275,6 +2261,28 @@ pub const CondCode = enum {
             .gt => .le,
             .le => .gt,
             .al => .al,
+        };
+    }
+
+    /// Encode condition code to 4-bit value for instruction encoding.
+    /// Maps to ARM condition field encoding per ARM ARM.
+    pub fn bits(self: CondCode) u4 {
+        return switch (self) {
+            .eq => 0b0000, // Z == 1
+            .ne => 0b0001, // Z == 0
+            .hs => 0b0010, // C == 1 (unsigned >=)
+            .lo => 0b0011, // C == 0 (unsigned <)
+            .mi => 0b0100, // N == 1 (negative)
+            .pl => 0b0101, // N == 0 (positive or zero)
+            .vs => 0b0110, // V == 1 (overflow)
+            .vc => 0b0111, // V == 0 (no overflow)
+            .hi => 0b1000, // C == 1 and Z == 0 (unsigned >)
+            .ls => 0b1001, // C == 0 or Z == 1 (unsigned <=)
+            .ge => 0b1010, // N == V (signed >=)
+            .lt => 0b1011, // N != V (signed <)
+            .gt => 0b1100, // Z == 0 and N == V (signed >)
+            .le => 0b1101, // Z == 1 or N != V (signed <=)
+            .al => 0b1110, // Always (unconditional)
         };
     }
 };
