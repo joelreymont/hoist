@@ -674,6 +674,14 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Load register from literal pool (LDR Xt, label).
+    /// PC-relative load from literal pool.
+    ldr_literal: struct {
+        dst: WritableReg,
+        label: u32, // Label ID for literal pool entry
+        size: OperandSize,
+    },
+
     /// Load register with pre-index (LDR Xt, [Xn, #offset]!).
     /// Updates base register before memory access: base = base + offset, then load from base.
     ldr_pre: struct {
@@ -1935,6 +1943,7 @@ pub const Inst = union(enum) {
             .strh => |i| try writer.print("strh {}, [{}, #{d}]", .{ i.src, i.base, i.offset }),
             .stp => |i| try writer.print("stp.{} {}, {}, [{}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
             .ldp => |i| try writer.print("ldp.{} {}, {}, [{}, #{d}]", .{ i.size, i.dst1, i.dst2, i.base, i.offset }),
+            .ldr_literal => |i| try writer.print("ldr.{} {}, =label{d}", .{ i.size, i.dst, i.label }),
             .ldr_pre => |i| try writer.print("ldr.{} {}, [{}, #{d}]!", .{ i.size, i.dst, i.base, i.offset }),
             .ldr_post => |i| try writer.print("ldr.{} {}, [{}], #{d}", .{ i.size, i.dst, i.base, i.offset }),
             .str_pre => |i| try writer.print("str.{} {}, [{}, #{d}]!", .{ i.size, i.src, i.base, i.offset }),
@@ -2780,6 +2789,132 @@ pub fn aarch64_bic(dst: WritableReg, src1: Reg, src2: Reg, size: OperandSize) In
         .dst = dst,
         .src1 = src1,
         .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// Create conditional select instruction.
+/// Selects src1 if condition is true, otherwise src2.
+pub fn aarch64_csel(dst: WritableReg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize) Inst {
+    return .{ .csel = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .cond = cond,
+        .size = size,
+    } };
+}
+
+/// Create conditional select increment instruction.
+/// Selects src1 if condition is true, otherwise src2 + 1.
+pub fn aarch64_csinc(dst: WritableReg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize) Inst {
+    return .{ .csinc = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .cond = cond,
+        .size = size,
+    } };
+}
+
+/// Create conditional select invert instruction.
+/// Selects src1 if condition is true, otherwise ~src2.
+pub fn aarch64_csinv(dst: WritableReg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize) Inst {
+    return .{ .csinv = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .cond = cond,
+        .size = size,
+    } };
+}
+
+/// Create conditional select negate instruction.
+/// Selects src1 if condition is true, otherwise -src2.
+pub fn aarch64_csneg(dst: WritableReg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize) Inst {
+    return .{ .csneg = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .cond = cond,
+        .size = size,
+    } };
+}
+
+/// Create store register with register offset instruction.
+/// Stores register to memory: [base + offset].
+pub fn aarch64_str_reg(src: Reg, base: Reg, offset: Reg, size: OperandSize) Inst {
+    return .{ .str_reg = .{
+        .src = src,
+        .base = base,
+        .offset = offset,
+        .size = size,
+    } };
+}
+
+/// Create store register with immediate offset instruction.
+/// Stores register to memory: [base + offset].
+pub fn aarch64_str_imm(src: Reg, base: Reg, offset: i16, size: OperandSize) Inst {
+    return .{ .str = .{
+        .src = src,
+        .base = base,
+        .offset = offset,
+        .size = size,
+    } };
+}
+
+/// Create store pair instruction.
+/// Stores two registers to adjacent memory locations: [base + offset], [base + offset + size].
+pub fn aarch64_str_pair(src1: Reg, src2: Reg, base: Reg, offset: i16, size: OperandSize) Inst {
+    return .{ .stp = .{
+        .src1 = src1,
+        .src2 = src2,
+        .base = base,
+        .offset = offset,
+        .size = size,
+    } };
+}
+
+/// Create LDR immediate instruction: LDR Xt, [Xn, #offset]
+/// Load register from memory with immediate offset.
+pub fn aarch64_ldr_imm(dst: WritableReg, base: Reg, offset: i16, size: OperandSize) Inst {
+    return .{ .ldr = .{
+        .dst = dst,
+        .base = base,
+        .offset = offset,
+        .size = size,
+    } };
+}
+
+/// Create LDR register instruction: LDR Xt, [Xn, Xm]
+/// Load register from memory with register offset.
+pub fn aarch64_ldr_reg(dst: WritableReg, base: Reg, offset: Reg, size: OperandSize) Inst {
+    return .{ .ldr_reg = .{
+        .dst = dst,
+        .base = base,
+        .offset = offset,
+        .size = size,
+    } };
+}
+
+/// Create LDP instruction: LDP Xt1, Xt2, [Xn, #offset]
+/// Load pair of registers from memory.
+pub fn aarch64_ldr_pair(dst1: WritableReg, dst2: WritableReg, base: Reg, offset: i16, size: OperandSize) Inst {
+    return .{ .ldp = .{
+        .dst1 = dst1,
+        .dst2 = dst2,
+        .base = base,
+        .offset = offset,
+        .size = size,
+    } };
+}
+
+/// Create LDR literal instruction: LDR Xt, label
+/// Load register from literal pool using PC-relative addressing.
+pub fn aarch64_ldr_literal(dst: WritableReg, label: u32, size: OperandSize) Inst {
+    return .{ .ldr_literal = .{
+        .dst = dst,
+        .label = label,
         .size = size,
     } };
 }
@@ -3886,6 +4021,94 @@ test "aarch64_bic: register-register" {
     try testing.expectEqual(OperandSize.size32, inst32.bic_rr.size);
 }
 
+test "aarch64_csel constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst64 = aarch64_csel(wr0, r1, r2, .eq, .size64);
+    try testing.expectEqual(Inst.csel, @as(std.meta.Tag(Inst), inst64));
+    try testing.expectEqual(wr0, inst64.csel.dst);
+    try testing.expectEqual(r1, inst64.csel.src1);
+    try testing.expectEqual(r2, inst64.csel.src2);
+    try testing.expectEqual(CondCode.eq, inst64.csel.cond);
+    try testing.expectEqual(OperandSize.size64, inst64.csel.size);
+
+    const inst32 = aarch64_csel(wr0, r1, r2, .ne, .size32);
+    try testing.expectEqual(CondCode.ne, inst32.csel.cond);
+    try testing.expectEqual(OperandSize.size32, inst32.csel.size);
+}
+
+test "aarch64_csinc constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst64 = aarch64_csinc(wr0, r1, r2, .hs, .size64);
+    try testing.expectEqual(Inst.csinc, @as(std.meta.Tag(Inst), inst64));
+    try testing.expectEqual(wr0, inst64.csinc.dst);
+    try testing.expectEqual(r1, inst64.csinc.src1);
+    try testing.expectEqual(r2, inst64.csinc.src2);
+    try testing.expectEqual(CondCode.hs, inst64.csinc.cond);
+    try testing.expectEqual(OperandSize.size64, inst64.csinc.size);
+
+    const inst32 = aarch64_csinc(wr0, r1, r2, .lo, .size32);
+    try testing.expectEqual(CondCode.lo, inst32.csinc.cond);
+    try testing.expectEqual(OperandSize.size32, inst32.csinc.size);
+}
+
+test "aarch64_csinv constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst64 = aarch64_csinv(wr0, r1, r2, .mi, .size64);
+    try testing.expectEqual(Inst.csinv, @as(std.meta.Tag(Inst), inst64));
+    try testing.expectEqual(wr0, inst64.csinv.dst);
+    try testing.expectEqual(r1, inst64.csinv.src1);
+    try testing.expectEqual(r2, inst64.csinv.src2);
+    try testing.expectEqual(CondCode.mi, inst64.csinv.cond);
+    try testing.expectEqual(OperandSize.size64, inst64.csinv.size);
+
+    const inst32 = aarch64_csinv(wr0, r1, r2, .pl, .size32);
+    try testing.expectEqual(CondCode.pl, inst32.csinv.cond);
+    try testing.expectEqual(OperandSize.size32, inst32.csinv.size);
+}
+
+test "aarch64_csneg constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst64 = aarch64_csneg(wr0, r1, r2, .vs, .size64);
+    try testing.expectEqual(Inst.csneg, @as(std.meta.Tag(Inst), inst64));
+    try testing.expectEqual(wr0, inst64.csneg.dst);
+    try testing.expectEqual(r1, inst64.csneg.src1);
+    try testing.expectEqual(r2, inst64.csneg.src2);
+    try testing.expectEqual(CondCode.vs, inst64.csneg.cond);
+    try testing.expectEqual(OperandSize.size64, inst64.csneg.size);
+
+    const inst32 = aarch64_csneg(wr0, r1, r2, .vc, .size32);
+    try testing.expectEqual(CondCode.vc, inst32.csneg.cond);
+    try testing.expectEqual(OperandSize.size32, inst32.csneg.size);
+}
+
 test "aarch64_lsl constructor" {
     const v0 = VReg.new(0, .int);
     const v1 = VReg.new(1, .int);
@@ -3964,4 +4187,86 @@ test "aarch64_ror constructor" {
     try testing.expectEqual(Inst.ror_imm, @as(std.meta.Tag(Inst), inst_64));
     try testing.expectEqual(@as(u8, 16), inst_64.ror_imm.imm);
     try testing.expectEqual(OperandSize.size64, inst_64.ror_imm.size);
+}
+
+test "aarch64_ldr_imm constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_64 = aarch64_ldr_imm(wr0, r1, 16, .size64);
+    try testing.expectEqual(Inst.ldr, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(wr0, inst_64.ldr.dst);
+    try testing.expectEqual(r1, inst_64.ldr.base);
+    try testing.expectEqual(@as(i16, 16), inst_64.ldr.offset);
+    try testing.expectEqual(OperandSize.size64, inst_64.ldr.size);
+
+    const inst_32 = aarch64_ldr_imm(wr0, r1, -8, .size32);
+    try testing.expectEqual(Inst.ldr, @as(std.meta.Tag(Inst), inst_32));
+    try testing.expectEqual(@as(i16, -8), inst_32.ldr.offset);
+    try testing.expectEqual(OperandSize.size32, inst_32.ldr.size);
+}
+
+test "aarch64_ldr_reg constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_64 = aarch64_ldr_reg(wr0, r1, r2, .size64);
+    try testing.expectEqual(Inst.ldr_reg, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(wr0, inst_64.ldr_reg.dst);
+    try testing.expectEqual(r1, inst_64.ldr_reg.base);
+    try testing.expectEqual(r2, inst_64.ldr_reg.offset);
+    try testing.expectEqual(OperandSize.size64, inst_64.ldr_reg.size);
+
+    const inst_32 = aarch64_ldr_reg(wr0, r1, r2, .size32);
+    try testing.expectEqual(Inst.ldr_reg, @as(std.meta.Tag(Inst), inst_32));
+    try testing.expectEqual(OperandSize.size32, inst_32.ldr_reg.size);
+}
+
+test "aarch64_ldr_pair constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+    const wr1 = WritableReg.fromReg(r1);
+
+    const inst_64 = aarch64_ldr_pair(wr0, wr1, r2, 16, .size64);
+    try testing.expectEqual(Inst.ldp, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(wr0, inst_64.ldp.dst1);
+    try testing.expectEqual(wr1, inst_64.ldp.dst2);
+    try testing.expectEqual(r2, inst_64.ldp.base);
+    try testing.expectEqual(@as(i16, 16), inst_64.ldp.offset);
+    try testing.expectEqual(OperandSize.size64, inst_64.ldp.size);
+
+    const inst_32 = aarch64_ldr_pair(wr0, wr1, r2, -8, .size32);
+    try testing.expectEqual(Inst.ldp, @as(std.meta.Tag(Inst), inst_32));
+    try testing.expectEqual(@as(i16, -8), inst_32.ldp.offset);
+    try testing.expectEqual(OperandSize.size32, inst_32.ldp.size);
+}
+
+test "aarch64_ldr_literal constructor" {
+    const v0 = VReg.new(0, .int);
+    const r0 = Reg.fromVReg(v0);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_64 = aarch64_ldr_literal(wr0, 42, .size64);
+    try testing.expectEqual(Inst.ldr_literal, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(wr0, inst_64.ldr_literal.dst);
+    try testing.expectEqual(@as(u32, 42), inst_64.ldr_literal.label);
+    try testing.expectEqual(OperandSize.size64, inst_64.ldr_literal.size);
+
+    const inst_32 = aarch64_ldr_literal(wr0, 123, .size32);
+    try testing.expectEqual(Inst.ldr_literal, @as(std.meta.Tag(Inst), inst_32));
+    try testing.expectEqual(@as(u32, 123), inst_32.ldr_literal.label);
+    try testing.expectEqual(OperandSize.size32, inst_32.ldr_literal.size);
 }
