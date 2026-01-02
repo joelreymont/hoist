@@ -227,6 +227,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .uzp2 => |i| try emitUzp2(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .trn1 => |i| try emitTrn1(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .trn2 => |i| try emitTrn2(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .ld1 => |i| try emitLd1(i.dst.toReg(), i.addr, i.size, buffer),
+        .st1 => |i| try emitSt1(i.src, i.addr, i.size, buffer),
     }
 }
 
@@ -10723,6 +10725,54 @@ fn emitTrn2(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffe
         (0b011010 << 10) |
         (@as(u32, rn) << 5) |
         @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// LD1 (load single structure, one register): LD1 {Vt.T}, [Xn]
+/// Encoding: 0|Q|0011010|L|0|00000|opcode|size|Rn|Rt
+/// L=1 for load, opcode=0111 for single register
+fn emitLd1(dst: Reg, addr: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(dst);
+    const rn = hwEnc(addr);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0011010 << 23) |
+        (0b1 << 22) | // L=1 for load
+        (0b0 << 21) |
+        (0b00000 << 16) |
+        (0b0111 << 12) | // opcode for single register
+        (@as(u32, size) << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rt);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// ST1 (store single structure, one register): ST1 {Vt.T}, [Xn]
+/// Encoding: 0|Q|0011010|L|0|00000|opcode|size|Rn|Rt
+/// L=0 for store, opcode=0111 for single register
+fn emitSt1(src: Reg, addr: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(src);
+    const rn = hwEnc(addr);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0011010 << 23) |
+        (0b0 << 22) | // L=0 for store
+        (0b0 << 21) |
+        (0b00000 << 16) |
+        (0b0111 << 12) | // opcode for single register
+        (@as(u32, size) << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rt);
 
     const bytes = std.mem.toBytes(insn);
     try buffer.put(&bytes);

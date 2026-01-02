@@ -1563,6 +1563,23 @@ pub const Inst = union(enum) {
     },
 
 
+    /// LD1 (load single structure, one register): LD1 {Vt.T}, [Xn]
+    /// Loads entire vector from memory
+    ld1: struct {
+        dst: WritableReg,
+        addr: Reg,
+        size: VectorSize,
+    },
+
+    /// ST1 (store single structure, one register): ST1 {Vt.T}, [Xn]
+    /// Stores entire vector to memory
+    st1: struct {
+        src: Reg,
+        addr: Reg,
+        size: VectorSize,
+    },
+
+
     pub fn format(
         self: Inst,
         comptime _: []const u8,
@@ -1783,6 +1800,8 @@ pub const Inst = union(enum) {
             .uzp2 => |i| try writer.print("uzp2.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .trn1 => |i| try writer.print("trn1.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .trn2 => |i| try writer.print("trn2.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .ld1 => |i| try writer.print("ld1.{} {{{}}}, [{}]", .{ i.size, i.dst, i.addr }),
+            .st1 => |i| try writer.print("st1.{} {{{}}}, [{}]", .{ i.size, i.src, i.addr }),
         }
     }
 };
