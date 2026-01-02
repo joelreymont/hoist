@@ -14,6 +14,8 @@ const std = @import("std");
 const Context = @import("context.zig").Context;
 const CompiledCode = @import("context.zig").CompiledCode;
 const Function = @import("../ir.zig").Function;
+const Block = @import("../ir.zig").Block;
+const ir = @import("../ir.zig");
 
 /// Compilation error with context.
 pub const CompileError = struct {
@@ -134,7 +136,7 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
     // try ctx.domtree.compute(&ctx.cfg);
 
     // 4. Eliminate unreachable code
-    // TODO: Implement unreachable code elimination
+    _ = try eliminateUnreachableCode(ctx);
 
     // 5. Remove constant phis
     // TODO: Implement constant phi removal
@@ -144,6 +146,47 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
 
     // 7. E-graph optimization (if opt_level > 0)
     // TODO: Implement e-graph pass
+}
+
+/// Eliminate unreachable code.
+///
+/// Uses CFG to find blocks unreachable from entry and removes them.
+/// Returns true if any blocks were removed.
+fn eliminateUnreachableCode(ctx: *Context) CodegenError!bool {
+    const entry = ctx.func.layout.entryBlock() orelse return false;
+
+    var changed = false;
+    var reachable = std.AutoHashMap(Block, void).init(ctx.allocator);
+    defer reachable.deinit();
+
+    // Mark all reachable blocks using worklist algorithm
+    var worklist = std.ArrayList(Block).init(ctx.allocator);
+    defer worklist.deinit();
+
+    try worklist.append(entry);
+    try reachable.put(entry, {});
+
+    while (worklist.items.len > 0) {
+        const block = worklist.pop();
+        var succ_iter = ctx.cfg.succIter(block);
+        while (succ_iter.next()) |succ| {
+            if (!reachable.contains(succ)) {
+                try reachable.put(succ, {});
+                try worklist.append(succ);
+            }
+        }
+    }
+
+    // Remove unreachable blocks
+    var block_iter = ctx.func.layout.blockIter();
+    while (block_iter.next()) |block| {
+        if (!reachable.contains(block)) {
+            ctx.func.layout.removeBlock(block);
+            changed = true;
+        }
+    }
+
+    return changed;
 }
 
 /// Legalize IR for target.
