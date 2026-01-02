@@ -1608,6 +1608,41 @@ pub const Inst = union(enum) {
     },
 
 
+    /// SXTL (signed extend long): SXTL Vd.T, Vn.Tb
+    /// Extends lower half elements with sign extension
+    sxtl: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VectorSize, // Result size (.8h, .4s, .2d)
+    },
+
+    /// UXTL (unsigned extend long): UXTL Vd.T, Vn.Tb
+    /// Extends lower half elements with zero extension
+    uxtl: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VectorSize, // Result size (.8h, .4s, .2d)
+    },
+
+    /// SADDL (signed add long): SADDL Vd.T, Vn.Tb, Vm.Tb
+    /// Adds lower half elements with widening
+    saddl: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize, // Result size (.8h, .4s, .2d)
+    },
+
+    /// UADDL (unsigned add long): UADDL Vd.T, Vn.Tb, Vm.Tb
+    /// Adds lower half elements with widening
+    uaddl: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize, // Result size (.8h, .4s, .2d)
+    },
+
+
     pub fn format(
         self: Inst,
         comptime _: []const u8,
@@ -1833,6 +1868,10 @@ pub const Inst = union(enum) {
             .ins => |i| try writer.print("ins.{} {{}}[{d}], {{}}[0]", .{ i.size, i.dst, i.index, i.src }),
             .ext => |i| try writer.print("ext.16b {}, {}, {}, #{d}", .{ i.dst, i.src1, i.src2, i.imm }),
             .dup_elem => |i| try writer.print("dup.{} {}, {{}}[{d}]", .{ i.size, i.dst, i.src, i.index }),
+            .sxtl => |i| try writer.print("sxtl.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .uxtl => |i| try writer.print("uxtl.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .saddl => |i| try writer.print("saddl.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .uaddl => |i| try writer.print("uaddl.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
         }
     }
 };

@@ -232,6 +232,10 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .ins => |i| try emitIns(i.dst.toReg(), i.src, i.index, i.size, buffer),
         .ext => |i| try emitExt(i.dst.toReg(), i.src1, i.src2, i.imm, buffer),
         .dup_elem => |i| try emitDupElem(i.dst.toReg(), i.src, i.index, i.size, buffer),
+        .sxtl => |i| try emitSxtl(i.dst.toReg(), i.src, i.size, buffer),
+        .uxtl => |i| try emitUxtl(i.dst.toReg(), i.src, i.size, buffer),
+        .saddl => |i| try emitSaddl(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .uaddl => |i| try emitUaddl(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
     }
 }
 
@@ -10860,6 +10864,122 @@ fn emitDupElem(dst: Reg, src: Reg, index: u4, vec_size: VectorSize, buffer: *buf
         (@as(u32, imm5) << 16) |
         (0b0 << 15) |
         (0b00001 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// SXTL (signed extend long): SXTL Vd.T, Vn.Tb
+/// Encoding: 0|Q|0|01111|immh|immb|101001|Rn|Rd
+/// immh:immb = shift amount (element width for extend)
+fn emitSxtl(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    // immh encodes destination element size
+    const immh: u4 = switch (vec_size) {
+        .h8 => 0b0001, // 8b -> 8h
+        .s4 => 0b0010, // 4h -> 4s
+        .d2 => 0b0100, // 2s -> 2d
+        else => unreachable,
+    };
+
+    const insn: u32 = (0b0 << 31) |
+        (0b1 << 30) | // Q=1 for full width result
+        (0b0 << 29) |
+        (0b01111 << 24) |
+        (@as(u32, immh) << 19) |
+        (0b000 << 16) | // immb=000
+        (0b101001 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// UXTL (unsigned extend long): UXTL Vd.T, Vn.Tb
+/// Encoding: 0|Q|1|01111|immh|immb|101001|Rn|Rd
+fn emitUxtl(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    const immh: u4 = switch (vec_size) {
+        .h8 => 0b0001,
+        .s4 => 0b0010,
+        .d2 => 0b0100,
+        else => unreachable,
+    };
+
+    const insn: u32 = (0b0 << 31) |
+        (0b1 << 30) | // Q=1
+        (0b1 << 29) | // U=1 for unsigned
+        (0b01111 << 24) |
+        (@as(u32, immh) << 19) |
+        (0b000 << 16) |
+        (0b101001 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// SADDL (signed add long): SADDL Vd.T, Vn.Tb, Vm.Tb
+/// Encoding: 0|Q|0|01110|size|1|Rm|000000|Rn|Rd
+/// Q=0 for lower half, size encodes source element size
+fn emitSaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+
+    // size encodes source element size
+    const size: u2 = switch (vec_size) {
+        .h8 => 0b00, // 8b + 8b -> 8h
+        .s4 => 0b01, // 4h + 4h -> 4s
+        .d2 => 0b10, // 2s + 2s -> 2d
+        else => unreachable,
+    };
+
+    const insn: u32 = (0b0 << 31) |
+        (0b0 << 30) | // Q=0 for lower half
+        (0b0 << 29) | // U=0 for signed
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b1 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b000000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// UADDL (unsigned add long): UADDL Vd.T, Vn.Tb, Vm.Tb
+/// Encoding: 0|Q|1|01110|size|1|Rm|000000|Rn|Rd
+fn emitUaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+
+    const size: u2 = switch (vec_size) {
+        .h8 => 0b00,
+        .s4 => 0b01,
+        .d2 => 0b10,
+        else => unreachable,
+    };
+
+    const insn: u32 = (0b0 << 31) |
+        (0b0 << 30) | // Q=0
+        (0b1 << 29) | // U=1 for unsigned
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b1 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b000000 << 10) |
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
