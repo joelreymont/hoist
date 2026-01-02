@@ -284,6 +284,48 @@ pub const Parser = struct {
         var iflets = std.ArrayList(ast.IfLet){};
         errdefer iflets.deinit(self.allocator);
 
+        // Parse optional if-let guards: (if-let pattern expr)
+        while (true) {
+            const tok = self.peek() orelse break;
+            if (tok != .lparen) break;
+
+            // Peek ahead to see if this is an if-let
+            const saved_current = self.current;
+            _ = try self.expect(.lparen);
+
+            const is_iflet = blk: {
+                if (self.peek()) |next_tok| {
+                    if (next_tok == .symbol) {
+                        const sym = next_tok.symbol;
+                        if (std.mem.eql(u8, sym, "if-let")) {
+                            break :blk true;
+                        }
+                    }
+                }
+                break :blk false;
+            };
+
+            if (!is_iflet) {
+                // Not an if-let, restore and break
+                self.current = saved_current;
+                break;
+            }
+
+            // Consume "if-let" symbol
+            _ = try self.expectSymbol();
+
+            const iflet_pos = self.peekPos().?;
+            const iflet_pattern = try self.parsePattern();
+            const iflet_expr = try self.parseExpr();
+            _ = try self.expect(.rparen);
+
+            try iflets.append(self.allocator, ast.IfLet{
+                .pattern = iflet_pattern,
+                .expr = iflet_expr,
+                .pos = iflet_pos,
+            });
+        }
+
         const expr = try self.parseExpr();
         _ = try self.expect(.rparen);
 
