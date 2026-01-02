@@ -224,3 +224,73 @@ test "CFG: invalidate block successors" {
     var succ_after = cfg.succIter(b0);
     try testing.expect(succ_after.next() == null);
 }
+
+// Test: CFG validation
+
+test "CFG: validation passes for valid CFG" {
+    var cfg = ControlFlowGraph.init(testing.allocator);
+    defer cfg.deinit();
+
+    var func = root.ir.Function.init(testing.allocator);
+    defer func.deinit();
+
+    // Create simple two-block CFG
+    const b0 = try func.dfg.blocks.add();
+    const b1 = try func.dfg.blocks.add();
+
+    // Add blocks to layout
+    try func.layout.appendBlock(b0);
+    try func.layout.appendBlock(b1);
+
+    // Create jump from b0 to b1
+    const jump_data = root.ir.InstructionData{
+        .jump = .{ .opcode = .jump, .destination = b1 },
+    };
+    const jump_inst = try func.dfg.makeInst(jump_data);
+    try func.layout.appendInst(jump_inst, b0);
+
+    // Compute CFG
+    try cfg.compute(&func);
+    try testing.expect(cfg.isValid());
+
+    // Validate - should pass
+    try cfg.validate(&func);
+}
+
+test "CFG: validation detects missing edge" {
+    var cfg = ControlFlowGraph.init(testing.allocator);
+    defer cfg.deinit();
+
+    // Manually create inconsistent CFG
+    const b0 = root.entities.Block.new(0);
+    const b1 = root.entities.Block.new(1);
+    const i0 = root.entities.Inst.new(0);
+
+    try cfg.data.resize(2);
+    for (0..2) |i| {
+        cfg.data.items[i] = cfg_mod.CFGNode.init(testing.allocator);
+    }
+
+    // Add successor but not predecessor (inconsistent!)
+    try cfg.data.items[0].successors.put(b1, {});
+    cfg.valid = true;
+
+    // Create minimal function for validation
+    var func = root.ir.Function.init(testing.allocator);
+    defer func.deinit();
+
+    const block0 = try func.dfg.blocks.add();
+    const block1 = try func.dfg.blocks.add();
+    try func.layout.appendBlock(block0);
+    try func.layout.appendBlock(block1);
+
+    const jump_data = root.ir.InstructionData{
+        .jump = .{ .opcode = .jump, .destination = block1 },
+    };
+    const jump_inst = try func.dfg.makeInst(jump_data);
+    try func.layout.appendInst(jump_inst, block0);
+
+    // Validation should detect inconsistency
+    const result = cfg.validate(&func);
+    try testing.expectError(error.MissingPredecessorEdge, result);
+}

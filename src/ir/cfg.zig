@@ -191,6 +191,73 @@ pub const ControlFlowGraph = struct {
     pub fn isValid(self: *const ControlFlowGraph) bool {
         return self.valid;
     }
+
+    /// Validate CFG consistency.
+    /// Returns error if CFG is malformed.
+    pub fn validate(self: *const ControlFlowGraph, func: *const Function) !void {
+        if (!self.valid) return error.CFGNotComputed;
+
+        // Validate all blocks in layout
+        var block_iter = func.layout.blocks();
+        while (block_iter.next()) |block| {
+            try self.validateBlock(func, block);
+        }
+    }
+
+    fn validateBlock(self: *const ControlFlowGraph, func: *const Function, block: Block) !void {
+        const block_data = func.layout.block_data.get(block) orelse return error.BlockNotInLayout;
+
+        // Get last instruction (terminator)
+        const last_inst = block_data.last_inst orelse return;
+        const inst_data = func.dfg.insts.get(last_inst) orelse return error.InvalidTerminator;
+
+        // Verify successors match terminator targets
+        switch (inst_data.opcode) {
+            .jump => {
+                try self.validateJump(block, last_inst, inst_data.data.jump.destination);
+            },
+            .brif => {
+                if (inst_data.data.branch.then_dest) |then_dest| {
+                    try self.validateEdge(block, last_inst, then_dest);
+                }
+                if (inst_data.data.branch.else_dest) |else_dest| {
+                    try self.validateEdge(block, last_inst, else_dest);
+                }
+            },
+            .br_table => {
+                if (inst_data.data.br_table.default_dest) |default| {
+                    try self.validateEdge(block, last_inst, default);
+                }
+                for (inst_data.data.br_table.table) |dest| {
+                    try self.validateEdge(block, last_inst, dest);
+                }
+            },
+            else => {}, // Non-branching terminator
+        }
+    }
+
+    fn validateJump(self: *const ControlFlowGraph, from: Block, inst: Inst, to_opt: ?Block) !void {
+        const to = to_opt orelse return error.MissingJumpTarget;
+        try self.validateEdge(from, inst, to);
+    }
+
+    fn validateEdge(self: *const ControlFlowGraph, from: Block, from_inst: Inst, to: Block) !void {
+        const from_idx = from.index();
+        const to_idx = to.index();
+
+        // Verify forward edge: from -> to
+        if (!self.data.items[from_idx].successors.contains(to)) {
+            return error.MissingSuccessorEdge;
+        }
+
+        // Verify backward edge: to has from as predecessor
+        const pred_block = self.data.items[to_idx].predecessors.get(from_inst) orelse
+            return error.MissingPredecessorEdge;
+
+        if (!pred_block.eql(from)) {
+            return error.InconsistentPredecessor;
+        }
+    }
 };
 
 pub const PredIterator = struct {
