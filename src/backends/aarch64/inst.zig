@@ -11,6 +11,7 @@ pub const WritableReg = reg_mod.WritableReg;
 
 /// ARM64 machine instruction.
 /// Minimal bootstrap set - full aarch64 backend needs ~100+ variants.
+
 pub const Inst = union(enum) {
     /// Move register to register (MOV Xd, Xn).
     mov_rr: struct {
@@ -1928,6 +1929,9 @@ pub const Inst = union(enum) {
             .tbl => |i| try writer.print("tbl.16b {}, {{{}}}, {}", .{ i.dst, i.table, i.index }),
             .tbl2 => |i| try writer.print("tbl.16b {}, {{{}, v{d}}}, {}", .{ i.dst, i.table, i.table.toVReg().nr() + 1, i.index }),
             .tbx => |i| try writer.print("tbx.16b {}, {{{}}}, {}", .{ i.dst, i.table, i.index }),
+            .dmb => |i| try writer.print("dmb {}", .{i.option}),
+            .dsb => |i| try writer.print("dsb {}", .{i.option}),
+            .isb => try writer.writeAll("isb"),
         }
     }
 };

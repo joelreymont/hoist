@@ -5,6 +5,7 @@ const root = @import("root");
 const Inst = root.aarch64_inst.Inst;
 const OperandSize = root.aarch64_inst.OperandSize;
 const VectorSize = root.aarch64_inst.VectorSize;
+const BarrierOption = root.aarch64_inst.BarrierOption;
 const CondCode = root.aarch64_inst.CondCode;
 const Reg = root.aarch64_inst.Reg;
 const PReg = root.aarch64_inst.PReg;
@@ -242,6 +243,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .tbl => |i| try emitTbl(i.dst.toReg(), i.table, i.index, buffer),
         .tbl2 => |i| try emitTbl2(i.dst.toReg(), i.table, i.index, buffer),
         .tbx => |i| try emitTbx(i.dst.toReg(), i.table, i.index, buffer),
+        .dmb => |i| try emitDmb(i.option, buffer),
+        .dsb => |i| try emitDsb(i.option, buffer),
+        .isb => try emitIsb(buffer),
     }
 }
 
@@ -11140,3 +11144,4 @@ fn emitTbx(dst: Reg, table: Reg, index: Reg, buffer: *buffer_mod.MachBuffer) !vo
     const bytes = std.mem.toBytes(insn);
     try buffer.put(&bytes);
 }
+
