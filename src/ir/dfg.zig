@@ -374,6 +374,95 @@ pub const DataFlowGraph = struct {
             }
         }
     }
+
+    /// Replace all uses of a value with another value.
+    /// Walks all instructions and updates operands.
+    pub fn replaceAllUses(self: *Self, old_value: Value, new_value: Value) !void {
+        const block_call = @import("block_call.zig");
+
+        for (self.insts.elems.items) |*inst_data| {
+            switch (inst_data.*) {
+                .unary => |*data| {
+                    if (std.meta.eql(data.arg, old_value)) {
+                        data.arg = new_value;
+                    }
+                },
+                .binary => |*data| {
+                    if (std.meta.eql(data.args[0], old_value)) {
+                        data.args[0] = new_value;
+                    }
+                    if (std.meta.eql(data.args[1], old_value)) {
+                        data.args[1] = new_value;
+                    }
+                },
+                .int_compare => |*data| {
+                    if (std.meta.eql(data.args[0], old_value)) {
+                        data.args[0] = new_value;
+                    }
+                    if (std.meta.eql(data.args[1], old_value)) {
+                        data.args[1] = new_value;
+                    }
+                },
+                .float_compare => |*data| {
+                    if (std.meta.eql(data.args[0], old_value)) {
+                        data.args[0] = new_value;
+                    }
+                    if (std.meta.eql(data.args[1], old_value)) {
+                        data.args[1] = new_value;
+                    }
+                },
+                .branch => |*data| {
+                    const slice = self.value_lists.asMutSlice(data.destination.values);
+                    if (slice.len > 1) {
+                        var i: usize = 1;
+                        while (i < slice.len) : (i += 1) {
+                            var v: Value = undefined;
+                            var index: u32 = undefined;
+                            const tag = block_call.BlockArg.decodeFromValue(slice[i], &v, &index);
+                            if (tag == .value and std.meta.eql(v, old_value)) {
+                                slice[i] = block_call.BlockArg.fromValue(new_value).encodeAsValue(new_value, 0);
+                            }
+                        }
+                    }
+                },
+                .branch_table => |*data| {
+                    if (std.meta.eql(data.arg, old_value)) {
+                        data.arg = new_value;
+                    }
+                },
+                .call => |*data| {
+                    const slice = self.value_lists.asMutSlice(data.args);
+                    for (slice) |*val| {
+                        if (std.meta.eql(val.*, old_value)) {
+                            val.* = new_value;
+                        }
+                    }
+                },
+                .call_indirect => |*data| {
+                    const slice = self.value_lists.asMutSlice(data.args);
+                    for (slice) |*val| {
+                        if (std.meta.eql(val.*, old_value)) {
+                            val.* = new_value;
+                        }
+                    }
+                },
+                .load => |*data| {
+                    if (std.meta.eql(data.arg, old_value)) {
+                        data.arg = new_value;
+                    }
+                },
+                .store => |*data| {
+                    if (std.meta.eql(data.args[0], old_value)) {
+                        data.args[0] = new_value;
+                    }
+                    if (std.meta.eql(data.args[1], old_value)) {
+                        data.args[1] = new_value;
+                    }
+                },
+                .jump, .nullary => {},
+            }
+        }
+    }
 };
 
 test "DataFlowGraph makeInst" {
@@ -397,4 +486,3 @@ test "DataFlowGraph append result" {
     try testing.expectEqual(@as(usize, 1), dfg.numResults(inst));
     try testing.expectEqual(result, dfg.firstResult(inst).?);
 }
-

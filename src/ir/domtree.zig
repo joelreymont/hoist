@@ -515,3 +515,197 @@ test "DominatorTree idominator" {
     const b1_idom = tree.idominator(b1).?;
     try testing.expect(std.meta.eql(b1_idom, b0));
 }
+
+/// Post-dominator tree for control flow analysis.
+/// Post-dominance: Block X post-dominates Y if all paths from Y to exit go through X.
+pub const PostDominatorTree = struct {
+    /// Immediate post-dominator for each block.
+    ipdom: PrimaryMap(Block, ?Block),
+
+    /// Post-dominator tree children.
+    children: std.AutoHashMap(Block, std.ArrayList(Block)),
+
+    /// Allocator.
+    allocator: Allocator,
+
+    pub fn init(allocator: Allocator) PostDominatorTree {
+        return .{
+            .ipdom = PrimaryMap(Block, ?Block).init(),
+            .children = std.AutoHashMap(Block, std.ArrayList(Block)).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *PostDominatorTree) void {
+        self.ipdom.deinit(self.allocator);
+
+        var iter = self.children.valueIterator();
+        while (iter.next()) |list| {
+            list.deinit();
+        }
+        self.children.deinit();
+    }
+
+    /// Compute post-dominator tree using reverse CFG.
+    /// Same algorithm as dominator tree but on reversed edges.
+    pub fn compute(
+        self: *PostDominatorTree,
+        allocator: Allocator,
+        exit: Block,
+        cfg: *const CFG,
+    ) !void {
+        // Clear existing tree
+        self.ipdom.deinit(allocator);
+        var child_iter = self.children.valueIterator();
+        while (child_iter.next()) |list| {
+            list.deinit();
+        }
+        self.children.clearRetainingCapacity();
+        self.ipdom = PrimaryMap(Block, ?Block).init();
+
+        // Exit block has no immediate post-dominator
+        try self.ipdom.set(allocator, exit, null);
+
+        // Build reverse postorder from exit (using predecessors as successors)
+        var rpo = std.ArrayList(Block).init(allocator);
+        defer rpo.deinit();
+
+        var visited = std.AutoHashMap(Block, void).init(allocator);
+        defer visited.deinit();
+
+        try collectReachableReverse(cfg, exit, &visited, &rpo);
+        std.mem.reverse(Block, rpo.items);
+
+        // Fixed-point iteration
+        var changed = true;
+        while (changed) {
+            changed = false;
+
+            for (rpo.items) |block| {
+                if (std.meta.eql(block, exit)) continue;
+
+                // Compute ipdom as intersection of successors' ipdoms
+                const succs = cfg.successors(block);
+                if (succs.len == 0) continue;
+
+                var new_ipdom: ?Block = null;
+                for (succs) |succ| {
+                    const succ_ipdom = self.ipdom.get(succ) orelse continue;
+                    if (succ_ipdom) |s_ipdom| {
+                        new_ipdom = if (new_ipdom) |n| intersect(self, n, s_ipdom, allocator) else s_ipdom;
+                    }
+                }
+
+                const old_ipdom = self.ipdom.get(block) orelse null;
+                if (!std.meta.eql(old_ipdom, new_ipdom)) {
+                    try self.ipdom.set(allocator, block, new_ipdom);
+                    changed = true;
+                }
+            }
+        }
+
+        // Build children map
+        for (rpo.items) |block| {
+            if (self.ipdom.get(block)) |maybe_ipdom| {
+                if (maybe_ipdom) |ipdom| {
+                    const entry = try self.children.getOrPut(ipdom);
+                    if (!entry.found_existing) {
+                        entry.value_ptr.* = std.ArrayList(Block).init(allocator);
+                    }
+                    try entry.value_ptr.append(block);
+                }
+            }
+        }
+    }
+
+    /// Check if block `a` post-dominates block `b`.
+    pub fn postDominates(self: *const PostDominatorTree, a: Block, b: Block) bool {
+        if (std.meta.eql(a, b)) return true;
+
+        var current = b;
+        while (self.ipdom.get(current)) |maybe_ipdom| {
+            const ipdom = maybe_ipdom orelse break;
+            if (std.meta.eql(ipdom, a)) return true;
+            current = ipdom;
+        } else {
+            return false;
+        }
+        return false;
+    }
+
+    /// Get immediate post-dominator of a block.
+    pub fn ipostDominator(self: *const PostDominatorTree, block: Block) ?Block {
+        return self.ipdom.get(block) orelse null;
+    }
+};
+
+fn collectReachableReverse(
+    cfg: *const CFG,
+    block: Block,
+    visited: *std.AutoHashMap(Block, void),
+    postorder: *std.ArrayList(Block),
+) !void {
+    if (visited.contains(block)) return;
+    try visited.put(block, {});
+
+    // Visit predecessors (reverse direction)
+    const preds = cfg.predecessors(block);
+    for (preds) |pred| {
+        try collectReachableReverse(cfg, pred, visited, postorder);
+    }
+
+    try postorder.append(block);
+}
+
+fn intersect(
+    tree: *const PostDominatorTree,
+    b1: Block,
+    b2: Block,
+    allocator: Allocator,
+) Block {
+    _ = allocator;
+    var finger1 = b1;
+    var finger2 = b2;
+
+    while (!std.meta.eql(finger1, finger2)) {
+        while (blockDepthPdom(tree, finger1) > blockDepthPdom(tree, finger2)) {
+            const ipdom = tree.ipdom.get(finger1) orelse break;
+            finger1 = ipdom orelse break;
+        }
+        while (blockDepthPdom(tree, finger2) > blockDepthPdom(tree, finger1)) {
+            const ipdom = tree.ipdom.get(finger2) orelse break;
+            finger2 = ipdom orelse break;
+        }
+
+        if (std.meta.eql(finger1, finger2)) break;
+
+        const ipdom1 = tree.ipdom.get(finger1) orelse break;
+        const ipdom2 = tree.ipdom.get(finger2) orelse break;
+
+        finger1 = ipdom1 orelse break;
+        finger2 = ipdom2 orelse break;
+    }
+
+    return finger1;
+}
+
+fn blockDepthPdom(tree: *const PostDominatorTree, block: Block) u32 {
+    var depth: u32 = 0;
+    var current = block;
+    while (tree.ipdom.get(current)) |maybe_ipdom| {
+        const ipdom = maybe_ipdom orelse return depth;
+        depth += 1;
+        current = ipdom;
+    }
+    return depth;
+}
+
+test "PostDominatorTree basic" {
+    var tree = PostDominatorTree.init(testing.allocator);
+    defer tree.deinit();
+
+    const exit = Block.new(0);
+    try tree.ipdom.set(testing.allocator, exit, null);
+
+    try testing.expect(tree.ipostDominator(exit) == null);
+}
