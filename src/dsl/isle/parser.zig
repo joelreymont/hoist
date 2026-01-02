@@ -10,10 +10,16 @@ const Lexer = lexer_mod.Lexer;
 const Token = token_mod.Token;
 const Pos = token_mod.Pos;
 
+pub const ParseError = struct {
+    message: []const u8,
+    pos: Pos,
+};
+
 pub const Parser = struct {
     lexer: *Lexer,
     allocator: Allocator,
     current: ?struct { Pos, Token },
+    errors: std.ArrayList(ParseError),
 
     const Self = @This();
 
@@ -22,9 +28,27 @@ pub const Parser = struct {
             .lexer = lexer,
             .allocator = allocator,
             .current = null,
+            .errors = std.ArrayList(ParseError).init(allocator),
         };
         try self.advance();
         return self;
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.errors.deinit();
+    }
+
+    fn reportError(self: *Self, message: []const u8, pos: Pos) !void {
+        try self.errors.append(.{ .message = message, .pos = pos });
+    }
+
+    fn synchronize(self: *Self) !void {
+        // Skip tokens until we find a sync point (top-level lparen or EOF)
+        while (self.current) |_| {
+            const tok = self.peek() orelse break;
+            if (tok == .lparen) break;
+            try self.advance();
+        }
     }
 
     fn advance(self: *Self) !void {
