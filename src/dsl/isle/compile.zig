@@ -21,6 +21,13 @@ pub const match = struct {
     pub const estimateCost = match_mod.estimateCost;
 };
 
+// Zig code emission module
+pub const emit_zig = struct {
+    const emit_mod = @import("codegen/emit_zig.zig");
+    pub const ZigEmitter = emit_mod.ZigEmitter;
+    pub const ZigCodegenOptions = emit_mod.ZigCodegenOptions;
+};
+
 /// Source input for compilation.
 pub const Source = struct {
     /// Source file name (for error messages).
@@ -266,4 +273,49 @@ test "match tree: basic compilation" {
     // Verify cost estimation works
     const cost = match.estimateCost(tree);
     try testing.expect(cost > 0);
+}
+
+test "emit_zig: basic code generation" {
+    var typeenv = sema_mod.TypeEnv.init(testing.allocator);
+    defer typeenv.deinit();
+
+    var termenv = sema_mod.TermEnv.init(testing.allocator);
+    defer termenv.deinit();
+
+    // Create a simple type
+    const i32_sym = try typeenv.internSym("i32");
+    const i32_ty = try typeenv.addType(.{ .primitive = .{
+        .id = sema_mod.TypeId.new(0),
+        .name = i32_sym,
+        .pos = sema_mod.Pos.new(0, 0),
+    } });
+
+    // Create a term: iadd(i32, i32) -> i32
+    const add_sym = try typeenv.internSym("iadd");
+    const add_term = sema_mod.Term{
+        .name = add_sym,
+        .id = sema_mod.TermId.new(0),
+        .kind = .{ .decl = .{
+            .arg_tys = @constCast(&[_]sema_mod.TypeId{ i32_ty, i32_ty }),
+            .ret_ty = i32_ty,
+            .pure = true,
+        } },
+        .pos = sema_mod.Pos.new(0, 0),
+    };
+    const term_id = try termenv.addTerm(add_term);
+
+    var ruleset = @import("trie.zig").RuleSet.init(testing.allocator);
+    defer ruleset.deinit();
+
+    var emitter = emit_zig.ZigEmitter.init(testing.allocator, &typeenv, &termenv, &ruleset);
+    defer emitter.deinit();
+
+    const code = try emitter.generate(term_id, .{});
+
+    // Verify basic structure
+    try testing.expect(std.mem.indexOf(u8, code, "pub fn iadd") != null);
+    try testing.expect(std.mem.indexOf(u8, code, "arg0: i32") != null);
+    try testing.expect(std.mem.indexOf(u8, code, "arg1: i32") != null);
+    try testing.expect(std.mem.indexOf(u8, code, "ctx: *Context") != null);
+    try testing.expect(std.mem.indexOf(u8, code, "return error.NoMatch") != null);
 }

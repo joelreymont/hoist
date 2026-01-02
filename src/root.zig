@@ -51,6 +51,20 @@ pub const isle_trie = @import("dsl/isle/trie.zig");
 pub const isle_codegen = @import("dsl/isle/codegen.zig");
 pub const isle_compile = @import("dsl/isle/compile.zig");
 pub const isle_runtime = @import("dsl/isle/runtime.zig");
+
+pub const dsl = struct {
+    pub const isle = struct {
+        pub const sema = isle_sema;
+        pub const trie = isle_trie;
+        pub const codegen = struct {
+            pub const match = @import("dsl/isle/codegen/match.zig");
+            pub const constructors = @import("dsl/isle/codegen/constructors.zig");
+            pub const extractors = @import("dsl/isle/codegen/extractors.zig");
+        };
+        pub const compile = isle_compile;
+        pub const runtime = isle_runtime;
+    };
+};
 pub const reg = @import("machinst/reg.zig");
 pub const machinst = @import("machinst/machinst.zig");
 pub const buffer = @import("machinst/buffer.zig");
