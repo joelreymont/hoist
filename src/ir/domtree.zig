@@ -298,6 +298,87 @@ pub const DominatorTree = struct {
         if (std.meta.eql(a, b)) return false;
         return self.dominates(a, b);
     }
+
+    /// Verify dominator tree properties.
+    /// Returns error if invariants are violated.
+    pub fn verify(self: *const DominatorTree, allocator: Allocator, entry: Block, cfg: *const CFG) !void {
+        // 1. Entry block should have no idom
+        if (self.idom.get(entry)) |maybe_entry_idom| {
+            if (maybe_entry_idom != null) {
+                return error.EntryBlockHasIdom;
+            }
+        }
+
+        // 2. Every reachable block (except entry) should have an idom
+        var reachable = std.AutoHashMap(Block, void).init(allocator);
+        defer reachable.deinit();
+
+        // Compute reachable blocks from entry via CFG
+        var worklist = std.ArrayList(Block).init(allocator);
+        defer worklist.deinit();
+
+        try worklist.append(entry);
+        try reachable.put(entry, {});
+
+        while (worklist.items.len > 0) {
+            const block = worklist.pop();
+            const succs = cfg.successors(block);
+            for (succs) |succ| {
+                if (!reachable.contains(succ)) {
+                    try reachable.put(succ, {});
+                    try worklist.append(succ);
+                }
+            }
+        }
+
+        // Check all reachable blocks have idom (except entry)
+        var iter = reachable.keyIterator();
+        while (iter.next()) |block| {
+            if (std.meta.eql(block.*, entry)) continue;
+
+            if (self.idom.get(block.*)) |maybe_idom| {
+                if (maybe_idom == null) {
+                    return error.ReachableBlockWithoutIdom;
+                }
+            } else {
+                return error.ReachableBlockWithoutIdom;
+            }
+        }
+
+        // 3. Verify dominator property: idom(b) must dominate all predecessors of b
+        iter = reachable.keyIterator();
+        while (iter.next()) |block| {
+            if (std.meta.eql(block.*, entry)) continue;
+
+            const idom_block = self.idom.get(block.*) orelse continue;
+            const idom = idom_block orelse continue;
+
+            const preds = cfg.predecessors(block.*);
+            for (preds) |pred| {
+                if (!self.dominates(idom, pred)) {
+                    return error.IdomDoesNotDominatePredecessor;
+                }
+            }
+        }
+
+        // 4. Verify no cycles in dominator tree
+        iter = reachable.keyIterator();
+        while (iter.next()) |block| {
+            var visited = std.AutoHashMap(Block, void).init(allocator);
+            defer visited.deinit();
+
+            var current = block.*;
+            while (self.idom.get(current)) |maybe_idom| {
+                const idom = maybe_idom orelse break;
+
+                if (visited.contains(idom)) {
+                    return error.DominatorTreeCycle;
+                }
+                try visited.put(idom, {});
+                current = idom;
+            }
+        }
+    }
 };
 
 /// Control flow graph representation (stub for domtree computation).
@@ -434,4 +515,3 @@ test "DominatorTree idominator" {
     const b1_idom = tree.idominator(b1).?;
     try testing.expect(std.meta.eql(b1_idom, b0));
 }
-
