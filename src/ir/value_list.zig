@@ -44,6 +44,7 @@ pub const ValueListPool = struct {
     data: std.ArrayList(Value),
     /// Heads of free lists, one per size class
     free_lists: std.ArrayList(usize),
+    allocator: Allocator,
 
     const SizeClass = u8;
 
@@ -65,14 +66,15 @@ pub const ValueListPool = struct {
 
     pub fn init(allocator: Allocator) ValueListPool {
         return .{
-            .data = std.ArrayList(Value).init(allocator),
-            .free_lists = std.ArrayList(usize).init(allocator),
+            .data = .{},
+            .free_lists = .{},
+            .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *ValueListPool) void {
-        self.data.deinit();
-        self.free_lists.deinit();
+        self.data.deinit(self.allocator);
+        self.free_lists.deinit(self.allocator);
     }
 
     /// Clear pool, invalidating all existing lists.

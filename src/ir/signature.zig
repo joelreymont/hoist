@@ -121,18 +121,20 @@ pub const Signature = struct {
     params: std.ArrayList(AbiParam),
     returns: std.ArrayList(AbiParam),
     call_conv: CallConv,
+    allocator: Allocator,
 
     pub fn init(allocator: Allocator, call_conv: CallConv) Signature {
         return .{
-            .params = std.ArrayList(AbiParam).init(allocator),
-            .returns = std.ArrayList(AbiParam).init(allocator),
+            .params = .{},
+            .returns = .{},
             .call_conv = call_conv,
+            .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *Signature) void {
-        self.params.deinit();
-        self.returns.deinit();
+        self.params.deinit(self.allocator);
+        self.returns.deinit(self.allocator);
     }
 
     pub fn clear(self: *Signature, call_conv: CallConv) void {

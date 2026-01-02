@@ -9,15 +9,19 @@ const Allocator = std.mem.Allocator;
 pub fn PrimaryMap(comptime K: type, comptime V: type) type {
     return struct {
         elems: std.ArrayList(V),
+        allocator: Allocator,
 
         const Self = @This();
 
         pub fn init(allocator: Allocator) Self {
-            return .{ .elems = std.ArrayList(V).init(allocator) };
+            return .{
+                .elems = .{},
+                .allocator = allocator,
+            };
         }
 
         pub fn deinit(self: *Self) void {
-            self.elems.deinit();
+            self.elems.deinit(self.allocator);
         }
 
         pub fn isValid(self: *const Self, k: K) bool {
@@ -52,7 +56,7 @@ pub fn PrimaryMap(comptime K: type, comptime V: type) type {
 
         pub fn push(self: *Self, v: V) !K {
             const k = self.nextKey();
-            try self.elems.append(v);
+            try self.elems.append(self.allocator, v);
             return k;
         }
 
@@ -80,15 +84,19 @@ pub fn PrimaryMap(comptime K: type, comptime V: type) type {
 pub fn SecondaryMap(comptime K: type, comptime V: type) type {
     return struct {
         elems: std.ArrayList(?V),
+        allocator: Allocator,
 
         const Self = @This();
 
         pub fn init(allocator: Allocator) Self {
-            return .{ .elems = std.ArrayList(?V).init(allocator) };
+            return .{
+                .elems = .{},
+                .allocator = allocator,
+            };
         }
 
         pub fn deinit(self: *Self) void {
-            self.elems.deinit();
+            self.elems.deinit(self.allocator);
         }
 
         pub fn clear(self: *Self) void {
@@ -122,8 +130,9 @@ pub fn SecondaryMap(comptime K: type, comptime V: type) type {
 
         pub fn resize(self: *Self, new_len: usize) !void {
             if (new_len <= self.elems.items.len) return;
-            try self.elems.resize(new_len);
-            @memset(self.elems.items[self.elems.items.len..new_len], null);
+            const old_len = self.elems.items.len;
+            try self.elems.resize(self.allocator, new_len);
+            @memset(self.elems.items[old_len..new_len], null);
         }
     };
 }
