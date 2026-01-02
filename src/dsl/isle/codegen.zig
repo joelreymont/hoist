@@ -297,6 +297,161 @@ pub const Codegen = struct {
             .wildcard => 0,
         };
     }
+
+    /// Generate a constructor function for a given term.
+    /// Constructors build values from components.
+    pub fn genConstructor(
+        self: *Self,
+        term_id: sema.TermId,
+        rule_indices: []const usize,
+    ) !void {
+        const writer = self.output.writer(self.allocator);
+        const term = self.termenv.getTerm(term_id);
+        const term_name = self.typeenv.symName(term.name);
+
+        const decl = switch (term.kind) {
+            .decl => |d| d,
+            else => return error.NotAConstructor,
+        };
+
+        // Function signature
+        try writer.print("\n/// Constructor for {s}\n", .{term_name});
+        try writer.print("pub fn constructor_{s}(\n", .{term_name});
+        try writer.writeAll("    ctx: *Context,\n");
+
+        // Parameters
+        for (decl.arg_tys, 0..) |arg_ty, i| {
+            const ty_name = try self.getTypeName(arg_ty);
+            try writer.print("    arg{d}: {s},\n", .{ i, ty_name });
+        }
+
+        // Return type
+        const ret_ty_name = try self.getTypeName(decl.ret_ty);
+        try writer.print(") !{s} {{\n", .{ret_ty_name});
+
+        // Emit rule matching logic
+        if (rule_indices.len > 0) {
+            for (rule_indices) |rule_idx| {
+                const rule = self.rules[rule_idx];
+                try self.emitRuleBody(rule, 4);
+            }
+        }
+
+        // Default: error for no match
+        if (decl.pure) {
+            try writer.writeAll("    unreachable; // Pure constructor, all patterns should match\n");
+        } else {
+            try writer.writeAll("    return error.NoMatch;\n");
+        }
+
+        try writer.writeAll("}\n");
+    }
+
+    /// Generate an extractor function for a given term.
+    /// Extractors decompose values and can fail.
+    pub fn genExtractor(
+        self: *Self,
+        term_id: sema.TermId,
+        rule_indices: []const usize,
+    ) !void {
+        const writer = self.output.writer(self.allocator);
+        const term = self.termenv.getTerm(term_id);
+        const term_name = self.typeenv.symName(term.name);
+
+        const extractor = switch (term.kind) {
+            .extractor => |e| e,
+            else => return error.NotAnExtractor,
+        };
+
+        // Function signature
+        try writer.print("\n/// Extractor for {s}\n", .{term_name});
+        try writer.print("pub fn extractor_{s}(\n", .{term_name});
+        try writer.writeAll("    ctx: *Context,\n");
+
+        // Input parameter
+        try writer.print("    input: {s},\n", .{try self.getTypeName(extractor.ret_ty)});
+
+        // Parameters
+        for (extractor.arg_tys, 0..) |arg_ty, i| {
+            const ty_name = try self.getTypeName(arg_ty);
+            try writer.print("    arg{d}: {s},\n", .{ i, ty_name });
+        }
+
+        // Return type (fallible)
+        const ret_ty_name = try self.getTypeName(extractor.ret_ty);
+        try writer.print(") ?{s} {{\n", .{ret_ty_name});
+
+        // Emit extraction logic
+        if (rule_indices.len > 0) {
+            for (rule_indices) |rule_idx| {
+                const rule = self.rules[rule_idx];
+                try self.emitRuleBody(rule, 4);
+            }
+        }
+
+        // Default: null for failed extraction
+        try writer.writeAll("    return null;\n");
+        try writer.writeAll("}\n");
+    }
+
+    /// Generate the main lowering dispatch function.
+    pub fn genLower(self: *Self, term_rules: std.AutoHashMap(sema.TermId, std.ArrayList(usize))) !void {
+        const writer = self.output.writer(self.allocator);
+
+        try writer.writeAll(
+            \\
+            \\/// Main lowering entry point
+            \\pub fn lower(ctx: *Context, value: Value) !LoweredValue {
+            \\    return switch (value.op) {
+            \\
+        );
+
+        var it = term_rules.iterator();
+        while (it.next()) |entry| {
+            const term_id = entry.key_ptr.*;
+            _ = entry.value_ptr.items; // rule_indices not used yet
+
+            const term = self.termenv.getTerm(term_id);
+            const term_name = self.typeenv.symName(term.name);
+
+            const arg_tys = switch (term.kind) {
+                .decl => |d| d.arg_tys,
+                else => continue,
+            };
+
+            try writer.print("        .{s} => {{\n", .{term_name});
+
+            // Extract operands
+            for (arg_tys, 0..) |_, i| {
+                try writer.print("            const arg{d} = value.operand({d});\n", .{ i, i });
+            }
+
+            // Call constructor
+            try writer.print("            return constructor_{s}(ctx", .{term_name});
+            for (0..arg_tys.len) |i| {
+                try writer.print(", arg{d}", .{i});
+            }
+            try writer.writeAll(");\n");
+            try writer.writeAll("        },\n");
+        }
+
+        try writer.writeAll(
+            \\        else => return error.UnsupportedOperation,
+            \\    };
+            \\}
+            \\
+        );
+    }
+
+    /// Get the Zig type name for a type ID.
+    fn getTypeName(self: *const Self, type_id: sema.TypeId) ![]const u8 {
+        const ty = self.typeenv.types.items[type_id.index()];
+        return switch (ty) {
+            .primitive => |p| self.typeenv.symName(p.name),
+            .enum_type => |e| self.typeenv.symName(e.name),
+            else => "Value",
+        };
+    }
 };
 
 test "Codegen basic structure" {
