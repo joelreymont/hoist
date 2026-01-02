@@ -10,6 +10,8 @@ pub const RegClass = enum(u8) {
     /// Vector register.
     vector = 2,
 
+    pub const count = 3;
+
     pub fn index(self: RegClass) u8 {
         return @intFromEnum(self);
     }
