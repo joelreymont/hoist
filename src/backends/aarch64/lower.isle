@@ -732,6 +732,21 @@
 (decl aarch64_swpal (Value Value) Aarch64Inst)         ;; Atomic swap with acquire/release
 (decl aarch64_casal (Value Value Value) Aarch64Inst)   ;; Compare-and-swap with acquire/release
 
+;; Memory barrier operations
+(decl aarch64_dmb (ShareabilityDomain) Aarch64Inst)    ;; Data Memory Barrier
+(decl aarch64_dsb (ShareabilityDomain) Aarch64Inst)    ;; Data Synchronization Barrier
+(decl aarch64_isb () Aarch64Inst)                      ;; Instruction Synchronization Barrier
+
+;; Shareability domain for memory barrier instructions
+(type ShareabilityDomain (enum
+  SY      ;; Full system - all agents
+  ISH     ;; Inner shareable - processors in same inner shareable domain
+  ISHLD   ;; Inner shareable load - acquire barrier for inner shareable
+  ISHST   ;; Inner shareable store - release barrier for inner shareable
+  NSH     ;; Non-shareable - only this processor
+  OSH     ;; Outer shareable - processors in same outer shareable domain
+))
+
 ;; Vector type enum
 (type VectorSize (enum
   V8B   ;; 8 bytes (8x i8)
@@ -1002,6 +1017,28 @@
 ;; Pattern: atomic_cas(addr, expected, new) => CASAL
 (rule (lower (atomic_cas addr expected new_val))
       (aarch64_casal addr expected new_val))
+
+;; Memory barrier lowering
+
+;; fence: Memory fence with sequential consistency
+;; Pattern: fence(seq_cst) => DSB SY (full system barrier)
+(rule (lower (fence AtomicOrdering.seq_cst))
+      (aarch64_dsb ShareabilityDomain.SY))
+
+;; fence: Memory fence with acquire semantics
+;; Pattern: fence(acquire) => DMB ISHLD (inner shareable load barrier)
+(rule (lower (fence AtomicOrdering.acquire))
+      (aarch64_dmb ShareabilityDomain.ISHLD))
+
+;; fence: Memory fence with release semantics
+;; Pattern: fence(release) => DMB ISH (inner shareable barrier)
+(rule (lower (fence AtomicOrdering.release))
+      (aarch64_dmb ShareabilityDomain.ISH))
+
+;; fence: Memory fence with acquire-release semantics
+;; Pattern: fence(acq_rel) => DMB ISH (inner shareable barrier)
+(rule (lower (fence AtomicOrdering.acq_rel))
+      (aarch64_dmb ShareabilityDomain.ISH))
 
 ;; Helper functions
 (decl negate_i64 (i64) i64)
