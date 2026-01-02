@@ -718,6 +718,20 @@
 (decl aarch64_uminv (VectorSize Value) Aarch64Inst)    ;; Horizontal unsigned min
 (decl aarch64_umaxv (VectorSize Value) Aarch64Inst)    ;; Horizontal unsigned max
 
+;; Atomic operations (LSE - Large System Extensions)
+(decl aarch64_ldar (Value) Aarch64Inst)                ;; Load-acquire register
+(decl aarch64_stlr (Value Value) Aarch64Inst)          ;; Store-release register
+(decl aarch64_ldadd (Value Value) Aarch64Inst)         ;; Atomic add with acquire/release
+(decl aarch64_ldclr (Value Value) Aarch64Inst)         ;; Atomic clear bits with acquire/release
+(decl aarch64_ldeor (Value Value) Aarch64Inst)         ;; Atomic XOR with acquire/release
+(decl aarch64_ldset (Value Value) Aarch64Inst)         ;; Atomic OR (set bits) with acquire/release
+(decl aarch64_ldsmax (Value Value) Aarch64Inst)        ;; Atomic signed max with acquire/release
+(decl aarch64_ldsmin (Value Value) Aarch64Inst)        ;; Atomic signed min with acquire/release
+(decl aarch64_ldumax (Value Value) Aarch64Inst)        ;; Atomic unsigned max with acquire/release
+(decl aarch64_ldumin (Value Value) Aarch64Inst)        ;; Atomic unsigned min with acquire/release
+(decl aarch64_swpal (Value Value) Aarch64Inst)         ;; Atomic swap with acquire/release
+(decl aarch64_casal (Value Value Value) Aarch64Inst)   ;; Compare-and-swap with acquire/release
+
 ;; Vector type enum
 (type VectorSize (enum
   V8B   ;; 8 bytes (8x i8)
