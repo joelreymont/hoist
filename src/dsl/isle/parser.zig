@@ -28,18 +28,18 @@ pub const Parser = struct {
             .lexer = lexer,
             .allocator = allocator,
             .current = null,
-            .errors = std.ArrayList(ParseError).init(allocator),
+            .errors = .{},
         };
         try self.advance();
         return self;
     }
 
     pub fn deinit(self: *Self) void {
-        self.errors.deinit();
+        self.errors.deinit(self.allocator);
     }
 
     fn reportError(self: *Self, message: []const u8, pos: Pos) !void {
-        try self.errors.append(.{ .message = message, .pos = pos });
+        try self.errors.append(self.allocator, .{ .message = message, .pos = pos });
     }
 
     fn synchronize(self: *Self) !void {
@@ -157,7 +157,7 @@ pub const Parser = struct {
                     for (variants.items) |*v| {
                         self.allocator.free(v.fields);
                     }
-                    variants.deinit();
+                    variants.deinit(self.allocator);
                 }
 
                 while (true) {
@@ -172,7 +172,7 @@ pub const Parser = struct {
                         const var_name = try self.expectSymbol();
 
                         var fields = std.ArrayList(ast.Field){};
-                        errdefer fields.deinit();
+                        errdefer fields.deinit(self.allocator);
 
                         // Parse fields: (field_name field_type)
                         while (true) {
@@ -185,7 +185,7 @@ pub const Parser = struct {
                                 const field_type = try self.expectSymbol();
                                 _ = try self.expect(.rparen);
 
-                                try fields.append(ast.Field{
+                                try fields.append(self.allocator, ast.Field{
                                     .name = field_name,
                                     .ty = field_type,
                                     .pos = field_name.pos,
@@ -197,15 +197,15 @@ pub const Parser = struct {
 
                         _ = try self.expect(.rparen); // close variant
 
-                        try variants.append(ast.Variant{
+                        try variants.append(self.allocator, ast.Variant{
                             .name = var_name,
-                            .fields = try fields.toOwnedSlice(),
+                            .fields = try fields.toOwnedSlice(self.allocator),
                             .pos = var_name.pos,
                         });
                     } else if (peek_tok == .symbol) {
                         // Simple variant with no fields
                         const var_name = try self.expectSymbol();
-                        try variants.append(ast.Variant{
+                        try variants.append(self.allocator, ast.Variant{
                             .name = var_name,
                             .fields = &[_]ast.Field{},
                             .pos = var_name.pos,
@@ -217,7 +217,7 @@ pub const Parser = struct {
 
                 _ = try self.expect(.rparen); // close enum variants list
 
-                return ast.TypeValue{ .enum_type = try variants.toOwnedSlice() };
+                return ast.TypeValue{ .enum_type = try variants.toOwnedSlice(self.allocator) };
             }
         }
 

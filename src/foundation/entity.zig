@@ -58,17 +58,17 @@ pub fn PrimaryMap(comptime K: type, comptime V: type) type {
 
         items: std.ArrayList(V),
 
-        pub fn init(allocator: Allocator) Self {
-            return .{ .items = std.ArrayList(V).init(allocator) };
+        pub fn init(_: Allocator) Self {
+            return .{ .items = .{} };
         }
 
-        pub fn deinit(self: *Self) void {
-            self.items.deinit();
+        pub fn deinit(self: *Self, allocator: Allocator) void {
+            self.items.deinit(allocator);
         }
 
-        pub fn push(self: *Self, value: V) !K {
+        pub fn push(self: *Self, allocator: Allocator, value: V) !K {
             const key = self.nextKey();
-            try self.items.append(value);
+            try self.items.append(allocator, value);
             return key;
         }
 

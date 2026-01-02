@@ -90,19 +90,19 @@ pub const BlockCall = struct {
         return @enumFromInt(@intFromEnum(val));
     }
 
-    fn blockToValue(block: Block) Value {
-        return @enumFromInt(@intFromEnum(block));
+    fn blockToValue(blk: Block) Value {
+        return @enumFromInt(@intFromEnum(blk));
     }
 
     /// Construct a BlockCall with the given block and arguments.
     pub fn init(
-        block: Block,
-        args: []const BlockArg,
+        blk: Block,
+        block_args: []const BlockArg,
         pool: *ValueListPool,
     ) !BlockCall {
         var values = ValueList{};
-        try values.push(blockToValue(block), pool);
-        for (args) |arg| {
+        try values.push(blockToValue(blk), pool);
+        for (block_args) |arg| {
             try values.push(arg.encodeAsValue(), pool);
         }
         return .{ .values = values };
