@@ -229,7 +229,7 @@ pub const DataFlowGraph = struct {
     insts: PrimaryMap(Inst, InstructionData),
     results: SecondaryMap(Inst, ValueList),
     values: SecondaryMap(Value, ValueData),
-    blocks: SecondaryMap(Block, BlockData),
+    blocks: PrimaryMap(Block, BlockData),
     value_lists: ValueListPool,
 
     const Self = @This();
@@ -239,7 +239,7 @@ pub const DataFlowGraph = struct {
             .insts = PrimaryMap(Inst, InstructionData).init(allocator),
             .results = SecondaryMap(Inst, ValueList).init(allocator),
             .values = SecondaryMap(Value, ValueData).init(allocator),
-            .blocks = SecondaryMap(Block, BlockData).init(allocator),
+            .blocks = PrimaryMap(Block, BlockData).init(allocator),
             .value_lists = ValueListPool.init(allocator),
         };
     }
@@ -280,6 +280,48 @@ pub const DataFlowGraph = struct {
 
     pub fn numResults(self: *const Self, inst: Inst) usize {
         return self.instResults(inst).len;
+    }
+
+    /// Get block parameters as a slice.
+    pub fn blockParams(self: *const Self, block: Block) []const Value {
+        const block_data = self.blocks.get(block) orelse return &.{};
+        return block_data.getParams(&self.value_lists);
+    }
+
+    /// Add a new block and return its handle.
+    pub fn addBlock(self: *Self) !Block {
+        return try self.blocks.push(BlockData.init());
+    }
+
+    /// Alias for addBlock - used in some E2E tests.
+    pub fn makeBlock(self: *Self) !Block {
+        return try self.addBlock();
+    }
+
+    /// Set block parameters from types.
+    pub fn setBlockParams(self: *Self, block: Block, params: []const Type) !void {
+        const block_data = self.blocks.getMut(block) orelse return error.InvalidBlock;
+
+        for (params, 0..) |ty, i| {
+            const val_idx = self.values.elems.items.len;
+            const value_data = try self.values.getOrDefault(Value.new(val_idx));
+            value_data.* = ValueData.param(ty, @intCast(i), block);
+            const val = Value.new(val_idx);
+            try self.value_lists.push(&block_data.params, val);
+        }
+    }
+
+    /// Append a single parameter to a block.
+    pub fn appendBlockParam(self: *Self, block: Block, ty: Type) !Value {
+        const block_data = self.blocks.getMut(block) orelse return error.InvalidBlock;
+        const param_num = self.value_lists.len(block_data.params);
+
+        const val_idx = self.values.elems.items.len;
+        const value_data = try self.values.getOrDefault(Value.new(val_idx));
+        value_data.* = ValueData.param(ty, @intCast(param_num), block);
+        const val = Value.new(val_idx);
+        try self.value_lists.push(&block_data.params, val);
+        return val;
     }
 
     pub fn resolveAliases(self: *const Self, val: Value) Value {

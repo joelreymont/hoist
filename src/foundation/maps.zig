@@ -60,6 +60,10 @@ pub fn PrimaryMap(comptime K: type, comptime V: type) type {
             return k;
         }
 
+        pub fn add(self: *Self) !K {
+            return try self.push(if (@sizeOf(V) == 0) {} else std.mem.zeroes(V));
+        }
+
         pub fn last(self: *const Self) ?struct { K, *const V } {
             if (self.elems.items.len == 0) return null;
             const idx = self.elems.items.len - 1;
