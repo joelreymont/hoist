@@ -230,6 +230,73 @@ pub const Codegen = struct {
             try writer.writeByte(' ');
         }
     }
+
+    /// Optimize rule ordering by sorting by priority and specificity.
+    /// Higher priority rules come first, and within each priority group,
+    /// more specific patterns come before general ones.
+    pub fn optimizeMatches(self: *Self, rule_indices: []usize) !void {
+        if (rule_indices.len <= 1) return;
+
+        // Sort by composite key: (priority desc, specificity desc)
+        const Context = struct {
+            rules: []const sema.Rule,
+            codegen: *const Codegen,
+
+            fn lessThan(ctx: @This(), a_idx: usize, b_idx: usize) bool {
+                const a = ctx.rules[a_idx];
+                const b = ctx.rules[b_idx];
+
+                // First: Higher priority comes first
+                if (a.prio != b.prio) {
+                    return a.prio > b.prio;
+                }
+
+                // Within same priority: More specific patterns first
+                const a_score = ctx.codegen.specificityScore(a.pattern);
+                const b_score = ctx.codegen.specificityScore(b.pattern);
+                return a_score > b_score;
+            }
+        };
+
+        const ctx = Context{ .rules = self.rules, .codegen = self };
+        std.mem.sort(usize, rule_indices, ctx, Context.lessThan);
+    }
+
+    /// Compute specificity score for a pattern.
+    /// Higher score = more specific pattern.
+    fn specificityScore(self: *const Self, pattern: sema.Pattern) usize {
+        return switch (pattern) {
+            // Constant patterns are most specific
+            .const_bool, .const_int => 100,
+
+            // Constructor patterns: base score + sum of argument scores
+            .term => |t| blk: {
+                var score: usize = 50;
+                for (t.args) |arg| {
+                    score += self.specificityScore(arg);
+                }
+                break :blk score;
+            },
+
+            // Variable bindings: medium specificity
+            .var_pat => 10,
+
+            // And-patterns: sum of sub-pattern scores
+            .and_pat => |a| blk: {
+                var score: usize = 0;
+                for (a.subpats) |subpat| {
+                    score += self.specificityScore(subpat);
+                }
+                break :blk score;
+            },
+
+            // Bind pattern: inherits sub-pattern score
+            .bind_pattern => |b| self.specificityScore(b.subpat.*),
+
+            // Wildcard is least specific
+            .wildcard => 0,
+        };
+    }
 };
 
 test "Codegen basic structure" {
