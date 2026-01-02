@@ -1267,6 +1267,110 @@ pub const Inst = union(enum) {
         src2: Reg,
     },
 
+    /// FRINTZ - Floating-point round toward zero (truncate)
+    frintz_s: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    frintz_d: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    /// FRINTP - Floating-point round toward +infinity (ceiling)
+    frintp_s: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    frintp_d: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    /// FRINTM - Floating-point round toward -infinity (floor)
+    frintm_s: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    frintm_d: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    /// FRINTA - Floating-point round to nearest, ties to away
+    frinta_s: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    frinta_d: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
+    /// FMADD - Floating-point fused multiply-add: d = a + (n * m)
+    fmadd_s: struct {
+        dst: WritableReg,
+        src_n: Reg,
+        src_m: Reg,
+        src_a: Reg,
+    },
+
+    fmadd_d: struct {
+        dst: WritableReg,
+        src_n: Reg,
+        src_m: Reg,
+        src_a: Reg,
+    },
+
+    /// FMSUB - Floating-point fused multiply-subtract: d = a - (n * m)
+    fmsub_s: struct {
+        dst: WritableReg,
+        src_n: Reg,
+        src_m: Reg,
+        src_a: Reg,
+    },
+
+    fmsub_d: struct {
+        dst: WritableReg,
+        src_n: Reg,
+        src_m: Reg,
+        src_a: Reg,
+    },
+
+    /// FNMADD - Floating-point fused negate multiply-add: d = -a - (n * m)
+    fnmadd_s: struct {
+        dst: WritableReg,
+        src_n: Reg,
+        src_m: Reg,
+        src_a: Reg,
+    },
+
+    fnmadd_d: struct {
+        dst: WritableReg,
+        src_n: Reg,
+        src_m: Reg,
+        src_a: Reg,
+    },
+
+    /// FNMSUB - Floating-point fused negate multiply-subtract: d = -a + (n * m)
+    fnmsub_s: struct {
+        dst: WritableReg,
+        src_n: Reg,
+        src_m: Reg,
+        src_a: Reg,
+    },
+
+    fnmsub_d: struct {
+        dst: WritableReg,
+        src_n: Reg,
+        src_m: Reg,
+        src_a: Reg,
+    },
+
     pub fn format(
         self: Inst,
         comptime _: []const u8,
@@ -1447,6 +1551,22 @@ pub const Inst = union(enum) {
             .fmax_d => |i| try writer.print("fmax.d {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
             .fmin_s => |i| try writer.print("fmin.s {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
             .fmin_d => |i| try writer.print("fmin.d {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .frintz_s => |i| try writer.print("frintz.s {}, {}", .{ i.dst, i.src }),
+            .frintz_d => |i| try writer.print("frintz.d {}, {}", .{ i.dst, i.src }),
+            .frintp_s => |i| try writer.print("frintp.s {}, {}", .{ i.dst, i.src }),
+            .frintp_d => |i| try writer.print("frintp.d {}, {}", .{ i.dst, i.src }),
+            .frintm_s => |i| try writer.print("frintm.s {}, {}", .{ i.dst, i.src }),
+            .frintm_d => |i| try writer.print("frintm.d {}, {}", .{ i.dst, i.src }),
+            .frinta_s => |i| try writer.print("frinta.s {}, {}", .{ i.dst, i.src }),
+            .frinta_d => |i| try writer.print("frinta.d {}, {}", .{ i.dst, i.src }),
+            .fmadd_s => |i| try writer.print("fmadd.s {}, {}, {}, {}", .{ i.dst, i.src_n, i.src_m, i.src_a }),
+            .fmadd_d => |i| try writer.print("fmadd.d {}, {}, {}, {}", .{ i.dst, i.src_n, i.src_m, i.src_a }),
+            .fmsub_s => |i| try writer.print("fmsub.s {}, {}, {}, {}", .{ i.dst, i.src_n, i.src_m, i.src_a }),
+            .fmsub_d => |i| try writer.print("fmsub.d {}, {}, {}, {}", .{ i.dst, i.src_n, i.src_m, i.src_a }),
+            .fnmadd_s => |i| try writer.print("fnmadd.s {}, {}, {}, {}", .{ i.dst, i.src_n, i.src_m, i.src_a }),
+            .fnmadd_d => |i| try writer.print("fnmadd.d {}, {}, {}, {}", .{ i.dst, i.src_n, i.src_m, i.src_a }),
+            .fnmsub_s => |i| try writer.print("fnmsub.s {}, {}, {}, {}", .{ i.dst, i.src_n, i.src_m, i.src_a }),
+            .fnmsub_d => |i| try writer.print("fnmsub.d {}, {}, {}, {}", .{ i.dst, i.src_n, i.src_m, i.src_a }),
         }
     }
 };

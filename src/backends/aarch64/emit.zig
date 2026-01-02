@@ -186,6 +186,22 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .fmax_d => |i| try emitFmaxD(i.dst.toReg(), i.src1, i.src2, buffer),
         .fmin_s => |i| try emitFminS(i.dst.toReg(), i.src1, i.src2, buffer),
         .fmin_d => |i| try emitFminD(i.dst.toReg(), i.src1, i.src2, buffer),
+        .frintz_s => |i| try emitFrintzS(i.dst.toReg(), i.src, buffer),
+        .frintz_d => |i| try emitFrintzD(i.dst.toReg(), i.src, buffer),
+        .frintp_s => |i| try emitFrintpS(i.dst.toReg(), i.src, buffer),
+        .frintp_d => |i| try emitFrintpD(i.dst.toReg(), i.src, buffer),
+        .frintm_s => |i| try emitFrintmS(i.dst.toReg(), i.src, buffer),
+        .frintm_d => |i| try emitFrintmD(i.dst.toReg(), i.src, buffer),
+        .frinta_s => |i| try emitFrintaS(i.dst.toReg(), i.src, buffer),
+        .frinta_d => |i| try emitFrintaD(i.dst.toReg(), i.src, buffer),
+        .fmadd_s => |i| try emitFmaddS(i.dst.toReg(), i.src_n, i.src_m, i.src_a, buffer),
+        .fmadd_d => |i| try emitFmaddD(i.dst.toReg(), i.src_n, i.src_m, i.src_a, buffer),
+        .fmsub_s => |i| try emitFmsubS(i.dst.toReg(), i.src_n, i.src_m, i.src_a, buffer),
+        .fmsub_d => |i| try emitFmsubD(i.dst.toReg(), i.src_n, i.src_m, i.src_a, buffer),
+        .fnmadd_s => |i| try emitFnmaddS(i.dst.toReg(), i.src_n, i.src_m, i.src_a, buffer),
+        .fnmadd_d => |i| try emitFnmaddD(i.dst.toReg(), i.src_n, i.src_m, i.src_a, buffer),
+        .fnmsub_s => |i| try emitFnmsubS(i.dst.toReg(), i.src_n, i.src_m, i.src_a, buffer),
+        .fnmsub_d => |i| try emitFnmsubD(i.dst.toReg(), i.src_n, i.src_m, i.src_a, buffer),
     }
 }
 
@@ -1246,7 +1262,6 @@ fn emitCsneg(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize, 
     const bytes = std.mem.toBytes(insn);
     try buffer.put(&bytes);
 }
-
 
 /// SXTB Wd/Xd, Wn (sign extend byte)
 /// Sign extends lowest 8 bits to 32-bit or 64-bit destination.
@@ -3371,6 +3386,351 @@ fn emitFminD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
     const bytes = std.mem.toBytes(insn);
     try buffer.put(&bytes);
 }
+
+/// FRINTZ Sd, Sn (round toward zero, single-precision)
+/// Encoding: 0|0|0|11110|00|1|001|011|10000|Rn|Rd
+fn emitFrintzS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11110 << 24) |
+        (0b00 << 22) | // type=00 for f32
+        (0b1 << 21) |
+        (0b001 << 18) |
+        (0b011 << 15) | // rmode=011 for FRINTZ
+        (0b10000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FRINTZ Dd, Dn (round toward zero, double-precision)
+/// Encoding: 0|0|0|11110|01|1|001|011|10000|Rn|Rd
+fn emitFrintzD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11110 << 24) |
+        (0b01 << 22) | // type=01 for f64
+        (0b1 << 21) |
+        (0b001 << 18) |
+        (0b011 << 15) | // rmode=011 for FRINTZ
+        (0b10000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FRINTP Sd, Sn (round toward +infinity, single-precision)
+/// Encoding: 0|0|0|11110|00|1|001|010|10000|Rn|Rd
+fn emitFrintpS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11110 << 24) |
+        (0b00 << 22) | // type=00 for f32
+        (0b1 << 21) |
+        (0b001 << 18) |
+        (0b010 << 15) | // rmode=010 for FRINTP
+        (0b10000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FRINTP Dd, Dn (round toward +infinity, double-precision)
+/// Encoding: 0|0|0|11110|01|1|001|010|10000|Rn|Rd
+fn emitFrintpD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11110 << 24) |
+        (0b01 << 22) | // type=01 for f64
+        (0b1 << 21) |
+        (0b001 << 18) |
+        (0b010 << 15) | // rmode=010 for FRINTP
+        (0b10000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FRINTM Sd, Sn (round toward -infinity, single-precision)
+/// Encoding: 0|0|0|11110|00|1|001|001|10000|Rn|Rd
+fn emitFrintmS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11110 << 24) |
+        (0b00 << 22) | // type=00 for f32
+        (0b1 << 21) |
+        (0b001 << 18) |
+        (0b001 << 15) | // rmode=001 for FRINTM
+        (0b10000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FRINTM Dd, Dn (round toward -infinity, double-precision)
+/// Encoding: 0|0|0|11110|01|1|001|001|10000|Rn|Rd
+fn emitFrintmD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11110 << 24) |
+        (0b01 << 22) | // type=01 for f64
+        (0b1 << 21) |
+        (0b001 << 18) |
+        (0b001 << 15) | // rmode=001 for FRINTM
+        (0b10000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FRINTA Sd, Sn (round to nearest, ties to away, single-precision)
+/// Encoding: 0|0|0|11110|00|1|001|000|10000|Rn|Rd
+fn emitFrintaS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11110 << 24) |
+        (0b00 << 22) | // type=00 for f32
+        (0b1 << 21) |
+        (0b001 << 18) |
+        (0b000 << 15) | // rmode=000 for FRINTA
+        (0b10000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FRINTA Dd, Dn (round to nearest, ties to away, double-precision)
+/// Encoding: 0|0|0|11110|01|1|001|000|10000|Rn|Rd
+fn emitFrintaD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11110 << 24) |
+        (0b01 << 22) | // type=01 for f64
+        (0b1 << 21) |
+        (0b001 << 18) |
+        (0b000 << 15) | // rmode=000 for FRINTA
+        (0b10000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FMADD Sd, Sn, Sm, Sa (fused multiply-add, single-precision)
+/// d = a + (n * m)
+/// Encoding: 0|0|0|11111|00|0|Rm|0|Ra|Rn|Rd
+fn emitFmaddS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src_n);
+    const rm = hwEnc(src_m);
+    const ra = hwEnc(src_a);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11111 << 24) |
+        (0b00 << 22) | // type=00 for f32
+        (0b0 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b0 << 15) | // o1=0 for FMADD
+        (@as(u32, ra) << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FMADD Dd, Dn, Dm, Da (fused multiply-add, double-precision)
+/// d = a + (n * m)
+/// Encoding: 0|0|0|11111|01|0|Rm|0|Ra|Rn|Rd
+fn emitFmaddD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src_n);
+    const rm = hwEnc(src_m);
+    const ra = hwEnc(src_a);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11111 << 24) |
+        (0b01 << 22) | // type=01 for f64
+        (0b0 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b0 << 15) | // o1=0 for FMADD
+        (@as(u32, ra) << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FMSUB Sd, Sn, Sm, Sa (fused multiply-subtract, single-precision)
+/// d = a - (n * m)
+/// Encoding: 0|0|0|11111|00|0|Rm|1|Ra|Rn|Rd
+fn emitFmsubS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src_n);
+    const rm = hwEnc(src_m);
+    const ra = hwEnc(src_a);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11111 << 24) |
+        (0b00 << 22) | // type=00 for f32
+        (0b0 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b1 << 15) | // o1=1 for FMSUB
+        (@as(u32, ra) << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FMSUB Dd, Dn, Dm, Da (fused multiply-subtract, double-precision)
+/// d = a - (n * m)
+/// Encoding: 0|0|0|11111|01|0|Rm|1|Ra|Rn|Rd
+fn emitFmsubD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src_n);
+    const rm = hwEnc(src_m);
+    const ra = hwEnc(src_a);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11111 << 24) |
+        (0b01 << 22) | // type=01 for f64
+        (0b0 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b1 << 15) | // o1=1 for FMSUB
+        (@as(u32, ra) << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FNMADD Sd, Sn, Sm, Sa (fused negate multiply-add, single-precision)
+/// d = -a - (n * m)
+/// Encoding: 0|0|0|11111|00|1|Rm|0|Ra|Rn|Rd
+fn emitFnmaddS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src_n);
+    const rm = hwEnc(src_m);
+    const ra = hwEnc(src_a);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11111 << 24) |
+        (0b00 << 22) | // type=00 for f32
+        (0b1 << 21) | // M=1 for negated variants
+        (@as(u32, rm) << 16) |
+        (0b0 << 15) | // o1=0 for FNMADD
+        (@as(u32, ra) << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FNMADD Dd, Dn, Dm, Da (fused negate multiply-add, double-precision)
+/// d = -a - (n * m)
+/// Encoding: 0|0|0|11111|01|1|Rm|0|Ra|Rn|Rd
+fn emitFnmaddD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src_n);
+    const rm = hwEnc(src_m);
+    const ra = hwEnc(src_a);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11111 << 24) |
+        (0b01 << 22) | // type=01 for f64
+        (0b1 << 21) | // M=1 for negated variants
+        (@as(u32, rm) << 16) |
+        (0b0 << 15) | // o1=0 for FNMADD
+        (@as(u32, ra) << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FNMSUB Sd, Sn, Sm, Sa (fused negate multiply-subtract, single-precision)
+/// d = -a + (n * m)
+/// Encoding: 0|0|0|11111|00|1|Rm|1|Ra|Rn|Rd
+fn emitFnmsubS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src_n);
+    const rm = hwEnc(src_m);
+    const ra = hwEnc(src_a);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11111 << 24) |
+        (0b00 << 22) | // type=00 for f32
+        (0b1 << 21) | // M=1 for negated variants
+        (@as(u32, rm) << 16) |
+        (0b1 << 15) | // o1=1 for FNMSUB
+        (@as(u32, ra) << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FNMSUB Dd, Dn, Dm, Da (fused negate multiply-subtract, double-precision)
+/// d = -a + (n * m)
+/// Encoding: 0|0|0|11111|01|1|Rm|1|Ra|Rn|Rd
+fn emitFnmsubD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src_n);
+    const rm = hwEnc(src_m);
+    const ra = hwEnc(src_a);
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11111 << 24) |
+        (0b01 << 22) | // type=01 for f64
+        (0b1 << 21) | // M=1 for negated variants
+        (@as(u32, rm) << 16) |
+        (0b1 << 15) | // o1=1 for FNMSUB
+        (@as(u32, ra) << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
 
 /// ADR Xd, #offset
 /// Form PC-relative address: Xd = PC + offset (±1MB range)
