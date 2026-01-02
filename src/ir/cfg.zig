@@ -1,0 +1,227 @@
+// Control Flow Graph construction and manipulation.
+//
+// A CFG maps blocks to their predecessors and successors. Predecessors
+// are represented as (block, inst) pairs where inst is the terminator.
+// Successors are just block IDs.
+
+const std = @import("std");
+const entities = @import("entities.zig");
+const Block = entities.Block;
+const Inst = entities.Inst;
+const Function = @import("function.zig").Function;
+
+/// Basic block predecessor: (block, terminator instruction).
+pub const BlockPredecessor = struct {
+    block: Block,
+    inst: Inst,
+
+    pub fn init(block: Block, inst: Inst) BlockPredecessor {
+        return .{ .block = block, .inst = inst };
+    }
+};
+
+/// CFG node containing predecessors and successors for a block.
+const CFGNode = struct {
+    /// Map from terminator instruction to predecessor block.
+    predecessors: std.AutoHashMap(Inst, Block),
+    /// Set of successor blocks.
+    successors: std.AutoHashMap(Block, void),
+
+    fn init(allocator: std.mem.Allocator) CFGNode {
+        return .{
+            .predecessors = std.AutoHashMap(Inst, Block).init(allocator),
+            .successors = std.AutoHashMap(Block, void).init(allocator),
+        };
+    }
+
+    fn deinit(self: *CFGNode) void {
+        self.predecessors.deinit();
+        self.successors.deinit();
+    }
+
+    fn clear(self: *CFGNode) void {
+        self.predecessors.clearRetainingCapacity();
+        self.successors.clearRetainingCapacity();
+    }
+};
+
+/// Control Flow Graph.
+pub const ControlFlowGraph = struct {
+    allocator: std.mem.Allocator,
+    /// CFG nodes per block (indexed by block number).
+    data: std.ArrayList(CFGNode),
+    valid: bool,
+
+    pub fn init(allocator: std.mem.Allocator) ControlFlowGraph {
+        return .{
+            .allocator = allocator,
+            .data = std.ArrayList(CFGNode).init(allocator),
+            .valid = false,
+        };
+    }
+
+    pub fn deinit(self: *ControlFlowGraph) void {
+        for (self.data.items) |*node| {
+            node.deinit();
+        }
+        self.data.deinit();
+    }
+
+    pub fn clear(self: *ControlFlowGraph) void {
+        for (self.data.items) |*node| {
+            node.clear();
+        }
+        self.data.clearRetainingCapacity();
+        self.valid = false;
+    }
+
+    /// Compute CFG from function.
+    pub fn compute(self: *ControlFlowGraph, func: *const Function) !void {
+        self.clear();
+
+        // Resize data to hold all blocks
+        const num_blocks = func.dfg.num_blocks;
+        try self.data.resize(num_blocks);
+        for (0..num_blocks) |i| {
+            self.data.items[i] = CFGNode.init(self.allocator);
+        }
+
+        // Build edges by visiting all blocks
+        var block_iter = func.layout.blocks();
+        while (block_iter.next()) |block| {
+            try self.computeBlock(func, block);
+        }
+
+        self.valid = true;
+    }
+
+    fn computeBlock(self: *ControlFlowGraph, func: *const Function, block: Block) !void {
+        // Visit all branch/jump successors of this block
+        const block_data = func.layout.block_data.get(block) orelse return;
+
+        // Get last instruction (terminator)
+        if (block_data.last_inst) |last_inst| {
+            const inst_data = func.dfg.insts.get(last_inst) orelse return;
+
+            // Extract successor blocks based on instruction type
+            switch (inst_data.opcode) {
+                .jump => {
+                    if (inst_data.data.jump.destination) |dest| {
+                        try self.addEdge(block, last_inst, dest);
+                    }
+                },
+                .brif => {
+                    if (inst_data.data.branch.then_dest) |then_dest| {
+                        try self.addEdge(block, last_inst, then_dest);
+                    }
+                    if (inst_data.data.branch.else_dest) |else_dest| {
+                        try self.addEdge(block, last_inst, else_dest);
+                    }
+                },
+                .br_table => {
+                    // Default destination
+                    if (inst_data.data.br_table.default_dest) |default| {
+                        try self.addEdge(block, last_inst, default);
+                    }
+                    // Table destinations
+                    for (inst_data.data.br_table.table) |dest| {
+                        try self.addEdge(block, last_inst, dest);
+                    }
+                },
+                else => {}, // Non-branching terminator (return, trap, etc)
+            }
+        }
+    }
+
+    fn addEdge(self: *ControlFlowGraph, from: Block, from_inst: Inst, to: Block) !void {
+        const from_idx = from.index();
+        const to_idx = to.index();
+
+        // Add to successors of 'from'
+        try self.data.items[from_idx].successors.put(to, {});
+
+        // Add to predecessors of 'to'
+        try self.data.items[to_idx].predecessors.put(from_inst, from);
+    }
+
+    /// Invalidate successors of a block (for recomputation).
+    fn invalidateBlockSuccessors(self: *ControlFlowGraph, block: Block) void {
+        const block_idx = block.index();
+        var node = &self.data.items[block_idx];
+
+        // Remove this block from all successors' predecessor lists
+        var succ_iter = node.successors.keyIterator();
+        while (succ_iter.next()) |succ_block| {
+            const succ_idx = succ_block.index();
+            var pred_iter = self.data.items[succ_idx].predecessors.iterator();
+            while (pred_iter.next()) |entry| {
+                if (entry.value_ptr.*.eql(block)) {
+                    _ = self.data.items[succ_idx].predecessors.remove(entry.key_ptr.*);
+                }
+            }
+        }
+
+        node.successors.clearRetainingCapacity();
+    }
+
+    /// Recompute CFG for a single block (after modifying its terminators).
+    pub fn recomputeBlock(self: *ControlFlowGraph, func: *const Function, block: Block) !void {
+        std.debug.assert(self.valid);
+        self.invalidateBlockSuccessors(block);
+        try self.computeBlock(func, block);
+    }
+
+    /// Iterator over predecessors.
+    pub fn predIter(self: *const ControlFlowGraph, block: Block) PredIterator {
+        const block_idx = block.index();
+        return PredIterator{
+            .inner = self.data.items[block_idx].predecessors.iterator(),
+        };
+    }
+
+    /// Iterator over successors.
+    pub fn succIter(self: *const ControlFlowGraph, block: Block) SuccIterator {
+        std.debug.assert(self.valid);
+        const block_idx = block.index();
+        return SuccIterator{
+            .inner = self.data.items[block_idx].successors.keyIterator(),
+        };
+    }
+
+    pub fn isValid(self: *const ControlFlowGraph) bool {
+        return self.valid;
+    }
+};
+
+pub const PredIterator = struct {
+    inner: std.AutoHashMap(Inst, Block).Iterator,
+
+    pub fn next(self: *PredIterator) ?BlockPredecessor {
+        const entry = self.inner.next() orelse return null;
+        return BlockPredecessor{
+            .inst = entry.key_ptr.*,
+            .block = entry.value_ptr.*,
+        };
+    }
+};
+
+pub const SuccIterator = struct {
+    inner: std.AutoHashMap(Block, void).KeyIterator,
+
+    pub fn next(self: *SuccIterator) ?Block {
+        return if (self.inner.next()) |key| key.* else null;
+    }
+};
+
+// Tests
+
+const testing = std.testing;
+
+test "CFG: basic construction" {
+    var cfg = ControlFlowGraph.init(testing.allocator);
+    defer cfg.deinit();
+
+    try testing.expect(!cfg.isValid());
+    cfg.clear();
+    try testing.expect(!cfg.isValid());
+}
