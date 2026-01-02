@@ -104,11 +104,11 @@ pub const ValueListPool = struct {
         // Allocate new block
         const offset = self.data.items.len;
         const size = sclassSize(sclass);
-        const reserved = Value.reserved();
-        try self.data.ensureTotalCapacity(offset + size);
+        const reserved = Value.invalid;
+        try self.data.ensureTotalCapacity(self.allocator, offset + size);
         var i: usize = 0;
         while (i < size) : (i += 1) {
-            self.data.appendAssumeCapacity(reserved);
+            self.data.appendAssumeCapacity(self.allocator, reserved);
         }
         return offset;
     }
