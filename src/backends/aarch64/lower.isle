@@ -333,6 +333,20 @@
 (rule (lower (store val addr _flags _offset))
       (aarch64_str val addr))
 
+;; Pre-index addressing modes
+
+;; load with pre-index: base+=offset, then load
+;; Pattern: load(pre_inc(base, offset)) => LDR Xt, [Xn, #offset]!
+(rule (lower (load ty (pre_inc base (iconst offset)) _flags _mem_offset))
+      (if-let scaled_offset (valid_ldr_imm_offset ty offset))
+      (aarch64_ldr_pre ty base scaled_offset))
+
+;; store with pre-index: base+=offset, then store
+;; Pattern: store(val, pre_inc(base, offset)) => STR Xt, [Xn, #offset]!
+(rule (lower (store val (pre_inc base (iconst offset)) _flags _mem_offset))
+      (if-let scaled_offset (valid_str_imm_offset val offset))
+      (aarch64_str_pre val base scaled_offset))
+
 ;; Load pair optimization (LDP)
 ;; Pattern: two adjacent loads with 8-byte offset
 ;; load(base+0) and load(base+8) => LDP X0, X1, [base]
