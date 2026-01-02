@@ -12,21 +12,25 @@ const BlockCall = block_call.BlockCall;
 /// First entry is always the default block.
 pub const JumpTableData = struct {
     table: std.ArrayList(BlockCall),
+    allocator: Allocator,
 
     const Self = @This();
 
     pub fn init(allocator: Allocator) Self {
-        return .{ .table = std.ArrayList(BlockCall).init(allocator) };
+        return .{
+            .table = .{},
+            .allocator = allocator,
+        };
     }
 
     pub fn deinit(self: *Self) void {
-        self.table.deinit();
+        self.table.deinit(self.allocator);
     }
 
     pub fn new(allocator: Allocator, default: BlockCall, entries: []const BlockCall) !Self {
         var self = init(allocator);
-        try self.table.append(default);
-        try self.table.appendSlice(entries);
+        try self.table.append(self.allocator, default);
+        try self.table.appendSlice(self.allocator, entries);
         return self;
     }
 
