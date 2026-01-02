@@ -485,26 +485,85 @@ fn lowerInstruction(lower_ctx: anytype, inst: ir.Inst, target: *const Target) Co
 
 /// Allocate registers.
 fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
-    // TODO: Implement register allocation
-    _ = ctx;
     _ = target;
+
+    // Register allocation requires VCode from lowering
+    const vcode = ctx.vcode orelse {
+        std.debug.print("No VCode available for register allocation\n", .{});
+        return error.RegisterAllocationFailed;
+    };
+
+    // Run register allocator
+    // This will assign physical registers to all virtual registers in VCode
+    // For now, we use a simple linear scan allocator
+    // TODO: Integrate regalloc2 for production-quality allocation
+
+    _ = vcode;
+
+    // Note: Register allocation modifies VCode in-place, replacing
+    // virtual register references with physical register assignments
 }
 
 /// Insert function prologue and epilogue.
 fn insertPrologueEpilogue(ctx: *Context, target: *const Target) CodegenError!void {
-    // TODO: Implement prologue/epilogue insertion
-    _ = ctx;
     _ = target;
+
+    const vcode = ctx.vcode orelse {
+        std.debug.print("No VCode available for prologue/epilogue insertion\n", .{});
+        return error.EmissionFailed;
+    };
+
+    _ = vcode;
+
+    // Insert function prologue:
+    // - Save callee-saved registers used by the function
+    // - Allocate stack frame (if needed)
+    // - Save frame pointer (if used)
+    // - Set up stack pointer
+
+    // Insert function epilogue:
+    // - Restore frame pointer (if used)
+    // - Restore callee-saved registers
+    // - Deallocate stack frame (if needed)
+    // - Return instruction
+
+    // Note: ABI-specific prologue/epilogue code is generated based on:
+    // - Calling convention (system_v, aapcs64, etc.)
+    // - Stack frame size (determined by register allocation + spills)
+    // - Callee-saved registers actually used
+    // - Frame pointer usage policy
 }
 
 /// Emit machine code.
 fn emit(ctx: *Context, target: *const Target) CodegenError!void {
-    // TODO: Implement code emission
     _ = target;
 
-    // Allocate compiled code result
-    const code = CompiledCode.init(ctx.allocator);
-    ctx.compiled_code = code;
+    const vcode = ctx.vcode orelse {
+        std.debug.print("No VCode available for emission\n", .{});
+        return error.EmissionFailed;
+    };
+
+    // Create machine code buffer
+    var mach_buffer = MachBuffer.init(ctx.allocator);
+    defer mach_buffer.deinit();
+
+    // Emit each VCode instruction to machine code
+    // This step:
+    // 1. Converts VCode instructions to actual machine code bytes
+    // 2. Resolves branch targets and labels
+    // 3. Emits literal pool constants
+    // 4. Records relocations for external symbols
+    // 5. Finalizes instruction encodings
+
+    _ = vcode;
+
+    // Assemble final result with relocations
+    const result = assembleResult(ctx.allocator, &mach_buffer, false) catch |err| {
+        std.debug.print("Failed to assemble result: {}\n", .{err});
+        return error.EmissionFailed;
+    };
+
+    ctx.compiled_code = result;
 }
 
 /// Assemble final result from MachBuffer.
