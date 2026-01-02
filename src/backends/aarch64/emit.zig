@@ -216,6 +216,11 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_fsub => |i| try emitVecFsub(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_fmul => |i| try emitVecFmul(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_fdiv => |i| try emitVecFdiv(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .addv => |i| try emitAddv(i.dst.toReg(), i.src, i.size, buffer),
+        .sminv => |i| try emitSminv(i.dst.toReg(), i.src, i.size, buffer),
+        .smaxv => |i| try emitSmaxv(i.dst.toReg(), i.src, i.size, buffer),
+        .uminv => |i| try emitUminv(i.dst.toReg(), i.src, i.size, buffer),
+        .umaxv => |i| try emitUmaxv(i.dst.toReg(), i.src, i.size, buffer),
     }
 }
 
@@ -10456,6 +10461,116 @@ fn emitVecFdiv(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (0b1 << 21) |
         (@as(u32, rm) << 16) |
         (0b111111 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// ADDV (add across vector): ADDV Vd, Vn.T
+/// Encoding: 0|Q|0|01110|size|11000|110110|Rn|Rd
+fn emitAddv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b11000 << 17) |
+        (0b110110 << 11) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// SMINV (signed minimum across vector): SMINV Vd, Vn.T
+/// Encoding: 0|Q|0|01110|size|11000|110010|Rn|Rd
+fn emitSminv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b11000 << 17) |
+        (0b110010 << 11) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// SMAXV (signed maximum across vector): SMAXV Vd, Vn.T
+/// Encoding: 0|Q|0|01110|size|11000|110100|Rn|Rd
+fn emitSmaxv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b11000 << 17) |
+        (0b110100 << 11) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// UMINV (unsigned minimum across vector): UMINV Vd, Vn.T
+/// Encoding: 0|Q|1|01110|size|11000|110010|Rn|Rd
+fn emitUminv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b1 << 29) | // U=1 for unsigned
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b11000 << 17) |
+        (0b110010 << 11) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// UMAXV (unsigned maximum across vector): UMAXV Vd, Vn.T
+/// Encoding: 0|Q|1|01110|size|11000|110100|Rn|Rd
+fn emitUmaxv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b1 << 29) | // U=1 for unsigned
+        (0b01110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b11000 << 17) |
+        (0b110100 << 11) |
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 

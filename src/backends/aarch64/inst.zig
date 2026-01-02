@@ -1472,6 +1472,42 @@ pub const Inst = union(enum) {
         size: VectorSize,
     },
 
+    /// Vector ADDV (add across vector): ADDV Vd, Vn.T
+    /// Sums all lanes of src into dst (scalar result in lane 0)
+    addv: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VectorSize, // .8b/.16b/.4h/.8h/.2s/.4s only (no .2d)
+    },
+
+    /// Vector SMINV (signed minimum across vector): SMINV Vd, Vn.T
+    sminv: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector SMAXV (signed maximum across vector): SMAXV Vd, Vn.T
+    smaxv: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector UMINV (unsigned minimum across vector): UMINV Vd, Vn.T
+    uminv: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector UMAXV (unsigned maximum across vector): UMAXV Vd, Vn.T
+    umaxv: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VectorSize,
+    },
+
 
     pub fn format(
         self: Inst,
@@ -1682,6 +1718,11 @@ pub const Inst = union(enum) {
             .vec_fsub => |i| try writer.print("fsub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_fmul => |i| try writer.print("fmul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_fdiv => |i| try writer.print("fdiv.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .addv => |i| try writer.print("addv.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .sminv => |i| try writer.print("sminv.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .smaxv => |i| try writer.print("smaxv.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .uminv => |i| try writer.print("uminv.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .umaxv => |i| try writer.print("umaxv.{} {}, {}", .{ i.size, i.dst, i.src }),
         }
     }
 };
