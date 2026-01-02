@@ -229,6 +229,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .trn2 => |i| try emitTrn2(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .ld1 => |i| try emitLd1(i.dst.toReg(), i.addr, i.size, buffer),
         .st1 => |i| try emitSt1(i.src, i.addr, i.size, buffer),
+        .ins => |i| try emitIns(i.dst.toReg(), i.src, i.index, i.size, buffer),
+        .ext => |i| try emitExt(i.dst.toReg(), i.src1, i.src2, i.imm, buffer),
+        .dup_elem => |i| try emitDupElem(i.dst.toReg(), i.src, i.index, i.size, buffer),
     }
 }
 
@@ -10773,6 +10776,92 @@ fn emitSt1(src: Reg, addr: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBu
         (@as(u32, size) << 10) |
         (@as(u32, rn) << 5) |
         @as(u32, rt);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// INS (insert element from register): INS Vd.T[index], Vn.T[0]
+/// Encoding: 0|Q|1|01110000|imm5|0|imm4|1|Rn|Rd
+/// imm5 encodes size and destination index, imm4=0000 for source lane 0
+fn emitIns(dst: Reg, src: Reg, index: u4, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    // imm5: index << (size_bits + 1) | (1 << size_bits)
+    const size_bits: u3 = switch (vec_size) {
+        .b8, .b16 => 0,
+        .h4, .h8 => 1,
+        .s2, .s4 => 2,
+        .d2 => 3,
+    };
+    const imm5 = (@as(u5, index) << (@as(u3, size_bits) + 1)) | (@as(u5, 1) << size_bits);
+
+    const insn: u32 = (0b0 << 31) |
+        (0b1 << 30) | // Q=1
+        (0b1 << 29) |
+        (0b01110000 << 21) |
+        (@as(u32, imm5) << 16) |
+        (0b0 << 15) |
+        (0b0000 << 11) | // imm4=0000 for source lane 0
+        (0b1 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// EXT (extract): EXT Vd.16B, Vn.16B, Vm.16B, #imm
+/// Encoding: 0|Q|101110|00|0|Rm|0|imm4|0|Rn|Rd
+/// Q=1 for 128-bit, imm4 specifies byte position
+fn emitExt(dst: Reg, src1: Reg, src2: Reg, imm: u4, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+
+    const insn: u32 = (0b0 << 31) |
+        (0b1 << 30) | // Q=1 for 128-bit
+        (0b101110 << 24) |
+        (0b00 << 22) |
+        (0b0 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b0 << 15) |
+        (@as(u32, imm) << 11) |
+        (0b0 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// DUP (duplicate element): DUP Vd.T, Vn.T[index]
+/// Encoding: 0|Q|0|01110000|imm5|0|00001|Rn|Rd
+/// imm5 encodes size and source index
+fn emitDupElem(dst: Reg, src: Reg, index: u4, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q = vec_size.qBit();
+
+    // imm5: index << (size_bits + 1) | (1 << size_bits)
+    const size_bits: u3 = switch (vec_size) {
+        .b8, .b16 => 0,
+        .h4, .h8 => 1,
+        .s2, .s4 => 2,
+        .d2 => 3,
+    };
+    const imm5 = (@as(u5, index) << (@as(u3, size_bits) + 1)) | (@as(u5, 1) << size_bits);
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b01110000 << 21) |
+        (@as(u32, imm5) << 16) |
+        (0b0 << 15) |
+        (0b00001 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
 
     const bytes = std.mem.toBytes(insn);
     try buffer.put(&bytes);

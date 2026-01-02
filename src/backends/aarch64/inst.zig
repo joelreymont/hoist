@@ -1580,6 +1580,34 @@ pub const Inst = union(enum) {
     },
 
 
+    /// INS (insert element from register): INS Vd.T[index], Vn.T[0]
+    /// Inserts element from source lane 0 into destination lane
+    ins: struct {
+        dst: WritableReg,
+        src: Reg,
+        index: u4,
+        size: VectorSize,
+    },
+
+    /// EXT (extract): EXT Vd.16B, Vn.16B, Vm.16B, #imm
+    /// Extracts bytes from concatenated vectors
+    ext: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        imm: u4,
+    },
+
+    /// DUP (duplicate element): DUP Vd.T, Vn.T[index]
+    /// Duplicates element to all lanes
+    dup_elem: struct {
+        dst: WritableReg,
+        src: Reg,
+        index: u4,
+        size: VectorSize,
+    },
+
+
     pub fn format(
         self: Inst,
         comptime _: []const u8,
@@ -1802,6 +1830,9 @@ pub const Inst = union(enum) {
             .trn2 => |i| try writer.print("trn2.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .ld1 => |i| try writer.print("ld1.{} {{{}}}, [{}]", .{ i.size, i.dst, i.addr }),
             .st1 => |i| try writer.print("st1.{} {{{}}}, [{}]", .{ i.size, i.src, i.addr }),
+            .ins => |i| try writer.print("ins.{} {{}}[{d}], {{}}[0]", .{ i.size, i.dst, i.index, i.src }),
+            .ext => |i| try writer.print("ext.16b {}, {}, {}, #{d}", .{ i.dst, i.src1, i.src2, i.imm }),
+            .dup_elem => |i| try writer.print("dup.{} {}, {{}}[{d}]", .{ i.size, i.dst, i.src, i.index }),
         }
     }
 };
