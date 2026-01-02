@@ -3156,3 +3156,113 @@ test "aarch64_vec_mul constructor" {
     try testing.expectEqual(Inst.vec_mul, @as(std.meta.Tag(Inst), inst_32x4));
     try testing.expectEqual(VecElemSize.size32x4, inst_32x4.vec_mul.size);
 }
+
+test "aarch64_addv constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_8x8 = aarch64_addv(wr0, r1, .size8x8);
+    try testing.expectEqual(Inst.vec_addv, @as(std.meta.Tag(Inst), inst_8x8));
+    try testing.expectEqual(wr0, inst_8x8.vec_addv.dst);
+    try testing.expectEqual(r1, inst_8x8.vec_addv.src);
+    try testing.expectEqual(VecElemSize.size8x8, inst_8x8.vec_addv.size);
+
+    const inst_16x8 = aarch64_addv(wr0, r1, .size16x8);
+    try testing.expectEqual(Inst.vec_addv, @as(std.meta.Tag(Inst), inst_16x8));
+    try testing.expectEqual(VecElemSize.size16x8, inst_16x8.vec_addv.size);
+
+    const inst_32x4 = aarch64_addv(wr0, r1, .size32x4);
+    try testing.expectEqual(Inst.vec_addv, @as(std.meta.Tag(Inst), inst_32x4));
+    try testing.expectEqual(VecElemSize.size32x4, inst_32x4.vec_addv.size);
+}
+
+test "aarch64_sminv constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_8x8 = aarch64_sminv(wr0, r1, .size8x8);
+    try testing.expectEqual(Inst.vec_sminv, @as(std.meta.Tag(Inst), inst_8x8));
+    try testing.expectEqual(wr0, inst_8x8.vec_sminv.dst);
+    try testing.expectEqual(r1, inst_8x8.vec_sminv.src);
+    try testing.expectEqual(VecElemSize.size8x8, inst_8x8.vec_sminv.size);
+
+    const inst_16x4 = aarch64_sminv(wr0, r1, .size16x4);
+    try testing.expectEqual(Inst.vec_sminv, @as(std.meta.Tag(Inst), inst_16x4));
+    try testing.expectEqual(VecElemSize.size16x4, inst_16x4.vec_sminv.size);
+
+    const inst_32x2 = aarch64_sminv(wr0, r1, .size32x2);
+    try testing.expectEqual(Inst.vec_sminv, @as(std.meta.Tag(Inst), inst_32x2));
+    try testing.expectEqual(VecElemSize.size32x2, inst_32x2.vec_sminv.size);
+}
+
+test "aarch64_smaxv constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_8x16 = aarch64_smaxv(wr0, r1, .size8x16);
+    try testing.expectEqual(Inst.vec_smaxv, @as(std.meta.Tag(Inst), inst_8x16));
+    try testing.expectEqual(wr0, inst_8x16.vec_smaxv.dst);
+    try testing.expectEqual(r1, inst_8x16.vec_smaxv.src);
+    try testing.expectEqual(VecElemSize.size8x16, inst_8x16.vec_smaxv.size);
+
+    const inst_16x8 = aarch64_smaxv(wr0, r1, .size16x8);
+    try testing.expectEqual(Inst.vec_smaxv, @as(std.meta.Tag(Inst), inst_16x8));
+    try testing.expectEqual(VecElemSize.size16x8, inst_16x8.vec_smaxv.size);
+
+    const inst_32x4 = aarch64_smaxv(wr0, r1, .size32x4);
+    try testing.expectEqual(Inst.vec_smaxv, @as(std.meta.Tag(Inst), inst_32x4));
+    try testing.expectEqual(VecElemSize.size32x4, inst_32x4.vec_smaxv.size);
+}
+
+test "aarch64_uminv constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_8x8 = aarch64_uminv(wr0, r1, .size8x8);
+    try testing.expectEqual(Inst.vec_uminv, @as(std.meta.Tag(Inst), inst_8x8));
+    try testing.expectEqual(wr0, inst_8x8.vec_uminv.dst);
+    try testing.expectEqual(r1, inst_8x8.vec_uminv.src);
+    try testing.expectEqual(VecElemSize.size8x8, inst_8x8.vec_uminv.size);
+
+    const inst_16x4 = aarch64_uminv(wr0, r1, .size16x4);
+    try testing.expectEqual(Inst.vec_uminv, @as(std.meta.Tag(Inst), inst_16x4));
+    try testing.expectEqual(VecElemSize.size16x4, inst_16x4.vec_uminv.size);
+
+    const inst_32x2 = aarch64_uminv(wr0, r1, .size32x2);
+    try testing.expectEqual(Inst.vec_uminv, @as(std.meta.Tag(Inst), inst_32x2));
+    try testing.expectEqual(VecElemSize.size32x2, inst_32x2.vec_uminv.size);
+}
+
+test "aarch64_umaxv constructor" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_8x16 = aarch64_umaxv(wr0, r1, .size8x16);
+    try testing.expectEqual(Inst.vec_umaxv, @as(std.meta.Tag(Inst), inst_8x16));
+    try testing.expectEqual(wr0, inst_8x16.vec_umaxv.dst);
+    try testing.expectEqual(r1, inst_8x16.vec_umaxv.src);
+    try testing.expectEqual(VecElemSize.size8x16, inst_8x16.vec_umaxv.size);
+
+    const inst_16x8 = aarch64_umaxv(wr0, r1, .size16x8);
+    try testing.expectEqual(Inst.vec_umaxv, @as(std.meta.Tag(Inst), inst_16x8));
+    try testing.expectEqual(VecElemSize.size16x8, inst_16x8.vec_umaxv.size);
+
+    const inst_32x4 = aarch64_umaxv(wr0, r1, .size32x4);
+    try testing.expectEqual(Inst.vec_umaxv, @as(std.meta.Tag(Inst), inst_32x4));
+    try testing.expectEqual(VecElemSize.size32x4, inst_32x4.vec_umaxv.size);
+}
