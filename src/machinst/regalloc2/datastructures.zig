@@ -16,14 +16,14 @@ pub fn SparseSet(comptime T: type) type {
 
         pub fn init(allocator: Allocator) Self {
             return .{
-                .dense = std.ArrayList(T).init(allocator),
+                .dense = .{},
                 .sparse = std.AutoHashMap(T, usize).init(allocator),
                 .allocator = allocator,
             };
         }
 
         pub fn deinit(self: *Self) void {
-            self.dense.deinit();
+            self.dense.deinit(self.allocator);
             self.sparse.deinit();
         }
 
@@ -31,7 +31,7 @@ pub fn SparseSet(comptime T: type) type {
             if (self.sparse.contains(value)) return;
 
             const pos = self.dense.items.len;
-            try self.dense.append(value);
+            try self.dense.append(self.allocator, value);
             try self.sparse.put(value, pos);
         }
 
@@ -82,28 +82,28 @@ pub const IntervalTree = struct {
 
     pub fn init(allocator: Allocator) IntervalTree {
         return .{
-            .intervals = std.ArrayList(Interval).init(allocator),
+            .intervals = .{},
             .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *IntervalTree) void {
-        self.intervals.deinit();
+        self.intervals.deinit(self.allocator);
     }
 
     pub fn insert(self: *IntervalTree, start: u32, end: u32, data: usize) !void {
-        try self.intervals.append(.{
+        try self.intervals.append(self.allocator, .{
             .start = start,
             .end = end,
             .data = data,
         });
     }
 
-    pub fn query(self: *const IntervalTree, start: u32, end: u32, result: *std.ArrayList(usize)) !void {
+    pub fn query(self: *const IntervalTree, allocator: Allocator, start: u32, end: u32, result: *std.ArrayList(usize)) !void {
         const query_interval = Interval{ .start = start, .end = end, .data = 0 };
         for (self.intervals.items) |interval| {
             if (interval.overlaps(query_interval)) {
-                try result.append(interval.data);
+                try result.append(allocator, interval.data);
             }
         }
     }
@@ -184,10 +184,10 @@ test "IntervalTree query overlaps" {
     try tree.insert(5, 15, 1);
     try tree.insert(20, 30, 2);
 
-    var result = std.ArrayList(usize).init(testing.allocator);
-    defer result.deinit();
+    var result: std.ArrayList(usize) = .{};
+    defer result.deinit(testing.allocator);
 
-    try tree.query(8, 12, &result);
+    try tree.query(testing.allocator, 8, 12, &result);
 
     try testing.expectEqual(@as(usize, 2), result.items.len);
     try testing.expect(std.mem.indexOfScalar(usize, result.items, 0) != null);

@@ -50,6 +50,7 @@ pub const vcode = @import("machinst/vcode.zig");
 pub const abi = @import("machinst/abi.zig");
 pub const regalloc = @import("machinst/regalloc.zig");
 pub const regalloc2_types = @import("machinst/regalloc2/types.zig");
+pub const regalloc2_api = @import("machinst/regalloc2/api.zig");
 pub const regalloc2_moves = @import("machinst/regalloc2/moves.zig");
 pub const regalloc2_liveness = @import("machinst/regalloc2/liveness.zig");
 pub const regalloc2_datastructures = @import("machinst/regalloc2/datastructures.zig");
@@ -67,4 +68,7 @@ pub const aarch64_inst = @import("backends/aarch64/inst.zig");
 pub const aarch64_emit = @import("backends/aarch64/emit.zig");
 pub const aarch64_abi = @import("backends/aarch64/abi.zig");
 pub const aarch64_lower = @import("backends/aarch64/lower.zig");
+pub const aarch64_isle_helpers = @import("backends/aarch64/isle_helpers.zig");
 pub const aarch64_isa = @import("backends/aarch64/isa.zig");
+
+pub const ir = @import("ir/function.zig");
