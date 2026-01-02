@@ -194,7 +194,7 @@ test "TuningFlags initialization" {
 }
 
 test "Aarch64ISA with features" {
-    var isa = Aarch64ISA{
+    const isa = Aarch64ISA{
         .features = Features{
             .has_lse = true,
             .has_neon = true,

@@ -53,11 +53,23 @@ pub fn build(b: *std.Build) void {
     });
     bench_large.root_module.addImport("root", lib.root_module);
 
+    const bench_aarch64 = b.addExecutable(.{
+        .name = "bench_aarch64",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/aarch64_perf.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    bench_aarch64.root_module.addImport("root", lib.root_module);
+
     const bench_step = b.step("bench", "Run benchmarks");
     const run_bench_fib = b.addRunArtifact(bench_fib);
     const run_bench_large = b.addRunArtifact(bench_large);
+    const run_bench_aarch64 = b.addRunArtifact(bench_aarch64);
     bench_step.dependOn(&run_bench_fib.step);
     bench_step.dependOn(&run_bench_large.step);
+    bench_step.dependOn(&run_bench_aarch64.step);
 
     // Fuzzing
     const fuzz_compile = b.addExecutable(.{
