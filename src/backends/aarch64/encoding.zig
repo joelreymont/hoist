@@ -304,13 +304,17 @@ pub fn encodeFloatImmediate(value: f64) ?u8 {
 
     const frac_bits = @as(u8, @intCast((frac >> 48) & 0xF));
 
-    // Exponent must be 10XX XXXX (between 0x380 and 0x47F)
+    // Exponent must match pattern aBbbbbbbcd where B = NOT(b)
+    // This means bit 10 must be different from bit 9
     const exp_bits = @as(u11, @intCast(exp));
-    if ((exp_bits & 0x600) != 0x200 or (exp_bits & 0x180) == 0x180) {
+    const bit10 = (exp_bits >> 10) & 1;
+    const bit9 = (exp_bits >> 9) & 1;
+    if (bit10 == bit9) {
         return null;
     }
 
-    const exp_encoded = @as(u8, @intCast((exp >> 6) & 0x7));
+    // Encode as: NOT(bit9) concat bits[8:6]
+    const exp_encoded = @as(u8, @intCast(((bit9 ^ 1) << 3) | ((exp >> 6) & 0x7)));
 
     return (@as(u8, @intCast(sign)) << 7) | (exp_encoded << 4) | frac_bits;
 }
