@@ -2384,11 +2384,68 @@ pub const ImmLogic = struct {
     /// Create from u64 if encodable as logical immediate.
     /// This is complex - see ARM ARM for full algorithm.
     pub fn maybeFromU64(val: u64, size: OperandSize) ?ImmLogic {
-        // TODO: Implement full logical immediate encoding algorithm
-        // For now, return null (will be implemented in Phase 2)
-        _ = val;
-        _ = size;
-        return null;
+        const original_value = val;
+
+        const value = if (size == .size32) blk: {
+            const v = val << 32;
+            break :blk v | (v >> 32);
+        } else val;
+
+        const inverted = (value & 1) == 1;
+        const value_adj = if (inverted) ~value else value;
+
+        if (value_adj == 0) return null;
+
+        const a = @as(u64, 1) << @intCast(@ctz(value_adj));
+        const value_plus_a = value_adj +% a;
+        const b = if (value_plus_a == 0) @as(u64, 0) else @as(u64, 1) << @intCast(@ctz(value_plus_a));
+        const value_plus_a_minus_b = value_plus_a -% b;
+        const c = if (value_plus_a_minus_b == 0) @as(u64, 0) else @as(u64, 1) << @intCast(@ctz(value_plus_a_minus_b));
+
+        const clz_a = @clz(a);
+        const d: u32 = if (c != 0) blk: {
+            const clz_c = @clz(c);
+            break :blk clz_a - clz_c;
+        } else 64;
+
+        const out_n: u8 = if (c != 0) 0 else 1;
+        const mask = if (c != 0) (@as(u64, 1) << @intCast(d)) - 1 else std.math.maxInt(u64);
+
+        if ((d & (d - 1)) != 0) return null;
+
+        if (((b -% a) & ~mask) != 0) return null;
+
+        const multipliers = [_]u64{
+            0x0000000000000001,
+            0x0000000100000001,
+            0x0001000100010001,
+            0x0101010101010101,
+            0x1111111111111111,
+            0x5555555555555555,
+        };
+        const multiplier = multipliers[@intCast(@as(u64, d).leading_zeros() - 57)];
+        const candidate = (b -% a) *% multiplier;
+
+        if (value_adj != candidate) return null;
+
+        const clz_b = if (b == 0) std.math.maxInt(u32) else @clz(b);
+        const s_bits = clz_a -% clz_b;
+
+        const s_val: u32 = if (inverted) d - s_bits else s_bits;
+        const r_val: u32 = if (inverted)
+            (clz_b +% 1) & (d - 1)
+        else
+            (clz_a + 1) & (d - 1);
+
+        const s = ((d * 2) *% (@as(u32, 0) -% 1) | (s_val -% 1)) & 0x3f;
+
+        return ImmLogic{
+            .value = original_value,
+            .n = out_n != 0,
+            .r = @intCast(r_val),
+            .s = @intCast(s),
+            .size = size,
+        };
     }
 
     pub fn toU64(self: ImmLogic) u64 {
