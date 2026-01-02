@@ -628,11 +628,15 @@
 (decl aarch64_ldr_reg (Type Value Value) Aarch64Inst)
 (decl aarch64_ldr_ext (Type Value Value ExtendOp) Aarch64Inst)
 (decl aarch64_ldr_shifted (Type Value Value i64) Aarch64Inst)
+(decl aarch64_ldr_pre (Type Value i64) Aarch64Inst)   ;; Pre-index: base+=offset, then load
+(decl aarch64_ldr_post (Type Value i64) Aarch64Inst)  ;; Post-index: load, then base+=offset
 (decl aarch64_str (Value Value) Aarch64Inst)
 (decl aarch64_str_imm (Value Value i64) Aarch64Inst)
 (decl aarch64_str_reg (Value Value Value) Aarch64Inst)
 (decl aarch64_str_ext (Value Value Value ExtendOp) Aarch64Inst)
 (decl aarch64_str_shifted (Value Value Value i64) Aarch64Inst)
+(decl aarch64_str_pre (Value Value i64) Aarch64Inst)  ;; Pre-index: base+=offset, then store
+(decl aarch64_str_post (Value Value i64) Aarch64Inst) ;; Post-index: store, then base+=offset
 
 ;; Control flow
 (decl aarch64_b (Block) Aarch64Inst)
