@@ -1911,6 +1911,105 @@ pub fn aarch64_str_pair(src1: Reg, src2: Reg, base: Reg, offset: i16, size: Oper
     } };
 }
 
+/// Create unconditional branch instruction: B label
+/// Branches to a label or offset.
+pub fn aarch64_b(target: BranchTarget) Inst {
+    return .{ .b = .{ .target = target } };
+}
+
+/// Create branch to register instruction: BR Xn
+/// Branches to the address in the specified register.
+pub fn aarch64_br(target: Reg) Inst {
+    return .{ .br = .{ .target = target } };
+}
+
+/// Create branch with link to register instruction: BLR Xn
+/// Branches to the address in the specified register and stores return address in X30 (LR).
+/// Used for function calls through register.
+pub fn aarch64_blr(target: Reg) Inst {
+    return .{ .blr = .{ .target = target } };
+}
+
+/// Create return instruction: RET
+/// Returns from function using address in X30 (LR).
+pub fn aarch64_ret() Inst {
+    return .ret;
+}
+
+/// Create floating-point add instruction: FADD Vd, Vn, Vm
+/// Computes dst = src1 + src2.
+pub fn aarch64_fadd(dst: WritableReg, src1: Reg, src2: Reg, size: FpuOperandSize) Inst {
+    return .{ .fadd = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// Create floating-point subtract instruction: FSUB Vd, Vn, Vm
+/// Computes dst = src1 - src2.
+pub fn aarch64_fsub(dst: WritableReg, src1: Reg, src2: Reg, size: FpuOperandSize) Inst {
+    return .{ .fsub = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// Create floating-point multiply instruction: FMUL Vd, Vn, Vm
+/// Computes dst = src1 * src2.
+pub fn aarch64_fmul(dst: WritableReg, src1: Reg, src2: Reg, size: FpuOperandSize) Inst {
+    return .{ .fmul = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// Create floating-point divide instruction: FDIV Vd, Vn, Vm
+/// Computes dst = src1 / src2.
+pub fn aarch64_fdiv(dst: WritableReg, src1: Reg, src2: Reg, size: FpuOperandSize) Inst {
+    return .{ .fdiv = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// Create floating-point square root instruction: FSQRT Vd, Vn
+/// Computes dst = sqrt(src).
+pub fn aarch64_fsqrt(dst: WritableReg, src: Reg, size: FpuOperandSize) Inst {
+    return .{ .fsqrt = .{
+        .dst = dst,
+        .src = src,
+        .size = size,
+    } };
+}
+
+/// Create floating-point absolute value instruction: FABS Vd, Vn
+/// Computes dst = abs(src).
+pub fn aarch64_fabs(dst: WritableReg, src: Reg, size: FpuOperandSize) Inst {
+    return .{ .fabs = .{
+        .dst = dst,
+        .src = src,
+        .size = size,
+    } };
+}
+
+/// Create floating-point negate instruction: FNEG Vd, Vn
+/// Computes dst = -src.
+pub fn aarch64_fneg(dst: WritableReg, src: Reg, size: FpuOperandSize) Inst {
+    return .{ .fneg = .{
+        .dst = dst,
+        .src = src,
+        .size = size,
+    } };
+}
+
 test "Inst formatting" {
     const v0 = VReg.new(0, .int);
     const v1 = VReg.new(1, .int);
@@ -2472,4 +2571,177 @@ test "aarch64_str_pair constructor" {
     try testing.expectEqual(Inst.stp, @as(std.meta.Tag(Inst), inst_64));
     try testing.expectEqual(@as(i16, 16), inst_64.stp.offset);
     try testing.expectEqual(OperandSize.size64, inst_64.stp.size);
+}
+
+test "aarch64_b constructor" {
+    const inst_label = aarch64_b(.{ .label = 42 });
+    try testing.expectEqual(Inst.b, @as(std.meta.Tag(Inst), inst_label));
+    try testing.expectEqual(BranchTarget.label, @as(std.meta.Tag(BranchTarget), inst_label.b.target));
+    try testing.expectEqual(@as(u32, 42), inst_label.b.target.label);
+
+    const inst_offset = aarch64_b(.{ .offset = -100 });
+    try testing.expectEqual(Inst.b, @as(std.meta.Tag(Inst), inst_offset));
+    try testing.expectEqual(BranchTarget.offset, @as(std.meta.Tag(BranchTarget), inst_offset.b.target));
+    try testing.expectEqual(@as(i32, -100), inst_offset.b.target.offset);
+}
+
+test "aarch64_br constructor" {
+    const v0 = VReg.new(0, .int);
+    const r0 = Reg.fromVReg(v0);
+
+    const inst = aarch64_br(r0);
+    try testing.expectEqual(Inst.br, @as(std.meta.Tag(Inst), inst));
+    try testing.expectEqual(r0, inst.br.target);
+}
+
+test "aarch64_blr constructor" {
+    const v0 = VReg.new(0, .int);
+    const r0 = Reg.fromVReg(v0);
+
+    const inst = aarch64_blr(r0);
+    try testing.expectEqual(Inst.blr, @as(std.meta.Tag(Inst), inst));
+    try testing.expectEqual(r0, inst.blr.target);
+}
+
+test "aarch64_ret constructor" {
+    const inst = aarch64_ret();
+    try testing.expectEqual(Inst.ret, @as(std.meta.Tag(Inst), inst));
+}
+
+test "aarch64_fadd constructor" {
+    const v0 = VReg.new(0, .float);
+    const v1 = VReg.new(1, .float);
+    const v2 = VReg.new(2, .float);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_32 = aarch64_fadd(wr0, r1, r2, .size32);
+    try testing.expectEqual(Inst.fadd, @as(std.meta.Tag(Inst), inst_32));
+    try testing.expectEqual(wr0, inst_32.fadd.dst);
+    try testing.expectEqual(r1, inst_32.fadd.src1);
+    try testing.expectEqual(r2, inst_32.fadd.src2);
+    try testing.expectEqual(FpuOperandSize.size32, inst_32.fadd.size);
+
+    const inst_64 = aarch64_fadd(wr0, r1, r2, .size64);
+    try testing.expectEqual(Inst.fadd, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(FpuOperandSize.size64, inst_64.fadd.size);
+}
+
+test "aarch64_fsub constructor" {
+    const v0 = VReg.new(0, .float);
+    const v1 = VReg.new(1, .float);
+    const v2 = VReg.new(2, .float);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_32 = aarch64_fsub(wr0, r1, r2, .size32);
+    try testing.expectEqual(Inst.fsub, @as(std.meta.Tag(Inst), inst_32));
+    try testing.expectEqual(wr0, inst_32.fsub.dst);
+    try testing.expectEqual(r1, inst_32.fsub.src1);
+    try testing.expectEqual(r2, inst_32.fsub.src2);
+    try testing.expectEqual(FpuOperandSize.size32, inst_32.fsub.size);
+
+    const inst_64 = aarch64_fsub(wr0, r1, r2, .size64);
+    try testing.expectEqual(Inst.fsub, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(FpuOperandSize.size64, inst_64.fsub.size);
+}
+
+test "aarch64_fmul constructor" {
+    const v0 = VReg.new(0, .float);
+    const v1 = VReg.new(1, .float);
+    const v2 = VReg.new(2, .float);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_32 = aarch64_fmul(wr0, r1, r2, .size32);
+    try testing.expectEqual(Inst.fmul, @as(std.meta.Tag(Inst), inst_32));
+    try testing.expectEqual(wr0, inst_32.fmul.dst);
+    try testing.expectEqual(r1, inst_32.fmul.src1);
+    try testing.expectEqual(r2, inst_32.fmul.src2);
+    try testing.expectEqual(FpuOperandSize.size32, inst_32.fmul.size);
+
+    const inst_64 = aarch64_fmul(wr0, r1, r2, .size64);
+    try testing.expectEqual(Inst.fmul, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(FpuOperandSize.size64, inst_64.fmul.size);
+}
+
+test "aarch64_fdiv constructor" {
+    const v0 = VReg.new(0, .float);
+    const v1 = VReg.new(1, .float);
+    const v2 = VReg.new(2, .float);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_32 = aarch64_fdiv(wr0, r1, r2, .size32);
+    try testing.expectEqual(Inst.fdiv, @as(std.meta.Tag(Inst), inst_32));
+    try testing.expectEqual(wr0, inst_32.fdiv.dst);
+    try testing.expectEqual(r1, inst_32.fdiv.src1);
+    try testing.expectEqual(r2, inst_32.fdiv.src2);
+    try testing.expectEqual(FpuOperandSize.size32, inst_32.fdiv.size);
+
+    const inst_64 = aarch64_fdiv(wr0, r1, r2, .size64);
+    try testing.expectEqual(Inst.fdiv, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(FpuOperandSize.size64, inst_64.fdiv.size);
+}
+
+test "aarch64_fsqrt constructor" {
+    const v0 = VReg.new(0, .float);
+    const v1 = VReg.new(1, .float);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_32 = aarch64_fsqrt(wr0, r1, .size32);
+    try testing.expectEqual(Inst.fsqrt, @as(std.meta.Tag(Inst), inst_32));
+    try testing.expectEqual(wr0, inst_32.fsqrt.dst);
+    try testing.expectEqual(r1, inst_32.fsqrt.src);
+    try testing.expectEqual(FpuOperandSize.size32, inst_32.fsqrt.size);
+
+    const inst_64 = aarch64_fsqrt(wr0, r1, .size64);
+    try testing.expectEqual(Inst.fsqrt, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(FpuOperandSize.size64, inst_64.fsqrt.size);
+}
+
+test "aarch64_fabs constructor" {
+    const v0 = VReg.new(0, .float);
+    const v1 = VReg.new(1, .float);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_32 = aarch64_fabs(wr0, r1, .size32);
+    try testing.expectEqual(Inst.fabs, @as(std.meta.Tag(Inst), inst_32));
+    try testing.expectEqual(wr0, inst_32.fabs.dst);
+    try testing.expectEqual(r1, inst_32.fabs.src);
+    try testing.expectEqual(FpuOperandSize.size32, inst_32.fabs.size);
+
+    const inst_64 = aarch64_fabs(wr0, r1, .size64);
+    try testing.expectEqual(Inst.fabs, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(FpuOperandSize.size64, inst_64.fabs.size);
+}
+
+test "aarch64_fneg constructor" {
+    const v0 = VReg.new(0, .float);
+    const v1 = VReg.new(1, .float);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    const inst_32 = aarch64_fneg(wr0, r1, .size32);
+    try testing.expectEqual(Inst.fneg, @as(std.meta.Tag(Inst), inst_32));
+    try testing.expectEqual(wr0, inst_32.fneg.dst);
+    try testing.expectEqual(r1, inst_32.fneg.src);
+    try testing.expectEqual(FpuOperandSize.size32, inst_32.fneg.size);
+
+    const inst_64 = aarch64_fneg(wr0, r1, .size64);
+    try testing.expectEqual(Inst.fneg, @as(std.meta.Tag(Inst), inst_64));
+    try testing.expectEqual(FpuOperandSize.size64, inst_64.fneg.size);
 }
