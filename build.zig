@@ -40,6 +40,17 @@ pub fn build(b: *std.Build) void {
     const run_e2e_branches = b.addRunArtifact(e2e_branches);
     test_step.dependOn(&run_e2e_branches.step);
 
+    const e2e_jit = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/e2e_jit.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    e2e_jit.root_module.addImport("hoist", lib.root_module);
+    const run_e2e_jit = b.addRunArtifact(e2e_jit);
+    test_step.dependOn(&run_e2e_jit.step);
+
     // Integration tests (future: full pipeline tests)
     const integration_step = b.step("test-integration", "Run integration tests");
     integration_step.dependOn(&run_tests.step);
