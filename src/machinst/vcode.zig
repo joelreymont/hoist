@@ -269,6 +269,38 @@ test "VCode with multiple blocks" {
     try testing.expectEqual(@as(BlockIndex, 2), b3.preds[1]);
 }
 
+/// VReg renaming map for SSA construction and optimization.
+pub const VRegRenameMap = struct {
+    map: std.AutoHashMap(VReg, VReg),
+    allocator: Allocator,
+
+    pub fn init(allocator: Allocator) VRegRenameMap {
+        return .{
+            .map = std.AutoHashMap(VReg, VReg).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *VRegRenameMap) void {
+        self.map.deinit();
+    }
+
+    /// Add a rename from old to new vreg.
+    pub fn addRename(self: *VRegRenameMap, old: VReg, new: VReg) !void {
+        try self.map.put(old, new);
+    }
+
+    /// Get the renamed vreg, or original if not renamed.
+    pub fn getRename(self: *const VRegRenameMap, vreg: VReg) VReg {
+        return self.map.get(vreg) orelse vreg;
+    }
+
+    /// Check if vreg has been renamed.
+    pub fn isRenamed(self: *const VRegRenameMap, vreg: VReg) bool {
+        return self.map.contains(vreg);
+    }
+};
+
 test "VCode with block parameters" {
     const TestInst = struct { opcode: u8 };
 
@@ -288,4 +320,24 @@ test "VCode with block parameters" {
     try testing.expectEqual(@as(usize, 2), block.params.len);
     try testing.expectEqual(@as(u32, 0), block.params[0].index());
     try testing.expectEqual(@as(u32, 1), block.params[1].index());
+}
+
+test "VRegRenameMap basic" {
+    var rename_map = VRegRenameMap.init(testing.allocator);
+    defer rename_map.deinit();
+
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+    const v3 = VReg.new(3, .int);
+
+    try rename_map.addRename(v1, v2);
+
+    try testing.expect(rename_map.isRenamed(v1));
+    try testing.expect(!rename_map.isRenamed(v3));
+
+    const renamed = rename_map.getRename(v1);
+    try testing.expectEqual(@as(u32, 2), renamed.index());
+
+    const not_renamed = rename_map.getRename(v3);
+    try testing.expectEqual(@as(u32, 3), not_renamed.index());
 }
