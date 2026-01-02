@@ -8,6 +8,7 @@ pub const maps = @import("foundation/maps.zig");
 pub const types = @import("ir/types.zig");
 pub const entities = @import("ir/entities.zig");
 pub const opcodes = @import("ir/opcodes.zig");
+pub const instructions = @import("ir/instructions.zig");
 pub const instruction_format = @import("ir/instruction_format.zig");
 pub const trapcode = @import("ir/trapcode.zig");
 pub const condcodes = @import("ir/condcodes.zig");
@@ -16,15 +17,20 @@ pub const memflags = @import("ir/memflags.zig");
 pub const value_list = @import("ir/value_list.zig");
 pub const block_call = @import("ir/block_call.zig");
 pub const atomic = @import("ir/atomic.zig");
+pub const atomics = @import("ir/atomics.zig");
 pub const signature = @import("ir/signature.zig");
 pub const constant = @import("ir/constant.zig");
+pub const constants = @import("ir/constants.zig");
 pub const extfunc = @import("ir/extfunc.zig");
 pub const dfg = @import("ir/dfg.zig");
 pub const layout = @import("ir/layout.zig");
 pub const instruction_data = @import("ir/instruction_data.zig");
 pub const stack_slot_data = @import("ir/stack_slot_data.zig");
+pub const stackslots = @import("ir/stackslots.zig");
+pub const stackmaps = @import("ir/stackmaps.zig");
 pub const global_value_data = @import("ir/global_value_data.zig");
 pub const jump_table_data = @import("ir/jump_table_data.zig");
+pub const flowgraph = @import("ir/flowgraph.zig");
 pub const function = @import("ir/function.zig");
 pub const builder = @import("ir/builder.zig");
 pub const optimize = @import("ir/optimize.zig");
@@ -32,12 +38,13 @@ pub const domtree = @import("ir/domtree.zig");
 pub const loops = @import("ir/loops.zig");
 pub const verifier = @import("ir/verifier.zig");
 pub const cfg = @import("ir/cfg.zig");
+pub const sourceloc = @import("ir/sourceloc.zig");
+pub const debuginfo = @import("ir/debuginfo.zig");
 
 // SSA tests
-// TODO: Fix ssa_tests.zig import paths
-// test {
-//     _ = @import("ir/ssa_tests.zig");
-// }
+test {
+    _ = @import("ir/ssa_tests.zig");
+}
 
 pub const isle_sema = @import("dsl/isle/sema.zig");
 pub const isle_trie = @import("dsl/isle/trie.zig");

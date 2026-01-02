@@ -13,3 +13,4 @@ pub const FunctionBuilder = @import("ir/builder.zig").FunctionBuilder;
 pub const ControlFlowGraph = @import("ir/cfg.zig").ControlFlowGraph;
 pub const DominatorTree = @import("ir/domtree.zig").DominatorTree;
 pub const LoopAnalysis = @import("ir/loops.zig").LoopAnalysis;
+pub const InstructionData = @import("ir/instruction_data.zig").InstructionData;
