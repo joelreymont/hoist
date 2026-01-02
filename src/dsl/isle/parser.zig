@@ -249,8 +249,34 @@ pub const Parser = struct {
         };
     }
 
-    fn parseExtractor(_: *Self, _: Pos) !ast.Extractor {
-        return error.NotImplemented;
+    fn parseExtractor(self: *Self, start_pos: Pos) !ast.Extractor {
+        // Parse: (extractor name (arg1 arg2) template_pattern)
+        const name = try self.expectSymbol();
+
+        // Parse argument list: (arg1 arg2 ...)
+        _ = try self.expect(.lparen);
+        var args = std.ArrayList(ast.Ident){};
+        errdefer args.deinit(self.allocator);
+
+        while (true) {
+            const tok = self.peek() orelse break;
+            if (tok == .rparen) break;
+            try args.append(self.allocator, try self.expectSymbol());
+        }
+
+        _ = try self.expect(.rparen);
+
+        // Parse template pattern
+        const template = try self.parsePattern();
+
+        _ = try self.expect(.rparen);
+
+        return ast.Extractor{
+            .term = name,
+            .args = try args.toOwnedSlice(self.allocator),
+            .template = template,
+            .pos = start_pos,
+        };
     }
 
     fn parseRule(self: *Self, start_pos: Pos) !ast.Rule {
