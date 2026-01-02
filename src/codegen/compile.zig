@@ -132,8 +132,9 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
     try ctx.cfg.compute(&ctx.func) catch return error.OptimizationFailed;
 
     // 3. Compute dominator tree
-    // TODO: Implement dominator tree computation
-    // try ctx.domtree.compute(&ctx.cfg);
+    if (ctx.func.entryBlock()) |entry| {
+        try ctx.domtree.compute(ctx.allocator, entry, &ctx.cfg) catch return error.OptimizationFailed;
+    }
 
     // 4. Eliminate unreachable code
     _ = try eliminateUnreachableCode(ctx);
