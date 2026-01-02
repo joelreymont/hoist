@@ -200,6 +200,75 @@ pub const LiveRange = struct {
     }
 };
 
+/// Use position for register allocation.
+pub const UsePosition = struct {
+    inst: u32,
+    kind: Kind,
+
+    pub const Kind = enum {
+        use,
+        def,
+        use_def,
+    };
+
+    pub fn init(inst: u32, kind: Kind) UsePosition {
+        return .{ .inst = inst, .kind = kind };
+    }
+};
+
+/// Use position tracker for a virtual register.
+pub const UsePositions = struct {
+    vreg: VReg,
+    positions: std.ArrayList(UsePosition),
+    allocator: Allocator,
+
+    pub fn init(allocator: Allocator, vreg: VReg) UsePositions {
+        return .{
+            .vreg = vreg,
+            .positions = .{},
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *UsePositions) void {
+        self.positions.deinit(self.allocator);
+    }
+
+    /// Add a use position.
+    pub fn addUse(self: *UsePositions, inst: u32) !void {
+        try self.positions.append(self.allocator, UsePosition.init(inst, .use));
+    }
+
+    /// Add a def position.
+    pub fn addDef(self: *UsePositions, inst: u32) !void {
+        try self.positions.append(self.allocator, UsePosition.init(inst, .def));
+    }
+
+    /// Add a use-def position.
+    pub fn addUseDef(self: *UsePositions, inst: u32) !void {
+        try self.positions.append(self.allocator, UsePosition.init(inst, .use_def));
+    }
+
+    /// Sort positions by instruction number.
+    pub fn sort(self: *UsePositions) void {
+        std.mem.sort(UsePosition, self.positions.items, {}, struct {
+            fn lessThan(_: void, a: UsePosition, b: UsePosition) bool {
+                return a.inst < b.inst;
+            }
+        }.lessThan);
+    }
+
+    /// Find next use after given instruction.
+    pub fn nextUseAfter(self: *const UsePositions, inst: u32) ?UsePosition {
+        for (self.positions.items) |pos| {
+            if (pos.inst > inst and (pos.kind == .use or pos.kind == .use_def)) {
+                return pos;
+            }
+        }
+        return null;
+    }
+};
+
 test "LivenessInfo calculateLiveIn" {
     const allocator = testing.allocator;
     var info = LivenessInfo.init(allocator);
@@ -328,4 +397,38 @@ test "LiveRange split" {
     try testing.expectEqual(@as(u32, 20), after.?.ranges.items[0].end);
     try testing.expectEqual(@as(u32, 30), after.?.ranges.items[1].start);
     try testing.expectEqual(@as(u32, 40), after.?.ranges.items[1].end);
+}
+
+test "UsePositions addUse" {
+    const allocator = testing.allocator;
+    var up = UsePositions.init(allocator, VReg.new(5));
+    defer up.deinit();
+
+    try up.addUse(10);
+    try up.addDef(20);
+    try up.addUseDef(30);
+
+    try testing.expectEqual(@as(usize, 3), up.positions.items.len);
+    try testing.expectEqual(@as(u32, 10), up.positions.items[0].inst);
+    try testing.expectEqual(UsePosition.Kind.use, up.positions.items[0].kind);
+    try testing.expectEqual(@as(u32, 20), up.positions.items[1].inst);
+    try testing.expectEqual(UsePosition.Kind.def, up.positions.items[1].kind);
+}
+
+test "UsePositions nextUseAfter" {
+    const allocator = testing.allocator;
+    var up = UsePositions.init(allocator, VReg.new(7));
+    defer up.deinit();
+
+    try up.addDef(5);
+    try up.addUse(10);
+    try up.addUse(20);
+    try up.addDef(25);
+
+    const next = up.nextUseAfter(12);
+    try testing.expect(next != null);
+    try testing.expectEqual(@as(u32, 20), next.?.inst);
+
+    const none = up.nextUseAfter(25);
+    try testing.expect(none == null);
 }
