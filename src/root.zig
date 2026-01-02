@@ -50,6 +50,7 @@ pub const isle_sema = @import("dsl/isle/sema.zig");
 pub const isle_trie = @import("dsl/isle/trie.zig");
 pub const isle_codegen = @import("dsl/isle/codegen.zig");
 pub const isle_compile = @import("dsl/isle/compile.zig");
+pub const isle_runtime = @import("dsl/isle/runtime.zig");
 pub const reg = @import("machinst/reg.zig");
 pub const machinst = @import("machinst/machinst.zig");
 pub const buffer = @import("machinst/buffer.zig");
@@ -77,15 +78,17 @@ pub const codegen_optimize = @import("codegen/optimize.zig");
 pub const legalize_types = @import("codegen/legalize_types.zig");
 pub const legalize_ops = @import("codegen/legalize_ops.zig");
 pub const lower_helpers = @import("codegen/lower_helpers.zig");
+pub const isle_ctx = @import("codegen/isle_ctx.zig");
 
 pub const codegen = struct {
     pub const compile = codegen_compile;
     pub const context = codegen_context;
     pub const optimize = codegen_optimize;
     pub const lower_helpers = @import("codegen/lower_helpers.zig");
+    pub const isle_ctx = @import("codegen/isle_ctx.zig");
 };
 
-pub const ir = struct {
+pub const ir_ns = struct {
     pub const types = @import("ir/types.zig");
     pub const entities = @import("ir/entities.zig");
 };
@@ -98,6 +101,7 @@ test {
     _ = @import("codegen/legalize_types.zig");
     _ = @import("codegen/legalize_ops.zig");
     _ = @import("codegen/lower_helpers.zig");
+    _ = @import("codegen/isle_ctx.zig");
 }
 
 // Backend tests
