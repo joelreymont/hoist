@@ -239,6 +239,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .xtn => |i| try emitXtn(i.dst.toReg(), i.src, i.size, buffer),
         .sqxtn => |i| try emitSqxtn(i.dst.toReg(), i.src, i.size, buffer),
         .uqxtn => |i| try emitUqxtn(i.dst.toReg(), i.src, i.size, buffer),
+        .tbl => |i| try emitTbl(i.dst.toReg(), i.table, i.index, buffer),
+        .tbl2 => |i| try emitTbl2(i.dst.toReg(), i.table, i.index, buffer),
+        .tbx => |i| try emitTbx(i.dst.toReg(), i.table, i.index, buffer),
     }
 }
 
@@ -11065,6 +11068,72 @@ fn emitUqxtn(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachB
         (@as(u32, size) << 22) |
         (0b100001 << 16) |
         (0b010010 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// TBL (table lookup, 1 register): TBL Vd.16B, {Vn.16B}, Vm.16B
+/// Encoding: 0|Q|001110000|Rm|0|len|000|Rn|Rd
+/// Q=1 for 128-bit, len=00 for 1 register
+fn emitTbl(dst: Reg, table: Reg, index: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(table);
+    const rm = hwEnc(index);
+
+    const insn: u32 = (0b0 << 31) |
+        (0b1 << 30) | // Q=1 for 128-bit
+        (0b001110000 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b0 << 15) |
+        (0b00 << 13) | // len=00 for 1 register
+        (0b000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// TBL2 (table lookup, 2 registers): TBL Vd.16B, {Vn.16B, Vn+1.16B}, Vm.16B
+/// Encoding: 0|Q|001110000|Rm|0|len|000|Rn|Rd
+/// len=01 for 2 registers
+fn emitTbl2(dst: Reg, table: Reg, index: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(table);
+    const rm = hwEnc(index);
+
+    const insn: u32 = (0b0 << 31) |
+        (0b1 << 30) | // Q=1 for 128-bit
+        (0b001110000 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b0 << 15) |
+        (0b01 << 13) | // len=01 for 2 registers
+        (0b000 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// TBX (table extension): TBX Vd.16B, {Vn.16B}, Vm.16B
+/// Encoding: 0|Q|001110000|Rm|0|len|100|Rn|Rd
+/// Like TBL but leaves dst unchanged for out-of-range indices
+fn emitTbx(dst: Reg, table: Reg, index: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(table);
+    const rm = hwEnc(index);
+
+    const insn: u32 = (0b0 << 31) |
+        (0b1 << 30) | // Q=1 for 128-bit
+        (0b001110000 << 21) |
+        (@as(u32, rm) << 16) |
+        (0b0 << 15) |
+        (0b00 << 13) | // len=00 for 1 register
+        (0b100 << 10) | // opcode for TBX (vs TBL 000)
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 

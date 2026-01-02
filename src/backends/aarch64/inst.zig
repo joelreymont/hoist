@@ -1668,6 +1668,31 @@ pub const Inst = union(enum) {
     },
 
 
+    /// TBL (table lookup, 1 register): TBL Vd.16B, {Vn.16B}, Vm.16B
+    /// Looks up bytes using single table register
+    tbl: struct {
+        dst: WritableReg,
+        table: Reg,
+        index: Reg,
+    },
+
+    /// TBL2 (table lookup, 2 registers): TBL Vd.16B, {Vn.16B, Vn+1.16B}, Vm.16B
+    /// Looks up bytes using two consecutive table registers
+    tbl2: struct {
+        dst: WritableReg,
+        table: Reg,  // First of two consecutive registers
+        index: Reg,
+    },
+
+    /// TBX (table extension): TBX Vd.16B, {Vn.16B}, Vm.16B
+    /// Like TBL but leaves dst unchanged for out-of-range indices
+    tbx: struct {
+        dst: WritableReg,
+        table: Reg,
+        index: Reg,
+    },
+
+
     pub fn format(
         self: Inst,
         comptime _: []const u8,
@@ -1900,6 +1925,9 @@ pub const Inst = union(enum) {
             .xtn => |i| try writer.print("xtn.{} {}, {}", .{ i.size, i.dst, i.src }),
             .sqxtn => |i| try writer.print("sqxtn.{} {}, {}", .{ i.size, i.dst, i.src }),
             .uqxtn => |i| try writer.print("uqxtn.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .tbl => |i| try writer.print("tbl.16b {}, {{{}}}, {}", .{ i.dst, i.table, i.index }),
+            .tbl2 => |i| try writer.print("tbl.16b {}, {{{}, v{d}}}, {}", .{ i.dst, i.table, i.table.toVReg().nr() + 1, i.index }),
+            .tbx => |i| try writer.print("tbx.16b {}, {{{}}}, {}", .{ i.dst, i.table, i.index }),
         }
     }
 };
