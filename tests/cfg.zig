@@ -294,3 +294,47 @@ test "CFG: validation detects missing edge" {
     const result = cfg.validate(&func);
     try testing.expectError(error.MissingPredecessorEdge, result);
 }
+
+test "CFG: critical edge detection" {
+    var cfg = ControlFlowGraph.init(testing.allocator);
+    defer cfg.deinit();
+
+    // Diamond with critical edges:
+    //     B0
+    //    /  \
+    //   B1  B2
+    //    \  /
+    //     B3
+    const b0 = root.entities.Block.new(0);
+    const b1 = root.entities.Block.new(1);
+    const b2 = root.entities.Block.new(2);
+    const b3 = root.entities.Block.new(3);
+
+    const i0 = root.entities.Inst.new(0);
+    const i1 = root.entities.Inst.new(1);
+    const i2 = root.entities.Inst.new(2);
+
+    try cfg.data.resize(4);
+    for (0..4) |i| {
+        cfg.data.items[i] = cfg_mod.CFGNode.init(testing.allocator);
+    }
+
+    // Build diamond
+    try cfg.addEdge(b0, i0, b1);
+    try cfg.addEdge(b0, i0, b2);
+    try cfg.addEdge(b1, i1, b3);
+    try cfg.addEdge(b2, i2, b3);
+    cfg.valid = true;
+
+    // B1 -> B3 is critical (B1 has 1 succ, but B3 has 2 preds - NOT critical)
+    try testing.expect(!cfg.isCriticalEdge(b1, b3));
+
+    // Add another edge to make B1 have multiple successors
+    const b4 = root.entities.Block.new(4);
+    try cfg.data.resize(5);
+    cfg.data.items[4] = cfg_mod.CFGNode.init(testing.allocator);
+    try cfg.addEdge(b1, i1, b4);
+
+    // Now B1 -> B3 is critical (B1 has 2 succs, B3 has 2 preds)
+    try testing.expect(cfg.isCriticalEdge(b1, b3));
+}

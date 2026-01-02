@@ -192,6 +192,58 @@ pub const ControlFlowGraph = struct {
         return self.valid;
     }
 
+    /// Check if an edge is critical.
+    /// A critical edge is one where:
+    /// - The source block has multiple successors, AND
+    /// - The target block has multiple predecessors
+    pub fn isCriticalEdge(self: *const ControlFlowGraph, from: Block, to: Block) bool {
+        const from_idx = from.index();
+        const to_idx = to.index();
+
+        const from_succ_count = self.data.items[from_idx].successors.count();
+        const to_pred_count = self.data.items[to_idx].predecessors.count();
+
+        return from_succ_count > 1 and to_pred_count > 1;
+    }
+
+    /// Split a critical edge by inserting a new block.
+    /// Returns the newly created block between 'from' and 'to'.
+    /// The caller is responsible for updating the function's DFG and layout.
+    pub fn splitCriticalEdge(
+        self: *ControlFlowGraph,
+        from: Block,
+        from_inst: Inst,
+        to: Block,
+        new_block: Block,
+    ) !void {
+        std.debug.assert(self.valid);
+        std.debug.assert(self.isCriticalEdge(from, to));
+
+        // Ensure new block has space in CFG
+        const new_idx = new_block.index();
+        if (new_idx >= self.data.items.len) {
+            try self.data.resize(new_idx + 1);
+            self.data.items[new_idx] = CFGNode.init(self.allocator);
+        }
+
+        // Remove edge from -> to
+        const from_idx = from.index();
+        const to_idx = to.index();
+
+        _ = self.data.items[from_idx].successors.remove(to);
+        _ = self.data.items[to_idx].predecessors.remove(from_inst);
+
+        // Add edges: from -> new_block -> to
+        try self.data.items[from_idx].successors.put(new_block, {});
+        try self.data.items[new_idx].predecessors.put(from_inst, from);
+
+        try self.data.items[new_idx].successors.put(to, {});
+        // Note: The caller must create a new terminator instruction for new_block
+        // and update from_inst's target from 'to' to 'new_block'
+        // We use a placeholder inst here - caller will fix it
+        try self.data.items[to_idx].predecessors.put(from_inst, new_block);
+    }
+
     /// Validate CFG consistency.
     /// Returns error if CFG is malformed.
     pub fn validate(self: *const ControlFlowGraph, func: *const Function) !void {
