@@ -19,8 +19,24 @@ pub fn imm12_from_u64(val: u64) ?Imm12 {
 /// Extractor: Try to extract Imm12 from negated Value.
 /// Returns the Imm12 if -value fits in 12-bit encoding.
 pub fn imm12_from_negated_value(value: lower_mod.Value, ctx: *const lower_mod.LowerCtx(Inst)) ?Imm12 {
-    // TODO: Need access to IR data to get iconst value
-    // This requires extending LowerCtx with value query methods
+    const const_val = intValue(value, ctx) orelse return null;
+    const negated = -%const_val;
+    if (negated < 0 or negated > 4095) return null;
+    return Imm12.maybeFromU64(@intCast(negated));
+}
+
+/// Helper: Extract integer constant value from an iconst instruction.
+/// Returns null if the value is not defined by iconst or if immediate data is not available.
+fn intValue(value: lower_mod.Value, ctx: *const lower_mod.LowerCtx(Inst)) ?i64 {
+    // TODO: LowerCtx needs access to IR DFG to query instruction data
+    // Once LowerCtx.func provides DFG access, implement as:
+    //   const def = ctx.func.dfg.valueDef(value);
+    //   if (def.inst) |inst| {
+    //       const inst_data = ctx.func.dfg.insts.get(inst) orelse return null;
+    //       if (inst_data.* == .nullary and inst_data.nullary.opcode == .iconst) {
+    //           return ctx.func.dfg.iconst_pool.get(inst); // requires immediate pool
+    //       }
+    //   }
     _ = value;
     _ = ctx;
     return null;
@@ -62,11 +78,36 @@ pub const ExtendedValue = struct {
 /// Extractor: Try to extract ExtendedValue from a Value.
 /// Looks for patterns like sext/zext applied to narrower loads.
 pub fn extended_value_from_value(value: lower_mod.Value, ctx: *const lower_mod.LowerCtx(Inst)) ?ExtendedValue {
-    // TODO: Need IR instruction analysis to detect extend patterns
-    // This requires access to instruction def-use chains
-    _ = value;
-    _ = ctx;
-    return null;
+    const Opcode = @import("../../ir/opcodes.zig").Opcode;
+
+    // Get the value definition
+    const def = ctx.func.dfg.valueDef(value) orelse return null;
+
+    // Get the instruction that defines this value
+    const inst = def.inst() orelse return null;
+
+    // Get instruction data
+    const inst_data = ctx.func.dfg.insts.get(inst) orelse return null;
+
+    // Check if this is an extending load operation
+    const extend_op: ExtendOp = switch (inst_data.opcode()) {
+        .sload8 => .sxtb,   // Sign-extend byte
+        .sload16 => .sxth,  // Sign-extend halfword
+        .sload32 => .sxtw,  // Sign-extend word
+        .uload8 => .uxtb,   // Zero-extend byte
+        .uload16 => .uxth,  // Zero-extend halfword
+        .uload32 => .uxtw,  // Zero-extend word
+        else => return null,
+    };
+
+    // Get or allocate register for this value
+    const vreg = ctx.value_to_reg.get(value) orelse return null;
+    const reg = lower_mod.Reg.fromVReg(vreg);
+
+    return ExtendedValue{
+        .reg = reg,
+        .op = extend_op,
+    };
 }
 
 /// Constructor: Get the register from an ExtendedValue.
