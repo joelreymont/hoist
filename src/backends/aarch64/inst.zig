@@ -66,6 +66,16 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Add with extended register (ADD Xd, Xn, Wm, extend).
+    /// Emits: dst = src1 + extend(src2)
+    add_extended: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        extend: ExtendOp,
+        size: OperandSize,
+    },
+
     /// Subtract register from register (SUB Xd, Xn, Xm).
     sub_rr: struct {
         dst: WritableReg,

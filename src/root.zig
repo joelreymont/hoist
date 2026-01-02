@@ -120,7 +120,21 @@ pub const aarch64_emit = @import("backends/aarch64/emit.zig");
 pub const aarch64_abi = @import("backends/aarch64/abi.zig");
 pub const aarch64_lower = @import("backends/aarch64/lower.zig");
 pub const aarch64_isle_helpers = @import("backends/aarch64/isle_helpers.zig");
+pub const aarch64_isle_impl = @import("backends/aarch64/isle_impl.zig");
 pub const aarch64_isa = @import("backends/aarch64/isa.zig");
 pub const aarch64_legalize = @import("backends/aarch64/legalize.zig");
+
+pub const backends = struct {
+    pub const aarch64 = struct {
+        pub const inst = aarch64_inst;
+        pub const emit = aarch64_emit;
+        pub const abi = aarch64_abi;
+        pub const lower = aarch64_lower;
+        pub const isle_helpers = aarch64_isle_helpers;
+        pub const isle_impl = aarch64_isle_impl;
+        pub const isa = aarch64_isa;
+        pub const legalize = aarch64_legalize;
+    };
+};
 
 pub const ir = @import("ir/function.zig");
