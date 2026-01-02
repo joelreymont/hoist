@@ -36,11 +36,15 @@ pub const Lexer = struct {
     }
 
     fn advancePos(self: *Self) void {
-        self.advanceBy(1);
+        if (self.peekByte()) |byte| {
+            self.pos.advanceByte(byte);
+        }
     }
 
     fn advanceBy(self: *Self, n: usize) void {
-        self.pos.offset += n;
+        for (0..n) |_| {
+            self.advancePos();
+        }
     }
 
     fn isSymFirstChar(c: u8) bool {

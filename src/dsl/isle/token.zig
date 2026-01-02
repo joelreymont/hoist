@@ -7,13 +7,37 @@ pub const Pos = struct {
     file: usize,
     /// Byte offset in file.
     offset: usize,
+    /// Line number (1-based).
+    line: usize,
+    /// Column number (1-based).
+    col: usize,
 
     pub fn new(file: usize, offset: usize) Pos {
-        return .{ .file = file, .offset = offset };
+        return .{ .file = file, .offset = offset, .line = 1, .col = 1 };
+    }
+
+    pub fn newFull(file: usize, offset: usize, line: usize, col: usize) Pos {
+        return .{ .file = file, .offset = offset, .line = line, .col = col };
     }
 
     pub fn format(self: Pos, writer: anytype) !void {
-        try writer.print("{}:{}", .{ self.file, self.offset });
+        try writer.print("{}:{}:{}", .{ self.file, self.line, self.col });
+    }
+
+    pub fn advanceByte(self: *Pos, byte: u8) void {
+        self.offset += 1;
+        if (byte == '\n') {
+            self.line += 1;
+            self.col = 1;
+        } else {
+            self.col += 1;
+        }
+    }
+
+    pub fn advanceBytes(self: *Pos, bytes: []const u8) void {
+        for (bytes) |b| {
+            self.advanceByte(b);
+        }
     }
 };
 
