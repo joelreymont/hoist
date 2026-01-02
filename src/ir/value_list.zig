@@ -46,7 +46,7 @@ pub const ValueListPool = struct {
     free_lists: std.ArrayList(usize),
     allocator: Allocator,
 
-    const SizeClass = u8;
+    const SizeClass = u6;
 
     /// Get size of a size class (includes length field).
     fn sclassSize(sclass: SizeClass) usize {
@@ -108,7 +108,7 @@ pub const ValueListPool = struct {
         try self.data.ensureTotalCapacity(self.allocator, offset + size);
         var i: usize = 0;
         while (i < size) : (i += 1) {
-            self.data.appendAssumeCapacity(self.allocator, reserved);
+            self.data.appendAssumeCapacity(reserved);
         }
         return offset;
     }
