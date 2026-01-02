@@ -224,6 +224,80 @@ pub const DominatorTree = struct {
     pub fn isReachable(self: *const DominatorTree, block: Block) bool {
         return self.idom.get(block) != null;
     }
+
+    /// Compute dominance frontier for a block.
+    /// The dominance frontier of X is the set of all nodes Y such that:
+    /// - X dominates a predecessor of Y, but
+    /// - X does not strictly dominate Y
+    pub fn dominanceFrontier(
+        self: *const DominatorTree,
+        allocator: Allocator,
+        block: Block,
+        cfg: *const CFG,
+    ) !std.ArrayList(Block) {
+        var frontier = std.ArrayList(Block).init(allocator);
+
+        // For each successor of blocks dominated by 'block'
+        var dominated = try self.getDominatedBlocks(allocator, block);
+        defer dominated.deinit();
+
+        for (dominated.items) |dom_block| {
+            const succs = cfg.successors(dom_block);
+            for (succs) |succ| {
+                // If block dominates dom_block but doesn't strictly dominate succ,
+                // then succ is in the dominance frontier
+                if (!self.strictlyDominates(block, succ)) {
+                    // Add to frontier if not already present
+                    var found = false;
+                    for (frontier.items) |f| {
+                        if (std.meta.eql(f, succ)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        try frontier.append(succ);
+                    }
+                }
+            }
+        }
+
+        return frontier;
+    }
+
+    /// Get all blocks dominated by a given block.
+    fn getDominatedBlocks(
+        self: *const DominatorTree,
+        allocator: Allocator,
+        block: Block,
+    ) !std.ArrayList(Block) {
+        var dominated = std.ArrayList(Block).init(allocator);
+
+        // Add the block itself
+        try dominated.append(block);
+
+        // Recursively add all dominated blocks via children
+        try self.collectDominatedRecursive(&dominated, block);
+
+        return dominated;
+    }
+
+    fn collectDominatedRecursive(
+        self: *const DominatorTree,
+        dominated: *std.ArrayList(Block),
+        block: Block,
+    ) !void {
+        const children_list = self.getChildren(block);
+        for (children_list) |child| {
+            try dominated.append(child);
+            try self.collectDominatedRecursive(dominated, child);
+        }
+    }
+
+    fn strictlyDominates(self: *const DominatorTree, a: Block, b: Block) bool {
+        if (std.meta.eql(a, b)) return false;
+        return self.dominates(a, b);
+    }
 };
 
 /// Control flow graph representation (stub for domtree computation).
@@ -360,3 +434,4 @@ test "DominatorTree idominator" {
     const b1_idom = tree.idominator(b1).?;
     try testing.expect(std.meta.eql(b1_idom, b0));
 }
+
