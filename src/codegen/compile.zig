@@ -140,13 +140,98 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
     _ = try eliminateUnreachableCode(ctx);
 
     // 5. Remove constant phis
-    // TODO: Implement constant phi removal
+    _ = try removeConstantPhis(ctx);
 
     // 6. Resolve value aliases
     ctx.func.dfg.resolveAllAliases();
 
     // 7. E-graph optimization (if opt_level > 0)
     // TODO: Implement e-graph pass
+}
+
+/// Remove constant phi nodes.
+///
+/// Finds block parameters where all incoming values are the same,
+/// and replaces the parameter with an alias to that value.
+/// Returns true if any phis were removed.
+fn removeConstantPhis(ctx: *Context) CodegenError!bool {
+    const Value = ir.Value;
+    var changed = false;
+
+    var block_iter = ctx.func.layout.blockIter();
+    while (block_iter.next()) |block| {
+        const block_data = ctx.func.dfg.blocks.get(block) orelse continue;
+        const params = block_data.getParams(&ctx.func.dfg.value_lists);
+
+        if (params.len == 0) continue;
+
+        // For each block parameter
+        for (params, 0..) |param, param_idx| {
+            var common_value: ?Value = null;
+            var all_same = true;
+
+            // Iterate over all predecessors
+            var pred_iter = ctx.cfg.predIter(block);
+            while (pred_iter.next()) |pred| {
+                const pred_inst = pred.inst;
+                const inst_data = ctx.func.dfg.insts.get(pred_inst) orelse {
+                    all_same = false;
+                    break;
+                };
+
+                // Extract argument at param_idx from branch instruction
+                const arg_value = switch (inst_data.*) {
+                    .branch => |br| blk: {
+                        if (br.destination.len(&ctx.func.dfg.value_lists) <= param_idx) {
+                            all_same = false;
+                            break;
+                        }
+                        break :blk br.destination.getArg(&ctx.func.dfg.value_lists, param_idx);
+                    },
+                    .jump => {
+                        // Jump instructions don't carry arguments in this IR
+                        all_same = false;
+                        break;
+                    },
+                    else => {
+                        all_same = false;
+                        break;
+                    },
+                } orelse {
+                    all_same = false;
+                    break;
+                };
+
+                // Resolve aliases
+                const resolved_value = ctx.func.dfg.resolveAliases(arg_value);
+
+                if (common_value) |cv| {
+                    // Check if same as previous
+                    if (!std.meta.eql(ctx.func.dfg.resolveAliases(cv), resolved_value)) {
+                        all_same = false;
+                        break;
+                    }
+                } else {
+                    common_value = resolved_value;
+                }
+            }
+
+            // If all incoming values are the same, replace param with alias
+            if (all_same and common_value != null) {
+                const cv = common_value.?;
+                // Don't create self-alias
+                if (!std.meta.eql(param, cv)) {
+                    if (ctx.func.dfg.values.getMut(param)) |param_data| {
+                        const param_type = param_data.getType();
+                        param_data.* = ir.ValueData.alias(param_type, cv);
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    return changed;
 }
 
 /// Eliminate unreachable code.
