@@ -61,7 +61,10 @@ pub fn aapcs64() abi_mod.ABIMachineSpec(u64) {
         PReg.new(.float, 7),
     };
 
-    // Callee-saves: X19-X28, X29 (FP), X30 (LR)
+    // Callee-saves: X19-X28, X29 (FP), X30 (LR), V8-V15
+    // AAPCS64 section 6.1.2: The registers v8-v15 must be preserved by a callee
+    // across subroutine calls; the remaining registers (v0-v7, v16-v31) do not
+    // need to be preserved (or should be preserved by the caller).
     const callee_saves = [_]PReg{
         PReg.new(.int, 19),
         PReg.new(.int, 20),
@@ -75,6 +78,14 @@ pub fn aapcs64() abi_mod.ABIMachineSpec(u64) {
         PReg.new(.int, 28),
         PReg.new(.int, 29), // FP
         PReg.new(.int, 30), // LR
+        PReg.new(.float, 8),
+        PReg.new(.float, 9),
+        PReg.new(.float, 10),
+        PReg.new(.float, 11),
+        PReg.new(.float, 12),
+        PReg.new(.float, 13),
+        PReg.new(.float, 14),
+        PReg.new(.float, 15),
     };
 
     return .{
@@ -189,6 +200,236 @@ fn calculateFrameSize(locals_and_spills: u32, num_callee_saves: u32) u32 {
     // Ensure 16-byte alignment
     return alignTo16(total);
 }
+
+/// Caller-saved register tracking across function calls.
+/// Per AAPCS64, caller-saved registers are:
+/// - x0-x18 (excluding x8 which is indirect result location)
+/// - v0-v7, v16-v31
+pub const CallerSavedTracker = struct {
+    /// Set of caller-saved integer registers that need saving.
+    int_regs: std.bit_set.IntegerBitSet(32),
+    /// Set of caller-saved float registers that need saving.
+    float_regs: std.bit_set.IntegerBitSet(32),
+
+    pub fn init() CallerSavedTracker {
+        return .{
+            .int_regs = std.bit_set.IntegerBitSet(32).initEmpty(),
+            .float_regs = std.bit_set.IntegerBitSet(32).initEmpty(),
+        };
+    }
+
+    /// Mark an integer register as caller-saved (needs saving across calls).
+    /// Only marks registers x0-x18 (excluding x8).
+    pub fn markIntReg(self: *CallerSavedTracker, preg: PReg) void {
+        std.debug.assert(preg.class == .int);
+        const hw = preg.hw_enc;
+        // x0-x18, excluding x8 (indirect result location)
+        if (hw <= 18 and hw != 8) {
+            self.int_regs.set(hw);
+        }
+    }
+
+    /// Mark a float register as caller-saved (needs saving across calls).
+    /// Only marks registers v0-v7 and v16-v31.
+    pub fn markFloatReg(self: *CallerSavedTracker, preg: PReg) void {
+        std.debug.assert(preg.class == .float);
+        const hw = preg.hw_enc;
+        // v0-v7 or v16-v31
+        if (hw <= 7 or (hw >= 16 and hw <= 31)) {
+            self.float_regs.set(hw);
+        }
+    }
+
+    /// Mark a register as caller-saved based on its class.
+    pub fn markReg(self: *CallerSavedTracker, preg: PReg) void {
+        switch (preg.class) {
+            .int => self.markIntReg(preg),
+            .float => self.markFloatReg(preg),
+        }
+    }
+
+    /// Clear all marked registers.
+    pub fn clear(self: *CallerSavedTracker) void {
+        self.int_regs = std.bit_set.IntegerBitSet(32).initEmpty();
+        self.float_regs = std.bit_set.IntegerBitSet(32).initEmpty();
+    }
+
+    /// Get count of marked integer registers.
+    pub fn intRegCount(self: *const CallerSavedTracker) usize {
+        return self.int_regs.count();
+    }
+
+    /// Get count of marked float registers.
+    pub fn floatRegCount(self: *const CallerSavedTracker) usize {
+        return self.float_regs.count();
+    }
+
+    /// Emit save instructions for all marked caller-saved registers.
+    /// Stores registers to stack starting at the given offset.
+    /// Returns the total number of bytes used.
+    pub fn emitSaves(
+        self: *const CallerSavedTracker,
+        buffer: *buffer_mod.MachBuffer,
+        stack_offset: i16,
+    ) !u32 {
+        const emit_fn = @import("emit.zig").emit;
+        const sp = Reg.fromPReg(PReg.new(.int, 31)); // SP
+        var offset = stack_offset;
+        var bytes_used: u32 = 0;
+
+        // Save integer registers in pairs using STP where possible
+        var int_iter = self.int_regs.iterator(.{});
+        var pending_int: ?u5 = null;
+        while (int_iter.next()) |hw| {
+            const hw_u5: u5 = @intCast(hw);
+            if (pending_int) |prev_hw| {
+                // Save pair with STP
+                const reg1 = Reg.fromPReg(PReg.new(.int, prev_hw));
+                const reg2 = Reg.fromPReg(PReg.new(.int, hw_u5));
+                try emit_fn(.{ .stp = .{
+                    .src1 = reg1,
+                    .src2 = reg2,
+                    .base = sp,
+                    .offset = offset,
+                    .size = .size64,
+                } }, buffer);
+                offset += 16;
+                bytes_used += 16;
+                pending_int = null;
+            } else {
+                pending_int = hw_u5;
+            }
+        }
+        // Save odd register with STR
+        if (pending_int) |hw| {
+            const reg = Reg.fromPReg(PReg.new(.int, hw));
+            try emit_fn(.{ .str = .{
+                .src = reg,
+                .base = sp,
+                .offset = offset,
+                .size = .size64,
+            } }, buffer);
+            offset += 16; // Reserve 16 bytes for alignment
+            bytes_used += 16;
+        }
+
+        // Save float registers in pairs using STP where possible
+        var float_iter = self.float_regs.iterator(.{});
+        var pending_float: ?u5 = null;
+        while (float_iter.next()) |hw| {
+            const hw_u5: u5 = @intCast(hw);
+            if (pending_float) |prev_hw| {
+                // Save pair with STP
+                const reg1 = Reg.fromPReg(PReg.new(.float, prev_hw));
+                const reg2 = Reg.fromPReg(PReg.new(.float, hw_u5));
+                try emit_fn(.{ .stp = .{
+                    .src1 = reg1,
+                    .src2 = reg2,
+                    .base = sp,
+                    .offset = offset,
+                    .size = .size64,
+                } }, buffer);
+                offset += 16;
+                bytes_used += 16;
+                pending_float = null;
+            } else {
+                pending_float = hw_u5;
+            }
+        }
+        // Save odd register with STR
+        if (pending_float) |hw| {
+            const reg = Reg.fromPReg(PReg.new(.float, hw));
+            try emit_fn(.{ .str = .{
+                .src = reg,
+                .base = sp,
+                .offset = offset,
+                .size = .size64,
+            } }, buffer);
+            bytes_used += 16;
+        }
+
+        return bytes_used;
+    }
+
+    /// Emit restore instructions for all marked caller-saved registers.
+    /// Loads registers from stack starting at the given offset.
+    pub fn emitRestores(
+        self: *const CallerSavedTracker,
+        buffer: *buffer_mod.MachBuffer,
+        stack_offset: i16,
+    ) !void {
+        const emit_fn = @import("emit.zig").emit;
+        const sp = Reg.fromPReg(PReg.new(.int, 31)); // SP
+        var offset = stack_offset;
+
+        // Restore integer registers in pairs using LDP where possible
+        var int_iter = self.int_regs.iterator(.{});
+        var pending_int: ?u5 = null;
+        while (int_iter.next()) |hw| {
+            const hw_u5: u5 = @intCast(hw);
+            if (pending_int) |prev_hw| {
+                // Restore pair with LDP
+                const reg1_w = WritableReg.fromReg(Reg.fromPReg(PReg.new(.int, prev_hw)));
+                const reg2_w = WritableReg.fromReg(Reg.fromPReg(PReg.new(.int, hw_u5)));
+                try emit_fn(.{ .ldp = .{
+                    .dst1 = reg1_w,
+                    .dst2 = reg2_w,
+                    .base = sp,
+                    .offset = offset,
+                    .size = .size64,
+                } }, buffer);
+                offset += 16;
+                pending_int = null;
+            } else {
+                pending_int = hw_u5;
+            }
+        }
+        // Restore odd register with LDR
+        if (pending_int) |hw| {
+            const reg_w = WritableReg.fromReg(Reg.fromPReg(PReg.new(.int, hw)));
+            try emit_fn(.{ .ldr = .{
+                .dst = reg_w,
+                .base = sp,
+                .offset = offset,
+                .size = .size64,
+            } }, buffer);
+            offset += 16; // Skip padding
+        }
+
+        // Restore float registers in pairs using LDP where possible
+        var float_iter = self.float_regs.iterator(.{});
+        var pending_float: ?u5 = null;
+        while (float_iter.next()) |hw| {
+            const hw_u5: u5 = @intCast(hw);
+            if (pending_float) |prev_hw| {
+                // Restore pair with LDP
+                const reg1_w = WritableReg.fromReg(Reg.fromPReg(PReg.new(.float, prev_hw)));
+                const reg2_w = WritableReg.fromReg(Reg.fromPReg(PReg.new(.float, hw_u5)));
+                try emit_fn(.{ .ldp = .{
+                    .dst1 = reg1_w,
+                    .dst2 = reg2_w,
+                    .base = sp,
+                    .offset = offset,
+                    .size = .size64,
+                } }, buffer);
+                offset += 16;
+                pending_float = null;
+            } else {
+                pending_float = hw_u5;
+            }
+        }
+        // Restore odd register with LDR
+        if (pending_float) |hw| {
+            const reg_w = WritableReg.fromReg(Reg.fromPReg(PReg.new(.float, hw)));
+            try emit_fn(.{ .ldr = .{
+                .dst = reg_w,
+                .base = sp,
+                .offset = offset,
+                .size = .size64,
+            } }, buffer);
+        }
+    }
+};
 
 /// Prologue/epilogue generation for aarch64 functions.
 pub const Aarch64ABICallee = struct {
@@ -1177,4 +1418,362 @@ test "16-byte alignment maintained with all callee-save combinations" {
         try testing.expectEqual(tc.expected_size, callee.frame_size);
         try testing.expectEqual(@as(u32, 0), callee.frame_size % 16);
     }
+}
+
+test "float callee-save V8" {
+    const args = [_]abi_mod.Type{.f64};
+    const sig = abi_mod.ABISignature.init(&args, &.{.f64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    try callee.clobberCalleeSave(PReg.new(.float, 8));
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try callee.emitPrologue(&buffer);
+    try callee.emitEpilogue(&buffer);
+
+    try testing.expect(buffer.data.items.len >= 20);
+}
+
+test "float callee-save pair V8-V9" {
+    const args = [_]abi_mod.Type{.f64};
+    const sig = abi_mod.ABISignature.init(&args, &.{.f64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    try callee.clobberCalleeSave(PReg.new(.float, 8));
+    try callee.clobberCalleeSave(PReg.new(.float, 9));
+
+    callee.setLocalsSize(0);
+    try testing.expectEqual(@as(u32, 32), callee.frame_size);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try callee.emitPrologue(&buffer);
+    try callee.emitEpilogue(&buffer);
+
+    try testing.expect(buffer.data.items.len > 0);
+}
+
+test "mixed int and float callee-saves" {
+    const args = [_]abi_mod.Type{.f64};
+    const sig = abi_mod.ABISignature.init(&args, &.{.f64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    try callee.clobberCalleeSave(PReg.new(.int, 19));
+    try callee.clobberCalleeSave(PReg.new(.int, 20));
+    try callee.clobberCalleeSave(PReg.new(.float, 8));
+    try callee.clobberCalleeSave(PReg.new(.float, 9));
+
+    callee.setLocalsSize(0);
+    try testing.expectEqual(@as(u32, 48), callee.frame_size);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try callee.emitPrologue(&buffer);
+    try callee.emitEpilogue(&buffer);
+
+    try testing.expect(buffer.data.items.len > 0);
+}
+
+test "all float callee-saves V8-V15" {
+    const args = [_]abi_mod.Type{.f64};
+    const sig = abi_mod.ABISignature.init(&args, &.{.f64}, .aapcs64);
+
+    var callee = Aarch64ABICallee.init(testing.allocator, sig);
+    defer callee.deinit();
+
+    try callee.clobberCalleeSave(PReg.new(.float, 8));
+    try callee.clobberCalleeSave(PReg.new(.float, 9));
+    try callee.clobberCalleeSave(PReg.new(.float, 10));
+    try callee.clobberCalleeSave(PReg.new(.float, 11));
+    try callee.clobberCalleeSave(PReg.new(.float, 12));
+    try callee.clobberCalleeSave(PReg.new(.float, 13));
+    try callee.clobberCalleeSave(PReg.new(.float, 14));
+    try callee.clobberCalleeSave(PReg.new(.float, 15));
+
+    callee.setLocalsSize(0);
+    try testing.expectEqual(@as(u32, 80), callee.frame_size);
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    try callee.emitPrologue(&buffer);
+    try callee.emitEpilogue(&buffer);
+
+    try testing.expect(buffer.data.items.len > 0);
+}
+
+test "CallerSavedTracker init" {
+    const tracker = CallerSavedTracker.init();
+    try testing.expectEqual(@as(usize, 0), tracker.intRegCount());
+    try testing.expectEqual(@as(usize, 0), tracker.floatRegCount());
+}
+
+test "CallerSavedTracker mark integer registers" {
+    var tracker = CallerSavedTracker.init();
+
+    // Mark x0-x7 (argument registers)
+    var i: u5 = 0;
+    while (i <= 7) : (i += 1) {
+        tracker.markIntReg(PReg.new(.int, i));
+    }
+    try testing.expectEqual(@as(usize, 8), tracker.intRegCount());
+
+    // Mark x9-x15 (temporaries)
+    i = 9;
+    while (i <= 15) : (i += 1) {
+        tracker.markIntReg(PReg.new(.int, i));
+    }
+    try testing.expectEqual(@as(usize, 15), tracker.intRegCount());
+
+    // Mark x16-x18 (IP0, IP1, platform)
+    tracker.markIntReg(PReg.new(.int, 16));
+    tracker.markIntReg(PReg.new(.int, 17));
+    tracker.markIntReg(PReg.new(.int, 18));
+    try testing.expectEqual(@as(usize, 18), tracker.intRegCount());
+}
+
+test "CallerSavedTracker excludes x8" {
+    var tracker = CallerSavedTracker.init();
+
+    // x8 is the indirect result location and should be excluded
+    tracker.markIntReg(PReg.new(.int, 8));
+    try testing.expectEqual(@as(usize, 0), tracker.intRegCount());
+}
+
+test "CallerSavedTracker excludes callee-saved x19-x30" {
+    var tracker = CallerSavedTracker.init();
+
+    // x19-x30 are callee-saved and should not be marked
+    var i: u5 = 19;
+    while (i <= 30) : (i += 1) {
+        tracker.markIntReg(PReg.new(.int, i));
+    }
+    try testing.expectEqual(@as(usize, 0), tracker.intRegCount());
+}
+
+test "CallerSavedTracker mark float registers v0-v7" {
+    var tracker = CallerSavedTracker.init();
+
+    // Mark v0-v7 (argument/return registers)
+    var i: u5 = 0;
+    while (i <= 7) : (i += 1) {
+        tracker.markFloatReg(PReg.new(.float, i));
+    }
+    try testing.expectEqual(@as(usize, 8), tracker.floatRegCount());
+}
+
+test "CallerSavedTracker mark float registers v16-v31" {
+    var tracker = CallerSavedTracker.init();
+
+    // Mark v16-v31 (temporaries)
+    var i: u5 = 16;
+    while (i <= 31) : (i += 1) {
+        tracker.markFloatReg(PReg.new(.float, i));
+    }
+    try testing.expectEqual(@as(usize, 16), tracker.floatRegCount());
+}
+
+test "CallerSavedTracker excludes callee-saved v8-v15" {
+    var tracker = CallerSavedTracker.init();
+
+    // v8-v15 are callee-saved and should not be marked
+    var i: u5 = 8;
+    while (i <= 15) : (i += 1) {
+        tracker.markFloatReg(PReg.new(.float, i));
+    }
+    try testing.expectEqual(@as(usize, 0), tracker.floatRegCount());
+}
+
+test "CallerSavedTracker markReg dispatches by class" {
+    var tracker = CallerSavedTracker.init();
+
+    // Mark mixed register classes
+    tracker.markReg(PReg.new(.int, 0)); // x0
+    tracker.markReg(PReg.new(.int, 1)); // x1
+    tracker.markReg(PReg.new(.float, 0)); // v0
+    tracker.markReg(PReg.new(.float, 1)); // v1
+
+    try testing.expectEqual(@as(usize, 2), tracker.intRegCount());
+    try testing.expectEqual(@as(usize, 2), tracker.floatRegCount());
+}
+
+test "CallerSavedTracker clear" {
+    var tracker = CallerSavedTracker.init();
+
+    // Mark some registers
+    tracker.markIntReg(PReg.new(.int, 0));
+    tracker.markIntReg(PReg.new(.int, 1));
+    tracker.markFloatReg(PReg.new(.float, 0));
+    tracker.markFloatReg(PReg.new(.float, 1));
+
+    try testing.expectEqual(@as(usize, 2), tracker.intRegCount());
+    try testing.expectEqual(@as(usize, 2), tracker.floatRegCount());
+
+    // Clear all
+    tracker.clear();
+    try testing.expectEqual(@as(usize, 0), tracker.intRegCount());
+    try testing.expectEqual(@as(usize, 0), tracker.floatRegCount());
+}
+
+test "CallerSavedTracker emitSaves and emitRestores with int regs" {
+    var tracker = CallerSavedTracker.init();
+
+    // Mark x0, x1 (will be saved as a pair)
+    tracker.markIntReg(PReg.new(.int, 0));
+    tracker.markIntReg(PReg.new(.int, 1));
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    // Emit saves at offset 0
+    const bytes_used = try tracker.emitSaves(&buffer, 0);
+    try testing.expectEqual(@as(u32, 16), bytes_used); // One STP = 16 bytes used
+
+    // Should emit one STP instruction (4 bytes)
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+
+    // Emit restores at same offset
+    try tracker.emitRestores(&buffer, 0);
+
+    // Should have STP + LDP = 8 bytes
+    try testing.expectEqual(@as(usize, 8), buffer.data.items.len);
+}
+
+test "CallerSavedTracker emitSaves with odd number of int regs" {
+    var tracker = CallerSavedTracker.init();
+
+    // Mark x0, x1, x2 (pair + single)
+    tracker.markIntReg(PReg.new(.int, 0));
+    tracker.markIntReg(PReg.new(.int, 1));
+    tracker.markIntReg(PReg.new(.int, 2));
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const bytes_used = try tracker.emitSaves(&buffer, 0);
+    try testing.expectEqual(@as(u32, 32), bytes_used); // STP + STR with padding = 32 bytes
+
+    // Should emit STP + STR = 8 bytes
+    try testing.expectEqual(@as(usize, 8), buffer.data.items.len);
+}
+
+test "CallerSavedTracker emitSaves and emitRestores with float regs" {
+    var tracker = CallerSavedTracker.init();
+
+    // Mark v0, v1 (will be saved as a pair)
+    tracker.markFloatReg(PReg.new(.float, 0));
+    tracker.markFloatReg(PReg.new(.float, 1));
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const bytes_used = try tracker.emitSaves(&buffer, 0);
+    try testing.expectEqual(@as(u32, 16), bytes_used); // One STP = 16 bytes used
+
+    // Should emit one STP instruction (4 bytes)
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+
+    // Emit restores
+    try tracker.emitRestores(&buffer, 0);
+
+    // Should have STP + LDP = 8 bytes
+    try testing.expectEqual(@as(usize, 8), buffer.data.items.len);
+}
+
+test "CallerSavedTracker emitSaves with mixed int and float regs" {
+    var tracker = CallerSavedTracker.init();
+
+    // Mark x0, x1, v0, v1
+    tracker.markIntReg(PReg.new(.int, 0));
+    tracker.markIntReg(PReg.new(.int, 1));
+    tracker.markFloatReg(PReg.new(.float, 0));
+    tracker.markFloatReg(PReg.new(.float, 1));
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const bytes_used = try tracker.emitSaves(&buffer, 0);
+    try testing.expectEqual(@as(u32, 32), bytes_used); // Two STPs = 32 bytes
+
+    // Should emit two STP instructions (8 bytes)
+    try testing.expectEqual(@as(usize, 8), buffer.data.items.len);
+
+    // Emit restores
+    try tracker.emitRestores(&buffer, 0);
+
+    // Should have 2 STPs + 2 LDPs = 16 bytes
+    try testing.expectEqual(@as(usize, 16), buffer.data.items.len);
+}
+
+test "CallerSavedTracker stack offset handling" {
+    var tracker = CallerSavedTracker.init();
+
+    // Mark x0, x1
+    tracker.markIntReg(PReg.new(.int, 0));
+    tracker.markIntReg(PReg.new(.int, 1));
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    // Emit saves at offset 64
+    const bytes_used = try tracker.emitSaves(&buffer, 64);
+    try testing.expectEqual(@as(u32, 16), bytes_used);
+
+    // Verify instruction was emitted
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+}
+
+test "CallerSavedTracker comprehensive register coverage" {
+    var tracker = CallerSavedTracker.init();
+
+    // Mark all caller-saved integer registers (x0-x7, x9-x18)
+    var i: u5 = 0;
+    while (i <= 7) : (i += 1) {
+        tracker.markIntReg(PReg.new(.int, i));
+    }
+    i = 9;
+    while (i <= 18) : (i += 1) {
+        tracker.markIntReg(PReg.new(.int, i));
+    }
+
+    // Mark all caller-saved float registers (v0-v7, v16-v31)
+    i = 0;
+    while (i <= 7) : (i += 1) {
+        tracker.markFloatReg(PReg.new(.float, i));
+    }
+    i = 16;
+    while (i <= 31) : (i += 1) {
+        tracker.markFloatReg(PReg.new(.float, i));
+    }
+
+    try testing.expectEqual(@as(usize, 18), tracker.intRegCount());
+    try testing.expectEqual(@as(usize, 24), tracker.floatRegCount());
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    // Emit all saves
+    const bytes_used = try tracker.emitSaves(&buffer, 0);
+
+    // 18 int regs = 9 pairs = 144 bytes
+    // 24 float regs = 12 pairs = 192 bytes
+    // Total = 336 bytes
+    try testing.expectEqual(@as(u32, 336), bytes_used);
+
+    // Verify instructions were generated
+    try testing.expect(buffer.data.items.len > 0);
+
+    // Emit restores
+    try tracker.emitRestores(&buffer, 0);
+    try testing.expect(buffer.data.items.len > 0);
 }
