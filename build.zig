@@ -29,16 +29,16 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_tests.step);
 
     // E2E tests
-    const e2e_simple = b.addTest(.{
+    const e2e_branches = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/e2e_simple.zig"),
+            .root_source_file = b.path("tests/e2e_branches.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
-    e2e_simple.root_module.addImport("hoist", lib.root_module);
-    const run_e2e_simple = b.addRunArtifact(e2e_simple);
-    test_step.dependOn(&run_e2e_simple.step);
+    e2e_branches.root_module.addImport("hoist", lib.root_module);
+    const run_e2e_branches = b.addRunArtifact(e2e_branches);
+    test_step.dependOn(&run_e2e_branches.step);
 
     // Integration tests (future: full pipeline tests)
     const integration_step = b.step("test-integration", "Run integration tests");
