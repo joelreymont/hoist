@@ -10,8 +10,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const root = @import("../../root.zig");
-const Function = root.ir.Function;
+const root = @import("root");
+const Function = root.function.Function;
 const Block = root.entities.Block;
 const Inst = root.entities.Inst;
 const Value = root.entities.Value;
