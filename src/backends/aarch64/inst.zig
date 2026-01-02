@@ -1371,6 +1371,30 @@ pub const Inst = union(enum) {
         src_a: Reg,
     },
 
+    /// Vector add (NEON): ADD Vd.T, Vn.T, Vm.T
+    vec_add: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector subtract (NEON): SUB Vd.T, Vn.T, Vm.T
+    vec_sub: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
+    /// Vector multiply (NEON): MUL Vd.T, Vn.T, Vm.T
+    vec_mul: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VectorSize,
+    },
+
     pub fn format(
         self: Inst,
         comptime _: []const u8,
@@ -1567,7 +1591,65 @@ pub const Inst = union(enum) {
             .fnmadd_d => |i| try writer.print("fnmadd.d {}, {}, {}, {}", .{ i.dst, i.src_n, i.src_m, i.src_a }),
             .fnmsub_s => |i| try writer.print("fnmsub.s {}, {}, {}, {}", .{ i.dst, i.src_n, i.src_m, i.src_a }),
             .fnmsub_d => |i| try writer.print("fnmsub.d {}, {}, {}, {}", .{ i.dst, i.src_n, i.src_m, i.src_a }),
+            .vec_add => |i| try writer.print("add.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_sub => |i| try writer.print("sub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_mul => |i| try writer.print("mul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
         }
+    }
+};
+
+/// Vector size for NEON/SIMD instructions.
+/// Encodes both vector width (64/128-bit) and element size.
+pub const VectorSize = enum(u3) {
+    /// 8 bytes × 8 bits = 64-bit vector (8B)
+    b8 = 0,
+    /// 16 bytes × 8 bits = 128-bit vector (16B)
+    b16 = 1,
+    /// 4 halfwords × 16 bits = 64-bit vector (4H)
+    h4 = 2,
+    /// 8 halfwords × 16 bits = 128-bit vector (8H)
+    h8 = 3,
+    /// 2 words × 32 bits = 64-bit vector (2S)
+    s2 = 4,
+    /// 4 words × 32 bits = 128-bit vector (4S)
+    s4 = 5,
+    /// 2 doublewords × 64 bits = 128-bit vector (2D)
+    d2 = 6,
+
+    /// Returns the Q bit (0 for 64-bit, 1 for 128-bit).
+    pub fn qBit(self: VectorSize) u1 {
+        return switch (self) {
+            .b8, .h4, .s2 => 0,
+            .b16, .h8, .s4, .d2 => 1,
+        };
+    }
+
+    /// Returns the size field for instruction encoding.
+    pub fn sizeBits(self: VectorSize) u2 {
+        return switch (self) {
+            .b8, .b16 => 0b00,
+            .h4, .h8 => 0b01,
+            .s2, .s4 => 0b10,
+            .d2 => 0b11,
+        };
+    }
+
+    pub fn format(
+        self: VectorSize,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        const suffix = switch (self) {
+            .b8 => "8b",
+            .b16 => "16b",
+            .h4 => "4h",
+            .h8 => "8h",
+            .s2 => "2s",
+            .s4 => "4s",
+            .d2 => "2d",
+        };
+        try writer.writeAll(suffix);
     }
 };
 

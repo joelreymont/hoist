@@ -4,6 +4,7 @@ const testing = std.testing;
 const root = @import("root");
 const Inst = root.aarch64_inst.Inst;
 const OperandSize = root.aarch64_inst.OperandSize;
+const VectorSize = root.aarch64_inst.VectorSize;
 const CondCode = root.aarch64_inst.CondCode;
 const Reg = root.aarch64_inst.Reg;
 const PReg = root.aarch64_inst.PReg;
@@ -202,6 +203,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .fnmadd_d => |i| try emitFnmaddD(i.dst.toReg(), i.src_n, i.src_m, i.src_a, buffer),
         .fnmsub_s => |i| try emitFnmsubS(i.dst.toReg(), i.src_n, i.src_m, i.src_a, buffer),
         .fnmsub_d => |i| try emitFnmsubD(i.dst.toReg(), i.src_n, i.src_m, i.src_a, buffer),
+        .vec_add => |i| try emitVecAdd(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_sub => |i| try emitVecSub(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_mul => |i| try emitVecMul(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
     }
 }
 
@@ -10122,4 +10126,76 @@ test "emit memory barriers" {
     const isb_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     // CRm=1111 + 11111111
     try testing.expectEqual(@as(u32, 0xD5033FDF), isb_insn);
+}
+
+/// Vector ADD (NEON): ADD Vd.T, Vn.T, Vm.T
+/// Encoding: Q|0|0|01110|size|1|Rm|100001|Rn|Rd
+fn emitVecAdd(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b0 << 28) |
+        (0b01110 << 23) |
+        (@as(u32, size) << 21) |
+        (0b1 << 20) |
+        (@as(u32, rm) << 16) |
+        (0b100001 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector SUB (NEON): SUB Vd.T, Vn.T, Vm.T
+/// Encoding: Q|0|1|01110|size|1|Rm|100001|Rn|Rd
+fn emitVecSub(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b1 << 28) |
+        (0b01110 << 23) |
+        (@as(u32, size) << 21) |
+        (0b1 << 20) |
+        (@as(u32, rm) << 16) |
+        (0b100001 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector MUL (NEON): MUL Vd.T, Vn.T, Vm.T
+/// Encoding: Q|0|0|01110|size|1|Rm|100111|Rn|Rd
+fn emitVecMul(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+    const size = vec_size.sizeBits();
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b0 << 28) |
+        (0b01110 << 23) |
+        (@as(u32, size) << 21) |
+        (0b1 << 20) |
+        (@as(u32, rm) << 16) |
+        (0b100111 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
 }
