@@ -455,6 +455,11 @@ pub const InstCombine = struct {
                 try self.replaceWithConst(func, inst, 0);
                 return true;
             },
+            // x % -1 = 0 (signed remainder by -1 is always 0)
+            .srem => if (rhs == -1) {
+                try self.replaceWithConst(func, inst, 0);
+                return true;
+            },
             // x & 0 = 0
             .band => if (rhs == 0) {
                 try self.replaceWithConst(func, inst, 0);
