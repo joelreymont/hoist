@@ -198,6 +198,13 @@ pub const InstCombine = struct {
             }
         }
 
+        // (x << k1) << k2 = x << (k1 + k2), (x >> k1) >> k2 = x >> (k1 + k2)
+        if (data.opcode == .ishl or data.opcode == .ushr or data.opcode == .sshr) {
+            if (try self.simplifyShiftChain(func, inst, data, lhs, rhs)) {
+                return;
+            }
+        }
+
         // (x < y) & (x > y) = 0 (mutually exclusive)
         if (data.opcode == .band) {
             if (try self.simplifyMutuallyExclusiveComparisons(func, inst, lhs, rhs)) {
@@ -1718,6 +1725,58 @@ pub const InstCombine = struct {
                     try self.replaceWithValue(func, inst, shift_inst);
                     return true;
                 }
+            }
+        }
+
+        return false;
+    }
+
+    /// Simplify (x << k1) << k2 = x << (k1 + k2), (x >> k1) >> k2 = x >> (k1 + k2).
+    fn simplifyShiftChain(self: *InstCombine, func: *Function, inst: Inst, data: BinaryData, lhs: Value, rhs: Value) !bool {
+        const result_ty = func.dfg.instResultType(inst) orelse return false;
+        const ty_bits = result_ty.bitSize();
+
+        // Get shift amount k2 (must be constant)
+        const k2 = self.getConstant(func, rhs) orelse return false;
+        if (k2 < 0 or k2 >= ty_bits) return false;
+
+        // Check if lhs is also a shift of the same kind
+        const lhs_def = func.dfg.valueDef(lhs) orelse return false;
+        const lhs_inst = switch (lhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const lhs_data = func.dfg.insts.get(lhs_inst) orelse return false;
+
+        if (lhs_data.* == .binary) {
+            const lhs_binary = lhs_data.binary;
+
+            // Check if it's the same shift operation
+            if (lhs_binary.opcode == data.opcode) {
+                const x = lhs_binary.args[0];
+                const k1_val = lhs_binary.args[1];
+
+                // Get k1 (must be constant)
+                const k1 = self.getConstant(func, k1_val) orelse return false;
+                if (k1 < 0 or k1 >= ty_bits) return false;
+
+                // Check if k1 + k2 < ty_bits (otherwise shift becomes 0 or undefined)
+                const k_sum = k1 + k2;
+                if (k_sum >= ty_bits) {
+                    // (x << k1) << k2 = 0 if k1 + k2 >= ty_bits (for left shift)
+                    if (data.opcode == .ishl or data.opcode == .ushr) {
+                        try self.replaceWithConst(func, inst, 0);
+                        return true;
+                    }
+                    // For sshr, it saturates to the sign bit
+                    return false;
+                }
+
+                // Create x << (k1 + k2)
+                const new_shift_amt = try func.dfg.makeConst(k_sum);
+                const new_shift = try func.dfg.makeInst(data.opcode, result_ty, &.{ x, new_shift_amt });
+                try self.replaceWithValue(func, inst, new_shift);
+                return true;
             }
         }
 
