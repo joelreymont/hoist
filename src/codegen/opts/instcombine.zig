@@ -351,6 +351,20 @@ pub const InstCombine = struct {
                 try self.replaceWithValue(func, inst, rhs);
                 return true;
             },
+            // 0 - x = -x
+            .isub => if (lhs == 0) {
+                const result_ty = func.dfg.instResultType(inst) orelse return false;
+                const neg_inst = try func.dfg.makeInst(.ineg, result_ty, &.{rhs});
+                try self.replaceWithValue(func, inst, neg_inst);
+                return true;
+            },
+            // 0.0 - x = -x
+            .fsub => if (lhs == 0) {
+                const result_ty = func.dfg.instResultType(inst) orelse return false;
+                const neg_inst = try func.dfg.makeInst(.fneg, result_ty, &.{rhs});
+                try self.replaceWithValue(func, inst, neg_inst);
+                return true;
+            },
             else => {},
         }
         return false;
