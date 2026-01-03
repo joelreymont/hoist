@@ -329,6 +329,30 @@
 (rule (lower (bnot ty x))
       (aarch64_mvn_rr ty x))
 
+;; Bit manipulation operations
+
+;; clz: Count leading zeros (CLZ)
+(rule (lower (has_type $I32 (clz x)))
+      (aarch64_clz_32 x))
+
+(rule (lower (has_type $I64 (clz x)))
+      (aarch64_clz_64 x))
+
+;; ctz: Count trailing zeros (RBIT + CLZ)
+;; ARM64 doesn't have CTZ, so we reverse bits then count leading zeros
+(rule (lower (has_type $I32 (ctz x)))
+      (aarch64_ctz_32 x))
+
+(rule (lower (has_type $I64 (ctz x)))
+      (aarch64_ctz_64 x))
+
+;; bitrev: Reverse bits (RBIT)
+(rule (lower (has_type $I32 (bitrev x)))
+      (aarch64_rbit_32 x))
+
+(rule (lower (has_type $I64 (bitrev x)))
+      (aarch64_rbit_64 x))
+
 ;; ineg: Integer negation (implemented as NEG)
 (rule (lower (ineg ty x))
       (aarch64_neg ty x))
@@ -769,6 +793,14 @@
 (decl aarch64_orr_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_eor_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_mvn_rr (Type Value) Aarch64Inst)
+
+;; Bit manipulation operations
+(decl aarch64_clz_32 (Value) Aarch64Inst)
+(decl aarch64_clz_64 (Value) Aarch64Inst)
+(decl aarch64_ctz_32 (Value) Aarch64Inst)
+(decl aarch64_ctz_64 (Value) Aarch64Inst)
+(decl aarch64_rbit_32 (Value) Aarch64Inst)
+(decl aarch64_rbit_64 (Value) Aarch64Inst)
 
 ;; Negation operations
 (decl aarch64_neg (Type Value) Aarch64Inst)

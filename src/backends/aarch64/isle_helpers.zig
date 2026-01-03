@@ -897,3 +897,90 @@ pub fn aarch64_fcvtn_combined(x: lower_mod.Value, y: lower_mod.Value, ctx: *lowe
         .high = true,
     } };
 }
+
+/// CLZ - Count leading zeros (32-bit)
+pub fn aarch64_clz_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueReg(ctx, val);
+
+    return Inst{ .clz = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src = src_reg,
+        .size = .size32,
+    } };
+}
+
+/// CLZ - Count leading zeros (64-bit)
+pub fn aarch64_clz_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueReg(ctx, val);
+
+    return Inst{ .clz = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src = src_reg,
+        .size = .size64,
+    } };
+}
+
+/// CTZ - Count trailing zeros (32-bit)
+/// ARM64 doesn't have CTZ, so we emit RBIT + CLZ
+pub fn aarch64_ctz_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueReg(ctx, val);
+
+    // First reverse bits
+    const rbit_dst = lower_mod.WritableVReg.allocVReg(.int, ctx);
+    const rbit_inst = Inst{ .rbit = .{
+        .dst = rbit_dst,
+        .src = src_reg,
+        .size = .size32,
+    } };
+    try ctx.emit(rbit_inst);
+
+    // Then count leading zeros
+    return Inst{ .clz = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src = rbit_dst.toReg(),
+        .size = .size32,
+    } };
+}
+
+/// CTZ - Count trailing zeros (64-bit)
+pub fn aarch64_ctz_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueReg(ctx, val);
+
+    // First reverse bits
+    const rbit_dst = lower_mod.WritableVReg.allocVReg(.int, ctx);
+    const rbit_inst = Inst{ .rbit = .{
+        .dst = rbit_dst,
+        .src = src_reg,
+        .size = .size64,
+    } };
+    try ctx.emit(rbit_inst);
+
+    // Then count leading zeros
+    return Inst{ .clz = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src = rbit_dst.toReg(),
+        .size = .size64,
+    } };
+}
+
+/// RBIT - Reverse bits (32-bit)
+pub fn aarch64_rbit_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueReg(ctx, val);
+
+    return Inst{ .rbit = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src = src_reg,
+        .size = .size32,
+    } };
+}
+
+/// RBIT - Reverse bits (64-bit)
+pub fn aarch64_rbit_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueReg(ctx, val);
+
+    return Inst{ .rbit = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src = src_reg,
+        .size = .size64,
+    } };
+}
