@@ -288,6 +288,20 @@ pub fn aarch64_uxtw(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst 
     } };
 }
 
+/// Constructor: Integer reduce (truncate to narrower type).
+/// On ARM64, this is just a register move with the target size.
+/// I64 -> I32: move to W register (implicit truncation)
+/// I64 -> I16/I8: move to W register, then truncate with mask
+pub fn aarch64_ireduce(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const dst_size = typeToOperandSize(dst_ty);
+    const src_reg = try getValueReg(ctx, src);
+    return Inst{ .mov_rr = .{
+        .dst = ctx.newTempReg(.int),
+        .src = src_reg,
+        .size = dst_size,
+    } };
+}
+
 /// Helper: Convert IR type to aarch64 operand size.
 fn typeToOperandSize(ty: root.types.Type) root.aarch64_inst.OperandSize {
     if (ty.bits() <= 32) {

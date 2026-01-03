@@ -149,6 +149,12 @@
       (if-let 64 (ty_bits dst_ty))
       (aarch64_uxtw x))
 
+;; ireduce: Truncate integer to narrower type
+;; On ARM64, this is implicit when using smaller register size
+;; I64 -> I32/I16/I8: move to W register (32-bit) truncates
+(rule (lower (ireduce dst_ty src_ty x))
+      (aarch64_ireduce dst_ty x))
+
 ;; Shift operations lowering
 
 ;; ishl: Integer shift left (register form)
