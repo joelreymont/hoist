@@ -11,11 +11,11 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const ir_mod = @import("../../ir.zig");
-const Function = root.function.Function;
+const Function = @import("../../ir/function.zig").Function;
 const Block = ir_mod.Block;
 const Inst = ir_mod.Inst;
 const Value = ir_mod.Value;
-const Opcode = root.opcodes.Opcode;
+const Opcode = @import("../../ir/opcodes.zig").Opcode;
 
 /// Dead code elimination pass.
 pub const DCE = struct {

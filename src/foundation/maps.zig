@@ -40,10 +40,10 @@ pub fn PrimaryMap(comptime K: type, comptime V: type) type {
 
         pub fn set(self: *Self, allocator: Allocator, key: K, value: V) !void {
             const idx = key.toIndex();
-            if (idx >= self.items.items.len) {
-                try self.items.resize(allocator, idx + 1);
+            if (idx >= self.elems.items.len) {
+                try self.elems.resize(allocator, idx + 1);
             }
-            self.items.items[idx] = value;
+            self.elems.items[idx] = value;
         }
 
         pub fn isEmpty(self: *const Self) bool {

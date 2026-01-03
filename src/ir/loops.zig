@@ -4,8 +4,8 @@ const Allocator = std.mem.Allocator;
 
 const ir_mod = @import("../ir.zig");
 const Block = ir_mod.Block;
-const DominatorTree = root.domtree.DominatorTree;
-const CFG = root.domtree.CFG;
+const DominatorTree = @import("domtree.zig").DominatorTree;
+const CFG = @import("domtree.zig").CFG;
 
 /// Natural loop information.
 pub const Loop = struct {
