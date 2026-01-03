@@ -390,6 +390,32 @@ pub const InstCombine = struct {
             }
         }
 
+        // ireduce(uextend(x)) = x and ireduce(sextend(x)) = x when reducing to original type
+        if (data.opcode == .ireduce) {
+            const arg_def = func.dfg.valueDef(data.arg) orelse return;
+            const arg_inst = switch (arg_def) {
+                .result => |r| r.inst,
+                else => return,
+            };
+            const arg_inst_data = func.dfg.insts.get(arg_inst) orelse return;
+
+            if (arg_inst_data.* == .unary) {
+                const inner = arg_inst_data.unary;
+                // Check if inner is an extend operation
+                if (inner.opcode == .uextend or inner.opcode == .sextend) {
+                    // Get the type of the innermost value
+                    const inner_val_ty = func.dfg.valueType(inner.arg) orelse return;
+                    const result_ty = func.dfg.instResultType(inst) orelse return;
+
+                    // If reducing back to the original type, just use the original value
+                    if (inner_val_ty.index == result_ty.index) {
+                        try self.replaceWithValue(func, inst, inner.arg);
+                        return;
+                    }
+                }
+            }
+        }
+
         // Negate subtraction: -(y - x) = x - y
         if (data.opcode == .ineg) {
             const arg_def = func.dfg.valueDef(data.arg) orelse return;
