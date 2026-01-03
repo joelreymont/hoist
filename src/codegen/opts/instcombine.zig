@@ -528,11 +528,50 @@ pub const InstCombine = struct {
                     try self.replaceWithValue(func, inst, true_val);
                     return;
                 }
+
+                // Transform select-of-icmp into {u,s}{min,max}
+                // select(x > y, x, y) => max(x, y), select(x < y, x, y) => min(x, y)
+                const cond_def = func.dfg.valueDef(cond) orelse return;
+                const cond_inst = switch (cond_def) {
+                    .result => |r| r.inst,
+                    else => return,
+                };
+                const cond_data = func.dfg.insts.get(cond_inst) orelse return;
+
+                if (cond_data.* == .int_compare) {
+                    const icmp = cond_data.int_compare;
+                    const x = icmp.args[0];
+                    const y = icmp.args[1];
+
+                    // Check if select operands match comparison operands
+                    if (true_val.index == x.index and false_val.index == y.index) {
+                        const new_opcode: Opcode = switch (icmp.cond) {
+                            .sgt, .sge => .smax,
+                            .ugt, .uge => .umax,
+                            .slt, .sle => .smin,
+                            .ult, .ule => .umin,
+                            else => return,
+                        };
+                        try self.replaceWithBinary(func, inst, new_opcode, x, y);
+                        return;
+                    }
+
+                    // Check swapped operands: select(x < y, y, x) => max(x, y)
+                    if (true_val.index == y.index and false_val.index == x.index) {
+                        const new_opcode: Opcode = switch (icmp.cond) {
+                            .slt, .sle => .smax,
+                            .ult, .ule => .umax,
+                            .sgt, .sge => .smin,
+                            .ugt, .uge => .umin,
+                            else => return,
+                        };
+                        try self.replaceWithBinary(func, inst, new_opcode, x, y);
+                        return;
+                    }
+                }
             },
             else => {},
         }
-
-        _ = cond;
     }
 
     /// Combine integer comparison operations.
@@ -2422,6 +2461,32 @@ pub const InstCombine = struct {
         // Create alias to replacement value
         const result_data = func.dfg.values.getMut(result) orelse return;
         result_data.* = ValueData.alias(ty, replacement);
+
+        self.changed = true;
+    }
+
+    /// Replace instruction with a binary operation.
+    fn replaceWithBinary(self: *InstCombine, func: *Function, inst: Inst, opcode: Opcode, lhs: Value, rhs: Value) !void {
+        const result = func.dfg.firstResult(inst) orelse return;
+        const ty = func.dfg.valueType(result) orelse return;
+
+        // Create new binary instruction
+        const new_inst = try func.dfg.createInst(.{
+            .binary = .{
+                .opcode = opcode,
+                .args = .{ lhs, rhs },
+            },
+        });
+
+        // Set result type
+        try func.dfg.attachResult(new_inst, ty);
+
+        // Get new result value
+        const new_result = func.dfg.firstResult(new_inst) orelse return;
+
+        // Alias old result to new result
+        const result_data = func.dfg.values.getMut(result) orelse return;
+        result_data.* = ValueData.alias(ty, new_result);
 
         self.changed = true;
     }
