@@ -243,6 +243,13 @@ pub const InstCombine = struct {
             }
         }
 
+        // (x > y) ^ (x < y) = x != y
+        if (data.opcode == .bxor) {
+            if (try self.simplifyXorComparisons(func, inst, lhs, rhs)) {
+                return;
+            }
+        }
+
         // (x ^ ~y) & x = x & y
         if (data.opcode == .band) {
             if (try self.simplifyXorNotAnd(func, inst, lhs, rhs)) {
@@ -1822,6 +1829,51 @@ pub const InstCombine = struct {
                 // x ^ (x ^ y) = y
                 if (x.index == lhs.index) {
                     try self.replaceWithValue(func, inst, y);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// Simplify (x > y) ^ (x < y) = x != y.
+    fn simplifyXorComparisons(self: *InstCombine, func: *Function, inst: Inst, lhs: Value, rhs: Value) !bool {
+        const result_ty = func.dfg.instResultType(inst) orelse return false;
+
+        // Check if both operands are integer comparisons
+        const lhs_def = func.dfg.valueDef(lhs) orelse return false;
+        const lhs_inst = switch (lhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const lhs_data = func.dfg.insts.get(lhs_inst) orelse return false;
+
+        const rhs_def = func.dfg.valueDef(rhs) orelse return false;
+        const rhs_inst = switch (rhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const rhs_data = func.dfg.insts.get(rhs_inst) orelse return false;
+
+        if (lhs_data.* == .int_compare and rhs_data.* == .int_compare) {
+            const lhs_cmp = lhs_data.int_compare;
+            const rhs_cmp = rhs_data.int_compare;
+
+            // Check if comparing the same values
+            if (lhs_cmp.args[0].index == rhs_cmp.args[0].index and
+                lhs_cmp.args[1].index == rhs_cmp.args[1].index)
+            {
+                // (x > y) ^ (x < y) = x != y
+                if ((lhs_cmp.cond == .ugt and rhs_cmp.cond == .ult) or
+                    (lhs_cmp.cond == .ult and rhs_cmp.cond == .ugt) or
+                    (lhs_cmp.cond == .sgt and rhs_cmp.cond == .slt) or
+                    (lhs_cmp.cond == .slt and rhs_cmp.cond == .sgt))
+                {
+                    const ne_inst = try func.dfg.makeInstWithData(.icmp, result_ty, .{
+                        .int_compare = IntCompareData.init(.icmp, .ne, lhs_cmp.args[0], lhs_cmp.args[1]),
+                    });
+                    try self.replaceWithValue(func, inst, ne_inst);
                     return true;
                 }
             }
