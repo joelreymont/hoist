@@ -35,6 +35,7 @@ const CFGNode = struct {
     }
 
     fn deinit(self: *CFGNode, allocator: std.mem.Allocator) void {
+        _ = allocator;
         self.predecessors.deinit();
         self.successors.deinit();
     }

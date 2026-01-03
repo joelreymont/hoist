@@ -7,7 +7,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const root = @import("root");
-const Function = root.function.Function;
+const Function = @import("../ir/function.zig").Function;
 const dce = @import("opts/dce.zig");
 
 /// Pass execution statistics.

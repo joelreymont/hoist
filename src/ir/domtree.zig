@@ -22,7 +22,7 @@ pub const DominatorTree = struct {
 
     pub fn init(allocator: Allocator) DominatorTree {
         return .{
-            .idom = PrimaryMap(Block, ?Block).init(),
+            .idom = PrimaryMap(Block, ?Block).init(allocator),
             .children = std.AutoHashMap(Block, std.ArrayList(Block)).init(allocator),
             .allocator = allocator,
         };
@@ -30,11 +30,11 @@ pub const DominatorTree = struct {
 
     pub fn deinit(self: *DominatorTree, allocator: std.mem.Allocator) void {
         _ = allocator;
-        self.idom.deinit(self.allocator);
+        self.idom.deinit();
 
         var iter = self.children.valueIterator();
         while (iter.next()) |list| {
-            list.deinit();
+            list.deinit(self.allocator);
         }
         self.children.deinit();
     }
@@ -48,13 +48,13 @@ pub const DominatorTree = struct {
         cfg: *const CFG,
     ) !void {
         // Clear existing dominator tree
-        self.idom.deinit(allocator);
+        self.idom.deinit();
         var child_iter = self.children.valueIterator();
         while (child_iter.next()) |list| {
-            list.deinit();
+            list.deinit(self.allocator);
         }
         self.children.clearRetainingCapacity();
-        self.idom = PrimaryMap(Block, ?Block).init();
+        self.idom = PrimaryMap(Block, ?Block).init(allocator);
 
         // Entry block has no immediate dominator
         try self.idom.set(allocator, entry, null);
@@ -123,7 +123,7 @@ pub const DominatorTree = struct {
                     if (!entry_result.found_existing) {
                         entry_result.value_ptr.* = std.ArrayList(Block){};
                     }
-                    try entry_result.value_ptr.append(block);
+                    try entry_result.value_ptr.append(self.allocator, block);
                 }
             }
         }
@@ -141,19 +141,19 @@ pub const DominatorTree = struct {
         defer visited.deinit();
 
         var worklist = std.ArrayList(Block){};
-        defer worklist.deinit();
+        defer worklist.deinit(self.allocator);
 
-        try worklist.append(entry);
+        try worklist.append(allocator, entry);
         try visited.put(entry, {});
 
         while (worklist.items.len > 0) {
             const block = worklist.pop();
-            try blocks.append(block);
+            try blocks.append(allocator, block);
 
             for (cfg.successors(block)) |succ| {
                 if (!visited.contains(succ)) {
                     try visited.put(succ, {});
-                    try worklist.append(succ);
+                    try worklist.append(allocator, succ);
                 }
             }
         }
@@ -317,9 +317,9 @@ pub const DominatorTree = struct {
 
         // Compute reachable blocks from entry via CFG
         var worklist = std.ArrayList(Block){};
-        defer worklist.deinit();
+        defer worklist.deinit(self.allocator);
 
-        try worklist.append(entry);
+        try worklist.append(allocator, entry);
         try reachable.put(entry, {});
 
         while (worklist.items.len > 0) {
@@ -328,7 +328,7 @@ pub const DominatorTree = struct {
             for (succs) |succ| {
                 if (!reachable.contains(succ)) {
                     try reachable.put(succ, {});
-                    try worklist.append(succ);
+                    try worklist.append(allocator, succ);
                 }
             }
         }
@@ -405,13 +405,13 @@ pub const CFG = struct {
     pub fn deinit(self: *CFG) void {
         var pred_iter = self.preds.valueIterator();
         while (pred_iter.next()) |list| {
-            list.deinit();
+            list.deinit(self.allocator);
         }
         self.preds.deinit();
 
         var succ_iter = self.succs.valueIterator();
         while (succ_iter.next()) |list| {
-            list.deinit();
+            list.deinit(self.allocator);
         }
         self.succs.deinit();
     }
@@ -421,16 +421,16 @@ pub const CFG = struct {
         // Add to successors of `from`
         const succ_entry = try self.succs.getOrPut(from);
         if (!succ_entry.found_existing) {
-            succ_entry.value_ptr.* = std.ArrayList(Block).init(self.allocator);
+            succ_entry.value_ptr.* = std.ArrayList(Block){};
         }
-        try succ_entry.value_ptr.append(to);
+        try succ_entry.value_ptr.append(self.allocator, to);
 
         // Add to predecessors of `to`
         const pred_entry = try self.preds.getOrPut(to);
         if (!pred_entry.found_existing) {
-            pred_entry.value_ptr.* = std.ArrayList(Block).init(self.allocator);
+            pred_entry.value_ptr.* = std.ArrayList(Block){};
         }
-        try pred_entry.value_ptr.append(from);
+        try pred_entry.value_ptr.append(self.allocator, from);
     }
 
     /// Get predecessors of a block.
@@ -532,7 +532,7 @@ pub const PostDominatorTree = struct {
 
     pub fn init(allocator: Allocator) PostDominatorTree {
         return .{
-            .ipdom = PrimaryMap(Block, ?Block).init(),
+            .ipdom = PrimaryMap(Block, ?Block).init(allocator),
             .children = std.AutoHashMap(Block, std.ArrayList(Block)).init(allocator),
             .allocator = allocator,
         };
@@ -543,7 +543,7 @@ pub const PostDominatorTree = struct {
 
         var iter = self.children.valueIterator();
         while (iter.next()) |list| {
-            list.deinit();
+            list.deinit(self.allocator);
         }
         self.children.deinit();
     }
@@ -560,10 +560,10 @@ pub const PostDominatorTree = struct {
         self.ipdom.deinit(allocator);
         var child_iter = self.children.valueIterator();
         while (child_iter.next()) |list| {
-            list.deinit();
+            list.deinit(self.allocator);
         }
         self.children.clearRetainingCapacity();
-        self.ipdom = PrimaryMap(Block, ?Block).init();
+        self.ipdom = PrimaryMap(Block, ?Block).init(allocator);
 
         // Exit block has no immediate post-dominator
         try self.ipdom.set(allocator, exit, null);

@@ -104,12 +104,28 @@ pub fn PrimaryMap(comptime K: type, comptime V: type) type {
             return &self.items.items[idx];
         }
 
+        pub fn set(self: *Self, allocator: Allocator, key: K, value: V) !void {
+            const idx = key.toIndex();
+            if (idx >= self.items.items.len) {
+                try self.items.resize(allocator, idx + 1);
+            }
+            self.items.items[idx] = value;
+        }
+
         pub fn getAssert(self: *const Self, key: K) *const V {
             return &self.items.items[key.toIndex()];
         }
 
         pub fn getMutAssert(self: *Self, key: K) *V {
             return &self.items.items[key.toIndex()];
+        }
+
+        pub fn set(self: *Self, allocator: Allocator, key: K, value: V) !void {
+            const idx = key.toIndex();
+            if (idx >= self.items.items.len) {
+                try self.items.resize(allocator, idx + 1);
+            }
+            self.items.items[idx] = value;
         }
 
         pub fn isValid(self: *const Self, key: K) bool {
