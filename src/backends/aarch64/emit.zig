@@ -255,6 +255,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_fmax => |i| try emitVecFmax(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_fabs => |i| try emitVecFabs(i.dst.toReg(), i.src, i.size, buffer),
         .vec_fneg => |i| try emitVecFneg(i.dst.toReg(), i.src, i.size, buffer),
+        .vec_sshll => |i| try emitVecSshll(i.dst.toReg(), i.src, i.shift_amt, i.size, i.high, buffer),
+        .vec_ushll => |i| try emitVecUshll(i.dst.toReg(), i.src, i.shift_amt, i.size, i.high, buffer),
         .addv => |i| try emitAddv(i.dst.toReg(), i.src, i.size, buffer),
         .sminv => |i| try emitSminv(i.dst.toReg(), i.src, i.size, buffer),
         .smaxv => |i| try emitSmaxv(i.dst.toReg(), i.src, i.size, buffer),
@@ -11871,6 +11873,62 @@ fn emitMrs(dst: Reg, sysreg: root.aarch64_inst.SystemReg, buffer: *buffer_mod.Ma
     const insn: u32 =
         (0b1101010100110 << 19) | // MRS opcode
         (@as(u32, sys_enc) << 5) |
+        rd;
+
+    try buffer.put(&std.mem.toBytes(insn));
+}
+
+/// SSHLL/SSHLL2 - Signed Shift Left Long
+/// Encoding: 0 Q 0 0 1 1 1 1 0 immh:immb 1 0 1 0 0 1 Rn Rd
+fn emitVecSshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VectorSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q: u1 = if (high) 1 else 0;
+
+    // For SSHLL, immh:immb encodes both element size and shift amount
+    // immh determines output element size:
+    //   0001 -> 8-bit input, 16-bit output
+    //   0010 -> 16-bit input, 32-bit output
+    //   0100 -> 32-bit input, 64-bit output
+    // immb is shift amount in low bits
+    const immh_immb: u7 = switch (vec_size) {
+        .size16x8 => (0b0001 << 3) | (shift_amt & 0x7), // 8->16
+        .size32x4 => (0b0010 << 3) | (shift_amt & 0xF), // 16->32
+        .size64x2 => (0b0100 << 3) | (shift_amt & 0x1F), // 32->64
+        else => unreachable, // Invalid for SSHLL
+    };
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b001111 << 23) |
+        (@as(u32, immh_immb) << 16) |
+        (0b101001 << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    try buffer.put(&std.mem.toBytes(insn));
+}
+
+/// USHLL/USHLL2 - Unsigned Shift Left Long
+/// Encoding: 0 Q 1 0 1 1 1 1 0 immh:immb 1 0 1 0 0 1 Rn Rd
+fn emitVecUshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VectorSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q: u1 = if (high) 1 else 0;
+
+    // Same immh:immb encoding as SSHLL
+    const immh_immb: u7 = switch (vec_size) {
+        .size16x8 => (0b0001 << 3) | (shift_amt & 0x7), // 8->16
+        .size32x4 => (0b0010 << 3) | (shift_amt & 0xF), // 16->32
+        .size64x2 => (0b0100 << 3) | (shift_amt & 0x1F), // 32->64
+        else => unreachable, // Invalid for USHLL
+    };
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b1 << 29) |
+        (0b01111 << 23) |
+        (@as(u32, immh_immb) << 16) |
+        (0b101001 << 10) |
+        (@as(u32, rn) << 5) |
         rd;
 
     try buffer.put(&std.mem.toBytes(insn));
