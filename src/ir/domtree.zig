@@ -241,7 +241,7 @@ pub const DominatorTree = struct {
 
         // For each successor of blocks dominated by 'block'
         var dominated = try self.getDominatedBlocks(allocator, block);
-        defer dominated.deinit();
+        defer dominated.deinit(allocator);
 
         for (dominated.items) |dom_block| {
             const succs = cfg.successors(dom_block);

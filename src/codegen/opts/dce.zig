@@ -148,8 +148,6 @@ pub const DCE = struct {
             .fcmp => false,
 
             // Conversions are pure
-            .fcvt_from_sint, .fcvt_from_uint => false,
-            .fcvt_to_sint, .fcvt_to_uint, .fcvt_to_sint_sat, .fcvt_to_uint_sat => false,
 
             // Constants are pure
             .iconst, .f32const, .f64const, .vconst => false,

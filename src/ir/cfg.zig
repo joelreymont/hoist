@@ -259,7 +259,7 @@ pub const ControlFlowGraph = struct {
         // Verify successors match terminator targets
         switch (inst_data.opcode()) {
                 .jump => {
-                    try self.addEdge(block, last_inst, inst_data.jump.destination);
+                    try self.validateEdge(block, last_inst, inst_data.jump.destination);
                 },
                 .brif => {
                     try self.addEdge(block, last_inst, inst_data.branch.then_dest);
@@ -295,7 +295,7 @@ pub const ControlFlowGraph = struct {
         const pred_block = self.data.items[to_idx].predecessors.get(from_inst) orelse
             return error.MissingPredecessorEdge;
 
-        if (!pred_block.eql(from)) {
+        if (!std.meta.eql(pred_block, from)) {
             return error.InconsistentPredecessor;
         }
     }

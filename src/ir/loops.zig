@@ -129,8 +129,8 @@ pub const LoopInfo = struct {
         try loop.addBlock(header);
 
         // Find all blocks in the loop using worklist algorithm
-        var worklist = std.ArrayList(Block).init(self.allocator);
-        defer worklist.deinit();
+        var worklist = std.ArrayList(Block){};
+        defer worklist.deinit(self.allocator);
 
         try worklist.append(back_edge_src);
         try loop.addBlock(back_edge_src);
