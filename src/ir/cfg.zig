@@ -97,7 +97,7 @@ pub const ControlFlowGraph = struct {
 
     fn computeBlock(self: *ControlFlowGraph, func: *const Function, block: Block) !void {
         // Visit all branch/jump successors of this block
-        const block_data = func.layout.block_data.get(block) orelse return;
+        const block_data = func.layout.blocks.get(block) orelse return;
 
         // Get last instruction (terminator)
         if (block_data.last_inst) |last_inst| {
@@ -257,7 +257,7 @@ pub const ControlFlowGraph = struct {
     }
 
     fn validateBlock(self: *const ControlFlowGraph, func: *const Function, block: Block) !void {
-        const block_data = func.layout.block_data.get(block) orelse return error.BlockNotInLayout;
+        const block_data = func.layout.blocks.get(block) orelse return error.BlockNotInLayout;
 
         // Get last instruction (terminator)
         const last_inst = block_data.last_inst orelse return;

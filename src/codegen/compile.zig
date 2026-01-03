@@ -12,7 +12,7 @@
 
 const std = @import("std");
 const Context = @import("context.zig").Context;
-const CompiledCode = @import("context.zig").CompiledCode;
+pub const CompiledCode = @import("context.zig").CompiledCode;
 const Relocation = @import("context.zig").Relocation;
 const RelocKind = @import("context.zig").RelocKind;
 const Function = @import("../ir/function.zig").Function;
