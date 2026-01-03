@@ -271,6 +271,7 @@ pub const DominatorTree = struct {
         _allocator: Allocator,
         block: Block,
     ) !std.ArrayList(Block) {
+        _ = _allocator;
         var dominated = std.ArrayList(Block){};
 
         // Add the block itself

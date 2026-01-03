@@ -83,6 +83,7 @@ pub const X64ABICallee = struct {
         _allocator: std.mem.Allocator,
         sig: abi_mod.ABISignature,
     ) X64ABICallee {
+        _ = _allocator;
         const abi = switch (sig.call_conv) {
             .system_v => systemV(),
             .windows_fastcall => windowsFastcall(),

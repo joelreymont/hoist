@@ -728,6 +728,7 @@ pub const Aarch64ABICallee = struct {
         _allocator: std.mem.Allocator,
         sig: abi_mod.ABISignature,
     ) Aarch64ABICallee {
+        _ = _allocator;
         const abi = switch (sig.call_conv) {
             .aapcs64 => aapcs64(),
             .system_v, .windows_fastcall => unreachable,

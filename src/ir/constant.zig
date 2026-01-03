@@ -12,6 +12,7 @@ pub const ConstantData = struct {
     bytes: std.ArrayList(u8),
 
     pub fn init(_allocator: Allocator) ConstantData {
+        _ = _allocator;
         return .{ .bytes = std.ArrayList(u8){} };
     }
 
