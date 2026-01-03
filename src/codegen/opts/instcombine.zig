@@ -105,6 +105,13 @@ pub const InstCombine = struct {
             }
         }
 
+        // ~x + 1 = -x
+        if (data.opcode == .iadd) {
+            if (try self.simplifyBnotPlusOne(func, inst, lhs, rhs)) {
+                return;
+            }
+        }
+
         // x + (-x) = 0, x - (-x) = 2x (but we only do the first for now)
         if (data.opcode == .iadd or data.opcode == .fadd) {
             if (try self.simplifyAddNeg(func, inst, lhs, rhs)) {
@@ -283,6 +290,13 @@ pub const InstCombine = struct {
                 try self.replaceWithValue(func, inst, lhs);
                 return true;
             },
+            // x * -1 = -x
+            .imul => if (rhs == -1) {
+                const result_ty = func.dfg.instResultType(inst) orelse return false;
+                const neg_inst = try func.dfg.makeInst(.ineg, result_ty, &.{lhs});
+                try self.replaceWithValue(func, inst, neg_inst);
+                return true;
+            },
             // x / 1 = x
             .udiv, .sdiv => if (rhs == 1) {
                 try self.replaceWithValue(func, inst, lhs);
@@ -378,6 +392,35 @@ pub const InstCombine = struct {
     /// Simplify identity operations (x op x).
     /// Simplify x + (-x) = 0 pattern.
     /// Checks if one operand is the negation of the other.
+    /// Simplify ~x + 1 to -x.
+    fn simplifyBnotPlusOne(self: *InstCombine, func: *Function, inst: Inst, lhs: Value, rhs: Value) !bool {
+        const result_ty = func.dfg.instResultType(inst) orelse return false;
+
+        // Check for ~x + 1
+        if (self.getConstant(func, rhs)) |c| {
+            if (c == 1) {
+                if (try self.getBnotOperand(func, lhs)) |x| {
+                    const neg_inst = try func.dfg.makeInst(.ineg, result_ty, &.{x});
+                    try self.replaceWithValue(func, inst, neg_inst);
+                    return true;
+                }
+            }
+        }
+
+        // Check for 1 + ~x
+        if (self.getConstant(func, lhs)) |c| {
+            if (c == 1) {
+                if (try self.getBnotOperand(func, rhs)) |x| {
+                    const neg_inst = try func.dfg.makeInst(.ineg, result_ty, &.{x});
+                    try self.replaceWithValue(func, inst, neg_inst);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     fn simplifyAddNeg(self: *InstCombine, func: *Function, inst: Inst, lhs: Value, rhs: Value) !bool {
         // Check if lhs is -rhs: lhs = -(rhs)
         if (try self.isNegationOf(func, lhs, rhs)) {
@@ -450,6 +493,25 @@ pub const InstCombine = struct {
             }
         }
         return false;
+    }
+
+    /// Get the operand if value is a bnot operation, null otherwise.
+    fn getBnotOperand(self: *InstCombine, func: *Function, value: Value) !?Value {
+        _ = self;
+        const def = func.dfg.valueDef(value) orelse return null;
+        const inst = switch (def) {
+            .result => |r| r.inst,
+            else => return null,
+        };
+        const inst_data = func.dfg.insts.get(inst) orelse return null;
+
+        if (inst_data.* == .unary) {
+            const unary = inst_data.unary;
+            if (unary.opcode == .bnot) {
+                return unary.arg;
+            }
+        }
+        return null;
     }
 
     fn simplifyIdentity(self: *InstCombine, func: *Function, inst: Inst, data: BinaryData, val: Value) !bool {
