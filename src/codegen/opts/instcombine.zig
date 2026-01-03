@@ -246,6 +246,33 @@ pub const InstCombine = struct {
                 }
             }
         }
+
+        // Absolute value simplifications: abs(-x) = abs(x), abs(abs(x)) = abs(x)
+        if (data.opcode == .iabs) {
+            const arg_def = func.dfg.valueDef(data.arg) orelse return;
+            const arg_inst = switch (arg_def) {
+                .result => |r| r.inst,
+                else => return,
+            };
+            const arg_inst_data = func.dfg.insts.get(arg_inst) orelse return;
+
+            if (arg_inst_data.* == .unary) {
+                const inner = arg_inst_data.unary;
+                const result_ty = func.dfg.instResultType(inst) orelse return;
+
+                // abs(-x) = abs(x)
+                if (inner.opcode == .ineg) {
+                    const abs_inst = try func.dfg.makeInst(.iabs, result_ty, &.{inner.arg});
+                    try self.replaceWithValue(func, inst, abs_inst);
+                    return;
+                }
+                // abs(abs(x)) = abs(x)
+                if (inner.opcode == .iabs) {
+                    try self.replaceWithValue(func, inst, data.arg);
+                    return;
+                }
+            }
+        }
     }
 
     /// Fold binary operation with two constants.
