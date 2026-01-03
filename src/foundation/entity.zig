@@ -393,8 +393,8 @@ test "PrimaryMap basic" {
 
     try std.testing.expect(map.isEmpty());
 
-    const k0 = try map.push(12);
-    const k1 = try map.push(33);
+    const k0 = try map.push(std.testing.allocator, 12);
+    const k1 = try map.push(std.testing.allocator, 33);
 
     try std.testing.expectEqual(@as(usize, 0), k0.toIndex());
     try std.testing.expectEqual(@as(usize, 1), k1.toIndex());
@@ -408,8 +408,8 @@ test "PrimaryMap keys iterator" {
     var map = PrimaryMap(Block, i32).init(std.testing.allocator);
     defer map.deinit(std.testing.allocator);
 
-    _ = try map.push(12);
-    _ = try map.push(33);
+    _ = try map.push(std.testing.allocator, 12);
+    _ = try map.push(std.testing.allocator, 33);
 
     var keys = map.keys();
     try std.testing.expectEqual(@as(usize, 0), keys.next().?.toIndex());

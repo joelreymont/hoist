@@ -28,7 +28,7 @@ pub const DominatorTree = struct {
         };
     }
 
-    pub fn deinit(self: *DominatorTree) void {
+    pub fn deinit(self: *DominatorTree, allocator: std.mem.Allocator) void {
         self.idom.deinit(self.allocator);
 
         var iter = self.children.valueIterator();

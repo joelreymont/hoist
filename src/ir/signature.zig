@@ -245,9 +245,9 @@ test "Signature basic" {
     var sig = Signature.init(testing.allocator, .system_v);
     defer sig.deinit();
 
-    try sig.params.append(AbiParam.new(Type.I32));
-    try sig.params.append(AbiParam.new(Type.I64));
-    try sig.returns.append(AbiParam.new(Type.I32));
+    try sig.params.append(testing.allocator, AbiParam.new(Type.I32));
+    try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
+    try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
 
     try testing.expectEqual(2, sig.params.items.len);
     try testing.expectEqual(1, sig.returns.items.len);
@@ -258,8 +258,8 @@ test "Signature special params" {
     var sig = Signature.init(testing.allocator, .system_v);
     defer sig.deinit();
 
-    try sig.params.append(AbiParam.new(Type.I32));
-    try sig.params.append(AbiParam.special(Type.I64, .vm_context));
+    try sig.params.append(testing.allocator, AbiParam.new(Type.I32));
+    try sig.params.append(testing.allocator, AbiParam.special(Type.I64, .vm_context));
 
     try testing.expect(sig.usesSpecialParam(.vm_context));
     try testing.expect(!sig.usesSpecialParam(.struct_return));
@@ -270,8 +270,8 @@ test "Signature multi-return" {
     var sig = Signature.init(testing.allocator, .system_v);
     defer sig.deinit();
 
-    try sig.returns.append(AbiParam.new(Type.I32));
-    try sig.returns.append(AbiParam.new(Type.I64));
+    try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
+    try sig.returns.append(testing.allocator, AbiParam.new(Type.I64));
 
     try testing.expect(sig.isMultiReturn());
 }

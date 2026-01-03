@@ -50,7 +50,7 @@ pub const PassManager = struct {
     }
 
     pub fn deinit(self: *PassManager) void {
-        self.stats.deinit();
+        self.stats.deinit(self.allocator);
     }
 
     /// Run all optimization passes on the function.

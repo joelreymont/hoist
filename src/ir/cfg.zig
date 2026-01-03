@@ -60,11 +60,11 @@ pub const ControlFlowGraph = struct {
         };
     }
 
-    pub fn deinit(self: *ControlFlowGraph) void {
+    pub fn deinit(self: *ControlFlowGraph, allocator: std.mem.Allocator) void {
         for (self.data.items) |*node| {
             node.deinit();
         }
-        self.data.deinit();
+        self.data.deinit(allocator);
     }
 
     pub fn clear(self: *ControlFlowGraph) void {

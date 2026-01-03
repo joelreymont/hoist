@@ -60,9 +60,9 @@ pub const Context = struct {
 
     pub fn deinit(self: *Context) void {
         self.func.deinit();
-        self.cfg.deinit();
-        self.domtree.deinit();
-        self.loop_analysis.deinit();
+        self.cfg.deinit(self.allocator);
+        self.domtree.deinit(self.allocator);
+        self.loop_analysis.deinit(self.allocator);
         if (self.compiled_code) |*code| {
             code.deinit();
         }
