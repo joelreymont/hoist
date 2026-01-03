@@ -314,6 +314,22 @@
       (aarch64_ror_imm ty x amt))
 ;; rotl(x, k) = rotr(x, width - k)
 
+;; smin: Signed minimum (CMP + CSEL)
+(rule (lower (smin ty x y))
+      (aarch64_smin ty x y))
+
+;; umin: Unsigned minimum (CMP + CSEL)
+(rule (lower (umin ty x y))
+      (aarch64_umin ty x y))
+
+;; smax: Signed maximum (CMP + CSEL)
+(rule (lower (smax ty x y))
+      (aarch64_smax ty x y))
+
+;; umax: Unsigned maximum (CMP + CSEL)
+(rule (lower (umax ty x y))
+      (aarch64_umax ty x y))
+
 ;; Comparison operations lowering
 
 ;; icmp: Integer comparison with Equal condition
@@ -845,6 +861,10 @@
 (decl aarch64_umulh (Value Value) Aarch64Inst)
 (decl aarch64_sdiv (Type Value Value) Aarch64Inst)
 (decl aarch64_udiv (Type Value Value) Aarch64Inst)
+(decl aarch64_smin (Type Value Value) Aarch64Inst)
+(decl aarch64_umin (Type Value Value) Aarch64Inst)
+(decl aarch64_smax (Type Value Value) Aarch64Inst)
+(decl aarch64_umax (Type Value Value) Aarch64Inst)
 
 ;; Shift operations
 (decl aarch64_lsl_rr (Type Value Value) Aarch64Inst)

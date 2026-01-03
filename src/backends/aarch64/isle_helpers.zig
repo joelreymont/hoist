@@ -1215,3 +1215,103 @@ pub fn aarch64_extractlane(ty: types.Type, vec: lower_mod.Value, lane_val: lower
         .size = size,
     } };
 }
+
+/// SMIN - Signed minimum (CMP + CSEL)
+/// Implemented as: cmp x, y; csel result, x, y, lt
+pub fn aarch64_smin(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
+
+    // Compare x with y
+    const cmp_inst = Inst{ .cmp_rr = .{
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = size,
+    } };
+    try ctx.emit(cmp_inst);
+
+    // Select x if less than, otherwise y
+    return Inst{ .csel = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .cond = .lt,
+        .size = size,
+    } };
+}
+
+/// UMIN - Unsigned minimum (CMP + CSEL)
+/// Implemented as: cmp x, y; csel result, x, y, lo
+pub fn aarch64_umin(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
+
+    // Compare x with y
+    const cmp_inst = Inst{ .cmp_rr = .{
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = size,
+    } };
+    try ctx.emit(cmp_inst);
+
+    // Select x if unsigned less than, otherwise y
+    return Inst{ .csel = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .cond = .lo,
+        .size = size,
+    } };
+}
+
+/// SMAX - Signed maximum (CMP + CSEL)
+/// Implemented as: cmp x, y; csel result, x, y, gt
+pub fn aarch64_smax(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
+
+    // Compare x with y
+    const cmp_inst = Inst{ .cmp_rr = .{
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = size,
+    } };
+    try ctx.emit(cmp_inst);
+
+    // Select x if greater than, otherwise y
+    return Inst{ .csel = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .cond = .gt,
+        .size = size,
+    } };
+}
+
+/// UMAX - Unsigned maximum (CMP + CSEL)
+/// Implemented as: cmp x, y; csel result, x, y, hi
+pub fn aarch64_umax(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
+
+    // Compare x with y
+    const cmp_inst = Inst{ .cmp_rr = .{
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = size,
+    } };
+    try ctx.emit(cmp_inst);
+
+    // Select x if unsigned greater than, otherwise y
+    return Inst{ .csel = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .cond = .hi,
+        .size = size,
+    } };
+}
