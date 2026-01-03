@@ -327,6 +327,37 @@ pub const InstCombine = struct {
             try self.replaceWithConst(func, inst, result);
             return;
         }
+
+        // Comparisons with constants
+        if (self.getConstant(func, rhs)) |c| {
+            const result_ty = func.dfg.instResultType(inst) orelse return;
+
+            // ult(x, 0) = 0 (always false)
+            if (data.cond == .ult and c == 0) {
+                try self.replaceWithConst(func, inst, 0);
+                return;
+            }
+
+            // ult(x, 1) = eq(x, 0)
+            if (data.cond == .ult and c == 1) {
+                const zero = try func.dfg.makeConst(0);
+                const new_eq = try func.dfg.makeInstWithData(.icmp, result_ty, .{
+                    .int_compare = IntCompareData.init(.icmp, .eq, lhs, zero),
+                });
+                try self.replaceWithValue(func, inst, new_eq);
+                return;
+            }
+
+            // slt(x, 1) = sle(x, 0)
+            if (data.cond == .slt and c == 1) {
+                const zero = try func.dfg.makeConst(0);
+                const sle_inst = try func.dfg.makeInstWithData(.icmp, result_ty, .{
+                    .int_compare = IntCompareData.init(.icmp, .sle, lhs, zero),
+                });
+                try self.replaceWithValue(func, inst, sle_inst);
+                return;
+            }
+        }
     }
 
     /// Fold binary operation with two constants.
