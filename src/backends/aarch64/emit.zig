@@ -144,6 +144,22 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .ldeora => |i| try emitLdeora(i.dst.toReg(), i.src, i.base, i.size, buffer),
         .ldeoral => |i| try emitLdeoral(i.dst.toReg(), i.src, i.base, i.size, buffer),
         .ldeorl => |i| try emitLdeorl(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .ldsmax => |i| try emitLdsmax(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .ldsmaxa => |i| try emitLdsmaxa(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .ldsmaxal => |i| try emitLdsmaxal(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .ldsmaxl => |i| try emitLdsmaxl(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .ldsmin => |i| try emitLdsmin(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .ldsmina => |i| try emitLdsmina(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .ldsminal => |i| try emitLdsminal(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .ldsminl => |i| try emitLdsminl(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .ldumax => |i| try emitLdumax(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .ldumaxa => |i| try emitLdumaxa(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .ldumaxal => |i| try emitLdumaxal(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .ldumaxl => |i| try emitLdumaxl(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .ldumin => |i| try emitLdumin(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .ldumina => |i| try emitLdumina(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .lduminal => |i| try emitLduminal(i.dst.toReg(), i.src, i.base, i.size, buffer),
+        .lduminl => |i| try emitLduminl(i.dst.toReg(), i.src, i.base, i.size, buffer),
         .cas => |i| try emitCas(i.compare, i.src, i.base, i.size, buffer),
         .casa => |i| try emitCasa(i.compare, i.src, i.base, i.size, buffer),
         .casal => |i| try emitCasal(i.compare, i.src, i.base, i.size, buffer),
@@ -2579,6 +2595,86 @@ fn emitLdeoral(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer
 /// LDEORL - Atomic XOR with release
 fn emitLdeorl(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     try emitAtomicOp(dst, src, base, size, 0b010, 0b01, buffer);
+}
+
+/// LDSMAX - Atomic signed maximum (no ordering)
+fn emitLdsmax(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b100, 0b00, buffer);
+}
+
+/// LDSMAXA - Atomic signed maximum with acquire
+fn emitLdsmaxa(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b100, 0b10, buffer);
+}
+
+/// LDSMAXAL - Atomic signed maximum with acquire-release
+fn emitLdsmaxal(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b100, 0b11, buffer);
+}
+
+/// LDSMAXL - Atomic signed maximum with release
+fn emitLdsmaxl(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b100, 0b01, buffer);
+}
+
+/// LDSMIN - Atomic signed minimum (no ordering)
+fn emitLdsmin(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b101, 0b00, buffer);
+}
+
+/// LDSMINA - Atomic signed minimum with acquire
+fn emitLdsmina(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b101, 0b10, buffer);
+}
+
+/// LDSMINAL - Atomic signed minimum with acquire-release
+fn emitLdsminal(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b101, 0b11, buffer);
+}
+
+/// LDSMINL - Atomic signed minimum with release
+fn emitLdsminl(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b101, 0b01, buffer);
+}
+
+/// LDUMAX - Atomic unsigned maximum (no ordering)
+fn emitLdumax(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b110, 0b00, buffer);
+}
+
+/// LDUMAXA - Atomic unsigned maximum with acquire
+fn emitLdumaxa(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b110, 0b10, buffer);
+}
+
+/// LDUMAXAL - Atomic unsigned maximum with acquire-release
+fn emitLdumaxal(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b110, 0b11, buffer);
+}
+
+/// LDUMAXL - Atomic unsigned maximum with release
+fn emitLdumaxl(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b110, 0b01, buffer);
+}
+
+/// LDUMIN - Atomic unsigned minimum (no ordering)
+fn emitLdumin(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b111, 0b00, buffer);
+}
+
+/// LDUMINA - Atomic unsigned minimum with acquire
+fn emitLdumina(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b111, 0b10, buffer);
+}
+
+/// LDUMINAL - Atomic unsigned minimum with acquire-release
+fn emitLduminal(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b111, 0b11, buffer);
+}
+
+/// LDUMINL - Atomic unsigned minimum with release
+fn emitLduminl(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitAtomicOp(dst, src, base, size, 0b111, 0b01, buffer);
 }
 
 /// Helper for CAS operations

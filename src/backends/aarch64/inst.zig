@@ -754,6 +754,38 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Atomic signed maximum (LDSMAX).
+    ldsmax: struct {
+        src: Reg,
+        dst: WritableReg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// Atomic signed minimum (LDSMIN).
+    ldsmin: struct {
+        src: Reg,
+        dst: WritableReg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// Atomic unsigned maximum (LDUMAX).
+    ldumax: struct {
+        src: Reg,
+        dst: WritableReg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// Atomic unsigned minimum (LDUMIN).
+    ldumin: struct {
+        src: Reg,
+        dst: WritableReg,
+        base: Reg,
+        size: OperandSize,
+    },
+
     /// Atomic swap (SWP).
     swp: struct {
         src: Reg,
@@ -1424,6 +1456,10 @@ pub const Inst = union(enum) {
             .ldclr => |i| try writer.print("ldclr.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
             .ldeor => |i| try writer.print("ldeor.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
             .ldset => |i| try writer.print("ldset.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
+            .ldsmax => |i| try writer.print("ldsmax.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
+            .ldsmin => |i| try writer.print("ldsmin.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
+            .ldumax => |i| try writer.print("ldumax.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
+            .ldumin => |i| try writer.print("ldumin.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
             .swp => |i| try writer.print("swp.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
             .cas => |i| try writer.print("cas.{} {}, {}, {}, [{}]", .{ i.size, i.compare, i.swap, i.dst, i.base }),
             .dmb => |i| try writer.print("dmb {}", .{i.option}),
