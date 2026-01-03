@@ -80,7 +80,7 @@ pub const X64ABICallee = struct {
     frame_size: u32,
 
     pub fn init(
-        allocator: std.mem.Allocator,
+        _allocator: std.mem.Allocator,
         sig: abi_mod.ABISignature,
     ) X64ABICallee {
         const abi = switch (sig.call_conv) {

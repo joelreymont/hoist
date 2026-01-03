@@ -725,7 +725,7 @@ pub const Aarch64ABICallee = struct {
     frame_size: u32,
 
     pub fn init(
-        allocator: std.mem.Allocator,
+        _allocator: std.mem.Allocator,
         sig: abi_mod.ABISignature,
     ) Aarch64ABICallee {
         const abi = switch (sig.call_conv) {

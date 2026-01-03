@@ -268,7 +268,7 @@ pub const DominatorTree = struct {
     /// Get all blocks dominated by a given block.
     fn getDominatedBlocks(
         self: *const DominatorTree,
-        allocator: Allocator,
+        _allocator: Allocator,
         block: Block,
     ) !std.ArrayList(Block) {
         var dominated = std.ArrayList(Block){};

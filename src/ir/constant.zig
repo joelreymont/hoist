@@ -11,7 +11,7 @@ const Constant = entities.Constant;
 pub const ConstantData = struct {
     bytes: std.ArrayList(u8),
 
-    pub fn init(allocator: Allocator) ConstantData {
+    pub fn init(_allocator: Allocator) ConstantData {
         return .{ .bytes = std.ArrayList(u8){} };
     }
 

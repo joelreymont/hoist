@@ -268,7 +268,7 @@ pub const Verifier = struct {
 };
 
 test "Verifier basic" {
-    const sig = try root.signature.Signature.init(testing.allocator, .fast);
+    const sig = root.signature.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -281,7 +281,7 @@ test "Verifier basic" {
 }
 
 test "Verifier detects orphaned instruction" {
-    const sig = try root.signature.Signature.init(testing.allocator, .fast);
+    const sig = root.signature.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -303,7 +303,7 @@ test "Verifier detects orphaned instruction" {
 }
 
 test "Verifier type checking" {
-    const sig = try root.signature.Signature.init(testing.allocator, .fast);
+    const sig = root.signature.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 

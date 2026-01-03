@@ -145,7 +145,7 @@ pub fn SecondaryMap(comptime K: type, comptime V: type) type {
         items: std.ArrayList(V),
         default: V,
 
-        pub fn init(allocator: Allocator, default: V) Self {
+        pub fn init(_allocator: Allocator, default: V) Self {
             return .{
                 .items = std.ArrayList(V){},
                 .default = default,

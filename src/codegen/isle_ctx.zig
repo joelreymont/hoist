@@ -289,7 +289,7 @@ test "LowerCtx: basic initialization" {
         opcode: u32,
     };
 
-    const sig = try Signature.init(testing.allocator, .fast);
+    const sig = Signature.init(testing.allocator, .fast);
     const func = try Function.init(testing.allocator, "test", sig);
     var func_mut = func;
     defer func_mut.deinit();
@@ -309,7 +309,7 @@ test "LowerCtx: vreg allocation" {
         opcode: u32,
     };
 
-    const sig = try Signature.init(testing.allocator, .fast);
+    const sig = Signature.init(testing.allocator, .fast);
     const func = try Function.init(testing.allocator, "test", sig);
     var func_mut = func;
     defer func_mut.deinit();
@@ -336,7 +336,7 @@ test "LowerCtx: value to register mapping" {
         opcode: u32,
     };
 
-    const sig = try Signature.init(testing.allocator, .fast);
+    const sig = Signature.init(testing.allocator, .fast);
     const func = try Function.init(testing.allocator, "test", sig);
     var func_mut = func;
     defer func_mut.deinit();
@@ -362,7 +362,7 @@ test "LowerCtx: temporary allocation" {
         opcode: u32,
     };
 
-    const sig = try Signature.init(testing.allocator, .fast);
+    const sig = Signature.init(testing.allocator, .fast);
     const func = try Function.init(testing.allocator, "test", sig);
     var func_mut = func;
     defer func_mut.deinit();
@@ -387,7 +387,7 @@ test "LowerCtx: diagnostic context" {
         opcode: u32,
     };
 
-    const sig = try Signature.init(testing.allocator, .fast);
+    const sig = Signature.init(testing.allocator, .fast);
     const func = try Function.init(testing.allocator, "test", sig);
     var func_mut = func;
     defer func_mut.deinit();
@@ -410,7 +410,7 @@ test "LowerCtx: block management" {
         opcode: u32,
     };
 
-    const sig = try Signature.init(testing.allocator, .fast);
+    const sig = Signature.init(testing.allocator, .fast);
     const func = try Function.init(testing.allocator, "test", sig);
     var func_mut = func;
     defer func_mut.deinit();

@@ -26,7 +26,7 @@ const CFG = @import("domtree.zig").CFG;
 // Test: SSA form verification - basic linear code
 
 test "SSA: linear code in SSA form" {
-    const sig = try Signature.init(testing.allocator, .fast);
+    const sig = Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -86,7 +86,7 @@ test "SSA: linear code in SSA form" {
 // Test: Block parameters as phi nodes
 
 test "SSA: block parameters represent phi nodes" {
-    const sig = try Signature.init(testing.allocator, .fast);
+    const sig = Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -308,7 +308,7 @@ test "SSA: variable renaming with VRegRenameMap" {
 // Test: SSA verification catches use-before-def
 
 test "SSA: verifier catches use before definition" {
-    const sig = try Signature.init(testing.allocator, .fast);
+    const sig = Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -338,7 +338,7 @@ test "SSA: verifier catches use before definition" {
 // Test: Constant phi removal
 
 test "SSA: constant phi removal optimization" {
-    const sig = try Signature.init(testing.allocator, .fast);
+    const sig = Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -408,7 +408,7 @@ test "SSA: constant phi removal optimization" {
 // Test: Multiple block parameters (multiple phi nodes)
 
 test "SSA: multiple block parameters in same block" {
-    const sig = try Signature.init(testing.allocator, .fast);
+    const sig = Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -594,7 +594,7 @@ test "SSA: complex CFG with nested diamonds" {
 // Test: Value aliasing for SSA optimization
 
 test "SSA: value aliasing mechanism" {
-    const sig = try Signature.init(testing.allocator, .fast);
+    const sig = Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
