@@ -169,6 +169,13 @@ pub const InstCombine = struct {
                 return;
             }
         }
+
+        // (x & y) ^ (x ^ y) = x | y
+        if (data.opcode == .bxor) {
+            if (try self.simplifyAndXorToOr(func, inst, lhs, rhs)) {
+                return;
+            }
+        }
     }
 
     /// Combine unary operations.
@@ -892,6 +899,67 @@ pub const InstCombine = struct {
                 // Check if lhs matches one of the inner operands
                 if (inner.args[0].index == lhs.index or inner.args[1].index == lhs.index) {
                     try self.replaceWithValue(func, inst, rhs);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// Simplify (x & y) ^ (x ^ y) = x | y.
+    fn simplifyAndXorToOr(self: *InstCombine, func: *Function, inst: Inst, lhs: Value, rhs: Value) !bool {
+        // Check if lhs is (x & y) and rhs is (x ^ y)
+        const lhs_def = func.dfg.valueDef(lhs) orelse return false;
+        const lhs_inst = switch (lhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const lhs_data = func.dfg.insts.get(lhs_inst) orelse return false;
+
+        const rhs_def = func.dfg.valueDef(rhs) orelse return false;
+        const rhs_inst = switch (rhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const rhs_data = func.dfg.insts.get(rhs_inst) orelse return false;
+
+        if (lhs_data.* == .binary and rhs_data.* == .binary) {
+            const lhs_binary = lhs_data.binary;
+            const rhs_binary = rhs_data.binary;
+
+            // Check: lhs is (x & y) and rhs is (x ^ y)
+            if (lhs_binary.opcode == .band and rhs_binary.opcode == .bxor) {
+                const x1 = lhs_binary.args[0];
+                const y1 = lhs_binary.args[1];
+                const x2 = rhs_binary.args[0];
+                const y2 = rhs_binary.args[1];
+
+                // Check if operands match (x and y in any order)
+                if ((x1.index == x2.index and y1.index == y2.index) or
+                    (x1.index == y2.index and y1.index == x2.index))
+                {
+                    const result_ty = func.dfg.instResultType(inst) orelse return false;
+                    const or_inst = try func.dfg.makeInst(.bor, result_ty, &.{ x1, y1 });
+                    try self.replaceWithValue(func, inst, or_inst);
+                    return true;
+                }
+            }
+
+            // Check: lhs is (x ^ y) and rhs is (x & y)
+            if (lhs_binary.opcode == .bxor and rhs_binary.opcode == .band) {
+                const x1 = lhs_binary.args[0];
+                const y1 = lhs_binary.args[1];
+                const x2 = rhs_binary.args[0];
+                const y2 = rhs_binary.args[1];
+
+                // Check if operands match (x and y in any order)
+                if ((x1.index == x2.index and y1.index == y2.index) or
+                    (x1.index == y2.index and y1.index == x2.index))
+                {
+                    const result_ty = func.dfg.instResultType(inst) orelse return false;
+                    const or_inst = try func.dfg.makeInst(.bor, result_ty, &.{ x1, y1 });
+                    try self.replaceWithValue(func, inst, or_inst);
                     return true;
                 }
             }
