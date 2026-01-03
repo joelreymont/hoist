@@ -296,7 +296,7 @@ pub const OptimizationPass = struct {
 };
 
 test "OptimizationPass basic" {
-    const sig = try root.signature.Signature.init(testing.allocator);
+    const sig = try root.signature.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 

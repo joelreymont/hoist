@@ -42,7 +42,7 @@ fn alignUp(value: u32, alignment: u32) u32 {
 }
 
 test "createStackSlot" {
-    const sig = try @import("signature.zig").Signature.init(testing.allocator);
+    const sig = try @import("signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -55,7 +55,7 @@ test "createStackSlot" {
 }
 
 test "calculateFrameSize" {
-    const sig = try @import("signature.zig").Signature.init(testing.allocator);
+    const sig = try @import("signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 

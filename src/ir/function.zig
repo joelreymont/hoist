@@ -106,7 +106,7 @@ pub const Function = struct {
 };
 
 test "Function init" {
-    const sig = try Signature.init(testing.allocator);
+    const sig = try Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test_func", sig);
     defer func.deinit();
 
@@ -116,7 +116,7 @@ test "Function init" {
 }
 
 test "Function entryBlock" {
-    const sig = try Signature.init(testing.allocator);
+    const sig = try Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 

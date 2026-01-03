@@ -157,7 +157,7 @@ test "StrengthReduction: init and deinit" {
 }
 
 test "StrengthReduction: run on empty function" {
-    const sig = try @import("../../ir/signature.zig").Signature.init(testing.allocator);
+    const sig = try @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -169,7 +169,7 @@ test "StrengthReduction: run on empty function" {
 }
 
 test "StrengthReduction: preserve non-arithmetic instructions" {
-    const sig = try @import("../../ir/signature.zig").Signature.init(testing.allocator);
+    const sig = try @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 

@@ -242,7 +242,7 @@ test "Peephole: init and deinit" {
 }
 
 test "Peephole: run on empty function" {
-    const sig = try @import("../../ir/signature.zig").Signature.init(testing.allocator);
+    const sig = try @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -254,7 +254,7 @@ test "Peephole: run on empty function" {
 }
 
 test "Peephole: preserve non-optimizable instructions" {
-    const sig = try @import("../../ir/signature.zig").Signature.init(testing.allocator);
+    const sig = try @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 

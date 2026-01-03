@@ -57,7 +57,7 @@ fn analyzeBlock(cfg: *CFG, func: *const Function, block: Block) !void {
 }
 
 test "buildCFG empty function" {
-    const sig = try @import("signature.zig").Signature.init(testing.allocator);
+    const sig = try @import("signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -69,7 +69,7 @@ test "buildCFG empty function" {
 }
 
 test "buildCFG linear flow" {
-    const sig = try @import("signature.zig").Signature.init(testing.allocator);
+    const sig = try @import("signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -102,7 +102,7 @@ test "buildCFG linear flow" {
 }
 
 test "buildCFG branch" {
-    const sig = try @import("signature.zig").Signature.init(testing.allocator);
+    const sig = try @import("signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 

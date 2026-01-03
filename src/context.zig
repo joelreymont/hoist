@@ -229,7 +229,7 @@ test "Context compile function" {
     var ctx = Context.init(testing.allocator);
     ctx.verify = false; // Skip verification for stub function
 
-    const sig = try root.signature.Signature.init(testing.allocator);
+    const sig = try root.signature.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
