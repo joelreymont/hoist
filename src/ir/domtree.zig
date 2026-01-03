@@ -105,9 +105,13 @@ pub const DominatorTree = struct {
                 }
 
                 // Update if changed
-                const old_idom = self.idom.get(block) ;
                 if (new_idom) |idom| {
-                    if (old_idom == null or !std.meta.eql(idom, old_idom.*.?)) {
+                    const needs_update = if (self.idom.get(block)) |old_ptr|
+                        if (old_ptr.*) |old| !std.meta.eql(idom, old) else true
+                    else
+                        true;
+
+                    if (needs_update) {
                         try self.idom.set(allocator, block, idom);
                         changed = true;
                     }
@@ -117,8 +121,8 @@ pub const DominatorTree = struct {
 
         // Build dominator tree children
         for (blocks.items) |block| {
-            if (self.idom.get(block)) |maybe_idom| {
-                if (maybe_idom) |idom_block| {
+            if (self.idom.get(block)) |ptr| {
+                if (ptr.*) |idom_block| {
                     const entry_result = try self.children.getOrPut(idom_block);
                     if (!entry_result.found_existing) {
                         entry_result.value_ptr.* = std.ArrayList(Block){};
@@ -172,11 +176,8 @@ pub const DominatorTree = struct {
 
             if (std.meta.eql(finger1, finger2)) break;
 
-            const idom1 = self.idom.get(finger1) orelse break;
-            const idom2 = self.idom.get(finger2) orelse break;
-
-            finger1 = idom1 orelse break;
-            finger2 = idom2 orelse break;
+            finger1 = if (self.idom.get(finger1)) |ptr| ptr.* orelse break else break;
+            finger2 = if (self.idom.get(finger2)) |ptr| ptr.* orelse break else break;
         }
 
         return finger1;
@@ -185,11 +186,12 @@ pub const DominatorTree = struct {
     fn blockDepth(self: *const DominatorTree, block: Block) u32 {
         var depth: u32 = 0;
         var current = block;
-        while (self.idom.get(current)) |maybe_idom| {
-            const idom_block = maybe_idom orelse return depth;
+        while (self.idom.get(current)) |ptr| {
+            const idom_block = ptr.* orelse return depth;
             depth += 1;
             current = idom_block;
         }
+        return depth;
     }
 
     /// Check if block `a` dominates block `b`.
@@ -337,8 +339,8 @@ pub const DominatorTree = struct {
         while (iter.next()) |block| {
             if (std.meta.eql(block.*, entry)) continue;
 
-            if (self.idom.get(block.*)) |maybe_idom| {
-                if (maybe_idom == null) {
+            if (self.idom.get(block.*)) |ptr| {
+                if (ptr.* == null) {
                     return error.ReachableBlockWithoutIdom;
                 }
             } else {
@@ -351,13 +353,14 @@ pub const DominatorTree = struct {
         while (iter.next()) |block| {
             if (std.meta.eql(block.*, entry)) continue;
 
-            const idom_block = self.idom.get(block.*) orelse continue;
-            const idom = idom_block orelse continue;
+            if (self.idom.get(block.*)) |ptr| {
+                const idom = ptr.* orelse continue;
 
             const preds = cfg.predecessors(block.*);
             for (preds) |pred| {
                 if (!self.dominates(idom, pred)) {
                     return error.IdomDoesNotDominatePredecessor;
+            }
                 }
             }
         }
@@ -591,13 +594,14 @@ pub const PostDominatorTree = struct {
 
                 var new_ipdom: ?Block = null;
                 for (succs) |succ| {
-                    const succ_ipdom = self.ipdom.get(succ) orelse continue;
-                    if (succ_ipdom) |s_ipdom| {
-                        new_ipdom = if (new_ipdom) |n| intersect(self, n, s_ipdom) else s_ipdom;
+                    if (self.ipdom.get(succ)) |ptr| {
+                        if (ptr.*) |s_ipdom| {
+                            new_ipdom = if (new_ipdom) |n| intersect(self, n, s_ipdom) else s_ipdom;
+                        }
                     }
                 }
 
-                const old_ipdom = self.ipdom.get(block) orelse null;
+                const old_ipdom = if (self.ipdom.get(block)) |ptr| ptr.* else null;
                 if (!std.meta.eql(old_ipdom, new_ipdom)) {
                     try self.ipdom.set(allocator, block, new_ipdom);
                     changed = true;
@@ -607,8 +611,8 @@ pub const PostDominatorTree = struct {
 
         // Build children map
         for (rpo.items) |block| {
-            if (self.ipdom.get(block)) |maybe_ipdom| {
-                if (maybe_ipdom) |ipdom| {
+            if (self.ipdom.get(block)) |ptr| {
+                if (ptr.*) |ipdom| {
                     const entry = try self.children.getOrPut(ipdom);
                     if (!entry.found_existing) {
                         entry.value_ptr.* = std.ArrayList(Block){};
@@ -670,31 +674,26 @@ fn intersect(
 
     while (!std.meta.eql(finger1, finger2)) {
         while (blockDepthPdom(tree, finger1) > blockDepthPdom(tree, finger2)) {
-            const ipdom = tree.ipdom.get(finger1) orelse break;
-            finger1 = ipdom orelse break;
+            finger1 = if (tree.ipdom.get(finger1)) |ptr| ptr.* orelse break else break;
         }
         while (blockDepthPdom(tree, finger2) > blockDepthPdom(tree, finger1)) {
-            const ipdom = tree.ipdom.get(finger2) orelse break;
-            finger2 = ipdom orelse break;
+            finger2 = if (tree.ipdom.get(finger2)) |ptr| ptr.* orelse break else break;
         }
 
         if (std.meta.eql(finger1, finger2)) break;
 
-        const ipdom1 = tree.ipdom.get(finger1) orelse break;
-        const ipdom2 = tree.ipdom.get(finger2) orelse break;
+        finger1 = if (tree.ipdom.get(finger1)) |ptr| ptr.* orelse break else break;
+        finger2 = if (tree.ipdom.get(finger2)) |ptr| ptr.* orelse break else break;
 
-        finger1 = ipdom1 orelse break;
-        finger2 = ipdom2 orelse break;
     }
-
     return finger1;
 }
 
 fn blockDepthPdom(tree: *const PostDominatorTree, block: Block) u32 {
     var depth: u32 = 0;
     var current = block;
-    while (tree.ipdom.get(current)) |maybe_ipdom| {
-        const ipdom = maybe_ipdom orelse return depth;
+    while (tree.ipdom.get(current)) |ptr| {
+        const ipdom = ptr.* orelse return depth;
         depth += 1;
         current = ipdom;
     }
