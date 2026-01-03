@@ -890,6 +890,11 @@
 (decl aarch64_uminv (VectorSize Value) Aarch64Inst)    ;; Horizontal unsigned min
 (decl aarch64_umaxv (VectorSize Value) Aarch64Inst)    ;; Horizontal unsigned max
 
+;; SIMD lane manipulation
+(decl aarch64_dup (VectorSize Value) Aarch64Inst)             ;; Duplicate scalar to all lanes
+(decl aarch64_extract_lane (Value Value) Aarch64Inst)         ;; Extract lane to scalar
+(decl aarch64_addp (VectorSize Value Value) Aarch64Inst)      ;; Add adjacent pairs
+
 ;; Atomic operations (LSE - Large System Extensions)
 (decl aarch64_ldar (Value) Aarch64Inst)                ;; Load-acquire register
 (decl aarch64_stlr (Value Value) Aarch64Inst)          ;; Store-release register
@@ -1162,6 +1167,41 @@
 
 (rule (lower (vreduce_umax (vector_type V4S) x))
       (aarch64_umaxv V4S x))
+
+;; SIMD lane manipulation lowering
+
+;; scalar_to_vector: Duplicate scalar to all vector lanes
+;; Pattern: scalar_to_vector(s) => DUP
+(rule (lower (scalar_to_vector (value_type $I8X16) x))
+      (aarch64_dup VecElemSize_8x16 x))
+
+(rule (lower (scalar_to_vector (value_type $I16X8) x))
+      (aarch64_dup VecElemSize_16x8 x))
+
+(rule (lower (scalar_to_vector (value_type $I32X4) x))
+      (aarch64_dup VecElemSize_32x4 x))
+
+(rule (lower (scalar_to_vector (value_type $I64X2) x))
+      (aarch64_dup VecElemSize_64x2 x))
+
+;; extract_vector: Extract lane from vector to scalar
+;; Pattern: extract_vector(vec, lane) => UMOV
+(rule (lower (extract_vector vec lane))
+      (aarch64_extract_lane vec lane))
+
+;; iadd_pairwise: Add adjacent pairs of elements
+;; Pattern: iadd_pairwise(vec) => ADDP
+(rule (lower (iadd_pairwise (value_type $I8X16) x))
+      (aarch64_addp VecElemSize_8x16 x x))
+
+(rule (lower (iadd_pairwise (value_type $I16X8) x))
+      (aarch64_addp VecElemSize_16x8 x x))
+
+(rule (lower (iadd_pairwise (value_type $I32X4) x))
+      (aarch64_addp VecElemSize_32x4 x x))
+
+(rule (lower (iadd_pairwise (value_type $I64X2) x))
+      (aarch64_addp VecElemSize_64x2 x x))
 
 ;; Atomic operations lowering
 

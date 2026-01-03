@@ -1267,6 +1267,42 @@ pub const Inst = union(enum) {
         size: VecElemSize,
     },
 
+    /// Duplicate scalar to all lanes (DUP).
+    /// Copies scalar into all vector lanes: dst[i] = src for all i.
+    vec_dup: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VecElemSize,
+    },
+
+    /// Extract vector element to scalar (UMOV).
+    /// Copies vector lane to scalar: dst = src[lane].
+    vec_extract_lane: struct {
+        dst: WritableReg,
+        src: Reg,
+        lane: u8,
+        size: VecElemSize,
+    },
+
+    /// Extract bytes and concatenate (EXT).
+    /// Extract bytes from concatenated pair: dst = (src1:src2)[index..index+bytes].
+    vec_ext: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        index: u8,
+        size: VecElemSize,
+    },
+
+    /// Pairwise add (ADDP).
+    /// Add adjacent element pairs: dst[i] = src1[2*i] + src1[2*i+1].
+    vec_addp: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
     /// Call - saves return address to link register and jumps.
     /// Pseudo-instruction that becomes BL.
     call: struct {
@@ -1535,6 +1571,10 @@ pub const Inst = union(enum) {
             .vec_smaxv => |i| try writer.print("vec_smaxv.{} {}, {}", .{ i.size, i.dst, i.src }),
             .vec_uminv => |i| try writer.print("vec_uminv.{} {}, {}", .{ i.size, i.dst, i.src }),
             .vec_umaxv => |i| try writer.print("vec_umaxv.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .vec_dup => |i| try writer.print("vec_dup.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .vec_extract_lane => |i| try writer.print("vec_extract_lane.{} {}, {}[{}]", .{ i.size, i.dst, i.src, i.lane }),
+            .vec_ext => |i| try writer.print("vec_ext.{} {}, {}, {}, #{}", .{ i.size, i.dst, i.src1, i.src2, i.index }),
+            .vec_addp => |i| try writer.print("vec_addp.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .call => |i| try writer.print("call {}", .{i.target}),
             .call_indirect => |i| try writer.print("call {}", .{i.target}),
             .ret_call => try writer.print("ret", .{}),
