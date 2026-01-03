@@ -1303,6 +1303,28 @@ pub const Inst = union(enum) {
         size: VecElemSize,
     },
 
+    /// Signed shift-left-long (SSHLL/SSHLL2).
+    /// Widen and shift lower/upper half: dst[i] = sign_extend(src[i]) << shift_amt.
+    /// For low variant: operates on src[0..n/2], for high: src[n/2..n].
+    vec_sshll: struct {
+        dst: WritableReg,
+        src: Reg,
+        shift_amt: u8,
+        size: VecElemSize, // Output size (16x8, 32x4, or 64x2)
+        high: bool, // false = SSHLL (low half), true = SSHLL2 (high half)
+    },
+
+    /// Unsigned shift-left-long (USHLL/USHLL2).
+    /// Widen and shift lower/upper half: dst[i] = zero_extend(src[i]) << shift_amt.
+    /// For low variant: operates on src[0..n/2], for high: src[n/2..n].
+    vec_ushll: struct {
+        dst: WritableReg,
+        src: Reg,
+        shift_amt: u8,
+        size: VecElemSize, // Output size (16x8, 32x4, or 64x2)
+        high: bool, // false = USHLL (low half), true = USHLL2 (high half)
+    },
+
     /// Call - saves return address to link register and jumps.
     /// Pseudo-instruction that becomes BL.
     call: struct {
@@ -1575,6 +1597,8 @@ pub const Inst = union(enum) {
             .vec_extract_lane => |i| try writer.print("vec_extract_lane.{} {}, {}[{}]", .{ i.size, i.dst, i.src, i.lane }),
             .vec_ext => |i| try writer.print("vec_ext.{} {}, {}, {}, #{}", .{ i.size, i.dst, i.src1, i.src2, i.index }),
             .vec_addp => |i| try writer.print("vec_addp.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_sshll => |i| try writer.print("vec_sshll{s}.{} {}, {}, #{}", .{ if (i.high) "2" else "", i.size, i.dst, i.src, i.shift_amt }),
+            .vec_ushll => |i| try writer.print("vec_ushll{s}.{} {}, {}, #{}", .{ if (i.high) "2" else "", i.size, i.dst, i.src, i.shift_amt }),
             .call => |i| try writer.print("call {}", .{i.target}),
             .call_indirect => |i| try writer.print("call {}", .{i.target}),
             .ret_call => try writer.print("ret", .{}),
