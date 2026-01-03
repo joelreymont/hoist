@@ -40,7 +40,7 @@ pub const DebugFunction = struct {
         return .{
             .name = name,
             .loc = loc,
-            .variables = std.ArrayList(DebugVariable).init(allocator),
+            .variables = std.ArrayList(DebugVariable){},
             .allocator = allocator,
         };
     }

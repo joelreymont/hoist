@@ -27,7 +27,7 @@ pub const Loop = struct {
     pub fn init(allocator: Allocator, header: Block, depth: u32) Loop {
         return .{
             .header = header,
-            .blocks = std.ArrayList(Block).init(allocator),
+            .blocks = std.ArrayList(Block){},
             .depth = depth,
             .parent = null,
             .allocator = allocator,
@@ -67,7 +67,7 @@ pub const LoopInfo = struct {
 
     pub fn init(allocator: Allocator) LoopInfo {
         return .{
-            .loops = std.ArrayList(*Loop).init(allocator),
+            .loops = std.ArrayList(*Loop){},
             .block_to_loop = std.AutoHashMap(Block, *Loop).init(allocator),
             .allocator = allocator,
         };

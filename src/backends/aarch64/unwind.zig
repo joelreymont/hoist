@@ -159,7 +159,7 @@ pub const CIE = struct {
 
     pub fn init(allocator: std.mem.Allocator) !CIE {
         var cie = CIE{
-            .initial_instructions = std.ArrayList(CFI).init(allocator),
+            .initial_instructions = std.ArrayList(CFI){},
         };
 
         // CFA starts at SP + 0
@@ -193,7 +193,7 @@ pub const FDE = struct {
         return .{
             .pc_begin = pc_begin,
             .code_size = code_size,
-            .instructions = std.ArrayList(CFI).init(allocator),
+            .instructions = std.ArrayList(CFI){},
         };
     }
 

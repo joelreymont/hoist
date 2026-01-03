@@ -28,7 +28,7 @@ pub const ConstructorGen = struct {
             .typeenv = typeenv,
             .termenv = termenv,
             .allocator = allocator,
-            .output = std.ArrayList(u8).init(allocator),
+            .output = std.ArrayList(u8){},
             .indent_level = 0,
         };
     }

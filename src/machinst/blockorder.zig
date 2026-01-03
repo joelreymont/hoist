@@ -14,7 +14,7 @@ pub const BlockOrder = struct {
 
     pub fn init(allocator: Allocator) BlockOrder {
         return .{
-            .blocks = std.ArrayList(Block).init(allocator),
+            .blocks = std.ArrayList(Block){},
             .allocator = allocator,
         };
     }
@@ -54,7 +54,7 @@ pub fn computeOrder(
     var visited = std.AutoHashMap(Block, void).init(allocator);
     defer visited.deinit();
 
-    var postorder = std.ArrayList(Block).init(allocator);
+    var postorder = std.ArrayList(Block){};
     defer postorder.deinit();
 
     try dfsPostorder(cfg, entry, &visited, &postorder);

@@ -44,7 +44,7 @@ pub const PassManager = struct {
     pub fn init(allocator: Allocator) PassManager {
         return .{
             .allocator = allocator,
-            .stats = std.ArrayList(PassStats).init(allocator),
+            .stats = std.ArrayList(PassStats){},
             .enable_stats = false,
         };
     }

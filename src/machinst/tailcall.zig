@@ -136,7 +136,7 @@ pub const ArgForwardingPlan = struct {
 
     pub fn init(allocator: Allocator) ArgForwardingPlan {
         return .{
-            .moves = std.ArrayList(ArgMove).init(allocator),
+            .moves = std.ArrayList(ArgMove){},
             .max_stack_used = 0,
         };
     }

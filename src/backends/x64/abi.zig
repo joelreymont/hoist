@@ -93,7 +93,7 @@ pub const X64ABICallee = struct {
             .sig = sig,
             .abi = abi,
             .call_conv = null,
-            .clobbered_callee_saves = std.ArrayList(PReg).init(allocator),
+            .clobbered_callee_saves = std.ArrayList(PReg){},
             .frame_size = 0,
         };
     }

@@ -51,7 +51,7 @@ pub const Liveness = struct {
 
     pub fn init(allocator: Allocator) Liveness {
         return .{
-            .blocks = std.ArrayList(BlockLiveness).init(allocator),
+            .blocks = std.ArrayList(BlockLiveness){},
             .allocator = allocator,
         };
     }

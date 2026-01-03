@@ -47,7 +47,7 @@ pub const RelocTable = struct {
 
     pub fn init(allocator: Allocator) RelocTable {
         return .{
-            .relocs = std.ArrayList(ExternalSymbol).init(allocator),
+            .relocs = std.ArrayList(ExternalSymbol){},
             .symbol_map = std.StringHashMap(usize).init(allocator),
             .allocator = allocator,
         };

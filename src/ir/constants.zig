@@ -40,7 +40,7 @@ pub const ConstantPool = struct {
 
     pub fn init(allocator: Allocator) ConstantPool {
         return .{
-            .constants = std.ArrayList(ConstantEntry).init(allocator),
+            .constants = std.ArrayList(ConstantEntry){},
             .allocator = allocator,
         };
     }

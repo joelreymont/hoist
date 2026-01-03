@@ -337,7 +337,7 @@ pub fn reversePostorder(allocator: std.mem.Allocator, cfg: *const ControlFlowGra
     var visited = std.AutoHashMap(Block, void).init(allocator);
     defer visited.deinit();
 
-    var postorder = std.ArrayList(Block).init(allocator);
+    var postorder = std.ArrayList(Block){};
     errdefer postorder.deinit();
 
     try dfsPostorder(cfg, entry, &visited, &postorder);

@@ -35,7 +35,7 @@ pub const StackMap = struct {
     pub fn init(allocator: Allocator, inst: Inst) StackMap {
         return .{
             .inst = inst,
-            .entries = std.ArrayList(StackMapEntry).init(allocator),
+            .entries = std.ArrayList(StackMapEntry){},
             .allocator = allocator,
         };
     }

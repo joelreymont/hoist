@@ -31,7 +31,7 @@ pub const UCE = struct {
         return .{
             .allocator = allocator,
             .reachable = std.AutoHashMap(Block, void).init(allocator),
-            .worklist = std.ArrayList(Block).init(allocator),
+            .worklist = std.ArrayList(Block){},
         };
     }
 

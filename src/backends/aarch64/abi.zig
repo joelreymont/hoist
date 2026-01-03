@@ -737,7 +737,7 @@ pub const Aarch64ABICallee = struct {
             .sig = sig,
             .abi = abi,
             .call_conv = null,
-            .clobbered_callee_saves = std.ArrayList(PReg).init(allocator),
+            .clobbered_callee_saves = std.ArrayList(PReg){},
             .locals_size = 0,
             .frame_size = 0,
         };

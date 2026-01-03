@@ -173,7 +173,7 @@ pub fn LowerBackend(comptime MachInst: type) type {
 
 /// Compute reverse postorder traversal of blocks.
 fn computeRPO(allocator: Allocator, func: *const Function) !std.ArrayList(Block) {
-    var rpo = std.ArrayList(Block).init(allocator);
+    var rpo = std.ArrayList(Block){};
     errdefer rpo.deinit();
 
     var visited = std.AutoHashMap(Block, void).init(allocator);

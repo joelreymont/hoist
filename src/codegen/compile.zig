@@ -601,7 +601,7 @@ pub fn assembleResult(
 
     // Generate disassembly if requested
     if (want_disasm) {
-        var disasm_buf = std.ArrayList(u8).init(allocator);
+        var disasm_buf = std.ArrayList(u8){};
         try disasm_buf.writer().print("; Machine code ({d} bytes)\n", .{result.code.items.len});
         try disasm_buf.writer().print("; {d} relocations\n", .{result.relocs.items.len});
         result.disasm = disasm_buf;

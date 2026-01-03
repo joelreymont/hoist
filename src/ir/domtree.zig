@@ -59,7 +59,7 @@ pub const DominatorTree = struct {
         try self.idom.set(allocator, entry, null);
 
         // Compute reverse postorder (approximated by iterating over blocks)
-        var blocks = std.ArrayList(Block).init(allocator);
+        var blocks = std.ArrayList(Block){};
         defer blocks.deinit();
 
         // Collect all blocks reachable from entry via DFS
@@ -120,7 +120,7 @@ pub const DominatorTree = struct {
                 if (maybe_idom) |idom_block| {
                     const entry_result = try self.children.getOrPut(idom_block);
                     if (!entry_result.found_existing) {
-                        entry_result.value_ptr.* = std.ArrayList(Block).init(allocator);
+                        entry_result.value_ptr.* = std.ArrayList(Block){};
                     }
                     try entry_result.value_ptr.append(block);
                 }
@@ -139,7 +139,7 @@ pub const DominatorTree = struct {
         var visited = std.AutoHashMap(Block, void).init(allocator);
         defer visited.deinit();
 
-        var worklist = std.ArrayList(Block).init(allocator);
+        var worklist = std.ArrayList(Block){};
         defer worklist.deinit();
 
         try worklist.append(entry);
@@ -235,7 +235,7 @@ pub const DominatorTree = struct {
         block: Block,
         cfg: *const CFG,
     ) !std.ArrayList(Block) {
-        var frontier = std.ArrayList(Block).init(allocator);
+        var frontier = std.ArrayList(Block){};
 
         // For each successor of blocks dominated by 'block'
         var dominated = try self.getDominatedBlocks(allocator, block);
@@ -271,7 +271,7 @@ pub const DominatorTree = struct {
         allocator: Allocator,
         block: Block,
     ) !std.ArrayList(Block) {
-        var dominated = std.ArrayList(Block).init(allocator);
+        var dominated = std.ArrayList(Block){};
 
         // Add the block itself
         try dominated.append(block);
@@ -314,7 +314,7 @@ pub const DominatorTree = struct {
         defer reachable.deinit();
 
         // Compute reachable blocks from entry via CFG
-        var worklist = std.ArrayList(Block).init(allocator);
+        var worklist = std.ArrayList(Block){};
         defer worklist.deinit();
 
         try worklist.append(entry);
@@ -567,7 +567,7 @@ pub const PostDominatorTree = struct {
         try self.ipdom.set(allocator, exit, null);
 
         // Build reverse postorder from exit (using predecessors as successors)
-        var rpo = std.ArrayList(Block).init(allocator);
+        var rpo = std.ArrayList(Block){};
         defer rpo.deinit();
 
         var visited = std.AutoHashMap(Block, void).init(allocator);
@@ -610,7 +610,7 @@ pub const PostDominatorTree = struct {
                 if (maybe_ipdom) |ipdom| {
                     const entry = try self.children.getOrPut(ipdom);
                     if (!entry.found_existing) {
-                        entry.value_ptr.* = std.ArrayList(Block).init(allocator);
+                        entry.value_ptr.* = std.ArrayList(Block){};
                     }
                     try entry.value_ptr.append(block);
                 }
