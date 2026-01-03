@@ -191,6 +191,14 @@
 (rule (lower (sqrt ty x))
       (aarch64_fsqrt ty x))
 
+;; splat: Duplicate scalar to all vector lanes (DUP)
+(rule (lower (splat ty x))
+      (aarch64_splat ty x))
+
+;; extractlane: Extract vector lane to scalar (UMOV)
+(rule (lower (extractlane ty vec lane))
+      (aarch64_extractlane ty vec lane))
+
 ;; fcvt_from_sint: Convert signed integer to float (SCVTF)
 (rule (lower (fcvt_from_sint dst_ty src_ty x))
       (aarch64_scvtf dst_ty src_ty x))
@@ -920,6 +928,8 @@
 (decl aarch64_fmin (Type Value Value) Aarch64Inst)
 (decl aarch64_fmax (Type Value Value) Aarch64Inst)
 (decl aarch64_fsqrt (Type Value) Aarch64Inst)
+(decl aarch64_splat (Type Value) Aarch64Inst)
+(decl aarch64_extractlane (Type Value Value) Aarch64Inst)
 
 ;; Floating-point conversions
 (decl aarch64_fcvtzu_32 (Value) Aarch64Inst)  ;; FCVTZU: float to unsigned i32
@@ -973,7 +983,6 @@
 (decl aarch64_fsub (Type Value Value) Aarch64Inst)
 (decl aarch64_fmul (Type Value Value) Aarch64Inst)
 (decl aarch64_fdiv (Type Value Value) Aarch64Inst)
-(decl aarch64_fsqrt (Type Value) Aarch64Inst)
 (decl aarch64_fmadd (Type Value Value Value) Aarch64Inst)
 (decl aarch64_fcmp (Value Value) Aarch64Inst)
 (decl aarch64_fabs (Type Value) Aarch64Inst)

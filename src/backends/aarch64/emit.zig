@@ -6,6 +6,7 @@ const Inst = root.aarch64_inst.Inst;
 const OperandSize = root.aarch64_inst.OperandSize;
 const FpuOperandSize = root.aarch64_inst.FpuOperandSize;
 const VectorSize = root.aarch64_inst.VectorSize;
+const VecElemSize = root.aarch64_inst.VecElemSize;
 const BarrierOption = root.aarch64_inst.BarrierOption;
 const CondCode = root.aarch64_inst.CondCode;
 const Reg = root.aarch64_inst.Reg;
@@ -12199,6 +12200,71 @@ fn emitMsr(sysreg: root.aarch64_inst.SystemReg, src: Reg, buffer: *buffer_mod.Ma
         (0b1101010100010 << 19) | // MSR opcode
         (@as(u32, sys_enc) << 5) |
         rt;
+
+    try buffer.put(&std.mem.toBytes(insn));
+}
+
+/// DUP (general) - Duplicate general-purpose register to vector
+/// Encoding: 0|Q|001110000|imm5|000011|Rn|Rd
+/// Q: 0=64-bit, 1=128-bit
+/// imm5: element size encoding
+fn emitVecDup(dst: Reg, src: Reg, size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    // Determine Q bit and imm5 from VecElemSize
+    const q: u32 = switch (size) {
+        .size8x8, .size16x4, .size32x2 => 0,
+        .size8x16, .size16x8, .size32x4, .size64x2 => 1,
+    };
+
+    const imm5: u32 = switch (size) {
+        .size8x8, .size8x16 => 0b00001,
+        .size16x4, .size16x8 => 0b00010,
+        .size32x2, .size32x4 => 0b00100,
+        .size64x2 => 0b01000,
+    };
+
+    const insn: u32 = (q << 30) |
+        (0b001110000 << 21) |
+        (imm5 << 16) |
+        (0b000011 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    try buffer.put(&std.mem.toBytes(insn));
+}
+
+/// UMOV - Unsigned move vector element to general-purpose register
+/// Encoding: 0|Q|001110000|imm5|001111|Rn|Rd
+/// Q: 0=32-bit access, 1=64-bit access
+/// imm5: encodes element size and lane index
+fn emitVecExtractLane(dst: Reg, src: Reg, lane: u8, size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    // Determine Q bit and imm5 encoding
+    // imm5 = (lane << shift) | size_bits
+    const q: u32 = switch (size) {
+        .size8x8, .size8x16 => 0,
+        .size16x4, .size16x8 => 0,
+        .size32x2, .size32x4 => 0,
+        .size64x2 => 1,
+    };
+
+    const imm5: u32 = switch (size) {
+        .size8x8, .size8x16 => (@as(u32, lane) << 1) | 0b00001,
+        .size16x4, .size16x8 => (@as(u32, lane) << 2) | 0b00010,
+        .size32x2, .size32x4 => (@as(u32, lane) << 3) | 0b00100,
+        .size64x2 => (@as(u32, lane) << 4) | 0b01000,
+    };
+
+    const insn: u32 = (q << 30) |
+        (0b001110000 << 21) |
+        (imm5 << 16) |
+        (0b001111 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
 
     try buffer.put(&std.mem.toBytes(insn));
 }

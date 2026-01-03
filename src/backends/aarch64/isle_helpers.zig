@@ -451,10 +451,10 @@ pub fn aarch64_atomic_store_release(ty: root.types.Type, addr: lower_mod.Value, 
 /// Constructor: Memory fence (DMB).
 pub fn aarch64_fence(ordering: root.atomics.AtomicOrdering) !Inst {
     const barrier = switch (ordering) {
-        .seq_cst => root.aarch64_inst.BarrierOp.ish,      // Sequential consistency: full barrier
-        .release => root.aarch64_inst.BarrierOp.ishst,    // Release: store barrier
-        .acquire => root.aarch64_inst.BarrierOp.ishld,    // Acquire: load barrier
-        .acq_rel => root.aarch64_inst.BarrierOp.ish,      // Acquire-release: full barrier
+        .seq_cst => root.aarch64_inst.BarrierOp.ish, // Sequential consistency: full barrier
+        .release => root.aarch64_inst.BarrierOp.ishst, // Release: store barrier
+        .acquire => root.aarch64_inst.BarrierOp.ishld, // Acquire: load barrier
+        .acq_rel => root.aarch64_inst.BarrierOp.ish, // Acquire-release: full barrier
         else => return error.UnsupportedAtomicOrdering,
     };
 
@@ -990,11 +990,13 @@ pub fn aarch64_rbit_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !In
 pub fn aarch64_bswap_16(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const src_reg = try getValueReg(ctx, val);
 
-    return Inst{ .rev16 = .{
-        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
-        .src = src_reg,
-        .size = .size32, // REV16 operates on 32-bit register
-    } };
+    return Inst{
+        .rev16 = .{
+            .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+            .src = src_reg,
+            .size = .size32, // REV16 operates on 32-bit register
+        },
+    };
 }
 
 /// BSWAP - Byte swap (32-bit)
@@ -1162,6 +1164,54 @@ pub fn aarch64_rotl_rr(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, c
         .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
         .src1 = x_reg,
         .src2 = neg_y.toReg(),
+        .size = size,
+    } };
+}
+
+/// SPLAT - Duplicate scalar to all vector lanes (DUP)
+pub fn aarch64_splat(ty: types.Type, x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+
+    // Determine vector element size from type
+    const size: Inst.VecElemSize = switch (ty) {
+        types.Type.V8x16 => .size8x16,
+        types.Type.V16x8 => .size16x8,
+        types.Type.V32x4 => .size32x4,
+        types.Type.V64x2 => .size64x2,
+        else => return error.UnsupportedType,
+    };
+
+    return Inst{ .vec_dup = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
+        .src = x_reg,
+        .size = size,
+    } };
+}
+
+/// EXTRACTLANE - Extract vector lane to scalar (UMOV)
+pub fn aarch64_extractlane(ty: types.Type, vec: lower_mod.Value, lane_val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const vec_reg = try getValueReg(ctx, vec);
+
+    // Extract lane index from constant value
+    const lane_node = try ctx.getValue(lane_val);
+    const lane: u8 = switch (lane_node) {
+        .iconst => |c| @intCast(c.value),
+        else => return error.NonConstantLane,
+    };
+
+    // Determine vector element size from type
+    const size: Inst.VecElemSize = switch (ty) {
+        types.Type.V8x16 => .size8x16,
+        types.Type.V16x8 => .size16x8,
+        types.Type.V32x4 => .size32x4,
+        types.Type.V64x2 => .size64x2,
+        else => return error.UnsupportedType,
+    };
+
+    return Inst{ .vec_extract_lane = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src = vec_reg,
+        .lane = lane,
         .size = size,
     } };
 }
