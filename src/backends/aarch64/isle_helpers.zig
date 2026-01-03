@@ -1139,3 +1139,29 @@ pub fn aarch64_fmax(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
         } };
     }
 }
+
+/// ROTL - Rotate left (register amount)
+/// Implemented as rotr(x, -y) since ARM64 only has ROR
+pub fn aarch64_rotl_rr(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+
+    const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
+
+    // Negate the shift amount: neg_y = 0 - y
+    const neg_y = lower_mod.WritableVReg.allocVReg(.int, ctx);
+    const neg_inst = Inst{ .neg = .{
+        .dst = neg_y,
+        .src = y_reg,
+        .size = size,
+    } };
+    try ctx.emit(neg_inst);
+
+    // Rotate right by the negated amount: rotr(x, -y) == rotl(x, y)
+    return Inst{ .ror_rr = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src1 = x_reg,
+        .src2 = neg_y.toReg(),
+        .size = size,
+    } };
+}

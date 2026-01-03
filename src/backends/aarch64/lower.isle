@@ -296,8 +296,14 @@
       (if-let amt (valid_shift_imm k))
       (aarch64_ror_imm ty x amt))
 
-;; rotl: Rotate left - NOT IMPLEMENTED YET
-;; Note: Needs register negation for variable amount
+;; rotl: Rotate left (register form) - implemented as rotr(x, bits - y)
+(rule (lower (rotl ty x y))
+      (aarch64_rotl_rr ty x y))
+
+;; rotl: Rotate left (immediate form) - implemented as rotr(x, bits - amount)
+(rule (lower (rotl ty x (iconst k)))
+      (if-let amt (valid_rotl_imm ty k))
+      (aarch64_ror_imm ty x amt))
 ;; rotl(x, k) = rotr(x, width - k)
 
 ;; Comparison operations lowering
@@ -745,6 +751,14 @@
   (if (<= 0 val 63)
       val))
 
+;; Extract rotl immediate and convert to rotr immediate
+;; rotl(x, k) = rotr(x, width - k)
+(extractor (valid_rotl_imm ty k)
+  (let ((width u32 (ty_bits ty)))
+  (if (<= 0 k 63)
+      (if (< k width)
+          (- width k)))))
+
 ;; Check if value is in range where negation fits in unsigned 12-bit
 ;; Returns $true if -4095 <= val <= -1 (i.e., -val fits in 0-4095)
 (extractor (in_neg_uimm12_range val)
@@ -833,6 +847,7 @@
 (decl aarch64_asr_imm (Type Value i64) Aarch64Inst)
 (decl aarch64_ror_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_ror_imm (Type Value i64) Aarch64Inst)
+(decl aarch64_rotl_rr (Type Value Value) Aarch64Inst)
 
 ;; Bitwise operations
 (decl aarch64_and_rr (Type Value Value) Aarch64Inst)
