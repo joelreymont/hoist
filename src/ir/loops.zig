@@ -35,7 +35,7 @@ pub const Loop = struct {
     }
 
     pub fn deinit(self: *Loop) void {
-        self.blocks.deinit();
+        self.blocks.deinit(self.allocator);
     }
 
     /// Check if block is in this loop.
@@ -79,7 +79,7 @@ pub const LoopInfo = struct {
             loop.deinit();
             self.allocator.destroy(loop);
         }
-        self.loops.deinit();
+        self.loops.deinit(self.allocator);
         self.block_to_loop.deinit();
     }
 
@@ -91,8 +91,8 @@ pub const LoopInfo = struct {
         domtree: *const DominatorTree,
     ) !void {
         // Find all back edges (edges from a block to one of its dominators)
-        var back_edges = std.ArrayList(struct { from: Block, to: Block }).init(self.allocator);
-        defer back_edges.deinit();
+        var back_edges = std.ArrayList(struct { from: Block, to: Block }){};
+        defer back_edges.deinit(self.allocator);
 
         // Iterate through CFG edges
         var iter = cfg.succs.iterator();

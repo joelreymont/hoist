@@ -90,7 +90,7 @@ pub const Verifier = struct {
                     "Block {d} not in CFG (CFG size: {d})",
                     .{ block_idx, cfg.data.items.len },
                 );
-                try self.errors.append(msg);
+                try self.errors.append(self.allocator, msg);
                 continue;
             }
 
@@ -101,7 +101,7 @@ pub const Verifier = struct {
                     "CFG validation failed for block {d}: {s}",
                     .{ block_idx, @errorName(err) },
                 );
-                try self.errors.append(msg);
+                try self.errors.append(self.allocator, msg);
             };
         }
 
@@ -123,7 +123,7 @@ pub const Verifier = struct {
                 "Instruction count mismatch: layout={d}, dfg={d}",
                 .{ inst_count, self.func.dfg.insts.elems.items.len },
             );
-            try self.errors.append(msg);
+            try self.errors.append(self.allocator, msg);
         }
     }
 
@@ -158,7 +158,7 @@ pub const Verifier = struct {
                                 "Use before def: value {d} in inst {d}",
                                 .{ bin.args[0].index, inst.index },
                             );
-                            try self.errors.append(msg);
+                            try self.errors.append(self.allocator, msg);
                         }
                         if (!defined.contains(bin.args[1])) {
                             const msg = try std.fmt.allocPrint(
@@ -166,7 +166,7 @@ pub const Verifier = struct {
                                 "Use before def: value {d} in inst {d}",
                                 .{ bin.args[1].index, inst.index },
                             );
-                            try self.errors.append(msg);
+                            try self.errors.append(self.allocator, msg);
                         }
                     },
                     .unary => |un| {
@@ -176,7 +176,7 @@ pub const Verifier = struct {
                                 "Use before def: value {d} in inst {d}",
                                 .{ un.arg.index, inst.index },
                             );
-                            try self.errors.append(msg);
+                            try self.errors.append(self.allocator, msg);
                         }
                     },
                     else => {},
@@ -212,7 +212,7 @@ pub const Verifier = struct {
                                 "Type mismatch in binary op: inst {d}",
                                 .{inst.index},
                             );
-                            try self.errors.append(msg);
+                            try self.errors.append(self.allocator, msg);
                         }
                     },
                     else => {},
@@ -233,7 +233,7 @@ pub const Verifier = struct {
                     "Block {d} has no instructions",
                     .{block.index},
                 );
-                try self.errors.append(msg);
+                try self.errors.append(self.allocator, msg);
                 continue;
             }
 
@@ -248,7 +248,7 @@ pub const Verifier = struct {
                     "Block {d} does not end with terminator (last opcode: {s})",
                     .{ block.index, @tagName(opcode) },
                 );
-                try self.errors.append(msg);
+                try self.errors.append(self.allocator, msg);
             }
         }
     }

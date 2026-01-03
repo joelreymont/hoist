@@ -279,7 +279,7 @@ pub const DominatorTree = struct {
         try dominated.append(_allocator, block);
 
         // Recursively add all dominated blocks via children
-        try self.collectDominatedRecursive(&dominated, block);
+        try self.collectDominatedRecursive(&dominated, block, _allocator);
 
         return dominated;
     }
@@ -291,8 +291,8 @@ pub const DominatorTree = struct {
     ) !void {
         const children_list = self.getChildren(block);
         for (children_list) |child| {
-            try dominated.append(child);
-            try self.collectDominatedRecursive(dominated, child);
+            try dominated.append(allocator, child);
+            try self.collectDominatedRecursive(dominated, child, allocator);
         }
     }
 
