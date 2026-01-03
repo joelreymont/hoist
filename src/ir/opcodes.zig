@@ -171,6 +171,12 @@ pub const Opcode = enum(u16) {
     // Type conversions - float width
     fpromote,
     fdemote,
+    // Atomic operations
+    atomic_load,
+    atomic_store,
+    atomic_rmw,
+    atomic_cas,
+    fence,
 };
 
 // Tests
