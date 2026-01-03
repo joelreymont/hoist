@@ -13,7 +13,7 @@ const Function = ir.Function;
 const Block = ir.Block;
 const Inst = ir.Inst;
 const Value = ir.Value;
-const Type = ir.types.Type;
+const Type = ir.Type;
 const ValueDef = ir.dfg.ValueDef;
 const Signature = ir.Signature;
 
@@ -327,7 +327,7 @@ test "LowerCtx: vreg allocation" {
     try testing.expectEqual(@as(u32, 0), r1.index);
     try testing.expectEqual(@as(u32, 1), r2.index);
     try testing.expectEqual(@as(u32, 2), r3.index);
-    try testing.expectEqual(RegClass.int, r1.class);
+    try testing.expectEqual(RegClass.gpr, r1.class);
     try testing.expectEqual(RegClass.fp, r3.class);
 }
 

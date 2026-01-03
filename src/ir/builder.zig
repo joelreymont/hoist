@@ -120,7 +120,7 @@ pub const FunctionBuilder = struct {
 };
 
 test "FunctionBuilder basic" {
-    const sig = try @import("signature.zig").Signature.init(testing.allocator, .fast);
+    const sig = @import("signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -133,7 +133,7 @@ test "FunctionBuilder basic" {
 }
 
 test "FunctionBuilder iconst and iadd" {
-    const sig = try @import("signature.zig").Signature.init(testing.allocator, .fast);
+    const sig = @import("signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 

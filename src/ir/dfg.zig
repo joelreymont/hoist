@@ -88,7 +88,7 @@ pub const ValueData = packed struct {
     }
 
     fn decodeNarrow(x: u32, bits: u8) u32 {
-        if (x == (1 << bits) - 1) return 0xffffffff;
+        if (x == (@as(u32, 1) << @as(u5, @intCast(bits))) - 1) return 0xffffffff;
         return x;
     }
 

@@ -34,9 +34,9 @@ const CFGNode = struct {
         };
     }
 
-    fn deinit(self: *CFGNode) void {
-        self.predecessors.deinit();
-        self.successors.deinit();
+    fn deinit(self: *CFGNode, allocator: std.mem.Allocator) void {
+        self.predecessors.deinit(allocator);
+        self.successors.deinit(allocator);
     }
 
     fn clear(self: *CFGNode) void {
@@ -62,7 +62,7 @@ pub const ControlFlowGraph = struct {
 
     pub fn deinit(self: *ControlFlowGraph, allocator: std.mem.Allocator) void {
         for (self.data.items) |*node| {
-            node.deinit();
+            node.deinit(allocator);
         }
         self.data.deinit(allocator);
     }
@@ -360,7 +360,7 @@ const testing = std.testing;
 
 test "CFG: basic construction" {
     var cfg = ControlFlowGraph.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     try testing.expect(!cfg.isValid());
     cfg.clear();

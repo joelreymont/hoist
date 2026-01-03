@@ -74,6 +74,7 @@ pub const LoopInfo = struct {
     }
 
     pub fn deinit(self: *LoopInfo, allocator: std.mem.Allocator) void {
+        _ = allocator;
         for (self.loops.items) |loop| {
             loop.deinit();
             self.allocator.destroy(loop);

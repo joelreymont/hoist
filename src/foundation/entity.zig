@@ -457,7 +457,7 @@ test "SecondaryMap basic" {
 test "EntitySet basic" {
     const Block = EntityRef(u32, "block");
     var set = EntitySet(Block).init(std.testing.allocator);
-    defer set.deinit();
+    defer set.deinit(std.testing.allocator);
 
     const r0 = Block.new(0);
     const r1 = Block.new(1);
@@ -478,7 +478,7 @@ test "EntitySet basic" {
 test "EntitySet pop" {
     const Block = EntityRef(u32, "block");
     var set = EntitySet(Block).init(std.testing.allocator);
-    defer set.deinit();
+    defer set.deinit(std.testing.allocator);
 
     _ = try set.insert(Block.new(0));
     _ = try set.insert(Block.new(1));
@@ -494,7 +494,7 @@ test "EntitySet pop" {
 test "EntitySet iter" {
     const Block = EntityRef(u32, "block");
     var set = EntitySet(Block).init(std.testing.allocator);
-    defer set.deinit();
+    defer set.deinit(std.testing.allocator);
 
     _ = try set.insert(Block.new(2));
     _ = try set.insert(Block.new(5));
