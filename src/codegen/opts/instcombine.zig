@@ -509,6 +509,16 @@ pub const InstCombine = struct {
                 return;
             }
 
+            // ugt(x, 0) = ne(x, 0)
+            if (data.cond == .ugt and c == 0) {
+                const zero = try func.dfg.makeConst(0);
+                const new_ne = try func.dfg.makeInstWithData(.icmp, result_ty, .{
+                    .int_compare = IntCompareData.init(.icmp, .ne, lhs, zero),
+                });
+                try self.replaceWithValue(func, inst, new_ne);
+                return;
+            }
+
             // ult(x, 1) = eq(x, 0)
             if (data.cond == .ult and c == 1) {
                 const zero = try func.dfg.makeConst(0);
