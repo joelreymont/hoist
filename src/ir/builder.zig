@@ -100,6 +100,66 @@ pub const FunctionBuilder = struct {
         return try self.func.dfg.appendInstResult(inst, ty);
     }
 
+    pub fn udiv(self: *Self, ty: Type, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .binary = BinaryData.init(.udiv, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn sdiv(self: *Self, ty: Type, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .binary = BinaryData.init(.sdiv, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn ishl(self: *Self, ty: Type, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .binary = BinaryData.init(.ishl, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn ushr(self: *Self, ty: Type, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .binary = BinaryData.init(.ushr, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn sshr(self: *Self, ty: Type, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .binary = BinaryData.init(.sshr, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn band(self: *Self, ty: Type, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .binary = BinaryData.init(.band, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
     pub fn jump(self: *Self, dest: Block) !void {
         const block = self.current_block orelse return error.NoCurrentBlock;
 
