@@ -1318,3 +1318,67 @@
 
 ;; Helper functions
 (decl negate_i64 (i64) i64)
+
+;; Vector widening constructors
+
+;; SSHLL - Signed shift-left-long (widen and optionally shift)
+(decl aarch64_sshll (Value VecElemSize u8 bool) Aarch64Inst)
+
+;; USHLL - Unsigned shift-left-long (widen and optionally shift)
+(decl aarch64_ushll (Value VecElemSize u8 bool) Aarch64Inst)
+
+;;;; Rules for `swiden_low` (signed widen low half) ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; I8X16 -> I16X8: widen low 8 lanes
+(rule (lower (has_type $I16X8 (swiden_low x)))
+      (aarch64_sshll x (VecElemSize.Size16x8) 0 false))
+
+;; I16X8 -> I32X4: widen low 4 lanes
+(rule (lower (has_type $I32X4 (swiden_low x)))
+      (aarch64_sshll x (VecElemSize.Size32x4) 0 false))
+
+;; I32X4 -> I64X2: widen low 2 lanes
+(rule (lower (has_type $I64X2 (swiden_low x)))
+      (aarch64_sshll x (VecElemSize.Size64x2) 0 false))
+
+;;;; Rules for `swiden_high` (signed widen high half) ;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; I8X16 -> I16X8: widen high 8 lanes
+(rule (lower (has_type $I16X8 (swiden_high x)))
+      (aarch64_sshll x (VecElemSize.Size16x8) 0 true))
+
+;; I16X8 -> I32X4: widen high 4 lanes
+(rule (lower (has_type $I32X4 (swiden_high x)))
+      (aarch64_sshll x (VecElemSize.Size32x4) 0 true))
+
+;; I32X4 -> I64X2: widen high 2 lanes
+(rule (lower (has_type $I64X2 (swiden_high x)))
+      (aarch64_sshll x (VecElemSize.Size64x2) 0 true))
+
+;;;; Rules for `uwiden_low` (unsigned widen low half) ;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; I8X16 -> I16X8: widen low 8 lanes
+(rule (lower (has_type $I16X8 (uwiden_low x)))
+      (aarch64_ushll x (VecElemSize.Size16x8) 0 false))
+
+;; I16X8 -> I32X4: widen low 4 lanes
+(rule (lower (has_type $I32X4 (uwiden_low x)))
+      (aarch64_ushll x (VecElemSize.Size32x4) 0 false))
+
+;; I32X4 -> I64X2: widen low 2 lanes
+(rule (lower (has_type $I64X2 (uwiden_low x)))
+      (aarch64_ushll x (VecElemSize.Size64x2) 0 false))
+
+;;;; Rules for `uwiden_high` (unsigned widen high half) ;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; I8X16 -> I16X8: widen high 8 lanes
+(rule (lower (has_type $I16X8 (uwiden_high x)))
+      (aarch64_ushll x (VecElemSize.Size16x8) 0 true))
+
+;; I16X8 -> I32X4: widen high 4 lanes
+(rule (lower (has_type $I32X4 (uwiden_high x)))
+      (aarch64_ushll x (VecElemSize.Size32x4) 0 true))
+
+;; I32X4 -> I64X2: widen high 2 lanes
+(rule (lower (has_type $I64X2 (uwiden_high x)))
+      (aarch64_ushll x (VecElemSize.Size64x2) 0 true))

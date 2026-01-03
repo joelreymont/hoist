@@ -764,3 +764,31 @@ test "aarch64_tst_imm: creates test bits immediate instruction" {
     try testing.expectEqual(Inst.tst_imm, @as(std.meta.Tag(Inst), inst));
     try testing.expectEqual(root.aarch64_inst.OperandSize.size64, inst.tst_imm.imm.size);
 }
+
+/// Constructor: SSHLL - Signed shift-left-long (widen and shift).
+/// Widens lower or upper half of vector elements and optionally shifts left.
+pub fn aarch64_sshll(val: lower_mod.Value, output_size: Inst.VecElemSize, shift_amt: u8, high: bool, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueReg(ctx, val);
+    
+    return Inst{ .vec_sshll = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
+        .src = src_reg,
+        .shift_amt = shift_amt,
+        .size = output_size,
+        .high = high,
+    } };
+}
+
+/// Constructor: USHLL - Unsigned shift-left-long (widen and shift).
+/// Widens lower or upper half of vector elements and optionally shifts left.
+pub fn aarch64_ushll(val: lower_mod.Value, output_size: Inst.VecElemSize, shift_amt: u8, high: bool, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueReg(ctx, val);
+    
+    return Inst{ .vec_ushll = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
+        .src = src_reg,
+        .shift_amt = shift_amt,
+        .size = output_size,
+        .high = high,
+    } };
+}
