@@ -1315,3 +1315,44 @@ pub fn aarch64_umax(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
         .size = size,
     } };
 }
+
+/// BITSELECT - Bitwise select: (x & c) | (y & ~c)
+/// Implemented as: tmp1 = x & c; tmp2 = y & ~c; result = tmp1 | tmp2
+pub fn aarch64_bitselect(c: lower_mod.Value, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const c_reg = try getValueReg(ctx, c);
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+
+    // Get type from one of the values
+    const x_node = try ctx.getValue(x);
+    const ty = x_node.getType();
+    const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
+
+    // tmp1 = x & c
+    const tmp1 = lower_mod.WritableVReg.allocVReg(.int, ctx);
+    const and_inst = Inst{ .and_rr = .{
+        .dst = tmp1,
+        .src1 = x_reg,
+        .src2 = c_reg,
+        .size = size,
+    } };
+    try ctx.emit(and_inst);
+
+    // tmp2 = y & ~c (using BIC: y & ~c)
+    const tmp2 = lower_mod.WritableVReg.allocVReg(.int, ctx);
+    const bic_inst = Inst{ .bic_rr = .{
+        .dst = tmp2,
+        .src1 = y_reg,
+        .src2 = c_reg,
+        .size = size,
+    } };
+    try ctx.emit(bic_inst);
+
+    // result = tmp1 | tmp2
+    return Inst{ .orr_rr = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src1 = tmp1.toReg(),
+        .src2 = tmp2.toReg(),
+        .size = size,
+    } };
+}

@@ -330,6 +330,10 @@
 (rule (lower (umax ty x y))
       (aarch64_umax ty x y))
 
+;; bitselect: Bitwise select ((x & c) | (y & ~c))
+(rule (lower (bitselect c x y))
+      (aarch64_bitselect c x y))
+
 ;; Comparison operations lowering
 
 ;; icmp: Integer comparison with Equal condition
@@ -865,6 +869,7 @@
 (decl aarch64_umin (Type Value Value) Aarch64Inst)
 (decl aarch64_smax (Type Value Value) Aarch64Inst)
 (decl aarch64_umax (Type Value Value) Aarch64Inst)
+(decl aarch64_bitselect (Value Value Value) Aarch64Inst)
 
 ;; Shift operations
 (decl aarch64_lsl_rr (Type Value Value) Aarch64Inst)
