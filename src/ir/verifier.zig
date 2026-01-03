@@ -199,6 +199,8 @@ pub const Verifier = struct {
             var inst_iter = self.func.layout.blockInsts(block);
             while (inst_iter.next()) |inst| {
                 const inst_data = self.func.dfg.insts.get(inst) orelse continue;
+                const opcode = inst_data.opcode();
+                const result_ty = self.func.dfg.instResultType(inst) orelse continue;
 
                 switch (inst_data.*) {
                     .binary => |bin| {
@@ -213,6 +215,58 @@ pub const Verifier = struct {
                                 .{inst.index},
                             );
                             try self.errors.append(self.allocator, msg);
+                        }
+                    },
+                    .unary => |un| {
+                        const arg_ty = self.func.dfg.valueType(un.arg);
+
+                        // Verify type conversion operations
+                        switch (opcode) {
+                            .sextend, .uextend => {
+                                // Source must be narrower than dest
+                                if (arg_ty.bits() >= result_ty.bits()) {
+                                    const msg = try std.fmt.allocPrint(
+                                        self.allocator,
+                                        "{s}: source type ({d} bits) must be narrower than dest ({d} bits) in inst {d}",
+                                        .{ @tagName(opcode), arg_ty.bits(), result_ty.bits(), inst.index },
+                                    );
+                                    try self.errors.append(self.allocator, msg);
+                                }
+                            },
+                            .ireduce => {
+                                // Source must be wider than dest
+                                if (arg_ty.bits() <= result_ty.bits()) {
+                                    const msg = try std.fmt.allocPrint(
+                                        self.allocator,
+                                        "ireduce: source type ({d} bits) must be wider than dest ({d} bits) in inst {d}",
+                                        .{ arg_ty.bits(), result_ty.bits(), inst.index },
+                                    );
+                                    try self.errors.append(self.allocator, msg);
+                                }
+                            },
+                            .fpromote => {
+                                // f32 -> f64 only
+                                if (arg_ty.bits() != 32 or result_ty.bits() != 64) {
+                                    const msg = try std.fmt.allocPrint(
+                                        self.allocator,
+                                        "fpromote: must be f32->f64, got {d}->{d} bits in inst {d}",
+                                        .{ arg_ty.bits(), result_ty.bits(), inst.index },
+                                    );
+                                    try self.errors.append(self.allocator, msg);
+                                }
+                            },
+                            .fdemote => {
+                                // f64 -> f32 only
+                                if (arg_ty.bits() != 64 or result_ty.bits() != 32) {
+                                    const msg = try std.fmt.allocPrint(
+                                        self.allocator,
+                                        "fdemote: must be f64->f32, got {d}->{d} bits in inst {d}",
+                                        .{ arg_ty.bits(), result_ty.bits(), inst.index },
+                                    );
+                                    try self.errors.append(self.allocator, msg);
+                                }
+                            },
+                            else => {},
                         }
                     },
                     else => {},
