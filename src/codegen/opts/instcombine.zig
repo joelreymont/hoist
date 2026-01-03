@@ -191,6 +191,13 @@ pub const InstCombine = struct {
             }
         }
 
+        // (x << z) & (y << z) = (x & y) << z
+        if (data.opcode == .band) {
+            if (try self.simplifyShiftDistribute(func, inst, data, lhs, rhs)) {
+                return;
+            }
+        }
+
         // (x & y) ^ (x ^ y) = x | y and (x | y) ^ (x & y) = x ^ y
         if (data.opcode == .bxor) {
             if (try self.simplifyAndXorToOr(func, inst, lhs, rhs)) {
