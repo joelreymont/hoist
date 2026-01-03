@@ -191,6 +191,11 @@
 (rule (lower (floor ty x))
       (aarch64_floor ty x))
 
+;; iconcat: Concatenate two integers into wider type (I64 + I64 → I128)
+;; On ARM64, this creates a register pair from two separate registers
+(rule (lower (has_type $I128 (iconcat lo hi)))
+      (value_regs_from_values lo hi))
+
 ;; Shift operations lowering
 
 ;; ishl: Integer shift left (register form)
@@ -673,6 +678,10 @@
   sxtx  ;; Sign-extend doubleword (no-op for 64-bit)
 ))
 
+;; Multi-register value type for wide operations (I128)
+;; Maps to Zig's ValueRegs(VReg) type
+(type ValueRegs extern)
+
 ;; Constructor terms for aarch64 instructions
 
 (type Aarch64Inst (enum))
@@ -780,6 +789,10 @@
 (decl aarch64_trunc (Type Value) Aarch64Inst)       ;; FRINTZ: round toward zero
 (decl aarch64_ceil (Type Value) Aarch64Inst)        ;; FRINTP: round toward +infinity
 (decl aarch64_floor (Type Value) Aarch64Inst)       ;; FRINTM: round toward -infinity
+
+;; Multi-register value operations
+(decl value_regs_from_values (Value Value) ValueRegs)  ;; Construct ValueRegs from two I64 values
+(extern constructor value_regs_from_values value_regs_from_values)
 
 ;; Floating-point arithmetic
 (decl aarch64_fadd (Type Value Value) Aarch64Inst)

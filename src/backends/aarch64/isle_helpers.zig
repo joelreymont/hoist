@@ -390,6 +390,27 @@ pub fn aarch64_floor(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.
     } };
 }
 
+/// Constructor: Create ValueRegs from two I64 values (for iconcat).
+/// Takes low and high 64-bit values, returns a ValueRegs pair for I128.
+pub fn value_regs_from_values(lo: lower_mod.Value, hi: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs(lower_mod.VReg) {
+    // Get VRegs for each value (both must be I64, so single-reg)
+    const lo_vregs = try ctx.getValueRegs(lo, .int);
+    const hi_vregs = try ctx.getValueRegs(hi, .int);
+
+    // Extract single VRegs (lo and hi must be 64-bit or smaller)
+    const lo_vreg = switch (lo_vregs) {
+        .one => |r| r,
+        .two => return error.InvalidIconcatOperand, // I64 should never be two regs
+    };
+    const hi_vreg = switch (hi_vregs) {
+        .one => |r| r,
+        .two => return error.InvalidIconcatOperand,
+    };
+
+    // Return pair representing I128
+    return lower_mod.ValueRegs(lower_mod.VReg).two(lo_vreg, hi_vreg);
+}
+
 /// Helper: Convert IR type to aarch64 operand size.
 fn typeToOperandSize(ty: root.types.Type) root.aarch64_inst.OperandSize {
     if (ty.bits() <= 32) {
