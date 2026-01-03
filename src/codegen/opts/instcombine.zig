@@ -490,6 +490,15 @@ pub const InstCombine = struct {
                 try self.replaceWithValue(func, inst, lhs);
                 return true;
             },
+            // udiv(x, pow2) = x >> log2(pow2) (for positive powers of 2)
+            .udiv => if (rhs > 0 and @popCount(@as(u64, @bitCast(rhs))) == 1) {
+                const result_ty = func.dfg.instResultType(inst) orelse return false;
+                const shift_amt = @ctz(@as(u64, @bitCast(rhs)));
+                const shift_const = try func.dfg.makeConst(@as(i64, @intCast(shift_amt)));
+                const shr_inst = try func.dfg.makeInst(.ushr, result_ty, &.{ lhs, shift_const });
+                try self.replaceWithValue(func, inst, shr_inst);
+                return true;
+            },
             // x % 1 = 0 (any number modulo 1 is 0)
             .urem, .srem => if (rhs == 1) {
                 try self.replaceWithConst(func, inst, 0);
