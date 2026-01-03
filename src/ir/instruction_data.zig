@@ -34,6 +34,7 @@ pub const InstructionData = union(enum) {
     unary_imm: UnaryImmData,
     unary: UnaryData,
     unary_with_trap: UnaryWithTrapData,
+    extract_lane: ExtractLaneData,
     binary: BinaryData,
     int_compare: IntCompareData,
     float_compare: FloatCompareData,
@@ -90,6 +91,16 @@ pub const UnaryWithTrapData = struct {
 
     pub fn init(op: Opcode, arg: Value, trap_code: TrapCode) UnaryWithTrapData {
         return .{ .opcode = op, .arg = arg, .trap_code = trap_code };
+    }
+};
+
+pub const ExtractLaneData = struct {
+    opcode: Opcode,
+    arg: Value,
+    lane: u8,
+
+    pub fn init(op: Opcode, arg: Value, lane: u8) ExtractLaneData {
+        return .{ .opcode = op, .arg = arg, .lane = lane };
     }
 };
 
