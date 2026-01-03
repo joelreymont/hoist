@@ -176,6 +176,13 @@ pub const InstCombine = struct {
                 return;
             }
         }
+
+        // (x & y) | ~y = x | ~y
+        if (data.opcode == .bor) {
+            if (try self.simplifyOrWithNotAbsorption(func, inst, lhs, rhs)) {
+                return;
+            }
+        }
     }
 
     /// Combine unary operations.
@@ -961,6 +968,79 @@ pub const InstCombine = struct {
                     const or_inst = try func.dfg.makeInst(.bor, result_ty, &.{ x1, y1 });
                     try self.replaceWithValue(func, inst, or_inst);
                     return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// Simplify (x & y) | ~y = x | ~y.
+    fn simplifyOrWithNotAbsorption(self: *InstCombine, func: *Function, inst: Inst, lhs: Value, rhs: Value) !bool {
+        // Check if lhs is (x & y) and rhs is ~y
+        const lhs_def = func.dfg.valueDef(lhs) orelse return false;
+        const lhs_inst = switch (lhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const lhs_data = func.dfg.insts.get(lhs_inst) orelse return false;
+
+        if (lhs_data.* == .binary) {
+            const lhs_binary = lhs_data.binary;
+            if (lhs_binary.opcode == .band) {
+                const x = lhs_binary.args[0];
+                const y = lhs_binary.args[1];
+
+                // Check if rhs is ~y
+                if (try self.getBnotOperand(func, rhs)) |bnot_arg| {
+                    if (bnot_arg.index == y.index) {
+                        // (x & y) | ~y = x | ~y
+                        const result_ty = func.dfg.instResultType(inst) orelse return false;
+                        const or_inst = try func.dfg.makeInst(.bor, result_ty, &.{ x, rhs });
+                        try self.replaceWithValue(func, inst, or_inst);
+                        return true;
+                    }
+                    if (bnot_arg.index == x.index) {
+                        // (x & y) | ~x = y | ~x
+                        const result_ty = func.dfg.instResultType(inst) orelse return false;
+                        const or_inst = try func.dfg.makeInst(.bor, result_ty, &.{ y, rhs });
+                        try self.replaceWithValue(func, inst, or_inst);
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Check if rhs is (x & y) and lhs is ~y
+        const rhs_def = func.dfg.valueDef(rhs) orelse return false;
+        const rhs_inst = switch (rhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const rhs_data = func.dfg.insts.get(rhs_inst) orelse return false;
+
+        if (rhs_data.* == .binary) {
+            const rhs_binary = rhs_data.binary;
+            if (rhs_binary.opcode == .band) {
+                const x = rhs_binary.args[0];
+                const y = rhs_binary.args[1];
+
+                // Check if lhs is ~y
+                if (try self.getBnotOperand(func, lhs)) |bnot_arg| {
+                    if (bnot_arg.index == y.index) {
+                        // ~y | (x & y) = ~y | x
+                        const result_ty = func.dfg.instResultType(inst) orelse return false;
+                        const or_inst = try func.dfg.makeInst(.bor, result_ty, &.{ lhs, x });
+                        try self.replaceWithValue(func, inst, or_inst);
+                        return true;
+                    }
+                    if (bnot_arg.index == x.index) {
+                        // ~x | (x & y) = ~x | y
+                        const result_ty = func.dfg.instResultType(inst) orelse return false;
+                        const or_inst = try func.dfg.makeInst(.bor, result_ty, &.{ lhs, y });
+                        try self.replaceWithValue(func, inst, or_inst);
+                        return true;
+                    }
                 }
             }
         }
