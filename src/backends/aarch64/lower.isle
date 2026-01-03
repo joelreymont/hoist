@@ -572,6 +572,34 @@
 (rule (lower (fcvt_from_sint (value_type $I64) x (value_type $F64)))
       (aarch64_scvtf_64_to_f64 x))
 
+;; fcvt_to_sint_sat: Convert float to signed integer with saturation
+;; ARM64 FCVTZS natively saturates: NaN→0, overflow→INT_MAX/MIN
+(rule (lower (has_type $I32 (fcvt_to_sint_sat x @ (value_type $F32))))
+      (aarch64_fcvtzs_32_to_32 x))
+
+(rule (lower (has_type $I32 (fcvt_to_sint_sat x @ (value_type $F64))))
+      (aarch64_fcvtzs_64_to_32 x))
+
+(rule (lower (has_type $I64 (fcvt_to_sint_sat x @ (value_type $F32))))
+      (aarch64_fcvtzs_32_to_64 x))
+
+(rule (lower (has_type $I64 (fcvt_to_sint_sat x @ (value_type $F64))))
+      (aarch64_fcvtzs_64_to_64 x))
+
+;; fcvt_to_uint_sat: Convert float to unsigned integer with saturation
+;; ARM64 FCVTZU natively saturates: NaN→0, negative→0, overflow→UINT_MAX
+(rule (lower (has_type $I32 (fcvt_to_uint_sat x @ (value_type $F32))))
+      (aarch64_fcvtzu_32_to_32 x))
+
+(rule (lower (has_type $I32 (fcvt_to_uint_sat x @ (value_type $F64))))
+      (aarch64_fcvtzu_64_to_32 x))
+
+(rule (lower (has_type $I64 (fcvt_to_uint_sat x @ (value_type $F32))))
+      (aarch64_fcvtzu_32_to_64 x))
+
+(rule (lower (has_type $I64 (fcvt_to_uint_sat x @ (value_type $F64))))
+      (aarch64_fcvtzu_64_to_64 x))
+
 ;; fdemote: Convert f64 to f32 (FCVT)
 (rule (lower (fdemote x))
       (aarch64_fcvt_f64_to_f32 x))
@@ -803,6 +831,16 @@
 (decl aarch64_scvtf_64_to_f64 (Value) Aarch64Inst)  ;; SCVTF: i64 to f64
 (decl aarch64_fcvt_f64_to_f32 (Value) Aarch64Inst)  ;; FCVT: f64 to f32
 (decl aarch64_fcvt_f32_to_f64 (Value) Aarch64Inst)  ;; FCVT: f32 to f64
+
+;; Float to integer conversions with saturation
+(decl aarch64_fcvtzs_32_to_32 (Value) Aarch64Inst)  ;; FCVTZS: f32 to i32 (saturating)
+(decl aarch64_fcvtzs_64_to_32 (Value) Aarch64Inst)  ;; FCVTZS: f64 to i32 (saturating)
+(decl aarch64_fcvtzs_32_to_64 (Value) Aarch64Inst)  ;; FCVTZS: f32 to i64 (saturating)
+(decl aarch64_fcvtzs_64_to_64 (Value) Aarch64Inst)  ;; FCVTZS: f64 to i64 (saturating)
+(decl aarch64_fcvtzu_32_to_32 (Value) Aarch64Inst)  ;; FCVTZU: f32 to u32 (saturating)
+(decl aarch64_fcvtzu_64_to_32 (Value) Aarch64Inst)  ;; FCVTZU: f64 to u32 (saturating)
+(decl aarch64_fcvtzu_32_to_64 (Value) Aarch64Inst)  ;; FCVTZU: f32 to u64 (saturating)
+(decl aarch64_fcvtzu_64_to_64 (Value) Aarch64Inst)  ;; FCVTZU: f64 to u64 (saturating)
 
 ;; General floating-point conversion (type-generic)
 (decl aarch64_scvtf (Type Type Value) Aarch64Inst)  ;; SCVTF: signed int to float

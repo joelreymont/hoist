@@ -493,6 +493,94 @@ fn getValueRegFloat(ctx: *lower_mod.LowerCtx(Inst), value: lower_mod.Value) !low
     return lower_mod.Reg.fromVReg(vreg);
 }
 
+/// Constructor: Convert F32 to I32 with saturation (FCVTZS).
+pub fn aarch64_fcvtzs_32_to_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const val_reg = try getValueRegFloat(ctx, val);
+    return Inst{ .fcvtzs = .{
+        .dst = ctx.newTempReg(.int),
+        .src = val_reg,
+        .src_size = .size32,
+        .dst_size = .size32,
+    } };
+}
+
+/// Constructor: Convert F64 to I32 with saturation (FCVTZS).
+pub fn aarch64_fcvtzs_64_to_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const val_reg = try getValueRegFloat(ctx, val);
+    return Inst{ .fcvtzs = .{
+        .dst = ctx.newTempReg(.int),
+        .src = val_reg,
+        .src_size = .size64,
+        .dst_size = .size32,
+    } };
+}
+
+/// Constructor: Convert F32 to I64 with saturation (FCVTZS).
+pub fn aarch64_fcvtzs_32_to_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const val_reg = try getValueRegFloat(ctx, val);
+    return Inst{ .fcvtzs = .{
+        .dst = ctx.newTempReg(.int),
+        .src = val_reg,
+        .src_size = .size32,
+        .dst_size = .size64,
+    } };
+}
+
+/// Constructor: Convert F64 to I64 with saturation (FCVTZS).
+pub fn aarch64_fcvtzs_64_to_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const val_reg = try getValueRegFloat(ctx, val);
+    return Inst{ .fcvtzs = .{
+        .dst = ctx.newTempReg(.int),
+        .src = val_reg,
+        .src_size = .size64,
+        .dst_size = .size64,
+    } };
+}
+
+/// Constructor: Convert F32 to U32 with saturation (FCVTZU).
+pub fn aarch64_fcvtzu_32_to_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const val_reg = try getValueRegFloat(ctx, val);
+    return Inst{ .fcvtzu = .{
+        .dst = ctx.newTempReg(.int),
+        .src = val_reg,
+        .src_size = .size32,
+        .dst_size = .size32,
+    } };
+}
+
+/// Constructor: Convert F64 to U32 with saturation (FCVTZU).
+pub fn aarch64_fcvtzu_64_to_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const val_reg = try getValueRegFloat(ctx, val);
+    return Inst{ .fcvtzu = .{
+        .dst = ctx.newTempReg(.int),
+        .src = val_reg,
+        .src_size = .size64,
+        .dst_size = .size32,
+    } };
+}
+
+/// Constructor: Convert F32 to U64 with saturation (FCVTZU).
+pub fn aarch64_fcvtzu_32_to_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const val_reg = try getValueRegFloat(ctx, val);
+    return Inst{ .fcvtzu = .{
+        .dst = ctx.newTempReg(.int),
+        .src = val_reg,
+        .src_size = .size32,
+        .dst_size = .size64,
+    } };
+}
+
+/// Constructor: Convert F64 to U64 with saturation (FCVTZU).
+pub fn aarch64_fcvtzu_64_to_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const val_reg = try getValueRegFloat(ctx, val);
+    return Inst{ .fcvtzu = .{
+        .dst = ctx.newTempReg(.int),
+        .src = val_reg,
+        .src_size = .size64,
+        .dst_size = .size64,
+    } };
+}
+
 test "imm12_from_u64" {
     const testing = std.testing;
 
