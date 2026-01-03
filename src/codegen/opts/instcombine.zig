@@ -437,6 +437,12 @@ pub const InstCombine = struct {
                 return;
             }
 
+            // uge(x, 0) = 1 (always true)
+            if (data.cond == .uge and c == 0) {
+                try self.replaceWithConst(func, inst, 1);
+                return;
+            }
+
             // ult(x, 1) = eq(x, 0)
             if (data.cond == .ult and c == 1) {
                 const zero = try func.dfg.makeConst(0);
