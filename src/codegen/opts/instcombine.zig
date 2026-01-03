@@ -504,6 +504,15 @@ pub const InstCombine = struct {
                 try self.replaceWithConst(func, inst, 0);
                 return true;
             },
+            // urem(x, pow2) = x & (pow2 - 1) (for powers of 2 > 1)
+            .urem => if (rhs > 1 and @popCount(@as(u64, @bitCast(rhs))) == 1) {
+                const result_ty = func.dfg.instResultType(inst) orelse return false;
+                const mask = rhs - 1;
+                const mask_const = try func.dfg.makeConst(mask);
+                const and_inst = try func.dfg.makeInst(.band, result_ty, &.{ lhs, mask_const });
+                try self.replaceWithValue(func, inst, and_inst);
+                return true;
+            },
             // x % -1 = 0 (signed remainder by -1 is always 0)
             .srem => if (rhs == -1) {
                 try self.replaceWithConst(func, inst, 0);
