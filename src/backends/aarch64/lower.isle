@@ -433,6 +433,19 @@
 (rule (lower (has_type $I64 (bswap x)))
       (aarch64_bswap_64 x))
 
+;; popcnt: Population count (count set bits)
+(rule (lower (has_type $I8 (popcnt x)))
+      (aarch64_popcnt_8 x))
+
+(rule (lower (has_type $I16 (popcnt x)))
+      (aarch64_popcnt_16 x))
+
+(rule (lower (has_type $I32 (popcnt x)))
+      (aarch64_popcnt_32 x))
+
+(rule (lower (has_type $I64 (popcnt x)))
+      (aarch64_popcnt_64 x))
+
 ;; ineg: Integer negation (implemented as NEG)
 (rule (lower (ineg ty x))
       (aarch64_neg ty x))
@@ -898,6 +911,12 @@
 (decl aarch64_bswap_16 (Value) Aarch64Inst)
 (decl aarch64_bswap_32 (Value) Aarch64Inst)
 (decl aarch64_bswap_64 (Value) Aarch64Inst)
+
+;; Population count operations
+(decl aarch64_popcnt_8 (Value) Aarch64Inst)
+(decl aarch64_popcnt_16 (Value) Aarch64Inst)
+(decl aarch64_popcnt_32 (Value) Aarch64Inst)
+(decl aarch64_popcnt_64 (Value) Aarch64Inst)
 
 ;; Negation operations
 (decl aarch64_neg (Type Value) Aarch64Inst)
