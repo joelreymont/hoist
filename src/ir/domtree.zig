@@ -288,6 +288,7 @@ pub const DominatorTree = struct {
         self: *const DominatorTree,
         dominated: *std.ArrayList(Block),
         block: Block,
+        allocator: Allocator,
     ) !void {
         const children_list = self.getChildren(block);
         for (children_list) |child| {
