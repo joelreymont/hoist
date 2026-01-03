@@ -42,13 +42,13 @@ test "SSA: linear code in SSA form" {
     try func.layout.appendBlock(b0);
 
     // v0 = const 42
-    const const42_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 42 } };
+    const const42_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(42) } };
     const const42_inst = try func.dfg.makeInst(const42_data);
     try func.layout.appendInst(const42_inst, b0);
     const v0 = try func.dfg.appendInstResult(const42_inst, Type.I32);
 
     // v1 = const 10
-    const const10_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 10 } };
+    const const10_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(10) } };
     const const10_inst = try func.dfg.makeInst(const10_data);
     try func.layout.appendInst(const10_inst, b0);
     const v1 = try func.dfg.appendInstResult(const10_inst, Type.I32);
@@ -116,12 +116,12 @@ test "SSA: block parameters represent phi nodes" {
     try func.layout.appendBlock(b3);
 
     // Block b0
-    const const1_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 1 } };
+    const const1_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(1) } };
     const const1_inst = try func.dfg.makeInst(const1_data);
     try func.layout.appendInst(const1_inst, b0);
     _ = try func.dfg.appendInstResult(const1_inst, Type.I32);
 
-    const const2_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 2 } };
+    const const2_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(2) } };
     const const2_inst = try func.dfg.makeInst(const2_data);
     try func.layout.appendInst(const2_inst, b0);
     _ = try func.dfg.appendInstResult(const2_inst, Type.I32);
@@ -132,7 +132,7 @@ test "SSA: block parameters represent phi nodes" {
     try func.layout.appendInst(jump_b1_inst, b0);
 
     // Block b1
-    const const10_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 10 } };
+    const const10_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(10) } };
     const const10_inst = try func.dfg.makeInst(const10_data);
     try func.layout.appendInst(const10_inst, b1);
     _ = try func.dfg.appendInstResult(const10_inst, Type.I32);
@@ -142,7 +142,7 @@ test "SSA: block parameters represent phi nodes" {
     try func.layout.appendInst(jump_b3_from_b1_inst, b1);
 
     // Block b2
-    const const20_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 20 } };
+    const const20_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(20) } };
     const const20_inst = try func.dfg.makeInst(const20_data);
     try func.layout.appendInst(const20_inst, b2);
     _ = try func.dfg.appendInstResult(const20_inst, Type.I32);
@@ -365,7 +365,7 @@ test "SSA: constant phi removal optimization" {
     try func.layout.appendBlock(b3);
 
     // b0: v0 = const 42
-    const const42_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 42 } };
+    const const42_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(42) } };
     const const42_inst = try func.dfg.makeInst(const42_data);
     try func.layout.appendInst(const42_inst, b0);
     const v0 = try func.dfg.appendInstResult(const42_inst, Type.I32);
@@ -434,12 +434,12 @@ test "SSA: multiple block parameters in same block" {
     try func.layout.appendBlock(b2);
 
     // b0
-    const const1_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 1 } };
+    const const1_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(1) } };
     const const1_inst = try func.dfg.makeInst(const1_data);
     try func.layout.appendInst(const1_inst, b0);
     _ = try func.dfg.appendInstResult(const1_inst, Type.I32);
 
-    const const2_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 2 } };
+    const const2_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(2) } };
     const const2_inst = try func.dfg.makeInst(const2_data);
     try func.layout.appendInst(const2_inst, b0);
     _ = try func.dfg.appendInstResult(const2_inst, Type.I32);
@@ -449,12 +449,12 @@ test "SSA: multiple block parameters in same block" {
     try func.layout.appendInst(jump_b2_from_b0_inst, b0);
 
     // b1
-    const const3_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 3 } };
+    const const3_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(3) } };
     const const3_inst = try func.dfg.makeInst(const3_data);
     try func.layout.appendInst(const3_inst, b1);
     _ = try func.dfg.appendInstResult(const3_inst, Type.I32);
 
-    const const4_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 4 } };
+    const const4_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(4) } };
     const const4_inst = try func.dfg.makeInst(const4_data);
     try func.layout.appendInst(const4_inst, b1);
     _ = try func.dfg.appendInstResult(const4_inst, Type.I32);
@@ -603,7 +603,7 @@ test "SSA: value aliasing mechanism" {
     try func.layout.appendBlock(b0);
 
     // Create v0
-    const const42_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 42 } };
+    const const42_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(42) } };
     const const42_inst = try func.dfg.makeInst(const42_data);
     try func.layout.appendInst(const42_inst, b0);
     const v0 = try func.dfg.appendInstResult(const42_inst, Type.I32);
