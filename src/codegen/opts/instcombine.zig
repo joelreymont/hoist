@@ -201,6 +201,13 @@ pub const InstCombine = struct {
             }
         }
 
+        // (x ^ y) ^ y = x
+        if (data.opcode == .bxor) {
+            if (try self.simplifyXorCancellation(func, inst, lhs, rhs)) {
+                return;
+            }
+        }
+
         // (x ^ ~y) & x = x & y
         if (data.opcode == .band) {
             if (try self.simplifyXorNotAnd(func, inst, lhs, rhs)) {
@@ -1546,6 +1553,67 @@ pub const InstCombine = struct {
                     const xor_inst = try func.dfg.makeInst(.bxor, result_ty, &.{ z1, y });
                     const and_inst = try func.dfg.makeInst(.band, result_ty, &.{ x, xor_inst });
                     try self.replaceWithValue(func, inst, and_inst);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// Simplify (x ^ y) ^ y = x.
+    fn simplifyXorCancellation(self: *InstCombine, func: *Function, inst: Inst, lhs: Value, rhs: Value) !bool {
+        // Check if lhs is (x ^ y) and rhs matches one of the operands
+        const lhs_def = func.dfg.valueDef(lhs) orelse return false;
+        const lhs_inst = switch (lhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const lhs_data = func.dfg.insts.get(lhs_inst) orelse return false;
+
+        if (lhs_data.* == .binary) {
+            const lhs_binary = lhs_data.binary;
+            if (lhs_binary.opcode == .bxor) {
+                const x = lhs_binary.args[0];
+                const y = lhs_binary.args[1];
+
+                // (x ^ y) ^ y = x
+                if (y.index == rhs.index) {
+                    try self.replaceWithValue(func, inst, x);
+                    return true;
+                }
+
+                // (x ^ y) ^ x = y
+                if (x.index == rhs.index) {
+                    try self.replaceWithValue(func, inst, y);
+                    return true;
+                }
+            }
+        }
+
+        // Check if rhs is (x ^ y) and lhs matches one of the operands
+        const rhs_def = func.dfg.valueDef(rhs) orelse return false;
+        const rhs_inst = switch (rhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const rhs_data = func.dfg.insts.get(rhs_inst) orelse return false;
+
+        if (rhs_data.* == .binary) {
+            const rhs_binary = rhs_data.binary;
+            if (rhs_binary.opcode == .bxor) {
+                const x = rhs_binary.args[0];
+                const y = rhs_binary.args[1];
+
+                // y ^ (x ^ y) = x
+                if (y.index == lhs.index) {
+                    try self.replaceWithValue(func, inst, x);
+                    return true;
+                }
+
+                // x ^ (x ^ y) = y
+                if (x.index == lhs.index) {
+                    try self.replaceWithValue(func, inst, y);
                     return true;
                 }
             }
