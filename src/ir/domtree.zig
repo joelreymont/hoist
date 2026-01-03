@@ -30,7 +30,6 @@ pub const DominatorTree = struct {
 
     pub fn deinit(self: *DominatorTree) void {
         _ = allocator;
-        _ = allocator;
         self.idom.deinit();
 
         var iter = self.children.valueIterator();
