@@ -2,9 +2,9 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
-const root = @import("root");
-const Block = root.entities.Block;
-const PrimaryMap = root.maps.PrimaryMap;
+const ir_mod = @import("../ir.zig");
+const Block = ir_mod.Block;
+const PrimaryMap = @import("../foundation/maps.zig").PrimaryMap;
 
 /// Dominator tree for control flow analysis.
 /// Computes dominance relationships between basic blocks.

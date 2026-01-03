@@ -10,6 +10,7 @@ const Inst = root.entities.Inst;
 const Value = root.entities.Value;
 const Type = root.types.Type;
 const InstructionData = ir.InstructionData;
+const Imm64 = @import("immediates.zig").Imm64;
 const ValueData = @import("dfg.zig").ValueData;
 const ValueDef = @import("dfg.zig").ValueDef;
 const DominatorTree = @import("domtree.zig").DominatorTree;

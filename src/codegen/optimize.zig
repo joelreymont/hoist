@@ -116,7 +116,7 @@ test "PassManager: initialization" {
 }
 
 test "PassManager: run passes" {
-    const sig = root.signature.Signature.init(testing.allocator, .fast);
+    const sig = @import("../ir/signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -130,7 +130,7 @@ test "PassManager: run passes" {
 }
 
 test "PassManager: statistics collection" {
-    const sig = root.signature.Signature.init(testing.allocator, .fast);
+    const sig = @import("../ir/signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -147,7 +147,7 @@ test "PassManager: statistics collection" {
 }
 
 test "PassManager: clear statistics" {
-    const sig = root.signature.Signature.init(testing.allocator, .fast);
+    const sig = @import("../ir/signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 

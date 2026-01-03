@@ -75,7 +75,7 @@ pub const Verifier = struct {
     fn verifyStructure(self: *Verifier) !void {
         // Build CFG for validation
         var cfg = ControlFlowGraph.init(self.allocator);
-        defer cfg.deinit();
+        defer cfg.deinit(self.allocator);
         try cfg.compute(self.func);
 
         // Check that all blocks in layout exist in CFG
@@ -128,7 +128,7 @@ pub const Verifier = struct {
     }
 
     /// Verify SSA properties (values defined before use).
-    fn verifySSA(self: *Verifier) !void {
+    pub fn verifySSA(self: *Verifier) !void {
         // Track which values have been defined
         var defined = std.AutoHashMap(Value, void).init(self.allocator);
         defer defined.deinit();

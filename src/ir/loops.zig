@@ -2,8 +2,8 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
-const root = @import("root");
-const Block = root.entities.Block;
+const ir_mod = @import("../ir.zig");
+const Block = ir_mod.Block;
 const DominatorTree = root.domtree.DominatorTree;
 const CFG = root.domtree.CFG;
 
