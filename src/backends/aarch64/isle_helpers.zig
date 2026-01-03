@@ -984,3 +984,38 @@ pub fn aarch64_rbit_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !In
         .size = .size64,
     } };
 }
+
+/// BSWAP - Byte swap (16-bit)
+/// Uses REV16 instruction
+pub fn aarch64_bswap_16(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueReg(ctx, val);
+
+    return Inst{ .rev16 = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src = src_reg,
+        .size = .size32, // REV16 operates on 32-bit register
+    } };
+}
+
+/// BSWAP - Byte swap (32-bit)
+/// Uses REV32 instruction (or REV for 32-bit)
+pub fn aarch64_bswap_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueReg(ctx, val);
+
+    return Inst{ .rev32 = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src = src_reg,
+        .size = .size32,
+    } };
+}
+
+/// BSWAP - Byte swap (64-bit)
+/// Uses REV64 instruction
+pub fn aarch64_bswap_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueReg(ctx, val);
+
+    return Inst{ .rev64 = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src = src_reg,
+    } };
+}

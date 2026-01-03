@@ -378,6 +378,26 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Byte reverse 16-bit (REV16 Xd, Xn).
+    rev16: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
+    /// Byte reverse 32-bit (REV32 Xd, Xn or REV Wd, Wn).
+    rev32: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
+    /// Byte reverse 64-bit (REV Xd, Xn).
+    rev64: struct {
+        dst: WritableReg,
+        src: Reg,
+    },
+
     /// Population count (CNT).
     popcnt: struct {
         dst: WritableReg,
@@ -1592,6 +1612,9 @@ pub const Inst = union(enum) {
             .clz => |i| try writer.print("clz.{} {}, {}", .{ i.size, i.dst, i.src }),
             .ctz => |i| try writer.print("ctz.{} {}, {}", .{ i.size, i.dst, i.src }),
             .rbit => |i| try writer.print("rbit.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .rev16 => |i| try writer.print("rev16.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .rev32 => |i| try writer.print("rev32.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .rev64 => |i| try writer.print("rev64 {}, {}", .{ i.dst, i.src }),
             .popcnt => |i| try writer.print("popcnt.{} {}, {}", .{ i.size, i.dst, i.src }),
             .fmov => |i| try writer.print("fmov.{} {}, {}", .{ i.size, i.dst, i.src }),
             .fmov_imm => |i| try writer.print("fmov.{} {}, #{}", .{ i.size, i.dst, i.imm }),

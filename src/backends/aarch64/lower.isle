@@ -353,6 +353,16 @@
 (rule (lower (has_type $I64 (bitrev x)))
       (aarch64_rbit_64 x))
 
+;; bswap: Byte swap (REV16, REV32, REV64)
+(rule (lower (has_type $I16 (bswap x)))
+      (aarch64_bswap_16 x))
+
+(rule (lower (has_type $I32 (bswap x)))
+      (aarch64_bswap_32 x))
+
+(rule (lower (has_type $I64 (bswap x)))
+      (aarch64_bswap_64 x))
+
 ;; ineg: Integer negation (implemented as NEG)
 (rule (lower (ineg ty x))
       (aarch64_neg ty x))
@@ -801,6 +811,9 @@
 (decl aarch64_ctz_64 (Value) Aarch64Inst)
 (decl aarch64_rbit_32 (Value) Aarch64Inst)
 (decl aarch64_rbit_64 (Value) Aarch64Inst)
+(decl aarch64_bswap_16 (Value) Aarch64Inst)
+(decl aarch64_bswap_32 (Value) Aarch64Inst)
+(decl aarch64_bswap_64 (Value) Aarch64Inst)
 
 ;; Negation operations
 (decl aarch64_neg (Type Value) Aarch64Inst)

@@ -73,6 +73,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .clz => |i| try emitClz(i.dst.toReg(), i.src, i.size, buffer),
         .cls => |i| try emitCls(i.dst.toReg(), i.src, i.size, buffer),
         .rbit => |i| try emitRbit(i.dst.toReg(), i.src, i.size, buffer),
+        .rev16 => |i| try emitRev16(i.dst.toReg(), i.src, i.size, buffer),
+        .rev32 => |i| try emitRev32(i.dst.toReg(), i.src, i.size, buffer),
+        .rev64 => |i| try emitRev64(i.dst.toReg(), i.src, buffer),
         .rev => |i| try emitRev(i.dst.toReg(), i.src, i.size, buffer),
         .csel => |i| try emitCsel(i.dst.toReg(), i.src1, i.src2, i.cond, i.size, buffer),
         .csinc => |i| try emitCsinc(i.dst.toReg(), i.src1, i.src2, i.cond, i.size, buffer),
@@ -1270,6 +1273,63 @@ fn emitRbit(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffe
         (0b11010110 << 21) |
         (0b00000 << 16) | // opcode2
         (0b00000 << 10) | // opcode
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// REV16 - Reverse bytes in 16-bit halfwords
+/// Encoding: sf|1|0|11010110|00000|00001|Rn|Rd
+fn emitRev16(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    const insn: u32 = (sf_bit << 31) |
+        (1 << 30) |
+        (0b11010110 << 21) |
+        (0b00000 << 16) | // opcode2
+        (0b00001 << 10) | // opcode for REV16
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// REV32 - Reverse bytes in 32-bit words
+/// For 64-bit: sf=1, opcode=00010
+/// For 32-bit (REV Wd): sf=0, opcode=00010
+fn emitRev32(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    const insn: u32 = (sf_bit << 31) |
+        (1 << 30) |
+        (0b11010110 << 21) |
+        (0b00000 << 16) | // opcode2
+        (0b00010 << 10) | // opcode for REV32
+        (@as(u32, rn) << 5) |
+        rd;
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// REV64 - Reverse bytes in 64-bit (REV Xd, Xn)
+/// Encoding: 1|1|0|11010110|00000|00011|Rn|Rd
+fn emitRev64(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    const insn: u32 = (1 << 31) | // sf=1 for 64-bit
+        (1 << 30) |
+        (0b11010110 << 21) |
+        (0b00000 << 16) | // opcode2
+        (0b00011 << 10) | // opcode for REV64
         (@as(u32, rn) << 5) |
         rd;
 
