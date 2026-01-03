@@ -32,12 +32,28 @@ pub fn EntityRef(comptime IndexType: type, comptime prefix: []const u8) type {
             return .{ .index = raw };
         }
 
+        pub fn fromBits(raw: IndexType) Self {
+            return Self.fromRaw(raw);
+        }
+
+        pub fn fromU32(raw: IndexType) Self {
+            return Self.fromRaw(raw);
+        }
+
         pub fn toIndex(self: Self) usize {
             return @intCast(self.index);
         }
 
         pub fn toRaw(self: Self) IndexType {
             return self.index;
+        }
+
+        pub fn asBits(self: Self) IndexType {
+            return self.toRaw();
+        }
+
+        pub fn asU32(self: Self) IndexType {
+            return self.toRaw();
         }
 
         pub fn isValid(self: Self) bool {
