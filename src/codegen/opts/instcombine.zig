@@ -277,6 +277,13 @@ pub const InstCombine = struct {
                 return;
             }
         }
+
+        // rotl(rotl(x, y), z) = rotl(x, y+z) and rotr(rotr(x, y), z) = rotr(x, y+z)
+        if (data.opcode == .rotl or data.opcode == .rotr) {
+            if (try self.simplifyRotateChain(func, inst, data, lhs, rhs)) {
+                return;
+            }
+        }
     }
 
     /// Combine unary operations.
@@ -1302,6 +1309,38 @@ pub const InstCombine = struct {
                     try self.replaceWithValue(func, inst, inner.args[0]);
                     return true;
                 }
+            }
+        }
+
+        return false;
+    }
+
+    /// Simplify rotl(rotl(x, y), z) = rotl(x, y+z) and rotr(rotr(x, y), z) = rotr(x, y+z).
+    fn simplifyRotateChain(self: *InstCombine, func: *Function, inst: Inst, data: BinaryData, lhs: Value, rhs: Value) !bool {
+        const result_ty = func.dfg.instResultType(inst) orelse return false;
+
+        // Check if lhs is the same rotate operation
+        const lhs_def = func.dfg.valueDef(lhs) orelse return false;
+        const lhs_inst = switch (lhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const lhs_data = func.dfg.insts.get(lhs_inst) orelse return false;
+
+        if (lhs_data.* == .binary) {
+            const inner = lhs_data.binary;
+            // Check if inner is the same rotation
+            if (inner.opcode == data.opcode) {
+                const x = inner.args[0];
+                const y = inner.args[1];
+                const z = rhs;
+
+                // Create y + z
+                const sum = try func.dfg.makeInst(.iadd, result_ty, &.{ y, z });
+                // Create rotl(x, y+z) or rotr(x, y+z)
+                const new_rot = try func.dfg.makeInst(data.opcode, result_ty, &.{ x, sum });
+                try self.replaceWithValue(func, inst, new_rot);
+                return true;
             }
         }
 
