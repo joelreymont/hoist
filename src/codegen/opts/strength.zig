@@ -132,16 +132,22 @@ pub const StrengthReduction = struct {
         };
 
         const inst_data = func.dfg.insts.get(defining_inst) orelse return null;
-        const const_val = switch (inst_data.*) {
-            .unary => |d| if (d.opcode == .iconst) blk: {
-                // For now, return null - proper constant extraction needs Imm64 handling
-                break :blk null;
-            } else null,
-            else => null,
+        const imm_val = switch (inst_data.*) {
+            .unary_imm => |d| if (d.opcode == .iconst) d.imm.bits() else return null,
+            else => return null,
         };
-        _ = const_val;
 
-        return null;
+        // Convert to unsigned for power-of-2 check
+        if (imm_val <= 0) return null;
+        const uval: u64 = @intCast(imm_val);
+
+        // Check if power of 2: exactly one bit set
+        if (uval == 0 or (uval & (uval - 1)) != 0) return null;
+
+        // Return log2
+        const log2_val = @ctz(uval);
+        if (log2_val > 63) return null;
+        return @intCast(log2_val);
     }
 };
 
