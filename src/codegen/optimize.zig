@@ -9,6 +9,13 @@ const Allocator = std.mem.Allocator;
 const root = @import("root");
 const Function = @import("../ir/function.zig").Function;
 const dce = @import("opts/dce.zig");
+const gvn = @import("opts/gvn.zig");
+const instcombine = @import("opts/instcombine.zig");
+const strength = @import("opts/strength.zig");
+const peephole = @import("opts/peephole.zig");
+const copyprop = @import("opts/copyprop.zig");
+const licm = @import("opts/licm.zig");
+const simplifybranch = @import("opts/simplifybranch.zig");
 
 /// Pass execution statistics.
 pub const PassStats = struct {
@@ -57,10 +64,15 @@ pub const PassManager = struct {
     pub fn run(self: *PassManager, func: *Function) !void {
         self.stats.clearRetainingCapacity();
 
-        // Run DCE pass
+        // Run optimization passes
+        try self.runPass(func, "SimplifyBranch", runSimplifyBranch);
+        try self.runPass(func, "InstCombine", runInstCombine);
+        try self.runPass(func, "GVN", runGVN);
+        try self.runPass(func, "CopyProp", runCopyProp);
+        try self.runPass(func, "Strength", runStrength);
+        try self.runPass(func, "LICM", runLICM);
+        try self.runPass(func, "Peephole", runPeephole);
         try self.runPass(func, "DCE", runDCE);
-
-        // Additional passes can be registered here
     }
 
     /// Run a single pass with timing and statistics.
@@ -103,6 +115,55 @@ fn runDCE(allocator: Allocator, func: *Function) !bool {
     return try pass.run(func);
 }
 
+/// Run GVN pass.
+fn runGVN(allocator: Allocator, func: *Function) !bool {
+    var pass = gvn.GVN.init(allocator);
+    defer pass.deinit();
+    return try pass.run(func);
+}
+
+/// Run InstCombine pass.
+fn runInstCombine(allocator: Allocator, func: *Function) !bool {
+    var pass = instcombine.InstCombine.init(allocator);
+    defer pass.deinit();
+    return try pass.run(func);
+}
+
+/// Run Strength Reduction pass.
+fn runStrength(allocator: Allocator, func: *Function) !bool {
+    var pass = strength.StrengthReduction.init(allocator);
+    defer pass.deinit();
+    return try pass.run(func);
+}
+
+/// Run Peephole pass.
+fn runPeephole(allocator: Allocator, func: *Function) !bool {
+    var pass = peephole.Peephole.init(allocator);
+    defer pass.deinit();
+    return try pass.run(func);
+}
+
+/// Run Copy Propagation pass.
+fn runCopyProp(allocator: Allocator, func: *Function) !bool {
+    var pass = copyprop.CopyProp.init(allocator);
+    defer pass.deinit();
+    return try pass.run(func);
+}
+
+/// Run LICM pass.
+fn runLICM(allocator: Allocator, func: *Function) !bool {
+    var pass = licm.LICM.init(allocator);
+    defer pass.deinit();
+    return try pass.run(func);
+}
+
+/// Run SimplifyBranch pass.
+fn runSimplifyBranch(allocator: Allocator, func: *Function) !bool {
+    var pass = simplifybranch.SimplifyBranch.init(allocator);
+    defer pass.deinit();
+    return try pass.run(func);
+}
+
 // Tests
 
 const testing = std.testing;
@@ -140,10 +201,17 @@ test "PassManager: statistics collection" {
 
     try pm.run(&func);
 
-    // Should have stats for DCE pass
+    // Should have stats for all passes
     const stats = pm.getStats();
-    try testing.expect(stats.len > 0);
-    try testing.expectEqualStrings("DCE", stats[0].name);
+    try testing.expectEqual(@as(usize, 8), stats.len);
+    try testing.expectEqualStrings("SimplifyBranch", stats[0].name);
+    try testing.expectEqualStrings("InstCombine", stats[1].name);
+    try testing.expectEqualStrings("GVN", stats[2].name);
+    try testing.expectEqualStrings("CopyProp", stats[3].name);
+    try testing.expectEqualStrings("Strength", stats[4].name);
+    try testing.expectEqualStrings("LICM", stats[5].name);
+    try testing.expectEqualStrings("Peephole", stats[6].name);
+    try testing.expectEqualStrings("DCE", stats[7].name);
 }
 
 test "PassManager: clear statistics" {
