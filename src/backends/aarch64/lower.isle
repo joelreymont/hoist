@@ -196,6 +196,32 @@
 (rule (lower (has_type $I128 (iconcat lo hi)))
       (value_regs_from_values lo hi))
 
+;; Atomic operations lowering
+
+;; atomic_load with acquire ordering: LDAR
+(rule (lower (atomic_load ty addr AtomicOrdering.Acquire _flags))
+      (aarch64_atomic_load_acquire ty addr))
+
+;; atomic_load with sequential consistency: DMB + LDAR
+;; Note: Simplified - full seq_cst may need DMB before as well
+(rule (lower (atomic_load ty addr AtomicOrdering.SeqCst _flags))
+      (aarch64_atomic_load_acquire ty addr))
+
+;; atomic_store with release ordering: STLR
+(rule (lower (atomic_store val addr AtomicOrdering.Release _flags))
+      (let ((ty Type (value_type val)))
+           (aarch64_atomic_store_release ty addr val)))
+
+;; atomic_store with sequential consistency: STLR + DMB
+;; Note: Simplified - full seq_cst may need DMB after as well
+(rule (lower (atomic_store val addr AtomicOrdering.SeqCst _flags))
+      (let ((ty Type (value_type val)))
+           (aarch64_atomic_store_release ty addr val)))
+
+;; fence: Memory barrier
+(rule (lower (fence ordering))
+      (aarch64_fence ordering))
+
 ;; Shift operations lowering
 
 ;; ishl: Integer shift left (register form)
@@ -793,6 +819,11 @@
 ;; Multi-register value operations
 (decl value_regs_from_values (Value Value) ValueRegs)  ;; Construct ValueRegs from two I64 values
 (extern constructor value_regs_from_values value_regs_from_values)
+
+;; Atomic operations
+(decl aarch64_atomic_load_acquire (Type Value) Aarch64Inst)   ;; LDAR: atomic load with acquire
+(decl aarch64_atomic_store_release (Type Value Value) Aarch64Inst)  ;; STLR: atomic store with release
+(decl aarch64_fence (AtomicOrdering) Aarch64Inst)  ;; DMB: memory fence
 
 ;; Floating-point arithmetic
 (decl aarch64_fadd (Type Value Value) Aarch64Inst)

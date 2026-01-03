@@ -411,6 +411,56 @@ pub fn value_regs_from_values(lo: lower_mod.Value, hi: lower_mod.Value, ctx: *lo
     return lower_mod.ValueRegs(lower_mod.VReg).two(lo_vreg, hi_vreg);
 }
 
+/// Constructor: Atomic load with acquire semantics (LDAR).
+pub fn aarch64_atomic_load_acquire(ty: root.types.Type, addr: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const addr_reg = try getValueReg(ctx, addr);
+    const size = typeToOperandSize(ty);
+
+    if (size == .size64) {
+        return Inst{ .ldar = .{
+            .dst = ctx.newTempReg(.int),
+            .addr = addr_reg,
+        } };
+    } else {
+        return Inst{ .ldar_w = .{
+            .dst = ctx.newTempReg(.int),
+            .addr = addr_reg,
+        } };
+    }
+}
+
+/// Constructor: Atomic store with release semantics (STLR).
+pub fn aarch64_atomic_store_release(ty: root.types.Type, addr: lower_mod.Value, val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const addr_reg = try getValueReg(ctx, addr);
+    const val_reg = try getValueReg(ctx, val);
+    const size = typeToOperandSize(ty);
+
+    if (size == .size64) {
+        return Inst{ .stlr = .{
+            .src = val_reg,
+            .addr = addr_reg,
+        } };
+    } else {
+        return Inst{ .stlr_w = .{
+            .src = val_reg,
+            .addr = addr_reg,
+        } };
+    }
+}
+
+/// Constructor: Memory fence (DMB).
+pub fn aarch64_fence(ordering: root.atomics.AtomicOrdering) !Inst {
+    const barrier = switch (ordering) {
+        .seq_cst => root.aarch64_inst.BarrierOp.ish,      // Sequential consistency: full barrier
+        .release => root.aarch64_inst.BarrierOp.ishst,    // Release: store barrier
+        .acquire => root.aarch64_inst.BarrierOp.ishld,    // Acquire: load barrier
+        .acq_rel => root.aarch64_inst.BarrierOp.ish,      // Acquire-release: full barrier
+        else => return error.UnsupportedAtomicOrdering,
+    };
+
+    return Inst{ .dmb = .{ .option = barrier } };
+}
+
 /// Helper: Convert IR type to aarch64 operand size.
 fn typeToOperandSize(ty: root.types.Type) root.aarch64_inst.OperandSize {
     if (ty.bits() <= 32) {
