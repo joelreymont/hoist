@@ -207,6 +207,30 @@ pub const InstCombine = struct {
                 const rotated = (val_u >> shift_amt) | (val_u << (64 - shift_amt));
                 break :blk @as(i64, @bitCast(rotated));
             },
+            .udiv => blk: {
+                if (rhs == 0) return false; // Don't fold division by zero
+                const lhs_u = @as(u64, @bitCast(lhs));
+                const rhs_u = @as(u64, @bitCast(rhs));
+                break :blk @as(i64, @bitCast(lhs_u / rhs_u));
+            },
+            .sdiv => blk: {
+                if (rhs == 0) return false; // Don't fold division by zero
+                // Check for INT_MIN / -1 overflow
+                if (lhs == std.math.minInt(i64) and rhs == -1) return false;
+                break :blk @divTrunc(lhs, rhs);
+            },
+            .urem => blk: {
+                if (rhs == 0) return false; // Don't fold modulo by zero
+                const lhs_u = @as(u64, @bitCast(lhs));
+                const rhs_u = @as(u64, @bitCast(rhs));
+                break :blk @as(i64, @bitCast(lhs_u % rhs_u));
+            },
+            .srem => blk: {
+                if (rhs == 0) return false; // Don't fold modulo by zero
+                // Check for INT_MIN % -1 (results in 0)
+                if (lhs == std.math.minInt(i64) and rhs == -1) break :blk 0;
+                break :blk @rem(lhs, rhs);
+            },
             else => return false,
         };
 
