@@ -137,6 +137,13 @@ pub const InstCombine = struct {
             }
         }
 
+        // (!x) + 1 = -x
+        if (data.opcode == .iadd) {
+            if (try self.simplifyNotPlusOne(func, inst, lhs, rhs)) {
+                return;
+            }
+        }
+
         // Reassociation: (x - y) + y = x, (x + y) - x = y, etc.
         if (data.opcode == .iadd or data.opcode == .isub) {
             if (try self.simplifyReassociation(func, inst, data, lhs, rhs)) {
@@ -315,6 +322,42 @@ pub const InstCombine = struct {
                     // Found double application - replace with inner argument
                     try self.replaceWithValue(func, inst, inner.arg);
                     return;
+                }
+            }
+        }
+
+        // !(x - 1) = -x and !(x + (-1)) = -x
+        if (data.opcode == .bnot) {
+            const arg_def = func.dfg.valueDef(data.arg) orelse return;
+            const arg_inst = switch (arg_def) {
+                .result => |r| r.inst,
+                else => return,
+            };
+            const arg_inst_data = func.dfg.insts.get(arg_inst) orelse return;
+
+            if (arg_inst_data.* == .binary) {
+                const inner = arg_inst_data.binary;
+                // !(x - 1) = -x
+                if (inner.opcode == .isub) {
+                    if (try self.getConstant(func, inner.args[1])) |c| {
+                        if (c == 1) {
+                            const result_ty = func.dfg.instResultType(inst) orelse return;
+                            const neg_inst = try func.dfg.makeInst(.ineg, result_ty, &.{inner.args[0]});
+                            try self.replaceWithValue(func, inst, neg_inst);
+                            return;
+                        }
+                    }
+                }
+                // !(x + (-1)) = -x
+                if (inner.opcode == .iadd) {
+                    if (try self.getSignedConstant(func, inner.args[1])) |c| {
+                        if (c == -1) {
+                            const result_ty = func.dfg.instResultType(inst) orelse return;
+                            const neg_inst = try func.dfg.makeInst(.ineg, result_ty, &.{inner.args[0]});
+                            try self.replaceWithValue(func, inst, neg_inst);
+                            return;
+                        }
+                    }
                 }
             }
         }
@@ -1199,6 +1242,51 @@ pub const InstCombine = struct {
             const shl_inst = try func.dfg.makeInst(.ishl, result_ty, &.{ rhs, y });
             try self.replaceWithValue(func, inst, shl_inst);
             return true;
+        }
+
+        return false;
+    }
+
+    /// Simplify (!x) + 1 = -x.
+    fn simplifyNotPlusOne(self: *InstCombine, func: *Function, inst: Inst, lhs: Value, rhs: Value) !bool {
+        const result_ty = func.dfg.instResultType(inst) orelse return false;
+
+        // Check for (!x) + 1
+        if (try self.getConstant(func, rhs)) |c| {
+            if (c == 1) {
+                const lhs_def = func.dfg.valueDef(lhs) orelse return false;
+                const lhs_inst = switch (lhs_def) {
+                    .result => |r| r.inst,
+                    else => return false,
+                };
+                const lhs_data = func.dfg.insts.get(lhs_inst) orelse return false;
+
+                if (lhs_data.* == .unary and lhs_data.unary.opcode == .bnot) {
+                    // Found (!x) + 1, replace with -x
+                    const neg_inst = try func.dfg.makeInst(.ineg, result_ty, &.{lhs_data.unary.arg});
+                    try self.replaceWithValue(func, inst, neg_inst);
+                    return true;
+                }
+            }
+        }
+
+        // Check for 1 + (!x) (commutative)
+        if (try self.getConstant(func, lhs)) |c| {
+            if (c == 1) {
+                const rhs_def = func.dfg.valueDef(rhs) orelse return false;
+                const rhs_inst = switch (rhs_def) {
+                    .result => |r| r.inst,
+                    else => return false,
+                };
+                const rhs_data = func.dfg.insts.get(rhs_inst) orelse return false;
+
+                if (rhs_data.* == .unary and rhs_data.unary.opcode == .bnot) {
+                    // Found 1 + (!x), replace with -x
+                    const neg_inst = try func.dfg.makeInst(.ineg, result_ty, &.{rhs_data.unary.arg});
+                    try self.replaceWithValue(func, inst, neg_inst);
+                    return true;
+                }
+            }
         }
 
         return false;
@@ -2694,6 +2782,10 @@ pub const InstCombine = struct {
             else => {},
         }
         return null;
+    }
+
+    fn getSignedConstant(self: *InstCombine, func: *const Function, value: Value) ?i64 {
+        return self.getConstant(func, value);
     }
 };
 
