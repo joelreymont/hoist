@@ -112,6 +112,13 @@ pub const InstCombine = struct {
             }
         }
 
+        // Reassociation: (x - y) + y = x, (x + y) - x = y, etc.
+        if (data.opcode == .iadd or data.opcode == .isub) {
+            if (try self.simplifyReassociation(func, inst, data, lhs, rhs)) {
+                return;
+            }
+        }
+
         // x + (-x) = 0, x - (-x) = 2x (but we only do the first for now)
         if (data.opcode == .iadd or data.opcode == .fadd) {
             if (try self.simplifyAddNeg(func, inst, lhs, rhs)) {
@@ -432,6 +439,61 @@ pub const InstCombine = struct {
                 if (try self.getBnotOperand(func, rhs)) |x| {
                     const neg_inst = try func.dfg.makeInst(.ineg, result_ty, &.{x});
                     try self.replaceWithValue(func, inst, neg_inst);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// Simplify reassociation patterns like (x - y) + y = x, (x + y) - x = y.
+    fn simplifyReassociation(self: *InstCombine, func: *Function, inst: Inst, data: BinaryData, lhs: Value, rhs: Value) !bool {
+        const lhs_def = func.dfg.valueDef(lhs) orelse return false;
+        const lhs_inst = switch (lhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const lhs_data = func.dfg.insts.get(lhs_inst) orelse return false;
+
+        if (lhs_data.* == .binary) {
+            const inner = lhs_data.binary;
+
+            if (data.opcode == .iadd) {
+                // (x - y) + y = x
+                if (inner.opcode == .isub and inner.args[1].index == rhs.index) {
+                    try self.replaceWithValue(func, inst, inner.args[0]);
+                    return true;
+                }
+                // (x + y) + (-y) would be x + y - y, not relevant here
+            } else if (data.opcode == .isub) {
+                // (x + y) - x = y
+                if (inner.opcode == .iadd and inner.args[0].index == rhs.index) {
+                    try self.replaceWithValue(func, inst, inner.args[1]);
+                    return true;
+                }
+                // (x + y) - y = x
+                if (inner.opcode == .iadd and inner.args[1].index == rhs.index) {
+                    try self.replaceWithValue(func, inst, inner.args[0]);
+                    return true;
+                }
+            }
+        }
+
+        // Check rhs for patterns like y + (x - y) = x
+        if (data.opcode == .iadd) {
+            const rhs_def = func.dfg.valueDef(rhs) orelse return false;
+            const rhs_inst = switch (rhs_def) {
+                .result => |r| r.inst,
+                else => return false,
+            };
+            const rhs_data = func.dfg.insts.get(rhs_inst) orelse return false;
+
+            if (rhs_data.* == .binary) {
+                const inner = rhs_data.binary;
+                // y + (x - y) = x
+                if (inner.opcode == .isub and inner.args[1].index == lhs.index) {
+                    try self.replaceWithValue(func, inst, inner.args[0]);
                     return true;
                 }
             }
