@@ -74,8 +74,15 @@ pub const StrengthReduction = struct {
 
     /// Reduce multiply by power-of-2 to left shift.
     fn reduceMul(self: *StrengthReduction, func: *Function, inst: Inst, data: BinaryData) !void {
-        _ = try self.getPowerOfTwo(func, data.args[1]) orelse return;
-        const new_data = InstructionData{ .binary = BinaryData.init(.ishl, data.args[0], data.args[1]) };
+        const log2 = try self.getPowerOfTwo(func, data.args[1]) orelse return;
+
+        // Create constant for shift amount
+        const shift_imm = @import("../../ir/immediates.zig").Imm64.new(log2);
+        const shift_inst_data = InstructionData{ .unary_imm = @import("../../ir/instruction_data.zig").UnaryImmData.init(.iconst, shift_imm) };
+        const shift_inst = try func.dfg.makeInst(shift_inst_data);
+        const shift_val = try func.dfg.appendInstResult(shift_inst, func.dfg.valueType(data.args[0]));
+
+        const new_data = InstructionData{ .binary = BinaryData.init(.ishl, data.args[0], shift_val) };
         const inst_mut = func.dfg.insts.getMut(inst) orelse return;
         inst_mut.* = new_data;
         self.changed = true;
@@ -83,8 +90,15 @@ pub const StrengthReduction = struct {
 
     /// Reduce unsigned divide by power-of-2 to right shift.
     fn reduceUdiv(self: *StrengthReduction, func: *Function, inst: Inst, data: BinaryData) !void {
-        _ = try self.getPowerOfTwo(func, data.args[1]) orelse return;
-        const new_data = InstructionData{ .binary = BinaryData.init(.ushr, data.args[0], data.args[1]) };
+        const log2 = try self.getPowerOfTwo(func, data.args[1]) orelse return;
+
+        // Create constant for shift amount
+        const shift_imm = @import("../../ir/immediates.zig").Imm64.new(log2);
+        const shift_inst_data = InstructionData{ .unary_imm = @import("../../ir/instruction_data.zig").UnaryImmData.init(.iconst, shift_imm) };
+        const shift_inst = try func.dfg.makeInst(shift_inst_data);
+        const shift_val = try func.dfg.appendInstResult(shift_inst, func.dfg.valueType(data.args[0]));
+
+        const new_data = InstructionData{ .binary = BinaryData.init(.ushr, data.args[0], shift_val) };
         const inst_mut = func.dfg.insts.getMut(inst) orelse return;
         inst_mut.* = new_data;
         self.changed = true;
@@ -103,9 +117,18 @@ pub const StrengthReduction = struct {
     }
 
     /// Reduce unsigned remainder by power-of-2 to bitwise AND.
+    /// x % N becomes x & (N-1) when N is a power of 2.
     fn reduceUrem(self: *StrengthReduction, func: *Function, inst: Inst, data: BinaryData) !void {
-        _ = try self.getPowerOfTwo(func, data.args[1]) orelse return;
-        const new_data = InstructionData{ .binary = BinaryData.init(.band, data.args[0], data.args[1]) };
+        const log2 = try self.getPowerOfTwo(func, data.args[1]) orelse return;
+
+        // Create constant for mask (2^log2 - 1)
+        const mask_val: i64 = (@as(i64, 1) << @intCast(log2)) - 1;
+        const mask_imm = @import("../../ir/immediates.zig").Imm64.new(mask_val);
+        const mask_inst_data = InstructionData{ .unary_imm = @import("../../ir/instruction_data.zig").UnaryImmData.init(.iconst, mask_imm) };
+        const mask_inst = try func.dfg.makeInst(mask_inst_data);
+        const mask = try func.dfg.appendInstResult(mask_inst, func.dfg.valueType(data.args[0]));
+
+        const new_data = InstructionData{ .binary = BinaryData.init(.band, data.args[0], mask) };
         const inst_mut = func.dfg.insts.getMut(inst) orelse return;
         inst_mut.* = new_data;
         self.changed = true;
