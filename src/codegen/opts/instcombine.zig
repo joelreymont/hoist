@@ -611,6 +611,42 @@ pub const InstCombine = struct {
                         }
                     }
                 }
+
+                // Nested select simplifications: select(d, a, select(d, _, y)) => select(d, a, y)
+                const false_def = func.dfg.valueDef(false_val) orelse return;
+                const false_inst = switch (false_def) {
+                    .result => |r| r.inst,
+                    else => return,
+                };
+                const false_data = func.dfg.insts.get(false_inst) orelse return;
+
+                if (false_data.* == .ternary and false_data.ternary.opcode == .select) {
+                    const inner = false_data.ternary;
+                    // Check if inner select has same condition
+                    if (inner.args[0].index == cond.index) {
+                        // select(d, a, select(d, _, y)) => select(d, a, y)
+                        try self.replaceWithTernary(func, inst, .select, cond, true_val, inner.args[2]);
+                        return;
+                    }
+                }
+
+                // Check true branch: select(d, select(d, x, _), a) => select(d, x, a)
+                const true_def = func.dfg.valueDef(true_val) orelse return;
+                const true_inst = switch (true_def) {
+                    .result => |r| r.inst,
+                    else => return,
+                };
+                const true_data = func.dfg.insts.get(true_inst) orelse return;
+
+                if (true_data.* == .ternary and true_data.ternary.opcode == .select) {
+                    const inner = true_data.ternary;
+                    // Check if inner select has same condition
+                    if (inner.args[0].index == cond.index) {
+                        // select(d, select(d, x, _), a) => select(d, x, a)
+                        try self.replaceWithTernary(func, inst, .select, cond, inner.args[1], false_val);
+                        return;
+                    }
+                }
             },
             else => {},
         }
@@ -2543,6 +2579,32 @@ pub const InstCombine = struct {
             .unary = .{
                 .opcode = opcode,
                 .arg = arg,
+            },
+        });
+
+        // Set result type
+        try func.dfg.attachResult(new_inst, ty);
+
+        // Get new result value
+        const new_result = func.dfg.firstResult(new_inst) orelse return;
+
+        // Alias old result to new result
+        const result_data = func.dfg.values.getMut(result) orelse return;
+        result_data.* = ValueData.alias(ty, new_result);
+
+        self.changed = true;
+    }
+
+    /// Replace instruction with a ternary operation.
+    fn replaceWithTernary(self: *InstCombine, func: *Function, inst: Inst, opcode: Opcode, arg1: Value, arg2: Value, arg3: Value) !void {
+        const result = func.dfg.firstResult(inst) orelse return;
+        const ty = func.dfg.valueType(result) orelse return;
+
+        // Create new ternary instruction
+        const new_inst = try func.dfg.createInst(.{
+            .ternary = .{
+                .opcode = opcode,
+                .args = .{ arg1, arg2, arg3 },
             },
         });
 
