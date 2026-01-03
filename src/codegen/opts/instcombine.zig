@@ -2304,6 +2304,16 @@ pub const InstCombine = struct {
                 try self.replaceWithValue(func, inst, val);
                 return true;
             },
+            // x / x = 1 (for division operations)
+            .udiv, .sdiv => {
+                try self.replaceWithConst(func, inst, 1);
+                return true;
+            },
+            // x % x = 0 (for modulo operations)
+            .urem, .srem => {
+                try self.replaceWithConst(func, inst, 0);
+                return true;
+            },
             else => {},
         }
         return false;
