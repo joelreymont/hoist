@@ -519,6 +519,26 @@ pub const InstCombine = struct {
         const lhs = data.args[0];
         const rhs = data.args[1];
 
+        // Constant folding: both operands are constants
+        const lhs_const = self.getConstant(func, lhs);
+        const rhs_const = self.getConstant(func, rhs);
+        if (lhs_const != null and rhs_const != null) {
+            const result: i64 = switch (data.cond) {
+                .eq => if (lhs_const.? == rhs_const.?) 1 else 0,
+                .ne => if (lhs_const.? != rhs_const.?) 1 else 0,
+                .slt => if (lhs_const.? < rhs_const.?) 1 else 0,
+                .sle => if (lhs_const.? <= rhs_const.?) 1 else 0,
+                .sgt => if (lhs_const.? > rhs_const.?) 1 else 0,
+                .sge => if (lhs_const.? >= rhs_const.?) 1 else 0,
+                .ult => if (@as(u64, @bitCast(lhs_const.?)) < @as(u64, @bitCast(rhs_const.?))) 1 else 0,
+                .ule => if (@as(u64, @bitCast(lhs_const.?)) <= @as(u64, @bitCast(rhs_const.?))) 1 else 0,
+                .ugt => if (@as(u64, @bitCast(lhs_const.?)) > @as(u64, @bitCast(rhs_const.?))) 1 else 0,
+                .uge => if (@as(u64, @bitCast(lhs_const.?)) >= @as(u64, @bitCast(rhs_const.?))) 1 else 0,
+            };
+            try self.replaceWithConst(func, inst, result);
+            return;
+        }
+
         // Identity comparisons: x cmp x
         if (lhs.index == rhs.index) {
             const result: i64 = switch (data.cond) {
@@ -534,7 +554,7 @@ pub const InstCombine = struct {
         }
 
         // Comparisons with constants
-        if (self.getConstant(func, rhs)) |c| {
+        if (rhs_const) |c| {
             const result_ty = func.dfg.instResultType(inst) orelse return;
 
             // ult(x, 0) = 0 (always false)
