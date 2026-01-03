@@ -350,6 +350,7 @@ pub const InstCombine = struct {
         }
 
         // sextend(icmp(...)) = uextend(icmp(...)) since icmp produces 0 or 1
+        // sextend(uextend(x)) = uextend(x) since uextend already cleared high bits
         if (data.opcode == .sextend) {
             const arg_def = func.dfg.valueDef(data.arg) orelse return;
             const arg_inst = switch (arg_def) {
@@ -361,6 +362,15 @@ pub const InstCombine = struct {
             if (arg_inst_data.* == .int_compare) {
                 const result_ty = func.dfg.instResultType(inst) orelse return;
                 const uextend_inst = try func.dfg.makeInst(.uextend, result_ty, &.{data.arg});
+                try self.replaceWithValue(func, inst, uextend_inst);
+                return;
+            }
+
+            if (arg_inst_data.* == .unary and arg_inst_data.unary.opcode == .uextend) {
+                // Once zero-extended, sign-extending is same as zero-extending
+                const result_ty = func.dfg.instResultType(inst) orelse return;
+                const inner_val = arg_inst_data.unary.arg;
+                const uextend_inst = try func.dfg.makeInst(.uextend, result_ty, &.{inner_val});
                 try self.replaceWithValue(func, inst, uextend_inst);
                 return;
             }
