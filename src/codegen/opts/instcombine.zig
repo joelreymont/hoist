@@ -112,6 +112,20 @@ pub const InstCombine = struct {
             }
         }
 
+        // Canonicalization: x + (-y) = x - y, x - (-y) = x + y
+        if (data.opcode == .iadd or data.opcode == .isub) {
+            if (try self.simplifyAddSubWithNeg(func, inst, data, lhs, rhs)) {
+                return;
+            }
+        }
+
+        // Multiply with negations: (-x) * (-y) = x * y
+        if (data.opcode == .imul) {
+            if (try self.simplifyMulNeg(func, inst, lhs, rhs)) {
+                return;
+            }
+        }
+
         // Reassociation: (x - y) + y = x, (x + y) - x = y, etc.
         if (data.opcode == .iadd or data.opcode == .isub) {
             if (try self.simplifyReassociation(func, inst, data, lhs, rhs)) {
@@ -158,6 +172,26 @@ pub const InstCombine = struct {
                 if (inner.opcode == data.opcode) {
                     // Found double negation - replace with inner argument
                     try self.replaceWithValue(func, inst, inner.arg);
+                    return;
+                }
+            }
+        }
+
+        // Negate subtraction: -(y - x) = x - y
+        if (data.opcode == .ineg) {
+            const arg_def = func.dfg.valueDef(data.arg) orelse return;
+            const arg_inst = switch (arg_def) {
+                .result => |r| r.inst,
+                else => return,
+            };
+            const arg_inst_data = func.dfg.insts.get(arg_inst) orelse return;
+
+            if (arg_inst_data.* == .binary) {
+                const inner = arg_inst_data.binary;
+                if (inner.opcode == .isub) {
+                    const result_ty = func.dfg.instResultType(inst) orelse return;
+                    const sub_inst = try func.dfg.makeInst(.isub, result_ty, &.{ inner.args[1], inner.args[0] });
+                    try self.replaceWithValue(func, inst, sub_inst);
                     return;
                 }
             }
@@ -447,6 +481,50 @@ pub const InstCombine = struct {
         return false;
     }
 
+    /// Simplify x + (-y) = x - y and x - (-y) = x + y.
+    fn simplifyAddSubWithNeg(self: *InstCombine, func: *Function, inst: Inst, data: BinaryData, lhs: Value, rhs: Value) !bool {
+        const result_ty = func.dfg.instResultType(inst) orelse return false;
+
+        if (data.opcode == .iadd) {
+            // x + (-y) = x - y
+            if (try self.getNegOperand(func, rhs)) |y| {
+                const sub_inst = try func.dfg.makeInst(.isub, result_ty, &.{ lhs, y });
+                try self.replaceWithValue(func, inst, sub_inst);
+                return true;
+            }
+            // (-x) + y = y - x
+            if (try self.getNegOperand(func, lhs)) |x| {
+                const sub_inst = try func.dfg.makeInst(.isub, result_ty, &.{ rhs, x });
+                try self.replaceWithValue(func, inst, sub_inst);
+                return true;
+            }
+        } else if (data.opcode == .isub) {
+            // x - (-y) = x + y
+            if (try self.getNegOperand(func, rhs)) |y| {
+                const add_inst = try func.dfg.makeInst(.iadd, result_ty, &.{ lhs, y });
+                try self.replaceWithValue(func, inst, add_inst);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// Simplify (-x) * (-y) = x * y.
+    fn simplifyMulNeg(self: *InstCombine, func: *Function, inst: Inst, lhs: Value, rhs: Value) !bool {
+        const result_ty = func.dfg.instResultType(inst) orelse return false;
+
+        if (try self.getNegOperand(func, lhs)) |x| {
+            if (try self.getNegOperand(func, rhs)) |y| {
+                const mul_inst = try func.dfg.makeInst(.imul, result_ty, &.{ x, y });
+                try self.replaceWithValue(func, inst, mul_inst);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// Simplify reassociation patterns like (x - y) + y = x, (x + y) - x = y.
     fn simplifyReassociation(self: *InstCombine, func: *Function, inst: Inst, data: BinaryData, lhs: Value, rhs: Value) !bool {
         const lhs_def = func.dfg.valueDef(lhs) orelse return false;
@@ -589,6 +667,25 @@ pub const InstCombine = struct {
         if (inst_data.* == .unary) {
             const unary = inst_data.unary;
             if (unary.opcode == .bnot) {
+                return unary.arg;
+            }
+        }
+        return null;
+    }
+
+    /// Get the operand if value is a negation (ineg/fneg), null otherwise.
+    fn getNegOperand(self: *InstCombine, func: *Function, value: Value) !?Value {
+        _ = self;
+        const def = func.dfg.valueDef(value) orelse return null;
+        const inst = switch (def) {
+            .result => |r| r.inst,
+            else => return null,
+        };
+        const inst_data = func.dfg.insts.get(inst) orelse return null;
+
+        if (inst_data.* == .unary) {
+            const unary = inst_data.unary;
+            if (unary.opcode == .ineg or unary.opcode == .fneg) {
                 return unary.arg;
             }
         }
