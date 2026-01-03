@@ -177,6 +177,22 @@ pub const Opcode = enum(u16) {
     atomic_rmw,
     atomic_cas,
     fence,
+    // SIMD vector operations - widening
+    swiden_low,
+    swiden_high,
+    uwiden_low,
+    uwiden_high,
+    // SIMD vector operations - narrowing
+    snarrow,
+    unarrow,
+    uunarrow,
+    // SIMD vector operations - lane manipulation
+    scalar_to_vector,
+    extract_vector,
+    iadd_pairwise,
+    // SIMD vector operations - float
+    fvpromote_low,
+    fvdemote,
 };
 
 // Tests
