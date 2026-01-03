@@ -469,6 +469,15 @@ pub const InstCombine = struct {
                 try self.replaceWithValue(func, inst, add_inst);
                 return true;
             },
+            // x * pow2 = x << log2(pow2) (for positive powers of 2)
+            .imul => if (rhs > 0 and @popCount(@as(u64, @bitCast(rhs))) == 1) {
+                const result_ty = func.dfg.instResultType(inst) orelse return false;
+                const shift_amt = @ctz(@as(u64, @bitCast(rhs)));
+                const shift_const = try func.dfg.makeConst(@as(i64, @intCast(shift_amt)));
+                const shl_inst = try func.dfg.makeInst(.ishl, result_ty, &.{ lhs, shift_const });
+                try self.replaceWithValue(func, inst, shl_inst);
+                return true;
+            },
             // x * -1 = -x
             .imul => if (rhs == -1) {
                 const result_ty = func.dfg.instResultType(inst) orelse return false;
