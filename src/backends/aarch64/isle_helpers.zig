@@ -302,6 +302,50 @@ pub fn aarch64_ireduce(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lowe
     } };
 }
 
+/// Constructor: Convert signed integer to float (SCVTF).
+pub fn aarch64_scvtf(dst_ty: root.types.Type, src_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_size = typeToOperandSize(src_ty);
+    const dst_size = typeToFpuOperandSize(dst_ty);
+    const src_reg = try getValueReg(ctx, src);
+    return Inst{ .scvtf = .{
+        .dst = ctx.newTempReg(.float),
+        .src = src_reg,
+        .src_size = src_size,
+        .dst_size = dst_size,
+    } };
+}
+
+/// Constructor: Convert unsigned integer to float (UCVTF).
+pub fn aarch64_ucvtf(dst_ty: root.types.Type, src_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_size = typeToOperandSize(src_ty);
+    const dst_size = typeToFpuOperandSize(dst_ty);
+    const src_reg = try getValueReg(ctx, src);
+    return Inst{ .ucvtf = .{
+        .dst = ctx.newTempReg(.float),
+        .src = src_reg,
+        .src_size = src_size,
+        .dst_size = dst_size,
+    } };
+}
+
+/// Constructor: Float promote f32 to f64 (FCVT).
+pub fn aarch64_fpromote(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueRegFloat(ctx, src);
+    return Inst{ .fcvt_f32_to_f64 = .{
+        .dst = ctx.newTempReg(.float),
+        .src = src_reg,
+    } };
+}
+
+/// Constructor: Float demote f64 to f32 (FCVT).
+pub fn aarch64_fdemote(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueRegFloat(ctx, src);
+    return Inst{ .fcvt_f64_to_f32 = .{
+        .dst = ctx.newTempReg(.float),
+        .src = src_reg,
+    } };
+}
+
 /// Helper: Convert IR type to aarch64 operand size.
 fn typeToOperandSize(ty: root.types.Type) root.aarch64_inst.OperandSize {
     if (ty.bits() <= 32) {
@@ -311,9 +355,26 @@ fn typeToOperandSize(ty: root.types.Type) root.aarch64_inst.OperandSize {
     }
 }
 
+/// Helper: Convert IR type to aarch64 FPU operand size.
+fn typeToFpuOperandSize(ty: root.types.Type) root.aarch64_inst.FpuOperandSize {
+    if (ty.bits() <= 32) {
+        return .size32;
+    } else if (ty.bits() <= 64) {
+        return .size64;
+    } else {
+        return .size128;
+    }
+}
+
 /// Helper: Get register for IR value.
 fn getValueReg(ctx: *lower_mod.LowerCtx(Inst), value: lower_mod.Value) !lower_mod.Reg {
     const vreg = try ctx.getValueReg(value, .int);
+    return lower_mod.Reg.fromVReg(vreg);
+}
+
+/// Helper: Get FP register for IR value.
+fn getValueRegFloat(ctx: *lower_mod.LowerCtx(Inst), value: lower_mod.Value) !lower_mod.Reg {
+    const vreg = try ctx.getValueReg(value, .float);
     return lower_mod.Reg.fromVReg(vreg);
 }
 

@@ -155,6 +155,26 @@
 (rule (lower (ireduce dst_ty src_ty x))
       (aarch64_ireduce dst_ty x))
 
+;; fcvt_from_sint: Convert signed integer to float (SCVTF)
+(rule (lower (fcvt_from_sint dst_ty src_ty x))
+      (aarch64_scvtf dst_ty src_ty x))
+
+;; fcvt_from_uint: Convert unsigned integer to float (UCVTF)
+(rule (lower (fcvt_from_uint dst_ty src_ty x))
+      (aarch64_ucvtf dst_ty src_ty x))
+
+;; fpromote: Promote f32 to f64 (FCVT)
+(rule (lower (fpromote dst_ty src_ty x))
+      (if-let 32 (ty_bits src_ty))
+      (if-let 64 (ty_bits dst_ty))
+      (aarch64_fpromote x))
+
+;; fdemote: Demote f64 to f32 (FCVT)
+(rule (lower (fdemote dst_ty src_ty x))
+      (if-let 64 (ty_bits src_ty))
+      (if-let 32 (ty_bits dst_ty))
+      (aarch64_fdemote x))
+
 ;; Shift operations lowering
 
 ;; ishl: Integer shift left (register form)
@@ -732,6 +752,12 @@
 (decl aarch64_scvtf_64_to_f64 (Value) Aarch64Inst)  ;; SCVTF: i64 to f64
 (decl aarch64_fcvt_f64_to_f32 (Value) Aarch64Inst)  ;; FCVT: f64 to f32
 (decl aarch64_fcvt_f32_to_f64 (Value) Aarch64Inst)  ;; FCVT: f32 to f64
+
+;; General floating-point conversion (type-generic)
+(decl aarch64_scvtf (Type Type Value) Aarch64Inst)  ;; SCVTF: signed int to float
+(decl aarch64_ucvtf (Type Type Value) Aarch64Inst)  ;; UCVTF: unsigned int to float
+(decl aarch64_fpromote (Value) Aarch64Inst)         ;; FCVT: f32 to f64
+(decl aarch64_fdemote (Value) Aarch64Inst)          ;; FCVT: f64 to f32
 
 ;; Floating-point arithmetic
 (decl aarch64_fadd (Type Value Value) Aarch64Inst)
