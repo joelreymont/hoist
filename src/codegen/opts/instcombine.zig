@@ -191,7 +191,7 @@ pub const InstCombine = struct {
             }
         }
 
-        // (x << z) & (y << z) = (x & y) << z
+        // (x shift z) & (y shift z) = (x & y) shift z
         if (data.opcode == .band) {
             if (try self.simplifyShiftDistribute(func, inst, data, lhs, rhs)) {
                 return;
@@ -1686,11 +1686,11 @@ pub const InstCombine = struct {
         return false;
     }
 
-    /// Simplify (x << z) + (y << z) = (x + y) << z and (x << z) - (y << z) = (x - y) << z.
+    /// Simplify (x << z) + (y << z) = (x + y) << z and (x >> z) & (y >> z) = (x & y) >> z.
     fn simplifyShiftDistribute(self: *InstCombine, func: *Function, inst: Inst, data: BinaryData, lhs: Value, rhs: Value) !bool {
         const result_ty = func.dfg.instResultType(inst) orelse return false;
 
-        // Check if both lhs and rhs are left shifts
+        // Check if both lhs and rhs are shifts
         const lhs_def = func.dfg.valueDef(lhs) orelse return false;
         const lhs_inst = switch (lhs_def) {
             .result => |r| r.inst,
@@ -1709,8 +1709,10 @@ pub const InstCombine = struct {
             const lhs_binary = lhs_data.binary;
             const rhs_binary = rhs_data.binary;
 
-            // Both must be left shifts
-            if (lhs_binary.opcode == .ishl and rhs_binary.opcode == .ishl) {
+            // Both must be the same kind of shift
+            if (lhs_binary.opcode == rhs_binary.opcode and
+                (lhs_binary.opcode == .ishl or lhs_binary.opcode == .ushr or lhs_binary.opcode == .sshr))
+            {
                 const x = lhs_binary.args[0];
                 const z1 = lhs_binary.args[1];
                 const y = rhs_binary.args[0];
@@ -1718,10 +1720,10 @@ pub const InstCombine = struct {
 
                 // Shift amounts must match
                 if (z1.index == z2.index) {
-                    // Create (x op y) where op is add or sub
+                    // Create (x op y) where op is add, sub, or and
                     const inner_inst = try func.dfg.makeInst(data.opcode, result_ty, &.{ x, y });
-                    // Create (x op y) << z
-                    const shift_inst = try func.dfg.makeInst(.ishl, result_ty, &.{ inner_inst, z1 });
+                    // Create (x op y) shift z
+                    const shift_inst = try func.dfg.makeInst(lhs_binary.opcode, result_ty, &.{ inner_inst, z1 });
                     try self.replaceWithValue(func, inst, shift_inst);
                     return true;
                 }
