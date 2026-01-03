@@ -266,6 +266,41 @@ pub const Verifier = struct {
                                     try self.errors.append(self.allocator, msg);
                                 }
                             },
+                            .swiden_low, .swiden_high, .uwiden_low, .uwiden_high => {
+                                // Widening: input vector lanes must be narrower than output vector lanes
+                                // Output width must be 2× input width (e.g., i16x8 → i32x4)
+                                if (!arg_ty.isVector() or !result_ty.isVector()) {
+                                    const msg = try std.fmt.allocPrint(
+                                        self.allocator,
+                                        "{s}: both input and output must be vectors in inst {d}",
+                                        .{ @tagName(opcode), inst.index },
+                                    );
+                                    try self.errors.append(self.allocator, msg);
+                                } else {
+                                    const arg_lane_bits = arg_ty.laneBits();
+                                    const result_lane_bits = result_ty.laneBits();
+                                    const arg_lanes = arg_ty.laneCount();
+                                    const result_lanes = result_ty.laneCount();
+
+                                    if (result_lane_bits != arg_lane_bits * 2) {
+                                        const msg = try std.fmt.allocPrint(
+                                            self.allocator,
+                                            "{s}: output lane bits ({d}) must be 2× input lane bits ({d}) in inst {d}",
+                                            .{ @tagName(opcode), result_lane_bits, arg_lane_bits, inst.index },
+                                        );
+                                        try self.errors.append(self.allocator, msg);
+                                    }
+
+                                    if (result_lanes != arg_lanes / 2) {
+                                        const msg = try std.fmt.allocPrint(
+                                            self.allocator,
+                                            "{s}: output lane count ({d}) must be ½ input lane count ({d}) in inst {d}",
+                                            .{ @tagName(opcode), result_lanes, arg_lanes, inst.index },
+                                        );
+                                        try self.errors.append(self.allocator, msg);
+                                    }
+                                }
+                            },
                             else => {},
                         }
                     },
@@ -351,6 +386,41 @@ pub const Verifier = struct {
                                 .{inst.index},
                             );
                             try self.errors.append(self.allocator, msg);
+                        }
+                    },
+                    .extract_lane => |el| {
+                        const arg_ty = self.func.dfg.valueType(el.arg);
+
+                        // extract_lane requires vector input
+                        if (!arg_ty.isVector()) {
+                            const msg = try std.fmt.allocPrint(
+                                self.allocator,
+                                "extract_lane: input must be a vector, got {any} in inst {d}",
+                                .{ arg_ty, inst.index },
+                            );
+                            try self.errors.append(self.allocator, msg);
+                        } else {
+                            // Lane index must be within bounds
+                            const lane_count = arg_ty.laneCount();
+                            if (el.lane >= lane_count) {
+                                const msg = try std.fmt.allocPrint(
+                                    self.allocator,
+                                    "extract_lane: lane index {d} out of bounds (vector has {d} lanes) in inst {d}",
+                                    .{ el.lane, lane_count, inst.index },
+                                );
+                                try self.errors.append(self.allocator, msg);
+                            }
+
+                            // Result type should match lane type
+                            const lane_ty = arg_ty.laneType();
+                            if (!std.meta.eql(result_ty, lane_ty)) {
+                                const msg = try std.fmt.allocPrint(
+                                    self.allocator,
+                                    "extract_lane: result type must match vector lane type in inst {d}",
+                                    .{inst.index},
+                                );
+                                try self.errors.append(self.allocator, msg);
+                            }
                         }
                     },
                     else => {},
