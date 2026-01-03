@@ -194,6 +194,13 @@ pub const InstCombine = struct {
             }
         }
 
+        // (z & x) ^ (z & y) = z & (x ^ y)
+        if (data.opcode == .bxor) {
+            if (try self.simplifyAndXorFactor(func, inst, lhs, rhs)) {
+                return;
+            }
+        }
+
         // (x ^ ~y) & x = x & y
         if (data.opcode == .band) {
             if (try self.simplifyXorNotAnd(func, inst, lhs, rhs)) {
@@ -1473,6 +1480,72 @@ pub const InstCombine = struct {
                 {
                     const xor_inst = try func.dfg.makeInst(.bxor, result_ty, &.{ x1, y1 });
                     try self.replaceWithValue(func, inst, xor_inst);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// Simplify (z & x) ^ (z & y) = z & (x ^ y).
+    fn simplifyAndXorFactor(self: *InstCombine, func: *Function, inst: Inst, lhs: Value, rhs: Value) !bool {
+        const result_ty = func.dfg.instResultType(inst) orelse return false;
+
+        // Check if both lhs and rhs are AND operations
+        const lhs_def = func.dfg.valueDef(lhs) orelse return false;
+        const lhs_inst = switch (lhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const lhs_data = func.dfg.insts.get(lhs_inst) orelse return false;
+
+        const rhs_def = func.dfg.valueDef(rhs) orelse return false;
+        const rhs_inst = switch (rhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const rhs_data = func.dfg.insts.get(rhs_inst) orelse return false;
+
+        if (lhs_data.* == .binary and rhs_data.* == .binary) {
+            const lhs_binary = lhs_data.binary;
+            const rhs_binary = rhs_data.binary;
+
+            if (lhs_binary.opcode == .band and rhs_binary.opcode == .band) {
+                const z1 = lhs_binary.args[0];
+                const x = lhs_binary.args[1];
+                const z2 = rhs_binary.args[0];
+                const y = rhs_binary.args[1];
+
+                // Check if first operands match: (z & x) ^ (z & y)
+                if (z1.index == z2.index) {
+                    const xor_inst = try func.dfg.makeInst(.bxor, result_ty, &.{ x, y });
+                    const and_inst = try func.dfg.makeInst(.band, result_ty, &.{ z1, xor_inst });
+                    try self.replaceWithValue(func, inst, and_inst);
+                    return true;
+                }
+
+                // Check if second operands match: (x & z) ^ (y & z)
+                if (x.index == y.index) {
+                    const xor_inst = try func.dfg.makeInst(.bxor, result_ty, &.{ z1, z2 });
+                    const and_inst = try func.dfg.makeInst(.band, result_ty, &.{ x, xor_inst });
+                    try self.replaceWithValue(func, inst, and_inst);
+                    return true;
+                }
+
+                // Check cross patterns: (z & x) ^ (y & z)
+                if (z1.index == y.index) {
+                    const xor_inst = try func.dfg.makeInst(.bxor, result_ty, &.{ x, z2 });
+                    const and_inst = try func.dfg.makeInst(.band, result_ty, &.{ z1, xor_inst });
+                    try self.replaceWithValue(func, inst, and_inst);
+                    return true;
+                }
+
+                // Check cross patterns: (x & z) ^ (z & y)
+                if (x.index == z2.index) {
+                    const xor_inst = try func.dfg.makeInst(.bxor, result_ty, &.{ z1, y });
+                    const and_inst = try func.dfg.makeInst(.band, result_ty, &.{ x, xor_inst });
+                    try self.replaceWithValue(func, inst, and_inst);
                     return true;
                 }
             }
