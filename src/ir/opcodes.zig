@@ -193,6 +193,11 @@ pub const Opcode = enum(u16) {
     // SIMD vector operations - float
     fvpromote_low,
     fvdemote,
+    // Float rounding operations
+    ceil,
+    floor,
+    trunc,
+    nearest,
 };
 
 // Tests
