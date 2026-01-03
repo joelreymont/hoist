@@ -200,6 +200,15 @@ pub const InstCombine = struct {
             }
         }
 
+        // Constant folding for extends: uextend(const) = const, sextend(const) = const
+        if (data.opcode == .uextend or data.opcode == .sextend) {
+            if (self.getConstant(func, data.arg)) |c| {
+                // The constant value remains the same when extending
+                try self.replaceWithConst(func, inst, c);
+                return;
+            }
+        }
+
         // Negate subtraction: -(y - x) = x - y
         if (data.opcode == .ineg) {
             const arg_def = func.dfg.valueDef(data.arg) orelse return;
