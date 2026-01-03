@@ -377,6 +377,13 @@ pub const InstCombine = struct {
                 try self.replaceWithValue(func, inst, lhs);
                 return true;
             },
+            // x * 2 = x + x
+            .imul => if (rhs == 2) {
+                const result_ty = func.dfg.instResultType(inst) orelse return false;
+                const add_inst = try func.dfg.makeInst(.iadd, result_ty, &.{ lhs, lhs });
+                try self.replaceWithValue(func, inst, add_inst);
+                return true;
+            },
             // x * -1 = -x
             .imul => if (rhs == -1) {
                 const result_ty = func.dfg.instResultType(inst) orelse return false;
