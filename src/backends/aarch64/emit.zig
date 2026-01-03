@@ -232,6 +232,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_add => |i| try emitVecAdd(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_sub => |i| try emitVecSub(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_addp => |i| try emitVecAddp(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_ext => |i| try emitVecExt(i.dst.toReg(), i.src1, i.src2, i.index, i.size, buffer),
         .vec_mul => |i| try emitVecMul(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_cmeq => |i| try emitVecCmeq(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_cmgt => |i| try emitVecCmgt(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -10361,6 +10362,29 @@ fn emitVecAddp(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (0b1 << 20) |
         (@as(u32, rm) << 16) |
         (0b101111 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// Vector EXT (NEON): EXT Vd.T, Vn.T, Vm.T, #index
+/// Encoding: Q|0|0|101110|000|Rm|0|index|Rn|Rd
+fn emitVecExt(dst: Reg, src1: Reg, src2: Reg, index: u8, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q = vec_size.qBit();
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b0 << 29) |
+        (0b0 << 28) |
+        (0b101110 << 22) |
+        (0b000 << 19) |
+        (@as(u32, rm) << 16) |
+        (0b0 << 15) |
+        (@as(u32, index) << 11) |
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
