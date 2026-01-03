@@ -346,6 +346,50 @@ pub fn aarch64_fdemote(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !In
     } };
 }
 
+/// Constructor: Float round to nearest (FRINTN).
+pub fn aarch64_nearest(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const size = typeToFpuOperandSize(ty);
+    const src_reg = try getValueRegFloat(ctx, src);
+    return Inst{ .frintn = .{
+        .dst = ctx.newTempReg(.float),
+        .src = src_reg,
+        .size = size,
+    } };
+}
+
+/// Constructor: Float round toward zero (FRINTZ).
+pub fn aarch64_trunc(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const size = typeToFpuOperandSize(ty);
+    const src_reg = try getValueRegFloat(ctx, src);
+    return Inst{ .frintz = .{
+        .dst = ctx.newTempReg(.float),
+        .src = src_reg,
+        .size = size,
+    } };
+}
+
+/// Constructor: Float round toward +infinity (FRINTP).
+pub fn aarch64_ceil(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const size = typeToFpuOperandSize(ty);
+    const src_reg = try getValueRegFloat(ctx, src);
+    return Inst{ .frintp = .{
+        .dst = ctx.newTempReg(.float),
+        .src = src_reg,
+        .size = size,
+    } };
+}
+
+/// Constructor: Float round toward -infinity (FRINTM).
+pub fn aarch64_floor(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const size = typeToFpuOperandSize(ty);
+    const src_reg = try getValueRegFloat(ctx, src);
+    return Inst{ .frintm = .{
+        .dst = ctx.newTempReg(.float),
+        .src = src_reg,
+        .size = size,
+    } };
+}
+
 /// Helper: Convert IR type to aarch64 operand size.
 fn typeToOperandSize(ty: root.types.Type) root.aarch64_inst.OperandSize {
     if (ty.bits() <= 32) {

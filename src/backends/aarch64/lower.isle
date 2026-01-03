@@ -175,6 +175,22 @@
       (if-let 32 (ty_bits dst_ty))
       (aarch64_fdemote x))
 
+;; nearest: Round to nearest (FRINTN)
+(rule (lower (nearest ty x))
+      (aarch64_nearest ty x))
+
+;; trunc: Round toward zero (FRINTZ)
+(rule (lower (trunc ty x))
+      (aarch64_trunc ty x))
+
+;; ceil: Round toward +infinity (FRINTP)
+(rule (lower (ceil ty x))
+      (aarch64_ceil ty x))
+
+;; floor: Round toward -infinity (FRINTM)
+(rule (lower (floor ty x))
+      (aarch64_floor ty x))
+
 ;; Shift operations lowering
 
 ;; ishl: Integer shift left (register form)
@@ -758,6 +774,12 @@
 (decl aarch64_ucvtf (Type Type Value) Aarch64Inst)  ;; UCVTF: unsigned int to float
 (decl aarch64_fpromote (Value) Aarch64Inst)         ;; FCVT: f32 to f64
 (decl aarch64_fdemote (Value) Aarch64Inst)          ;; FCVT: f64 to f32
+
+;; Floating-point rounding operations
+(decl aarch64_nearest (Type Value) Aarch64Inst)     ;; FRINTN: round to nearest
+(decl aarch64_trunc (Type Value) Aarch64Inst)       ;; FRINTZ: round toward zero
+(decl aarch64_ceil (Type Value) Aarch64Inst)        ;; FRINTP: round toward +infinity
+(decl aarch64_floor (Type Value) Aarch64Inst)       ;; FRINTM: round toward -infinity
 
 ;; Floating-point arithmetic
 (decl aarch64_fadd (Type Value Value) Aarch64Inst)
