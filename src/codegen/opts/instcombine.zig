@@ -104,6 +104,13 @@ pub const InstCombine = struct {
                 return;
             }
         }
+
+        // x + (-x) = 0, x - (-x) = 2x (but we only do the first for now)
+        if (data.opcode == .iadd or data.opcode == .fadd) {
+            if (try self.simplifyAddNeg(func, inst, lhs, rhs)) {
+                return;
+            }
+        }
     }
 
     /// Combine unary operations.
@@ -292,6 +299,41 @@ pub const InstCombine = struct {
     }
 
     /// Simplify identity operations (x op x).
+    /// Simplify x + (-x) = 0 pattern.
+    /// Checks if one operand is the negation of the other.
+    fn simplifyAddNeg(self: *InstCombine, func: *Function, inst: Inst, lhs: Value, rhs: Value) !bool {
+        // Check if lhs is -rhs: lhs = -(rhs)
+        if (try self.isNegationOf(func, lhs, rhs)) {
+            try self.replaceWithConst(func, inst, 0);
+            return true;
+        }
+        // Check if rhs is -lhs: rhs = -(lhs)
+        if (try self.isNegationOf(func, rhs, lhs)) {
+            try self.replaceWithConst(func, inst, 0);
+            return true;
+        }
+        return false;
+    }
+
+    /// Check if value1 is the negation of value2.
+    fn isNegationOf(self: *InstCombine, func: *Function, value1: Value, value2: Value) !bool {
+        _ = self;
+        const def1 = func.dfg.valueDef(value1) orelse return false;
+        const inst1 = switch (def1) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const inst_data = func.dfg.insts.get(inst1) orelse return false;
+
+        if (inst_data.* == .unary) {
+            const unary = inst_data.unary;
+            if (unary.opcode == .ineg or unary.opcode == .fneg) {
+                return unary.arg.index == value2.index;
+            }
+        }
+        return false;
+    }
+
     fn simplifyIdentity(self: *InstCombine, func: *Function, inst: Inst, data: BinaryData, val: Value) !bool {
         switch (data.opcode) {
             // x - x = 0
