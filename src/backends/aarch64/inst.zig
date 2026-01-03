@@ -91,6 +91,42 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Add register to register with flags (ADDS Xd, Xn, Xm).
+    /// Sets condition flags (NZCV).
+    adds_rr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Add immediate to register with flags (ADDS Xd, Xn, #imm).
+    /// Sets condition flags (NZCV).
+    adds_imm: struct {
+        dst: WritableReg,
+        src: Reg,
+        imm: u16,
+        size: OperandSize,
+    },
+
+    /// Subtract register from register with flags (SUBS Xd, Xn, Xm).
+    /// Sets condition flags (NZCV).
+    subs_rr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Subtract immediate from register with flags (SUBS Xd, Xn, #imm).
+    /// Sets condition flags (NZCV).
+    subs_imm: struct {
+        dst: WritableReg,
+        src: Reg,
+        imm: u16,
+        size: OperandSize,
+    },
+
     /// Multiply register (MUL Xd, Xn, Xm).
     /// Computes Xd = Xn * Xm (lower bits only).
     mul_rr: struct {
@@ -1323,6 +1359,23 @@ pub const Inst = union(enum) {
         size: VecElemSize,
     },
 
+    /// Unsigned maximum pairwise (UMAXP).
+    /// Pairwise max: dst[i] = max(src1[2*i], src1[2*i+1]).
+    vec_umaxp: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// Compare equal to zero (CMEQ - zero variant).
+    /// Element-wise compare: dst[i] = (src[i] == 0) ? -1 : 0.
+    vec_cmeq0: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VecElemSize,
+    },
+
     /// Signed shift-left-long (SSHLL/SSHLL2).
     /// Widen and shift lower/upper half: dst[i] = sign_extend(src[i]) << shift_amt.
     /// For low variant: operates on src[0..n/2], for high: src[n/2..n].
@@ -1498,6 +1551,10 @@ pub const Inst = union(enum) {
             .add_imm => |i| try writer.print("add.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
             .sub_rr => |i| try writer.print("sub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .sub_imm => |i| try writer.print("sub.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .adds_rr => |i| try writer.print("adds.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .adds_imm => |i| try writer.print("adds.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .subs_rr => |i| try writer.print("subs.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .subs_imm => |i| try writer.print("subs.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
             .mul_rr => |i| try writer.print("mul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .madd => |i| try writer.print("madd.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.addend }),
             .msub => |i| try writer.print("msub.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.minuend }),
@@ -1663,6 +1720,8 @@ pub const Inst = union(enum) {
             .vec_extract_lane => |i| try writer.print("vec_extract_lane.{} {}, {}[{}]", .{ i.size, i.dst, i.src, i.lane }),
             .vec_ext => |i| try writer.print("vec_ext.{} {}, {}, {}, #{}", .{ i.size, i.dst, i.src1, i.src2, i.index }),
             .vec_addp => |i| try writer.print("vec_addp.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_umaxp => |i| try writer.print("vec_umaxp.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_cmeq0 => |i| try writer.print("vec_cmeq0.{} {}, {}", .{ i.size, i.dst, i.src }),
             .vec_sshll => |i| try writer.print("vec_sshll{s}.{} {}, {}, #{}", .{ if (i.high) "2" else "", i.size, i.dst, i.src, i.shift_amt }),
             .vec_ushll => |i| try writer.print("vec_ushll{s}.{} {}, {}, #{}", .{ if (i.high) "2" else "", i.size, i.dst, i.src, i.shift_amt }),
             .vec_sqxtn => |i| try writer.print("vec_sqxtn{s}.{} {}, {}", .{ if (i.high) "2" else "", i.size, i.dst, i.src }),
