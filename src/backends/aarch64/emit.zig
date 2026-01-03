@@ -267,6 +267,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_sqxtn => |i| try emitVecSqxtn(i.dst.toReg(), i.src, i.size, i.high, buffer),
         .vec_sqxtun => |i| try emitVecSqxtun(i.dst.toReg(), i.src, i.size, i.high, buffer),
         .vec_uqxtn => |i| try emitVecUqxtn(i.dst.toReg(), i.src, i.size, i.high, buffer),
+        .vec_fcvtl => |i| try emitVecFcvtl(i.dst.toReg(), i.src, i.high, buffer),
+        .vec_fcvtn => |i| try emitVecFcvtn(i.dst.toReg(), i.src, i.high, buffer),
         .addv => |i| try emitAddv(i.dst.toReg(), i.src, i.size, buffer),
         .sminv => |i| try emitSminv(i.dst.toReg(), i.src, i.size, buffer),
         .smaxv => |i| try emitSmaxv(i.dst.toReg(), i.src, i.size, buffer),
@@ -12059,6 +12061,44 @@ fn emitVecUqxtn(dst: Reg, src: Reg, vec_size: VectorSize, high: bool, buffer: *b
         (0b101110 << 24) |
         (@as(u32, immh) << 19) |
         (0b100110 << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    try buffer.put(&std.mem.toBytes(insn));
+}
+
+/// FCVTL/FCVTL2 - Floating-point convert to higher precision
+/// Converts F32 vector to F64 vector
+/// Encoding: 0Q00 1110 0010 0001 0111 10nn nnnd dddd
+/// Q=0: FCVTL (low half), Q=1: FCVTL2 (high half)
+fn emitVecFcvtl(dst: Reg, src: Reg, high: bool, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q: u1 = if (high) 1 else 0;
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b0001110 << 23) |
+        (0b0100001 << 16) |
+        (0b011110 << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    try buffer.put(&std.mem.toBytes(insn));
+}
+
+/// FCVTN/FCVTN2 - Floating-point convert to lower precision
+/// Converts F64 vector to F32 vector
+/// Encoding: 0Q00 1110 0110 0001 0110 10nn nnnd dddd
+/// Q=0: FCVTN (writes low half), Q=1: FCVTN2 (writes high half)
+fn emitVecFcvtn(dst: Reg, src: Reg, high: bool, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q: u1 = if (high) 1 else 0;
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b0001110 << 23) |
+        (0b1100001 << 16) |
+        (0b011010 << 10) |
         (@as(u32, rn) << 5) |
         rd;
 

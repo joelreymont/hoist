@@ -769,7 +769,7 @@ test "aarch64_tst_imm: creates test bits immediate instruction" {
 /// Widens lower or upper half of vector elements and optionally shifts left.
 pub fn aarch64_sshll(val: lower_mod.Value, output_size: Inst.VecElemSize, shift_amt: u8, high: bool, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const src_reg = try getValueReg(ctx, val);
-    
+
     return Inst{ .vec_sshll = .{
         .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
         .src = src_reg,
@@ -783,7 +783,7 @@ pub fn aarch64_sshll(val: lower_mod.Value, output_size: Inst.VecElemSize, shift_
 /// Widens lower or upper half of vector elements and optionally shifts left.
 pub fn aarch64_ushll(val: lower_mod.Value, output_size: Inst.VecElemSize, shift_amt: u8, high: bool, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const src_reg = try getValueReg(ctx, val);
-    
+
     return Inst{ .vec_ushll = .{
         .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
         .src = src_reg,
@@ -798,7 +798,7 @@ pub fn aarch64_ushll(val: lower_mod.Value, output_size: Inst.VecElemSize, shift_
 pub fn aarch64_sqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_size: Inst.VecElemSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
-    
+
     // First narrow x to low half
     const temp_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     const low_inst = Inst{ .vec_sqxtn = .{
@@ -808,7 +808,7 @@ pub fn aarch64_sqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_siz
         .high = false,
     } };
     try ctx.emit(low_inst);
-    
+
     // Then narrow y to high half (writes to same register)
     return Inst{ .vec_sqxtn = .{
         .dst = temp_reg,
@@ -822,7 +822,7 @@ pub fn aarch64_sqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_siz
 pub fn aarch64_sqxtun_combined(x: lower_mod.Value, y: lower_mod.Value, output_size: Inst.VecElemSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
-    
+
     const temp_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     const low_inst = Inst{ .vec_sqxtun = .{
         .dst = temp_reg,
@@ -831,7 +831,7 @@ pub fn aarch64_sqxtun_combined(x: lower_mod.Value, y: lower_mod.Value, output_si
         .high = false,
     } };
     try ctx.emit(low_inst);
-    
+
     return Inst{ .vec_sqxtun = .{
         .dst = temp_reg,
         .src = y_reg,
@@ -844,7 +844,7 @@ pub fn aarch64_sqxtun_combined(x: lower_mod.Value, y: lower_mod.Value, output_si
 pub fn aarch64_uqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_size: Inst.VecElemSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
-    
+
     const temp_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     const low_inst = Inst{ .vec_uqxtn = .{
         .dst = temp_reg,
@@ -853,11 +853,47 @@ pub fn aarch64_uqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_siz
         .high = false,
     } };
     try ctx.emit(low_inst);
-    
+
     return Inst{ .vec_uqxtn = .{
         .dst = temp_reg,
         .src = y_reg,
         .size = output_size,
+        .high = true,
+    } };
+}
+
+/// FCVTL - Float convert to higher precision (F32 -> F64)
+/// Converts F32X4 to F64X2 (promotes low or high 2 lanes)
+pub fn aarch64_fcvtl(val: lower_mod.Value, high: bool, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueReg(ctx, val);
+
+    return Inst{ .vec_fcvtl = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
+        .src = src_reg,
+        .high = high,
+    } };
+}
+
+/// FCVTN - Float convert to lower precision (F64 -> F32) - combined variant
+/// Converts two F64X2 vectors to one F32X4 vector
+/// Emits FCVTN (low half) then FCVTN2 (high half)
+pub fn aarch64_fcvtn_combined(x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+
+    // First demote x to low half
+    const temp_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    const low_inst = Inst{ .vec_fcvtn = .{
+        .dst = temp_reg,
+        .src = x_reg,
+        .high = false,
+    } };
+    try ctx.emit(low_inst);
+
+    // Then demote y to high half
+    return Inst{ .vec_fcvtn = .{
+        .dst = temp_reg,
+        .src = y_reg,
         .high = true,
     } };
 }

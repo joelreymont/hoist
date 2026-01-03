@@ -1446,3 +1446,19 @@
 ;; I64X2 + I64X2 -> I32X4: narrow unsigned to unsigned
 (rule (lower (has_type $I32X4 (uunarrow x y)))
       (aarch64_uqxtn_combined x y (VecElemSize.Size32x4)))
+
+;;;; Float vector conversions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; FCVTL - Float convert to higher precision (F32 -> F64)
+(decl aarch64_fcvtl (Value bool) Aarch64Inst)
+
+;; FCVTN - Float convert to lower precision (F64 -> F32)
+(decl aarch64_fcvtn_combined (Value Value) Aarch64Inst)
+
+;; F32X4 -> F64X2: promote low 2 lanes
+(rule (lower (has_type $F64X2 (fvpromote_low x)))
+      (aarch64_fcvtl x false))
+
+;; F64X2 + F64X2 -> F32X4: demote two vectors
+(rule (lower (has_type $F32X4 (fvdemote x y)))
+      (aarch64_fcvtn_combined x y))

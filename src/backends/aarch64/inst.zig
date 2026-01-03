@@ -1352,6 +1352,22 @@ pub const Inst = union(enum) {
         high: bool, // false = UQXTN (write to low half), true = UQXTN2 (write to high half)
     },
 
+    /// FCVTL/FCVTL2 - Float convert to higher precision long.
+    /// Widens F32 elements to F64 (low or high half of input vector).
+    vec_fcvtl: struct {
+        dst: WritableReg,
+        src: Reg,
+        high: bool, // false = FCVTL (low half), true = FCVTL2 (high half)
+    },
+
+    /// FCVTN/FCVTN2 - Float convert to lower precision narrow.
+    /// Narrows F64 elements to F32.
+    vec_fcvtn: struct {
+        dst: WritableReg,
+        src: Reg,
+        high: bool, // false = FCVTN (write to low half), true = FCVTN2 (write to high half)
+    },
+
     /// Call - saves return address to link register and jumps.
     /// Pseudo-instruction that becomes BL.
     call: struct {
@@ -1629,6 +1645,8 @@ pub const Inst = union(enum) {
             .vec_sqxtn => |i| try writer.print("vec_sqxtn{s}.{} {}, {}", .{ if (i.high) "2" else "", i.size, i.dst, i.src }),
             .vec_sqxtun => |i| try writer.print("vec_sqxtun{s}.{} {}, {}", .{ if (i.high) "2" else "", i.size, i.dst, i.src }),
             .vec_uqxtn => |i| try writer.print("vec_uqxtn{s}.{} {}, {}", .{ if (i.high) "2" else "", i.size, i.dst, i.src }),
+            .vec_fcvtl => |i| try writer.print("vec_fcvtl{s} {}, {}", .{ if (i.high) "2" else "", i.dst, i.src }),
+            .vec_fcvtn => |i| try writer.print("vec_fcvtn{s} {}, {}", .{ if (i.high) "2" else "", i.dst, i.src }),
             .call => |i| try writer.print("call {}", .{i.target}),
             .call_indirect => |i| try writer.print("call {}", .{i.target}),
             .ret_call => try writer.print("ret", .{}),
