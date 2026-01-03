@@ -181,8 +181,10 @@ pub const InstCombine = struct {
             }
         }
 
-        // Double negation: -(-x) = x, ~(~x) = x
-        if (data.opcode == .ineg or data.opcode == .fneg or data.opcode == .bnot) {
+        // Double application: -(-x) = x, ~(~x) = x, bswap(bswap(x)) = x, bitrev(bitrev(x)) = x
+        if (data.opcode == .ineg or data.opcode == .fneg or data.opcode == .bnot or
+            data.opcode == .bswap or data.opcode == .bitrev)
+        {
             const arg_def = func.dfg.valueDef(data.arg) orelse return;
             const arg_inst = switch (arg_def) {
                 .result => |r| r.inst,
@@ -193,7 +195,7 @@ pub const InstCombine = struct {
             if (arg_inst_data.* == .unary) {
                 const inner = arg_inst_data.unary;
                 if (inner.opcode == data.opcode) {
-                    // Found double negation - replace with inner argument
+                    // Found double application - replace with inner argument
                     try self.replaceWithValue(func, inst, inner.arg);
                     return;
                 }
