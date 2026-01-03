@@ -160,6 +160,13 @@ pub const InstCombine = struct {
                 return;
             }
         }
+
+        // Associative flattening: (x | y) | x = x | y, (x & y) & x = x & y
+        if (data.opcode == .bor or data.opcode == .band) {
+            if (try self.simplifyAssociativeFlattening(func, inst, data, lhs, rhs)) {
+                return;
+            }
+        }
     }
 
     /// Combine unary operations.
@@ -748,6 +755,49 @@ pub const InstCombine = struct {
             if (try self.getBxorOtherOperand(func, rhs, lhs)) |x| {
                 try self.replaceWithValue(func, inst, x);
                 return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// Simplify associative flattening: (x | y) | x = x | y, (x & y) & x = x & y.
+    fn simplifyAssociativeFlattening(self: *InstCombine, func: *Function, inst: Inst, data: BinaryData, lhs: Value, rhs: Value) !bool {
+        // (x op y) op x = x op y  (where op is | or &)
+        const lhs_def = func.dfg.valueDef(lhs) orelse return false;
+        const lhs_inst = switch (lhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const lhs_data = func.dfg.insts.get(lhs_inst) orelse return false;
+
+        if (lhs_data.* == .binary) {
+            const inner = lhs_data.binary;
+            if (inner.opcode == data.opcode) {
+                // Check if rhs matches one of the inner operands
+                if (inner.args[0].index == rhs.index or inner.args[1].index == rhs.index) {
+                    try self.replaceWithValue(func, inst, lhs);
+                    return true;
+                }
+            }
+        }
+
+        // x op (x op y) = x op y
+        const rhs_def = func.dfg.valueDef(rhs) orelse return false;
+        const rhs_inst = switch (rhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const rhs_data = func.dfg.insts.get(rhs_inst) orelse return false;
+
+        if (rhs_data.* == .binary) {
+            const inner = rhs_data.binary;
+            if (inner.opcode == data.opcode) {
+                // Check if lhs matches one of the inner operands
+                if (inner.args[0].index == lhs.index or inner.args[1].index == lhs.index) {
+                    try self.replaceWithValue(func, inst, rhs);
+                    return true;
+                }
             }
         }
 
