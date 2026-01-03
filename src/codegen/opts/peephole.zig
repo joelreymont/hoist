@@ -205,28 +205,48 @@ pub const Peephole = struct {
         };
 
         const inst_data = func.dfg.insts.get(defining_inst) orelse return false;
-        return switch (inst_data.*) {
-            .unary => |d| d.opcode == .iconst,
-            else => false,
+        const imm_val = switch (inst_data.*) {
+            .unary_imm => |d| if (d.opcode == .iconst) d.imm.bits() else return false,
+            else => return false,
         };
+
+        return imm_val == 0;
     }
 
     /// Check if value is constant one.
     fn isOne(self: *Peephole, func: *const Function, value: Value) !bool {
         _ = self;
-        _ = func;
-        _ = value;
-        // Conservative: return false until we have proper constant tracking
-        return false;
+        const value_def = func.dfg.valueDef(value) orelse return false;
+        const defining_inst = switch (value_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+
+        const inst_data = func.dfg.insts.get(defining_inst) orelse return false;
+        const imm_val = switch (inst_data.*) {
+            .unary_imm => |d| if (d.opcode == .iconst) d.imm.bits() else return false,
+            else => return false,
+        };
+
+        return imm_val == 1;
     }
 
     /// Check if value is all-ones (-1).
     fn isAllOnes(self: *Peephole, func: *const Function, value: Value) !bool {
         _ = self;
-        _ = func;
-        _ = value;
-        // Conservative: return false until we have proper constant tracking
-        return false;
+        const value_def = func.dfg.valueDef(value) orelse return false;
+        const defining_inst = switch (value_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+
+        const inst_data = func.dfg.insts.get(defining_inst) orelse return false;
+        const imm_val = switch (inst_data.*) {
+            .unary_imm => |d| if (d.opcode == .iconst) d.imm.bits() else return false,
+            else => return false,
+        };
+
+        return imm_val == -1;
     }
 };
 
