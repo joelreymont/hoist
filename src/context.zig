@@ -6,7 +6,7 @@ const root = @import("root.zig");
 const Function = root.function.Function;
 const compile_mod = root.codegen.compile;
 const signature_mod = root.signature;
-const Verifier = ("ir/verifier.zig").Verifier;
+const Verifier = @import("ir/verifier.zig").Verifier;
 
 /// Compiler configuration and context.
 /// Central API for configuring and invoking the compiler.

@@ -9,7 +9,7 @@ const ir = @import("../ir.zig");
 const Function = ir.Function;
 const ControlFlowGraph = ir.ControlFlowGraph;
 const DominatorTree = ir.DominatorTree;
-const LoopAnalysis = ir.LoopAnalysis;
+const LoopInfo = ir.LoopInfo;
 
 /// Persistent data structures and compilation pipeline.
 pub const Context = struct {
@@ -26,7 +26,7 @@ pub const Context = struct {
     domtree: DominatorTree,
 
     /// Loop analysis of the function.
-    loop_analysis: LoopAnalysis,
+    loop_analysis: LoopInfo,
 
     /// Compiled machine code result (after lowering and emission).
     compiled_code: ?CompiledCode,
@@ -40,7 +40,7 @@ pub const Context = struct {
             .func = Function.init(allocator),
             .cfg = ControlFlowGraph.init(allocator),
             .domtree = DominatorTree.init(allocator),
-            .loop_analysis = LoopAnalysis.init(allocator),
+            .loop_analysis = LoopInfo.init(allocator),
             .compiled_code = null,
             .want_disasm = false,
         };
@@ -52,7 +52,7 @@ pub const Context = struct {
             .func = func,
             .cfg = ControlFlowGraph.init(allocator),
             .domtree = DominatorTree.init(allocator),
-            .loop_analysis = LoopAnalysis.init(allocator),
+            .loop_analysis = LoopInfo.init(allocator),
             .compiled_code = null,
             .want_disasm = false,
         };

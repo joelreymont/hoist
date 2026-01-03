@@ -10,9 +10,9 @@ const Allocator = std.mem.Allocator;
 
 const ir = @import("../ir.zig");
 const Function = ir.Function;
-const Block = ir.entities.Block;
-const Inst = ir.entities.Inst;
-const Value = ir.entities.Value;
+const Block = ir.Block;
+const Inst = ir.Inst;
+const Value = ir.Value;
 const Type = ir.types.Type;
 const ValueDef = ir.dfg.ValueDef;
 const Signature = ir.Signature;
