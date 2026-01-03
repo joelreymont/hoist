@@ -250,6 +250,13 @@ pub const InstCombine = struct {
             }
         }
 
+        // uextend(x) op uextend(y) = uextend(x op y) for bitwise ops
+        if (data.opcode == .band or data.opcode == .bor or data.opcode == .bxor) {
+            if (try self.simplifyExtendBitwise(func, inst, data, lhs, rhs)) {
+                return;
+            }
+        }
+
         // (x & y) | ~y = x | ~y
         if (data.opcode == .bor) {
             if (try self.simplifyOrWithNotAbsorption(func, inst, lhs, rhs)) {
@@ -1414,6 +1421,64 @@ pub const InstCombine = struct {
                         try self.replaceWithValue(func, inst, and_inst);
                         return true;
                     }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// Simplify uextend(x) op uextend(y) = uextend(x op y) for bitwise ops.
+    fn simplifyExtendBitwise(self: *InstCombine, func: *Function, inst: Inst, data: BinaryData, lhs: Value, rhs: Value) !bool {
+        const result_ty = func.dfg.instResultType(inst) orelse return false;
+
+        // Check if both lhs and rhs are uextend
+        const lhs_def = func.dfg.valueDef(lhs) orelse return false;
+        const lhs_inst = switch (lhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const lhs_data = func.dfg.insts.get(lhs_inst) orelse return false;
+
+        const rhs_def = func.dfg.valueDef(rhs) orelse return false;
+        const rhs_inst = switch (rhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const rhs_data = func.dfg.insts.get(rhs_inst) orelse return false;
+
+        if (lhs_data.* == .unary and rhs_data.* == .unary) {
+            const lhs_unary = lhs_data.unary;
+            const rhs_unary = rhs_data.unary;
+
+            // Both must be uextend
+            if (lhs_unary.opcode == .uextend and rhs_unary.opcode == .uextend) {
+                const x = lhs_unary.arg;
+                const y = rhs_unary.arg;
+
+                // Get the types
+                const x_def = func.dfg.valueDef(x) orelse return false;
+                const y_def = func.dfg.valueDef(y) orelse return false;
+
+                const x_ty = switch (x_def) {
+                    .result => |r| func.dfg.instResultType(r.inst) orelse return false,
+                    .param => |p| func.signature.params[p.index],
+                    else => return false,
+                };
+                const y_ty = switch (y_def) {
+                    .result => |r| func.dfg.instResultType(r.inst) orelse return false,
+                    .param => |p| func.signature.params[p.index],
+                    else => return false,
+                };
+
+                // Types must match
+                if (x_ty.index == y_ty.index) {
+                    // Create (x op y)
+                    const inner_op = try func.dfg.makeInst(data.opcode, x_ty, &.{ x, y });
+                    // Create uextend(x op y)
+                    const extend = try func.dfg.makeInst(.uextend, result_ty, &.{inner_op});
+                    try self.replaceWithValue(func, inst, extend);
+                    return true;
                 }
             }
         }
