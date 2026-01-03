@@ -866,6 +866,51 @@
 (decl aarch64_swpal (Value Value) Aarch64Inst)         ;; Atomic swap with acquire/release
 (decl aarch64_casal (Value Value Value) Aarch64Inst)   ;; Compare-and-swap with acquire/release
 
+;; LSE Atomic helper implementations
+;; These generate atomic instructions with sequentially-consistent ordering
+
+;; aarch64_ldadd: Atomic add - LDADDAL (acquire-release for seq_cst)
+(rule (aarch64_ldadd addr val)
+      ;; TODO: Select ordering variant based on context
+      ;; For now, use sequentially-consistent (acquire-release)
+      (Aarch64Inst.ldaddal val addr))
+
+;; aarch64_ldclr: Atomic clear bits - LDCLRAL
+(rule (aarch64_ldclr addr val)
+      (Aarch64Inst.ldclral val addr))
+
+;; aarch64_ldeor: Atomic XOR - LDEORAL
+(rule (aarch64_ldeor addr val)
+      (Aarch64Inst.ldeoral val addr))
+
+;; aarch64_ldset: Atomic OR - LDSETAL
+(rule (aarch64_ldset addr val)
+      (Aarch64Inst.ldsetal val addr))
+
+;; aarch64_ldsmax: Atomic signed maximum - LDSMAXAL
+(rule (aarch64_ldsmax addr val)
+      (Aarch64Inst.ldsmaxal val addr))
+
+;; aarch64_ldsmin: Atomic signed minimum - LDSMINAL
+(rule (aarch64_ldsmin addr val)
+      (Aarch64Inst.ldsminal val addr))
+
+;; aarch64_ldumax: Atomic unsigned maximum - LDUMAXAL
+(rule (aarch64_ldumax addr val)
+      (Aarch64Inst.ldumaxal val addr))
+
+;; aarch64_ldumin: Atomic unsigned minimum - LDUMINAL
+(rule (aarch64_ldumin addr val)
+      (Aarch64Inst.lduminal val addr))
+
+;; aarch64_swpal: Atomic swap - SWPAL
+(rule (aarch64_swpal addr val)
+      (Aarch64Inst.swpal val addr))
+
+;; aarch64_casal: Compare-and-swap - CASAL
+(rule (aarch64_casal addr expected new_val)
+      (Aarch64Inst.casal expected new_val addr))
+
 ;; Memory barrier operations
 (decl aarch64_dmb (ShareabilityDomain) Aarch64Inst)    ;; Data Memory Barrier
 (decl aarch64_dsb (ShareabilityDomain) Aarch64Inst)    ;; Data Synchronization Barrier
