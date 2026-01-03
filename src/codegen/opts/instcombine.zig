@@ -20,6 +20,7 @@ const Opcode = root.opcodes.Opcode;
 const InstructionData = root.instruction_data.InstructionData;
 const BinaryData = root.instruction_data.BinaryData;
 const UnaryData = root.instruction_data.UnaryData;
+const IntCompareData = root.instruction_data.IntCompareData;
 const Imm64 = root.immediates.Imm64;
 const ValueData = root.dfg.ValueData;
 
@@ -64,6 +65,7 @@ pub const InstCombine = struct {
         switch (inst_data.*) {
             .binary => |data| try self.combineBinary(func, inst, data),
             .unary => |data| try self.combineUnary(func, inst, data),
+            .int_compare => |data| try self.combineIntCompare(func, inst, data),
             else => {},
         }
     }
@@ -293,6 +295,26 @@ pub const InstCombine = struct {
                     return;
                 }
             }
+        }
+    }
+
+    /// Combine integer comparison operations.
+    fn combineIntCompare(self: *InstCombine, func: *Function, inst: Inst, data: IntCompareData) !void {
+        const lhs = data.args[0];
+        const rhs = data.args[1];
+
+        // Identity comparisons: x cmp x
+        if (lhs.index == rhs.index) {
+            const result: i64 = switch (data.cond) {
+                .eq => 1, // x == x → true
+                .ne => 0, // x != x → false
+                .slt, .ult => 0, // x < x → false
+                .sle, .ule => 1, // x <= x → true
+                .sgt, .ugt => 0, // x > x → false
+                .sge, .uge => 1, // x >= x → true
+            };
+            try self.replaceWithConst(func, inst, result);
+            return;
         }
     }
 
