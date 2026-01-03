@@ -273,11 +273,10 @@ pub const DominatorTree = struct {
         _allocator: Allocator,
         block: Block,
     ) !std.ArrayList(Block) {
-        _ = _allocator;
         var dominated = std.ArrayList(Block){};
 
         // Add the block itself
-        try dominated.append(block);
+        try dominated.append(_allocator, block);
 
         // Recursively add all dominated blocks via children
         try self.collectDominatedRecursive(&dominated, block);
@@ -372,8 +371,8 @@ pub const DominatorTree = struct {
             defer visited.deinit();
 
             var current = block.*;
-            while (self.idom.get(current)) |maybe_idom| {
-                const idom = maybe_idom orelse break;
+            while (self.idom.get(current)) |ptr| {
+                const idom = ptr.* orelse break;
 
                 if (visited.contains(idom)) {
                     return error.DominatorTreeCycle;
@@ -617,7 +616,7 @@ pub const PostDominatorTree = struct {
                     if (!entry.found_existing) {
                         entry.value_ptr.* = std.ArrayList(Block){};
                     }
-                    try entry.value_ptr.append(block);
+                    try entry.value_ptr.append(self.allocator, block);
                 }
             }
         }

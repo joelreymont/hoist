@@ -83,7 +83,7 @@ pub const DCE = struct {
         const inst_data = func.dfg.insts.get(inst) orelse return;
 
         // Mark operands based on instruction type
-        switch (inst_data.data) {
+        switch (inst_data) {
             .unary => |d| try self.markValueLive(func, d.arg),
             .binary => |d| {
                 try self.markValueLive(func, d.args[0]);
@@ -143,7 +143,7 @@ pub const DCE = struct {
             .icmp, .select => false,
 
             // Floating-point operations are pure (ignoring NaN behavior)
-            .fadd, .fsub, .fmul, .fdiv, .fsqrt => false,
+            .fadd, .fsub, .fmul, .fdiv => false,
             .fabs, .fneg, .fmin, .fmax => false,
             .fcmp => false,
 

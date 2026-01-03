@@ -122,7 +122,7 @@ test "GlobalValueData iadd_imm" {
 test "GlobalValueData symbol" {
     const sym = GlobalValueData.SymbolData.init(ExternalName.fromUser(0, 0));
     const data = GlobalValueData{ .symbol = sym };
-    try testing.expect(data.symbol.name.isUser());
+    try testing.expect(data.symbol.name == .user);
 }
 
 test "GlobalValueData dyn_scale" {

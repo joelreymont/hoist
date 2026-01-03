@@ -77,7 +77,7 @@ pub const PassManager = struct {
         if (self.enable_stats) {
             const end = std.time.nanoTimestamp();
             const elapsed: u64 = @intCast(end - start);
-            try self.stats.append(.{
+            try self.stats.append(self.allocator, .{
                 .name = name,
                 .time_ns = elapsed,
                 .changes = if (changed) 1 else 0,
