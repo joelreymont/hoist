@@ -104,27 +104,21 @@ pub const ControlFlowGraph = struct {
             const inst_data = func.dfg.insts.get(last_inst) orelse return;
 
             // Extract successor blocks based on instruction type
-            switch (inst_data.opcode) {
+            switch (inst_data.opcode()) {
                 .jump => {
-                    if (inst_data.data.jump.destination) |dest| {
-                        try self.addEdge(block, last_inst, dest);
-                    }
+                    try self.addEdge(block, last_inst, inst_data.jump.destination);
                 },
                 .brif => {
-                    if (inst_data.data.branch.then_dest) |then_dest| {
-                        try self.addEdge(block, last_inst, then_dest);
-                    }
-                    if (inst_data.data.branch.else_dest) |else_dest| {
-                        try self.addEdge(block, last_inst, else_dest);
-                    }
+                    try self.addEdge(block, last_inst, inst_data.branch.then_dest);
+                    try self.addEdge(block, last_inst, inst_data.branch.else_dest);
                 },
                 .br_table => {
                     // Default destination
-                    if (inst_data.data.br_table.default_dest) |default| {
+                    if (inst_data.branch_table.default_dest) |default| {
                         try self.addEdge(block, last_inst, default);
                     }
                     // Table destinations
-                    for (inst_data.data.br_table.table) |dest| {
+                    for (inst_data.branch_table.table) |dest| {
                         try self.addEdge(block, last_inst, dest);
                     }
                 },
@@ -264,23 +258,19 @@ pub const ControlFlowGraph = struct {
         const inst_data = func.dfg.insts.get(last_inst) orelse return error.InvalidTerminator;
 
         // Verify successors match terminator targets
-        switch (inst_data.opcode) {
-            .jump => {
-                try self.validateJump(block, last_inst, inst_data.data.jump.destination);
-            },
-            .brif => {
-                if (inst_data.data.branch.then_dest) |then_dest| {
-                    try self.validateEdge(block, last_inst, then_dest);
-                }
-                if (inst_data.data.branch.else_dest) |else_dest| {
-                    try self.validateEdge(block, last_inst, else_dest);
-                }
-            },
+        switch (inst_data.opcode()) {
+                .jump => {
+                    try self.addEdge(block, last_inst, inst_data.jump.destination);
+                },
+                .brif => {
+                    try self.addEdge(block, last_inst, inst_data.branch.then_dest);
+                    try self.addEdge(block, last_inst, inst_data.branch.else_dest);
+                },
             .br_table => {
-                if (inst_data.data.br_table.default_dest) |default| {
+                if (inst_data.branch_table.default_dest) |default| {
                     try self.validateEdge(block, last_inst, default);
                 }
-                for (inst_data.data.br_table.table) |dest| {
+                for (inst_data.branch_table.table) |dest| {
                     try self.validateEdge(block, last_inst, dest);
                 }
             },
