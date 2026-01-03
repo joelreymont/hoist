@@ -17,6 +17,8 @@ const Opcode = opcodes.Opcode;
 const Value = entities.Value;
 const Type = types.Type;
 const Imm64 = immediates.Imm64;
+const Imm128 = immediates.Imm128;
+const Uimm8 = immediates.Uimm8;
 const Ieee32 = immediates.Ieee32;
 const Ieee64 = immediates.Ieee64;
 const IntCC = condcodes.IntCC;
@@ -35,6 +37,8 @@ pub const InstructionData = union(enum) {
     unary: UnaryData,
     unary_with_trap: UnaryWithTrapData,
     extract_lane: ExtractLaneData,
+    ternary_imm8: TernaryImm8Data,
+    shuffle: ShuffleData,
     binary: BinaryData,
     int_compare: IntCompareData,
     float_compare: FloatCompareData,
@@ -101,6 +105,26 @@ pub const ExtractLaneData = struct {
 
     pub fn init(op: Opcode, arg: Value, lane: u8) ExtractLaneData {
         return .{ .opcode = op, .arg = arg, .lane = lane };
+    }
+};
+
+pub const TernaryImm8Data = struct {
+    opcode: Opcode,
+    args: [2]Value,
+    imm: Uimm8,
+
+    pub fn init(op: Opcode, arg0: Value, imm: Uimm8, arg1: Value) TernaryImm8Data {
+        return .{ .opcode = op, .args = .{ arg0, arg1 }, .imm = imm };
+    }
+};
+
+pub const ShuffleData = struct {
+    opcode: Opcode,
+    args: [2]Value,
+    mask: Imm128,
+
+    pub fn init(op: Opcode, arg0: Value, arg1: Value, mask: Imm128) ShuffleData {
+        return .{ .opcode = op, .args = .{ arg0, arg1 }, .mask = mask };
     }
 };
 

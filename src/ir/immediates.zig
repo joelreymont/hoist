@@ -23,6 +23,25 @@ pub const Imm64 = packed struct {
 /// Used for lane indexes in SIMD vectors and immediate bit counts.
 pub const Uimm8 = u8;
 
+/// 128-bit immediate operand.
+///
+/// Used for shuffle masks and vector constants.
+pub const Imm128 = packed struct {
+    bytes: [16]u8,
+
+    pub fn new(b: [16]u8) Imm128 {
+        return .{ .bytes = b };
+    }
+
+    pub fn zero() Imm128 {
+        return .{ .bytes = [_]u8{0} ** 16 };
+    }
+
+    pub fn toBytes(self: Imm128) [16]u8 {
+        return self.bytes;
+    }
+};
+
 /// 32-bit immediate signed offset.
 ///
 /// Used for address offsets in load/store instructions.
