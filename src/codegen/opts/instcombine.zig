@@ -570,6 +570,13 @@ pub const InstCombine = struct {
             }
         }
 
+        // ult(~x, ~y) = ugt(x, y)
+        if (data.cond == .ult) {
+            if (try self.simplifyCompareNotOperands(func, inst, data, lhs, rhs)) {
+                return;
+            }
+        }
+
         // eq(x, x ^ y) = eq(y, 0) and ne(x, x ^ y) = ne(y, 0)
         if (data.cond == .eq or data.cond == .ne) {
             if (try self.simplifyCompareWithXor(func, inst, data, lhs, rhs)) {
@@ -1361,6 +1368,23 @@ pub const InstCombine = struct {
         }
 
         return false;
+    }
+
+    /// Simplify ult(~x, ~y) = ugt(x, y).
+    fn simplifyCompareNotOperands(self: *InstCombine, func: *Function, inst: Inst, _: IntCompareData, lhs: Value, rhs: Value) !bool {
+        const result_ty = func.dfg.instResultType(inst) orelse return false;
+
+        // Check if lhs is ~x
+        const x = self.getBnotOperand(func, lhs) catch return false orelse return false;
+        // Check if rhs is ~y
+        const y = self.getBnotOperand(func, rhs) catch return false orelse return false;
+
+        // ult(~x, ~y) = ugt(x, y)
+        const new_cmp = try func.dfg.makeInstWithData(.icmp, result_ty, .{
+            .int_compare = IntCompareData.init(.icmp, .ugt, x, y),
+        });
+        try self.replaceWithValue(func, inst, new_cmp);
+        return true;
     }
 
     /// Simplify (x ^ ~y) & x = x & y.
