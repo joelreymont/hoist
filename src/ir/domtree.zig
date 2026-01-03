@@ -29,7 +29,7 @@ pub const DominatorTree = struct {
     }
 
     pub fn deinit(self: *DominatorTree) void {
-        _ = allocator;
+
         self.idom.deinit();
 
         var iter = self.children.valueIterator();
@@ -146,7 +146,7 @@ pub const DominatorTree = struct {
         try visited.put(entry, {});
 
         while (worklist.items.len > 0) {
-            const block = worklist.pop();
+            const block = worklist.pop() orelse break;
             try blocks.append(allocator, block);
 
             for (cfg.successors(block)) |succ| {
@@ -322,7 +322,7 @@ pub const DominatorTree = struct {
         try reachable.put(entry, {});
 
         while (worklist.items.len > 0) {
-            const block = worklist.pop();
+            const block = worklist.pop() orelse break;
             const succs = cfg.successors(block);
             for (succs) |succ| {
                 if (!reachable.contains(succ)) {
@@ -574,7 +574,7 @@ pub const PostDominatorTree = struct {
         var visited = std.AutoHashMap(Block, void).init(allocator);
         defer visited.deinit();
 
-        try collectReachableReverse(cfg, exit, &visited, &rpo);
+        try collectReachableReverse(cfg, exit, &visited, &rpo, allocator);
         std.mem.reverse(Block, rpo.items);
 
         // Fixed-point iteration
@@ -593,7 +593,7 @@ pub const PostDominatorTree = struct {
                 for (succs) |succ| {
                     const succ_ipdom = self.ipdom.get(succ) orelse continue;
                     if (succ_ipdom) |s_ipdom| {
-                        new_ipdom = if (new_ipdom) |n| intersect(self, n, s_ipdom, allocator) else s_ipdom;
+                        new_ipdom = if (new_ipdom) |n| intersect(self, n, s_ipdom) else s_ipdom;
                     }
                 }
 
@@ -636,7 +636,7 @@ pub const PostDominatorTree = struct {
 
     /// Get immediate post-dominator of a block.
     pub fn ipostDominator(self: *const PostDominatorTree, block: Block) ?Block {
-        return self.ipdom.get(block) orelse null;
+        if (self.ipdom.get(block)) |ptr| return ptr.* else return null;
     }
 };
 
@@ -645,6 +645,7 @@ fn collectReachableReverse(
     block: Block,
     visited: *std.AutoHashMap(Block, void),
     postorder: *std.ArrayList(Block),
+    allocator: Allocator,
 ) !void {
     if (visited.contains(block)) return;
     try visited.put(block, {});
@@ -652,19 +653,18 @@ fn collectReachableReverse(
     // Visit predecessors (reverse direction)
     const preds = cfg.predecessors(block);
     for (preds) |pred| {
-        try collectReachableReverse(cfg, pred, visited, postorder);
+        try collectReachableReverse(cfg, pred, visited, postorder, allocator);
     }
 
-    try postorder.append(block);
+    try postorder.append(allocator, block);
 }
 
 fn intersect(
     tree: *const PostDominatorTree,
     b1: Block,
     b2: Block,
-    allocator: Allocator,
 ) Block {
-    _ = allocator;
+
     var finger1 = b1;
     var finger2 = b2;
 
