@@ -58,14 +58,14 @@ pub const DCE = struct {
     /// Mark all live instructions starting from roots.
     fn markLive(self: *DCE, func: *Function) !void {
         // Start with instructions that have side effects as roots
-        var block_iter = func.layout.blocks();
+        var block_iter = func.layout.blockIter();
         while (block_iter.next()) |block| {
             var inst_iter = func.layout.blockInsts(block);
             while (inst_iter.next()) |inst| {
                 const inst_data = func.dfg.insts.get(inst) orelse continue;
 
                 // Instructions with side effects are always live
-                if (self.hasSideEffects(inst_data.opcode)) {
+                if (self.hasSideEffects(inst_data.opcode())) {
                     try self.markInstLive(func, inst);
                 }
             }
@@ -166,7 +166,7 @@ pub const DCE = struct {
         defer dead_insts.deinit();
 
         // Collect dead instructions
-        var block_iter = func.layout.blocks();
+        var block_iter = func.layout.blockIter();
         while (block_iter.next()) |block| {
             var inst_iter = func.layout.blockInsts(block);
             while (inst_iter.next()) |inst| {

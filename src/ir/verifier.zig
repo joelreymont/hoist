@@ -79,9 +79,9 @@ pub const Verifier = struct {
         try cfg.compute(self.func);
 
         // Check that all blocks in layout exist in CFG
-        var block_iter = self.func.layout.blocks();
+        var block_iter = self.func.layout.blockIter();
         while (block_iter.next()) |block| {
-            const block_idx = block.index();
+            const block_idx = block.toIndex();
 
             // Verify block is in CFG
             if (block_idx >= cfg.data.items.len) {
@@ -107,7 +107,7 @@ pub const Verifier = struct {
 
         // Check that all instructions are in some block
         var inst_count: usize = 0;
-        var block_iter2 = self.func.layout.blocks();
+        var block_iter2 = self.func.layout.blockIter();
         while (block_iter2.next()) |block| {
             var inst_iter = self.func.layout.blockInsts(block);
             while (inst_iter.next()) |inst| {
@@ -134,7 +134,7 @@ pub const Verifier = struct {
         defer defined.deinit();
 
         // Iterate through blocks in layout order
-        var block_iter = self.func.layout.blocks();
+        var block_iter = self.func.layout.blockIter();
         while (block_iter.next()) |block| {
             // Block parameters are defined at block entry
             if (self.func.dfg.blocks.get(block)) |block_data| {
@@ -194,7 +194,7 @@ pub const Verifier = struct {
     /// Verify type consistency.
     fn verifyTypes(self: *Verifier) !void {
         // Check that operations have type-compatible operands
-        var block_iter = self.func.layout.blocks();
+        var block_iter = self.func.layout.blockIter();
         while (block_iter.next()) |block| {
             var inst_iter = self.func.layout.blockInsts(block);
             while (inst_iter.next()) |inst| {
@@ -224,7 +224,7 @@ pub const Verifier = struct {
     /// Verify control flow properties.
     fn verifyControlFlow(self: *Verifier) !void {
         // Check that each block ends with a terminator
-        var block_iter = self.func.layout.blocks();
+        var block_iter = self.func.layout.blockIter();
         while (block_iter.next()) |block| {
             const last_inst = self.func.layout.lastInst(block);
             if (last_inst == null) {

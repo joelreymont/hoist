@@ -61,7 +61,7 @@ pub const DominatorTree = struct {
 
         // Compute reverse postorder (approximated by iterating over blocks)
         var blocks = std.ArrayList(Block){};
-        defer blocks.deinit();
+        defer blocks.deinit(allocator);
 
         // Collect all blocks reachable from entry via DFS
         try self.collectReachableBlocks(allocator, &blocks, entry, cfg);
@@ -105,9 +105,9 @@ pub const DominatorTree = struct {
                 }
 
                 // Update if changed
-                const old_idom = self.idom.get(block) orelse null;
+                const old_idom = self.idom.get(block) ;
                 if (new_idom) |idom| {
-                    if (old_idom == null or !std.meta.eql(idom, old_idom.?)) {
+                    if (old_idom == null or !std.meta.eql(idom, old_idom.*.?)) {
                         try self.idom.set(allocator, block, idom);
                         changed = true;
                     }
@@ -164,10 +164,10 @@ pub const DominatorTree = struct {
 
         while (!std.meta.eql(finger1, finger2)) {
             while (self.blockDepth(finger1) > self.blockDepth(finger2)) {
-                finger1 = self.idom.get(finger1) orelse break;
+                finger1 = if (self.idom.get(finger1)) |ptr| ptr.* orelse break else break;
             }
             while (self.blockDepth(finger2) > self.blockDepth(finger1)) {
-                finger2 = self.idom.get(finger2) orelse break;
+                finger2 = if (self.idom.get(finger2)) |ptr| ptr.* orelse break else break;
             }
 
             if (std.meta.eql(finger1, finger2)) break;
@@ -197,8 +197,8 @@ pub const DominatorTree = struct {
         if (std.meta.eql(a, b)) return true;
 
         var current = b;
-        while (self.idom.get(current)) |maybe_idom| {
-            const idom_block = maybe_idom orelse break;
+        while (self.idom.get(current)) |ptr| {
+            const idom_block = ptr.* orelse break;
             if (std.meta.eql(idom_block, a)) return true;
             current = idom_block;
         } else {
@@ -209,7 +209,7 @@ pub const DominatorTree = struct {
 
     /// Get immediate dominator of a block.
     pub fn idominator(self: *const DominatorTree, block: Block) ?Block {
-        return self.idom.get(block) orelse null;
+        if (self.idom.get(block)) |ptr| return ptr.* else return null;
     }
 
     /// Get dominator tree children of a block.
@@ -304,8 +304,8 @@ pub const DominatorTree = struct {
     /// Returns error if invariants are violated.
     pub fn verify(self: *const DominatorTree, allocator: Allocator, entry: Block, cfg: *const CFG) !void {
         // 1. Entry block should have no idom
-        if (self.idom.get(entry)) |maybe_entry_idom| {
-            if (maybe_entry_idom != null) {
+        if (self.idom.get(entry)) |ptr| {
+            if (ptr.* != null) {
                 return error.EntryBlockHasIdom;
             }
         }
@@ -569,7 +569,7 @@ pub const PostDominatorTree = struct {
 
         // Build reverse postorder from exit (using predecessors as successors)
         var rpo = std.ArrayList(Block){};
-        defer rpo.deinit();
+        defer rpo.deinit(allocator);
 
         var visited = std.AutoHashMap(Block, void).init(allocator);
         defer visited.deinit();
