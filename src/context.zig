@@ -3,7 +3,7 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
 const root = @import("root.zig");
-const Function = root.ir.function.Function;
+const Function = root.function.Function;
 const compile_mod = root.codegen.compile;
 const signature_mod = root.signature;
 
@@ -102,7 +102,7 @@ pub const Context = struct {
                 .linux, .macos => .system_v,
                 .windows => .windows_fastcall,
             },
-            .aarch64 => .aapcs64,
+            .aarch64 => .apple_aarch64,
         };
     }
 };
@@ -198,7 +198,7 @@ test "Context with target" {
 
     try testing.expectEqual(Arch.aarch64, ctx.target.arch);
     try testing.expectEqual(OS.macos, ctx.target.os);
-    try testing.expectEqual(signature_mod.CallConv.aapcs64, ctx.call_conv);
+    try testing.expectEqual(signature_mod.CallConv.apple_aarch64, ctx.call_conv);
 }
 
 test "Context optimization level" {
@@ -252,7 +252,7 @@ test "Context default calling convention" {
     );
 
     try testing.expectEqual(
-        signature_mod.CallConv.aapcs64,
+        signature_mod.CallConv.apple_aarch64,
         Context.defaultCallConv(.aarch64, .linux),
     );
 }

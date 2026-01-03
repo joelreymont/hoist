@@ -15,7 +15,7 @@ const Inst = ir.entities.Inst;
 const Value = ir.entities.Value;
 const Type = ir.types.Type;
 const ValueDef = ir.dfg.ValueDef;
-const Signature = ir.signature.Signature;
+const Signature = ir.Signature;
 
 const lower_helpers = @import("lower_helpers.zig");
 const ValueRegs = lower_helpers.ValueRegs;

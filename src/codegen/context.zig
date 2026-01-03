@@ -105,19 +105,23 @@ pub const CompiledCode = struct {
     /// Disassembly text (if requested).
     disasm: ?std.ArrayList(u8),
 
+    /// Allocator for cleanup.
+    allocator: std.mem.Allocator,
+
     pub fn init(allocator: std.mem.Allocator) CompiledCode {
         return .{
-            .code = std.ArrayList(u8).init(allocator),
-            .relocs = std.ArrayList(Relocation).init(allocator),
+            .code = std.ArrayList(u8){},
+            .relocs = std.ArrayList(Relocation){},
             .disasm = null,
+            .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *CompiledCode) void {
-        self.code.deinit();
-        self.relocs.deinit();
+        self.code.deinit(self.allocator);
+        self.relocs.deinit(self.allocator);
         if (self.disasm) |*d| {
-            d.deinit();
+            d.deinit(self.allocator);
         }
     }
 };

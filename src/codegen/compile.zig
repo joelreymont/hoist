@@ -26,8 +26,10 @@ const ir = struct {
     pub const Inst = @import("../ir/entities.zig").Inst;
     pub const Value = @import("../ir/entities.zig").Value;
     pub const ValueData = @import("../ir/dfg.zig").ValueData;
+    pub const FunctionBuilder = @import("../ir/builder.zig").FunctionBuilder;
 };
 const MachBuffer = @import("../machinst/buffer.zig").MachBuffer;
+const Reloc = @import("../machinst/buffer.zig").Reloc;
 
 /// Compilation error with context.
 pub const CompileError = struct {
@@ -576,7 +578,7 @@ fn emit(ctx: *Context, target: *const Target) CodegenError!void {
 /// - Optionally generates disassembly
 pub fn assembleResult(
     allocator: std.mem.Allocator,
-    buffer: *const MachBuffer,
+    buffer: *MachBuffer,
     want_disasm: bool,
 ) CodegenError!CompiledCode {
     var result = CompiledCode.init(allocator);
@@ -609,7 +611,7 @@ pub fn assembleResult(
 }
 
 /// Convert MachBuffer relocation to output relocation kind.
-fn convertRelocKind(kind: MachBuffer.Reloc) RelocKind {
+fn convertRelocKind(kind: Reloc) RelocKind {
     return switch (kind) {
         .abs8, .aarch64_abs64 => .abs8,
         .x86_pc_rel_32 => .pcrel4,
