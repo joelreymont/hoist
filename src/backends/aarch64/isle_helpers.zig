@@ -225,6 +225,69 @@ pub fn aarch64_tst_imm(ty: root.types.Type, x: lower_mod.Value, imm: u64, ctx: *
     } };
 }
 
+/// Constructor: Sign-extend byte (SXTB).
+pub fn aarch64_sxtb(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const dst_size = typeToOperandSize(dst_ty);
+    const src_reg = try getValueReg(ctx, src);
+    return Inst{ .sxtb = .{
+        .dst = ctx.newTempReg(.int),
+        .src = src_reg,
+        .dst_size = dst_size,
+    } };
+}
+
+/// Constructor: Zero-extend byte (UXTB).
+pub fn aarch64_uxtb(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const dst_size = typeToOperandSize(dst_ty);
+    const src_reg = try getValueReg(ctx, src);
+    return Inst{ .uxtb = .{
+        .dst = ctx.newTempReg(.int),
+        .src = src_reg,
+        .dst_size = dst_size,
+    } };
+}
+
+/// Constructor: Sign-extend halfword (SXTH).
+pub fn aarch64_sxth(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const dst_size = typeToOperandSize(dst_ty);
+    const src_reg = try getValueReg(ctx, src);
+    return Inst{ .sxth = .{
+        .dst = ctx.newTempReg(.int),
+        .src = src_reg,
+        .dst_size = dst_size,
+    } };
+}
+
+/// Constructor: Zero-extend halfword (UXTH).
+pub fn aarch64_uxth(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const dst_size = typeToOperandSize(dst_ty);
+    const src_reg = try getValueReg(ctx, src);
+    return Inst{ .uxth = .{
+        .dst = ctx.newTempReg(.int),
+        .src = src_reg,
+        .dst_size = dst_size,
+    } };
+}
+
+/// Constructor: Sign-extend word (SXTW).
+pub fn aarch64_sxtw(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueReg(ctx, src);
+    return Inst{ .sxtw = .{
+        .dst = ctx.newTempReg(.int),
+        .src = src_reg,
+    } };
+}
+
+/// Constructor: Zero-extend word (UXTW).
+/// Note: In ARM64, 32-bit operations zero-extend automatically.
+pub fn aarch64_uxtw(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try getValueReg(ctx, src);
+    return Inst{ .uxtw = .{
+        .dst = ctx.newTempReg(.int),
+        .src = src_reg,
+    } };
+}
+
 /// Helper: Convert IR type to aarch64 operand size.
 fn typeToOperandSize(ty: root.types.Type) root.aarch64_inst.OperandSize {
     if (ty.bits() <= 32) {

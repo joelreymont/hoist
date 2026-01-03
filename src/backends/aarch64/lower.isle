@@ -113,6 +113,42 @@
       (let ((quot Aarch64Inst (aarch64_udiv ty x y)))
             (aarch64_msub ty quot y x)))
 
+;; Type conversion operations lowering
+
+;; sextend: Sign-extend to target type
+;; I8 -> I16/I32/I64 => SXTB
+(rule (lower (sextend dst_ty src_ty x))
+      (if-let 8 (ty_bits src_ty))
+      (aarch64_sxtb dst_ty x))
+
+;; I16 -> I32/I64 => SXTH
+(rule (lower (sextend dst_ty src_ty x))
+      (if-let 16 (ty_bits src_ty))
+      (aarch64_sxth dst_ty x))
+
+;; I32 -> I64 => SXTW
+(rule (lower (sextend dst_ty src_ty x))
+      (if-let 32 (ty_bits src_ty))
+      (if-let 64 (ty_bits dst_ty))
+      (aarch64_sxtw x))
+
+;; uextend: Zero-extend to target type
+;; I8 -> I16/I32/I64 => UXTB
+(rule (lower (uextend dst_ty src_ty x))
+      (if-let 8 (ty_bits src_ty))
+      (aarch64_uxtb dst_ty x))
+
+;; I16 -> I32/I64 => UXTH
+(rule (lower (uextend dst_ty src_ty x))
+      (if-let 16 (ty_bits src_ty))
+      (aarch64_uxth dst_ty x))
+
+;; I32 -> I64 => UXTW (note: 32-bit ops auto zero-extend on ARM64)
+(rule (lower (uextend dst_ty src_ty x))
+      (if-let 32 (ty_bits src_ty))
+      (if-let 64 (ty_bits dst_ty))
+      (aarch64_uxtw x))
+
 ;; Shift operations lowering
 
 ;; ishl: Integer shift left (register form)
