@@ -2314,6 +2314,11 @@ pub const InstCombine = struct {
                 try self.replaceWithConst(func, inst, 0);
                 return true;
             },
+            // min(x, x) = x, max(x, x) = x
+            .smin, .smax, .umin, .umax => {
+                try self.replaceWithValue(func, inst, val);
+                return true;
+            },
             else => {},
         }
         return false;
