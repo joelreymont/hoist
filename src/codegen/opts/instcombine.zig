@@ -116,8 +116,8 @@ pub const InstCombine = struct {
             }
         }
 
-        // Double negation: -(-x) = x
-        if (data.opcode == .ineg or data.opcode == .fneg) {
+        // Double negation: -(-x) = x, ~(~x) = x
+        if (data.opcode == .ineg or data.opcode == .fneg or data.opcode == .bnot) {
             const arg_def = func.dfg.valueDef(data.arg) orelse return;
             const arg_inst = switch (arg_def) {
                 .result => |r| r.inst,
@@ -130,6 +130,37 @@ pub const InstCombine = struct {
                 if (inner.opcode == data.opcode) {
                     // Found double negation - replace with inner argument
                     try self.replaceWithValue(func, inst, inner.arg);
+                    return;
+                }
+            }
+        }
+
+        // De Morgan's laws: ~(x & y) = ~x | ~y, ~(x | y) = ~x & ~y
+        if (data.opcode == .bnot) {
+            const arg_def = func.dfg.valueDef(data.arg) orelse return;
+            const arg_inst = switch (arg_def) {
+                .result => |r| r.inst,
+                else => return,
+            };
+            const arg_inst_data = func.dfg.insts.get(arg_inst) orelse return;
+
+            if (arg_inst_data.* == .binary) {
+                const inner = arg_inst_data.binary;
+                const result_ty = func.dfg.instResultType(inst) orelse return;
+
+                if (inner.opcode == .band) {
+                    // ~(x & y) = ~x | ~y
+                    const not_lhs = try func.dfg.makeInst(.bnot, result_ty, &.{inner.args[0]});
+                    const not_rhs = try func.dfg.makeInst(.bnot, result_ty, &.{inner.args[1]});
+                    const or_inst = try func.dfg.makeInst(.bor, result_ty, &.{ not_lhs, not_rhs });
+                    try self.replaceWithValue(func, inst, or_inst);
+                    return;
+                } else if (inner.opcode == .bor) {
+                    // ~(x | y) = ~x & ~y
+                    const not_lhs = try func.dfg.makeInst(.bnot, result_ty, &.{inner.args[0]});
+                    const not_rhs = try func.dfg.makeInst(.bnot, result_ty, &.{inner.args[1]});
+                    const and_inst = try func.dfg.makeInst(.band, result_ty, &.{ not_lhs, not_rhs });
+                    try self.replaceWithValue(func, inst, and_inst);
                     return;
                 }
             }
