@@ -157,6 +157,7 @@ pub const InstCombine = struct {
         }
 
         // De Morgan's laws: ~(x & y) = ~x | ~y, ~(x | y) = ~x & ~y
+        // Also: ~(x - 1) = -x
         if (data.opcode == .bnot) {
             const arg_def = func.dfg.valueDef(data.arg) orelse return;
             const arg_inst = switch (arg_def) {
@@ -183,6 +184,24 @@ pub const InstCombine = struct {
                     const and_inst = try func.dfg.makeInst(.band, result_ty, &.{ not_lhs, not_rhs });
                     try self.replaceWithValue(func, inst, and_inst);
                     return;
+                } else if (inner.opcode == .isub) {
+                    // ~(x - 1) = -x (and also ~(x + -1) = -x)
+                    if (self.getConstant(func, inner.args[1])) |c| {
+                        if (c == 1 or c == -1) {
+                            const neg_inst = try func.dfg.makeInst(.ineg, result_ty, &.{inner.args[0]});
+                            try self.replaceWithValue(func, inst, neg_inst);
+                            return;
+                        }
+                    }
+                } else if (inner.opcode == .iadd) {
+                    // ~(x + -1) = -x
+                    if (self.getConstant(func, inner.args[1])) |c| {
+                        if (c == -1) {
+                            const neg_inst = try func.dfg.makeInst(.ineg, result_ty, &.{inner.args[0]});
+                            try self.replaceWithValue(func, inst, neg_inst);
+                            return;
+                        }
+                    }
                 }
             }
         }
