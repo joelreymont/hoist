@@ -49,7 +49,7 @@ pub const Loop = struct {
     /// Add block to loop.
     pub fn addBlock(self: *Loop, block: Block) !void {
         if (!self.contains(block)) {
-            try self.blocks.append(block);
+            try self.blocks.append(self.allocator, block);
         }
     }
 };
@@ -196,7 +196,7 @@ test "Loop basic" {
 
 test "LoopInfo basic" {
     var loop_info = LoopInfo.init(testing.allocator);
-    defer loop_info.deinit();
+    defer loop_info.deinit(testing.allocator);
 
     // Create simple CFG with loop: b0 -> b1 -> b2 -> b1
     var cfg = CFG.init(testing.allocator);
@@ -241,7 +241,7 @@ test "LoopInfo basic" {
 
 test "LoopInfo nested loops" {
     var loop_info = LoopInfo.init(testing.allocator);
-    defer loop_info.deinit();
+    defer loop_info.deinit(testing.allocator);
 
     // We would need a more complex CFG for nested loops
     // This is a placeholder test
