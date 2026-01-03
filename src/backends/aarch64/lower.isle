@@ -1327,6 +1327,28 @@
 ;; USHLL - Unsigned shift-left-long (widen and optionally shift)
 (decl aarch64_ushll (Value VecElemSize u8 bool) Aarch64Inst)
 
+;; Vector narrowing constructors (combined operations)
+
+;; SQXTN + SQXTN2 - Signed narrow combined (narrow x to low, y to high)
+(decl aarch64_sqxtn_combined (Value Value VecElemSize) Aarch64Inst)
+
+;; SQXTUN + SQXTUN2 - Signed to unsigned narrow combined
+(decl aarch64_sqxtun_combined (Value Value VecElemSize) Aarch64Inst)
+
+;; UQXTN + UQXTN2 - Unsigned narrow combined
+(decl aarch64_uqxtn_combined (Value Value VecElemSize) Aarch64Inst)
+
+;; Vector narrowing constructors (combined operations)
+
+;; SQXTN + SQXTN2 - Signed narrow combined (narrow x to low, y to high)
+(decl aarch64_sqxtn_combined (Value Value VecElemSize) Aarch64Inst)
+
+;; SQXTUN + SQXTUN2 - Signed to unsigned narrow combined
+(decl aarch64_sqxtun_combined (Value Value VecElemSize) Aarch64Inst)
+
+;; UQXTN + UQXTN2 - Unsigned narrow combined
+(decl aarch64_uqxtn_combined (Value Value VecElemSize) Aarch64Inst)
+
 ;;;; Rules for `swiden_low` (signed widen low half) ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; I8X16 -> I16X8: widen low 8 lanes
@@ -1382,3 +1404,45 @@
 ;; I32X4 -> I64X2: widen high 2 lanes
 (rule (lower (has_type $I64X2 (uwiden_high x)))
       (aarch64_ushll x (VecElemSize.Size64x2) 0 true))
+
+;;;; Rules for `snarrow` (signed narrow) ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; I16X8 + I16X8 -> I8X16: narrow two vectors to one
+(rule (lower (has_type $I8X16 (snarrow x y)))
+      (aarch64_sqxtn_combined x y (VecElemSize.Size8x16)))
+
+;; I32X4 + I32X4 -> I16X8: narrow two vectors to one
+(rule (lower (has_type $I16X8 (snarrow x y)))
+      (aarch64_sqxtn_combined x y (VecElemSize.Size16x8)))
+
+;; I64X2 + I64X2 -> I32X4: narrow two vectors to one
+(rule (lower (has_type $I32X4 (snarrow x y)))
+      (aarch64_sqxtn_combined x y (VecElemSize.Size32x4)))
+
+;;;; Rules for `unarrow` (unsigned narrow from signed) ;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; I16X8 + I16X8 -> I8X16: narrow signed to unsigned
+(rule (lower (has_type $I8X16 (unarrow x y)))
+      (aarch64_sqxtun_combined x y (VecElemSize.Size8x16)))
+
+;; I32X4 + I32X4 -> I16X8: narrow signed to unsigned
+(rule (lower (has_type $I16X8 (unarrow x y)))
+      (aarch64_sqxtun_combined x y (VecElemSize.Size16x8)))
+
+;; I64X2 + I64X2 -> I32X4: narrow signed to unsigned
+(rule (lower (has_type $I32X4 (unarrow x y)))
+      (aarch64_sqxtun_combined x y (VecElemSize.Size32x4)))
+
+;;;; Rules for `uunarrow` (unsigned narrow from unsigned) ;;;;;;;;;;;;;;;;;;;;;;;
+
+;; I16X8 + I16X8 -> I8X16: narrow unsigned to unsigned
+(rule (lower (has_type $I8X16 (uunarrow x y)))
+      (aarch64_uqxtn_combined x y (VecElemSize.Size8x16)))
+
+;; I32X4 + I32X4 -> I16X8: narrow unsigned to unsigned
+(rule (lower (has_type $I16X8 (uunarrow x y)))
+      (aarch64_uqxtn_combined x y (VecElemSize.Size16x8)))
+
+;; I64X2 + I64X2 -> I32X4: narrow unsigned to unsigned
+(rule (lower (has_type $I32X4 (uunarrow x y)))
+      (aarch64_uqxtn_combined x y (VecElemSize.Size32x4)))

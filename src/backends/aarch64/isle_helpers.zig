@@ -792,3 +792,72 @@ pub fn aarch64_ushll(val: lower_mod.Value, output_size: Inst.VecElemSize, shift_
         .high = high,
     } };
 }
+
+/// Constructor: Combined SQXTN + SQXTN2 - Signed saturating narrow.
+/// Narrows x to low half and y to high half of output vector.
+pub fn aarch64_sqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_size: Inst.VecElemSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    
+    // First narrow x to low half
+    const temp_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    const low_inst = Inst{ .vec_sqxtn = .{
+        .dst = temp_reg,
+        .src = x_reg,
+        .size = output_size,
+        .high = false,
+    } };
+    try ctx.emit(low_inst);
+    
+    // Then narrow y to high half (writes to same register)
+    return Inst{ .vec_sqxtn = .{
+        .dst = temp_reg,
+        .src = y_reg,
+        .size = output_size,
+        .high = true,
+    } };
+}
+
+/// Constructor: Combined SQXTUN + SQXTUN2 - Signed to unsigned saturating narrow.
+pub fn aarch64_sqxtun_combined(x: lower_mod.Value, y: lower_mod.Value, output_size: Inst.VecElemSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    
+    const temp_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    const low_inst = Inst{ .vec_sqxtun = .{
+        .dst = temp_reg,
+        .src = x_reg,
+        .size = output_size,
+        .high = false,
+    } };
+    try ctx.emit(low_inst);
+    
+    return Inst{ .vec_sqxtun = .{
+        .dst = temp_reg,
+        .src = y_reg,
+        .size = output_size,
+        .high = true,
+    } };
+}
+
+/// Constructor: Combined UQXTN + UQXTN2 - Unsigned saturating narrow.
+pub fn aarch64_uqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_size: Inst.VecElemSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    
+    const temp_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    const low_inst = Inst{ .vec_uqxtn = .{
+        .dst = temp_reg,
+        .src = x_reg,
+        .size = output_size,
+        .high = false,
+    } };
+    try ctx.emit(low_inst);
+    
+    return Inst{ .vec_uqxtn = .{
+        .dst = temp_reg,
+        .src = y_reg,
+        .size = output_size,
+        .high = true,
+    } };
+}

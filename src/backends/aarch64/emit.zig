@@ -264,6 +264,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_fneg => |i| try emitVecFneg(i.dst.toReg(), i.src, i.size, buffer),
         .vec_sshll => |i| try emitVecSshll(i.dst.toReg(), i.src, i.shift_amt, i.size, i.high, buffer),
         .vec_ushll => |i| try emitVecUshll(i.dst.toReg(), i.src, i.shift_amt, i.size, i.high, buffer),
+        .vec_sqxtn => |i| try emitVecSqxtn(i.dst.toReg(), i.src, i.size, i.high, buffer),
+        .vec_sqxtun => |i| try emitVecSqxtun(i.dst.toReg(), i.src, i.size, i.high, buffer),
+        .vec_uqxtn => |i| try emitVecUqxtn(i.dst.toReg(), i.src, i.size, i.high, buffer),
         .addv => |i| try emitAddv(i.dst.toReg(), i.src, i.size, buffer),
         .sminv => |i| try emitSminv(i.dst.toReg(), i.src, i.size, buffer),
         .smaxv => |i| try emitSmaxv(i.dst.toReg(), i.src, i.size, buffer),
@@ -11982,6 +11985,80 @@ fn emitVecUshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VectorSize, high: b
         (0b01111 << 23) |
         (@as(u32, immh_immb) << 16) |
         (0b101001 << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    try buffer.put(&std.mem.toBytes(insn));
+}
+
+/// SQXTN/SQXTN2 - Signed saturating extract narrow
+/// Encoding: 0Q001110 immh:immb 100101 Rn Rd
+/// Q=0 for SQXTN (low half), Q=1 for SQXTN2 (high half)
+fn emitVecSqxtn(dst: Reg, src: Reg, vec_size: VectorSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q: u1 = if (high) 1 else 0;
+
+    // immh determines element size (output size)
+    const immh: u4 = switch (vec_size) {
+        .size8x8, .size8x16 => 0b0001, // 16->8
+        .size16x4, .size16x8 => 0b0010, // 32->16
+        .size32x2, .size32x4 => 0b0100, // 64->32
+        else => unreachable, // Invalid for SQXTN
+    };
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b001110 << 24) |
+        (@as(u32, immh) << 19) |
+        (0b100101 << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    try buffer.put(&std.mem.toBytes(insn));
+}
+
+/// SQXTUN/SQXTUN2 - Signed saturating extract unsigned narrow
+/// Encoding: 0Q101110 immh:immb 100101 Rn Rd
+fn emitVecSqxtun(dst: Reg, src: Reg, vec_size: VectorSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q: u1 = if (high) 1 else 0;
+
+    const immh: u4 = switch (vec_size) {
+        .size8x8, .size8x16 => 0b0001, // 16->8
+        .size16x4, .size16x8 => 0b0010, // 32->16
+        .size32x2, .size32x4 => 0b0100, // 64->32
+        else => unreachable,
+    };
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b101110 << 24) |
+        (@as(u32, immh) << 19) |
+        (0b100101 << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    try buffer.put(&std.mem.toBytes(insn));
+}
+
+/// UQXTN/UQXTN2 - Unsigned saturating extract narrow
+/// Encoding: 0Q101110 immh:immb 100110 Rn Rd
+fn emitVecUqxtn(dst: Reg, src: Reg, vec_size: VectorSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q: u1 = if (high) 1 else 0;
+
+    const immh: u4 = switch (vec_size) {
+        .size8x8, .size8x16 => 0b0001, // 16->8
+        .size16x4, .size16x8 => 0b0010, // 32->16
+        .size32x2, .size32x4 => 0b0100, // 64->32
+        else => unreachable,
+    };
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b101110 << 24) |
+        (@as(u32, immh) << 19) |
+        (0b100110 << 10) |
         (@as(u32, rn) << 5) |
         rd;
 

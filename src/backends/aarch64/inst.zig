@@ -1325,6 +1325,33 @@ pub const Inst = union(enum) {
         high: bool, // false = USHLL (low half), true = USHLL2 (high half)
     },
 
+    /// Signed saturating extract narrow (SQXTN/SQXTN2).
+    /// Narrow signed integers to half width with saturation.
+    vec_sqxtn: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VecElemSize, // Output size (8x8, 16x4, or 32x2 for SQXTN; 8x16, 16x8, or 32x4 for SQXTN2)
+        high: bool, // false = SQXTN (write to low half), true = SQXTN2 (write to high half)
+    },
+
+    /// Signed saturating extract unsigned narrow (SQXTUN/SQXTUN2).
+    /// Narrow signed integers to unsigned half width with saturation.
+    vec_sqxtun: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VecElemSize, // Output size (8x8, 16x4, or 32x2 for SQXTUN; 8x16, 16x8, or 32x4 for SQXTUN2)
+        high: bool, // false = SQXTUN (write to low half), true = SQXTUN2 (write to high half)
+    },
+
+    /// Unsigned saturating extract narrow (UQXTN/UQXTN2).
+    /// Narrow unsigned integers to half width with saturation.
+    vec_uqxtn: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VecElemSize, // Output size (8x8, 16x4, or 32x2 for UQXTN; 8x16, 16x8, or 32x4 for UQXTN2)
+        high: bool, // false = UQXTN (write to low half), true = UQXTN2 (write to high half)
+    },
+
     /// Call - saves return address to link register and jumps.
     /// Pseudo-instruction that becomes BL.
     call: struct {
@@ -1599,6 +1626,9 @@ pub const Inst = union(enum) {
             .vec_addp => |i| try writer.print("vec_addp.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_sshll => |i| try writer.print("vec_sshll{s}.{} {}, {}, #{}", .{ if (i.high) "2" else "", i.size, i.dst, i.src, i.shift_amt }),
             .vec_ushll => |i| try writer.print("vec_ushll{s}.{} {}, {}, #{}", .{ if (i.high) "2" else "", i.size, i.dst, i.src, i.shift_amt }),
+            .vec_sqxtn => |i| try writer.print("vec_sqxtn{s}.{} {}, {}", .{ if (i.high) "2" else "", i.size, i.dst, i.src }),
+            .vec_sqxtun => |i| try writer.print("vec_sqxtun{s}.{} {}, {}", .{ if (i.high) "2" else "", i.size, i.dst, i.src }),
+            .vec_uqxtn => |i| try writer.print("vec_uqxtn{s}.{} {}, {}", .{ if (i.high) "2" else "", i.size, i.dst, i.src }),
             .call => |i| try writer.print("call {}", .{i.target}),
             .call_indirect => |i| try writer.print("call {}", .{i.target}),
             .ret_call => try writer.print("ret", .{}),
