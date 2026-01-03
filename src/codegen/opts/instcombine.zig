@@ -249,6 +249,32 @@ pub const InstCombine = struct {
             }
         }
 
+        // iabs(ineg(x)) = iabs(x) and iabs(iabs(x)) = iabs(x)
+        if (data.opcode == .iabs) {
+            const arg_def = func.dfg.valueDef(data.arg) orelse return;
+            const arg_inst = switch (arg_def) {
+                .result => |r| r.inst,
+                else => return,
+            };
+            const arg_inst_data = func.dfg.insts.get(arg_inst) orelse return;
+
+            if (arg_inst_data.* == .unary) {
+                const inner = arg_inst_data.unary;
+                // iabs(ineg(x)) = iabs(x)
+                if (inner.opcode == .ineg) {
+                    const result_ty = func.dfg.instResultType(inst) orelse return;
+                    const abs_inst = try func.dfg.makeInst(.iabs, result_ty, &.{inner.arg});
+                    try self.replaceWithValue(func, inst, abs_inst);
+                    return;
+                }
+                // iabs(iabs(x)) = iabs(x)
+                if (inner.opcode == .iabs) {
+                    try self.replaceWithValue(func, inst, data.arg);
+                    return;
+                }
+            }
+        }
+
         // Negate subtraction: -(y - x) = x - y
         if (data.opcode == .ineg) {
             const arg_def = func.dfg.valueDef(data.arg) orelse return;
