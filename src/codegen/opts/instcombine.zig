@@ -65,6 +65,7 @@ pub const InstCombine = struct {
         switch (inst_data.*) {
             .binary => |data| try self.combineBinary(func, inst, data),
             .unary => |data| try self.combineUnary(func, inst, data),
+            .ternary => |data| try self.combineTernary(func, inst, data),
             .int_compare => |data| try self.combineIntCompare(func, inst, data),
             else => {},
         }
@@ -512,6 +513,26 @@ pub const InstCombine = struct {
                 }
             }
         }
+    }
+
+    /// Combine ternary operations (select, etc).
+    fn combineTernary(self: *InstCombine, func: *Function, inst: Inst, data: struct { opcode: Opcode, args: [3]Value }) !void {
+        const cond = data.args[0];
+        const true_val = data.args[1];
+        const false_val = data.args[2];
+
+        switch (data.opcode) {
+            .select => {
+                // select(c, x, x) => x (both branches identical)
+                if (true_val.index == false_val.index) {
+                    try self.replaceWithValue(func, inst, true_val);
+                    return;
+                }
+            },
+            else => {},
+        }
+
+        _ = cond;
     }
 
     /// Combine integer comparison operations.
