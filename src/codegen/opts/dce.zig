@@ -10,11 +10,11 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const root = @import("root");
+const ir_mod = @import("../../ir.zig");
 const Function = root.function.Function;
-const Block = root.entities.Block;
-const Inst = root.entities.Inst;
-const Value = root.entities.Value;
+const Block = ir_mod.Block;
+const Inst = ir_mod.Inst;
+const Value = ir_mod.Value;
 const Opcode = root.opcodes.Opcode;
 
 /// Dead code elimination pass.

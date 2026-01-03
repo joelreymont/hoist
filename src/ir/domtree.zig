@@ -136,7 +136,6 @@ pub const DominatorTree = struct {
         entry: Block,
         cfg: *const CFG,
     ) !void {
-        _ = self;
         var visited = std.AutoHashMap(Block, void).init(allocator);
         defer visited.deinit();
 
@@ -452,7 +451,7 @@ pub const CFG = struct {
 
 test "DominatorTree basic" {
     var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const b0 = Block.new(0);
     const b1 = Block.new(1);
@@ -502,7 +501,7 @@ test "CFG basic" {
 
 test "DominatorTree idominator" {
     var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const b0 = Block.new(0);
     const b1 = Block.new(1);
@@ -539,7 +538,7 @@ pub const PostDominatorTree = struct {
     }
 
     pub fn deinit(self: *PostDominatorTree) void {
-        self.ipdom.deinit(self.allocator);
+        self.ipdom.deinit();
 
         var iter = self.children.valueIterator();
         while (iter.next()) |list| {
@@ -557,7 +556,7 @@ pub const PostDominatorTree = struct {
         cfg: *const CFG,
     ) !void {
         // Clear existing tree
-        self.ipdom.deinit(allocator);
+        self.ipdom.deinit();
         var child_iter = self.children.valueIterator();
         while (child_iter.next()) |list| {
             list.deinit(self.allocator);
@@ -704,7 +703,7 @@ fn blockDepthPdom(tree: *const PostDominatorTree, block: Block) u32 {
 
 test "PostDominatorTree basic" {
     var tree = PostDominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const exit = Block.new(0);
     try tree.ipdom.set(testing.allocator, exit, null);
@@ -724,7 +723,7 @@ test "DominatorTree: linear CFG dominators" {
     defer cfg.deinit();
 
     var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const blocks = [_]Block{
         Block.new(0),
@@ -749,7 +748,7 @@ test "DominatorTree: diamond CFG dominators" {
     defer cfg.deinit();
 
     var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const b0 = Block.new(0);
     const b1 = Block.new(1);
@@ -780,7 +779,7 @@ test "DominatorTree: loop CFG dominators" {
     defer cfg.deinit();
 
     var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const b0 = Block.new(0);
     const b1 = Block.new(1);
@@ -806,7 +805,7 @@ test "DominatorTree: dominates - transitive" {
     defer cfg.deinit();
 
     var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const blocks = [_]Block{
         Block.new(0),
@@ -833,7 +832,7 @@ test "DominatorTree: getChildren - linear" {
     defer cfg.deinit();
 
     var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const blocks = [_]Block{
         Block.new(0),
@@ -861,7 +860,7 @@ test "DominatorTree: getChildren - diamond" {
     defer cfg.deinit();
 
     var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const b0 = Block.new(0);
     const b1 = Block.new(1);
@@ -888,7 +887,7 @@ test "DominatorTree: dominance frontier - diamond" {
     defer cfg.deinit();
 
     var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const b0 = Block.new(0);
     const b1 = Block.new(1);
@@ -922,7 +921,7 @@ test "DominatorTree: dominance frontier - loop" {
     defer cfg.deinit();
 
     var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const b0 = Block.new(0);
     const b1 = Block.new(1);
@@ -950,7 +949,7 @@ test "DominatorTree: verify - valid tree" {
     defer cfg.deinit();
 
     var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const blocks = [_]Block{
         Block.new(0),
@@ -969,7 +968,7 @@ test "DominatorTree: verify - entry has idom fails" {
     defer cfg.deinit();
 
     var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const b0 = Block.new(0);
     const b1 = Block.new(1);
@@ -985,7 +984,7 @@ test "DominatorTree: isReachable" {
     defer cfg.deinit();
 
     var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const b0 = Block.new(0);
     const b1 = Block.new(1);
@@ -1005,7 +1004,7 @@ test "PostDominatorTree: linear CFG" {
     defer cfg.deinit();
 
     var tree = PostDominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const blocks = [_]Block{
         Block.new(0),
@@ -1030,7 +1029,7 @@ test "PostDominatorTree: diamond" {
     defer cfg.deinit();
 
     var tree = PostDominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const b0 = Block.new(0);
     const b1 = Block.new(1);
@@ -1061,7 +1060,7 @@ test "PostDominatorTree: postDominates" {
     defer cfg.deinit();
 
     var tree = PostDominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const blocks = [_]Block{
         Block.new(0),
@@ -1085,7 +1084,7 @@ test "DominatorTree: single block CFG" {
     defer cfg.deinit();
 
     var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const b0 = Block.new(0);
 
@@ -1102,7 +1101,7 @@ test "DominatorTree: complex CFG" {
     defer cfg.deinit();
 
     var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
+    defer tree.deinit(testing.allocator);
 
     const b0 = Block.new(0);
     const b1 = Block.new(1);

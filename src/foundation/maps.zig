@@ -38,6 +38,14 @@ pub fn PrimaryMap(comptime K: type, comptime V: type) type {
             return &self.elems.items[k.index];
         }
 
+        pub fn set(self: *Self, allocator: Allocator, key: K, value: V) !void {
+            const idx = key.toIndex();
+            if (idx >= self.items.items.len) {
+                try self.items.resize(allocator, idx + 1);
+            }
+            self.items.items[idx] = value;
+        }
+
         pub fn isEmpty(self: *const Self) bool {
             return self.elems.items.len == 0;
         }
@@ -117,6 +125,14 @@ pub fn SecondaryMap(comptime K: type, comptime V: type) type {
             if (k.index >= self.elems.items.len) return null;
             if (self.elems.items[k.index]) |*v| return v;
             return null;
+        }
+
+        pub fn set(self: *Self, allocator: Allocator, key: K, value: V) !void {
+            const idx = key.toIndex();
+            if (idx >= self.items.items.len) {
+                try self.items.resize(allocator, idx + 1);
+            }
+            self.items.items[idx] = value;
         }
 
         pub fn getOrDefault(self: *Self, k: K) !*V {
