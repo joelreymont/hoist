@@ -556,6 +556,16 @@ pub const InstCombine = struct {
                 return;
             }
 
+            // sle(x, -1) = slt(x, 0)
+            if (data.cond == .sle and c == -1) {
+                const zero = try func.dfg.makeConst(0);
+                const slt_inst = try func.dfg.makeInstWithData(.icmp, result_ty, .{
+                    .int_compare = IntCompareData.init(.icmp, .slt, lhs, zero),
+                });
+                try self.replaceWithValue(func, inst, slt_inst);
+                return;
+            }
+
             // ule(x, 0) = eq(x, 0)
             if (data.cond == .ule and c == 0) {
                 const zero = try func.dfg.makeConst(0);
