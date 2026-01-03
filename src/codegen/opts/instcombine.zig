@@ -21,6 +21,7 @@ const InstructionData = root.instruction_data.InstructionData;
 const BinaryData = root.instruction_data.BinaryData;
 const UnaryData = root.instruction_data.UnaryData;
 const IntCompareData = root.instruction_data.IntCompareData;
+const IntCC = root.condcodes.IntCC;
 const Imm64 = root.immediates.Imm64;
 const ValueData = root.dfg.ValueData;
 
@@ -689,6 +690,47 @@ pub const InstCombine = struct {
             };
             try self.replaceWithConst(func, inst, result);
             return;
+        }
+
+        // Optimize icmp-of-icmp: ne(icmp(...), 0) == icmp(...), eq(icmp(...), 0) == icmp(complement, ...)
+        if (rhs_const) |c| {
+            if (c == 0) {
+                const lhs_def = func.dfg.valueDef(lhs) orelse return;
+                const lhs_inst = switch (lhs_def) {
+                    .result => |r| r.inst,
+                    else => return,
+                };
+                const lhs_data = func.dfg.insts.get(lhs_inst) orelse return;
+
+                if (lhs_data.* == .int_compare) {
+                    const inner_icmp = lhs_data.int_compare;
+                    if (data.cond == .ne) {
+                        // ne(icmp(...), 0) => icmp(...) (redundant != 0 check)
+                        try self.replaceWithValue(func, inst, lhs);
+                        return;
+                    } else if (data.cond == .eq) {
+                        // eq(icmp(cc, x, y), 0) => icmp(complement(cc), x, y)
+                        const complement_cc: IntCC = switch (inner_icmp.cond) {
+                            .eq => .ne,
+                            .ne => .eq,
+                            .slt => .sge,
+                            .sle => .sgt,
+                            .sgt => .sle,
+                            .sge => .slt,
+                            .ult => .uge,
+                            .ule => .ugt,
+                            .ugt => .ule,
+                            .uge => .ult,
+                        };
+                        const result_ty = func.dfg.instResultType(inst) orelse return;
+                        const new_icmp = try func.dfg.makeInstWithData(.icmp, result_ty, .{
+                            .int_compare = IntCompareData.init(.icmp, complement_cc, inner_icmp.args[0], inner_icmp.args[1]),
+                        });
+                        try self.replaceWithValue(func, inst, new_icmp);
+                        return;
+                    }
+                }
+            }
         }
 
         // Comparisons with constants
