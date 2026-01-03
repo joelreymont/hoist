@@ -183,6 +183,13 @@ pub const InstCombine = struct {
                 return;
             }
         }
+
+        // rotl(rotr(x, y), y) = x and rotr(rotl(x, y), y) = x
+        if (data.opcode == .rotl or data.opcode == .rotr) {
+            if (try self.simplifyRotateCancellation(func, inst, data, lhs, rhs)) {
+                return;
+            }
+        }
     }
 
     /// Combine unary operations.
@@ -1041,6 +1048,38 @@ pub const InstCombine = struct {
                         try self.replaceWithValue(func, inst, or_inst);
                         return true;
                     }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// Simplify rotl(rotr(x, y), y) = x and rotr(rotl(x, y), y) = x.
+    fn simplifyRotateCancellation(self: *InstCombine, func: *Function, inst: Inst, data: BinaryData, lhs: Value, rhs: Value) !bool {
+        // Check if lhs is the opposite rotate with same shift amount
+        const lhs_def = func.dfg.valueDef(lhs) orelse return false;
+        const lhs_inst = switch (lhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const lhs_data = func.dfg.insts.get(lhs_inst) orelse return false;
+
+        if (lhs_data.* == .binary) {
+            const inner = lhs_data.binary;
+            // Check if inner is the opposite rotation
+            const opposite_op = switch (data.opcode) {
+                .rotl => Opcode.rotr,
+                .rotr => Opcode.rotl,
+                else => return false,
+            };
+
+            if (inner.opcode == opposite_op) {
+                // Check if shift amounts match
+                if (inner.args[1].index == rhs.index) {
+                    // rotl(rotr(x, y), y) = x or rotr(rotl(x, y), y) = x
+                    try self.replaceWithValue(func, inst, inner.args[0]);
+                    return true;
                 }
             }
         }
