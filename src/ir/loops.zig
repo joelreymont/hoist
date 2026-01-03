@@ -103,7 +103,7 @@ pub const LoopInfo = struct {
             for (succs.items) |to| {
                 // If 'to' dominates 'from', this is a back edge
                 if (domtree.dominates(to, from)) {
-                    try back_edges.append(.{ .from = from, .to = to });
+                    try back_edges.append(self.allocator, .{ .from = from, .to = to });
                 }
             }
         }

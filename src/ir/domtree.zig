@@ -258,7 +258,7 @@ pub const DominatorTree = struct {
                         }
                     }
                     if (!found) {
-                        try frontier.append(succ);
+                        try frontier.append(allocator, succ);
                     }
                 }
             }
@@ -628,8 +628,8 @@ pub const PostDominatorTree = struct {
         if (std.meta.eql(a, b)) return true;
 
         var current = b;
-        while (self.ipdom.get(current)) |maybe_ipdom| {
-            const ipdom = maybe_ipdom orelse break;
+        while (self.ipdom.get(current)) |ptr| {
+            const ipdom = ptr.* orelse break;
             if (std.meta.eql(ipdom, a)) return true;
             current = ipdom;
         } else {

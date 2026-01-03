@@ -148,7 +148,6 @@ pub const DCE = struct {
             .fcmp => false,
 
             // Conversions are pure
-            .sextend, .uextend, .ireduce => false,
             .fcvt_from_sint, .fcvt_from_uint => false,
             .fcvt_to_sint, .fcvt_to_uint, .fcvt_to_sint_sat, .fcvt_to_uint_sat => false,
 

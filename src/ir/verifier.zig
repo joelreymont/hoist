@@ -55,7 +55,7 @@ pub const Verifier = struct {
         for (self.errors.items) |msg| {
             self.allocator.free(msg);
         }
-        self.errors.deinit();
+        self.errors.deinit(self.allocator);
     }
 
     /// Run full verification on the function.

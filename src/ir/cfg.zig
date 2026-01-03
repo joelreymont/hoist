@@ -249,7 +249,7 @@ pub const ControlFlowGraph = struct {
         }
     }
 
-    fn validateBlock(self: *const ControlFlowGraph, func: *const Function, block: Block) !void {
+    pub fn validateBlock(self: *const ControlFlowGraph, func: *const Function, block: Block) !void {
         const block_data = func.layout.blocks.get(block) orelse return error.BlockNotInLayout;
 
         // Get last instruction (terminator)
