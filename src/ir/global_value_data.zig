@@ -103,7 +103,7 @@ test "GlobalValueData load" {
     );
     const data = GlobalValueData{ .load = load };
     try testing.expectEqual(GlobalValue.new(0), data.load.base);
-    try testing.expectEqual(@as(i32, 16), data.load.offset.offset);
+    try testing.expectEqual(@as(i32, 16), data.load.offset.value);
     try testing.expectEqual(Type.I64, data.load.global_type);
 }
 
@@ -115,12 +115,12 @@ test "GlobalValueData iadd_imm" {
     );
     const data = GlobalValueData{ .iadd_imm = iadd };
     try testing.expectEqual(GlobalValue.new(1), data.iadd_imm.base);
-    try testing.expectEqual(@as(i64, 42), data.iadd_imm.offset.bits);
+    try testing.expectEqual(@as(i64, 42), data.iadd_imm.offset.value);
     try testing.expectEqual(Type.I64, data.iadd_imm.global_type);
 }
 
 test "GlobalValueData symbol" {
-    const sym = GlobalValueData.SymbolData.init(ExternalName.user(0, 0));
+    const sym = GlobalValueData.SymbolData.init(ExternalName.fromUser(0, 0));
     const data = GlobalValueData{ .symbol = sym };
     try testing.expect(data.symbol.name.isUser());
 }

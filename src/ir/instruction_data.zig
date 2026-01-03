@@ -176,8 +176,8 @@ test "NullaryData" {
 }
 
 test "UnaryData" {
-    const data = UnaryData.init(.copy, Value.new(42));
-    try testing.expectEqual(Opcode.copy, data.opcode);
+    const data = UnaryData.init(.iadd, Value.new(42));
+    try testing.expectEqual(Opcode.iadd, data.opcode);
     try testing.expectEqual(Value.new(42), data.arg);
 }
 
