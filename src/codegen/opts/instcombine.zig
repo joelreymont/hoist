@@ -288,6 +288,11 @@ pub const InstCombine = struct {
                 try self.replaceWithValue(func, inst, lhs);
                 return true;
             },
+            // x % 1 = 0 (any number modulo 1 is 0)
+            .urem, .srem => if (rhs == 1) {
+                try self.replaceWithConst(func, inst, 0);
+                return true;
+            },
             // x & 0 = 0
             .band => if (rhs == 0) {
                 try self.replaceWithConst(func, inst, 0);
