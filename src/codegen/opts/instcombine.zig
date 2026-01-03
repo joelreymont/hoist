@@ -1936,6 +1936,24 @@ pub const InstCombine = struct {
                     return true;
                 }
             }
+
+            // Check if comparing swapped values: (x > y) ^ (y > x) = x != y
+            if (lhs_cmp.args[0].index == rhs_cmp.args[1].index and
+                lhs_cmp.args[1].index == rhs_cmp.args[0].index)
+            {
+                // (x > y) ^ (y > x) = x != y
+                if ((lhs_cmp.cond == .ugt and rhs_cmp.cond == .ugt) or
+                    (lhs_cmp.cond == .ult and rhs_cmp.cond == .ult) or
+                    (lhs_cmp.cond == .sgt and rhs_cmp.cond == .sgt) or
+                    (lhs_cmp.cond == .slt and rhs_cmp.cond == .slt))
+                {
+                    const ne_inst = try func.dfg.makeInstWithData(.icmp, result_ty, .{
+                        .int_compare = IntCompareData.init(.icmp, .ne, lhs_cmp.args[0], lhs_cmp.args[1]),
+                    });
+                    try self.replaceWithValue(func, inst, ne_inst);
+                    return true;
+                }
+            }
         }
 
         return false;
