@@ -610,6 +610,28 @@ pub const InstCombine = struct {
                     try self.replaceWithValue(func, inst, neg_inst);
                     return true;
                 }
+                // (x + y) - (x | y) = x & y
+                if (inner.opcode == .iadd) {
+                    const rhs_def = func.dfg.valueDef(rhs) orelse return false;
+                    const rhs_inst = switch (rhs_def) {
+                        .result => |r| r.inst,
+                        else => return false,
+                    };
+                    const rhs_data = func.dfg.insts.get(rhs_inst) orelse return false;
+                    if (rhs_data.* == .binary) {
+                        const rhs_inner = rhs_data.binary;
+                        if (rhs_inner.opcode == .bor) {
+                            // Check if operands match (x+y) - (x|y)
+                            const same_operands = (inner.args[0].index == rhs_inner.args[0].index and inner.args[1].index == rhs_inner.args[1].index) or (inner.args[0].index == rhs_inner.args[1].index and inner.args[1].index == rhs_inner.args[0].index);
+                            if (same_operands) {
+                                const result_ty = func.dfg.instResultType(inst) orelse return false;
+                                const and_inst = try func.dfg.makeInst(.band, result_ty, &.{ inner.args[0], inner.args[1] });
+                                try self.replaceWithValue(func, inst, and_inst);
+                                return true;
+                            }
+                        }
+                    }
+                }
             }
         }
 
