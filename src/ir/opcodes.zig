@@ -155,6 +155,22 @@ pub const Opcode = enum(u16) {
     fcopysign,
     fmin,
     fmax,
+    // Type conversions - integer
+    sextend,
+    uextend,
+    ireduce,
+    iconcat,
+    isplit,
+    // Type conversions - float to int
+    fcvt_from_sint,
+    fcvt_from_uint,
+    fcvt_to_sint,
+    fcvt_to_sint_sat,
+    fcvt_to_uint,
+    fcvt_to_uint_sat,
+    // Type conversions - float width
+    fpromote,
+    fdemote,
 };
 
 // Tests
