@@ -146,6 +146,13 @@ pub const InstCombine = struct {
                 return;
             }
         }
+
+        // Bitwise absorption and cancellation
+        if (data.opcode == .bor or data.opcode == .bxor) {
+            if (try self.simplifyBitwiseAbsorption(func, inst, data, lhs, rhs)) {
+                return;
+            }
+        }
     }
 
     /// Combine unary operations.
@@ -657,6 +664,39 @@ pub const InstCombine = struct {
         return false;
     }
 
+    /// Simplify absorption and cancellation patterns.
+    fn simplifyBitwiseAbsorption(self: *InstCombine, func: *Function, inst: Inst, data: BinaryData, lhs: Value, rhs: Value) !bool {
+        // (x & y) | x = x (absorption)
+        if (data.opcode == .bor) {
+            // Check if lhs is band with rhs as one of its operands
+            if (try self.isBinaryWith(func, lhs, .band, rhs)) {
+                try self.replaceWithValue(func, inst, rhs);
+                return true;
+            }
+            // Check if rhs is band with lhs as one of its operands
+            if (try self.isBinaryWith(func, rhs, .band, lhs)) {
+                try self.replaceWithValue(func, inst, lhs);
+                return true;
+            }
+        }
+
+        // (x ^ y) ^ y = x (XOR cancellation)
+        if (data.opcode == .bxor) {
+            // Check if lhs is bxor with rhs as one of its operands
+            if (try self.getBxorOtherOperand(func, lhs, rhs)) |x| {
+                try self.replaceWithValue(func, inst, x);
+                return true;
+            }
+            // Check if rhs is bxor with lhs as one of its operands
+            if (try self.getBxorOtherOperand(func, rhs, lhs)) |x| {
+                try self.replaceWithValue(func, inst, x);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// Check if value1 is the negation of value2.
     fn isNegationOf(self: *InstCombine, func: *Function, value1: Value, value2: Value) !bool {
         _ = self;
@@ -728,6 +768,48 @@ pub const InstCombine = struct {
             const unary = inst_data.unary;
             if (unary.opcode == .ineg or unary.opcode == .fneg) {
                 return unary.arg;
+            }
+        }
+        return null;
+    }
+
+    /// Check if value1 is a binary operation with given opcode and value2 as one of its operands.
+    fn isBinaryWith(self: *InstCombine, func: *Function, value1: Value, opcode: Opcode, value2: Value) !bool {
+        _ = self;
+        const def1 = func.dfg.valueDef(value1) orelse return false;
+        const inst1 = switch (def1) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const inst_data = func.dfg.insts.get(inst1) orelse return false;
+
+        if (inst_data.* == .binary) {
+            const binary = inst_data.binary;
+            if (binary.opcode == opcode) {
+                return binary.args[0].index == value2.index or binary.args[1].index == value2.index;
+            }
+        }
+        return false;
+    }
+
+    /// Get the other operand if value is a bxor with given operand.
+    fn getBxorOtherOperand(self: *InstCombine, func: *Function, value: Value, operand: Value) !?Value {
+        _ = self;
+        const def = func.dfg.valueDef(value) orelse return null;
+        const inst = switch (def) {
+            .result => |r| r.inst,
+            else => return null,
+        };
+        const inst_data = func.dfg.insts.get(inst) orelse return null;
+
+        if (inst_data.* == .binary) {
+            const binary = inst_data.binary;
+            if (binary.opcode == .bxor) {
+                if (binary.args[0].index == operand.index) {
+                    return binary.args[1];
+                } else if (binary.args[1].index == operand.index) {
+                    return binary.args[0];
+                }
             }
         }
         return null;
