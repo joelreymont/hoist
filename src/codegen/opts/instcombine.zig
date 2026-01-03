@@ -126,6 +126,13 @@ pub const InstCombine = struct {
             }
         }
 
+        // Multiply by shifted 1: x * (1 << y) = x << y
+        if (data.opcode == .imul) {
+            if (try self.simplifyMulShift(func, inst, lhs, rhs)) {
+                return;
+            }
+        }
+
         // Reassociation: (x - y) + y = x, (x + y) - x = y, etc.
         if (data.opcode == .iadd or data.opcode == .isub) {
             if (try self.simplifyReassociation(func, inst, data, lhs, rhs)) {
@@ -573,6 +580,27 @@ pub const InstCombine = struct {
         return false;
     }
 
+    /// Simplify x * (1 << y) = x << y.
+    fn simplifyMulShift(self: *InstCombine, func: *Function, inst: Inst, lhs: Value, rhs: Value) !bool {
+        const result_ty = func.dfg.instResultType(inst) orelse return false;
+
+        // Check if rhs is ishl(1, y)
+        if (try self.getShiftBy1(func, rhs)) |y| {
+            const shl_inst = try func.dfg.makeInst(.ishl, result_ty, &.{ lhs, y });
+            try self.replaceWithValue(func, inst, shl_inst);
+            return true;
+        }
+
+        // Check if lhs is ishl(1, y)
+        if (try self.getShiftBy1(func, lhs)) |y| {
+            const shl_inst = try func.dfg.makeInst(.ishl, result_ty, &.{ rhs, y });
+            try self.replaceWithValue(func, inst, shl_inst);
+            return true;
+        }
+
+        return false;
+    }
+
     /// Simplify reassociation patterns like (x - y) + y = x, (x + y) - x = y.
     fn simplifyReassociation(self: *InstCombine, func: *Function, inst: Inst, data: BinaryData, lhs: Value, rhs: Value) !bool {
         const lhs_def = func.dfg.valueDef(lhs) orelse return false;
@@ -838,6 +866,29 @@ pub const InstCombine = struct {
                     return binary.args[1];
                 } else if (binary.args[1].index == operand.index) {
                     return binary.args[0];
+                }
+            }
+        }
+        return null;
+    }
+
+    /// Get the shift amount if value is ishl(1, y), null otherwise.
+    fn getShiftBy1(self: *InstCombine, func: *Function, value: Value) !?Value {
+        const def = func.dfg.valueDef(value) orelse return null;
+        const inst = switch (def) {
+            .result => |r| r.inst,
+            else => return null,
+        };
+        const inst_data = func.dfg.insts.get(inst) orelse return null;
+
+        if (inst_data.* == .binary) {
+            const binary = inst_data.binary;
+            if (binary.opcode == .ishl) {
+                // Check if LHS is constant 1
+                if (self.getConstant(func, binary.args[0])) |c| {
+                    if (c == 1) {
+                        return binary.args[1]; // Return shift amount
+                    }
                 }
             }
         }
