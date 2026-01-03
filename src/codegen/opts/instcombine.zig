@@ -840,6 +840,11 @@ pub const InstCombine = struct {
                 try self.replaceWithValue(func, inst, lhs);
                 return true;
             },
+            // rotl(x, 0) = x, rotr(x, 0) = x
+            .rotl, .rotr => if (rhs == 0) {
+                try self.replaceWithValue(func, inst, lhs);
+                return true;
+            },
             else => {},
         }
         return false;
