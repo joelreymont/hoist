@@ -205,6 +205,13 @@ pub const InstCombine = struct {
             }
         }
 
+        // ((x << y) & z) >> y = x & (z >> y)
+        if (data.opcode == .ushr) {
+            if (try self.simplifyShiftMask(func, inst, data, lhs, rhs)) {
+                return;
+            }
+        }
+
         // (x < y) & (x > y) = 0 (mutually exclusive)
         if (data.opcode == .band) {
             if (try self.simplifyMutuallyExclusiveComparisons(func, inst, lhs, rhs)) {
@@ -1779,6 +1786,49 @@ pub const InstCombine = struct {
                 const new_shift = try func.dfg.makeInst(data.opcode, result_ty, &.{ x, new_shift_amt });
                 try self.replaceWithValue(func, inst, new_shift);
                 return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// Simplify ((x << y) & z) >> y = x & (z >> y).
+    fn simplifyShiftMask(self: *InstCombine, func: *Function, inst: Inst, _: BinaryData, lhs: Value, rhs: Value) !bool {
+        const result_ty = func.dfg.instResultType(inst) orelse return false;
+
+        // lhs must be (something & z)
+        const lhs_def = func.dfg.valueDef(lhs) orelse return false;
+        const lhs_inst = switch (lhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const lhs_data = func.dfg.insts.get(lhs_inst) orelse return false;
+
+        if (lhs_data.* == .binary and lhs_data.binary.opcode == .band) {
+            const band_lhs = lhs_data.binary.args[0];
+            const z = lhs_data.binary.args[1];
+
+            // band_lhs must be (x << y)
+            const band_lhs_def = func.dfg.valueDef(band_lhs) orelse return false;
+            const band_lhs_inst = switch (band_lhs_def) {
+                .result => |r| r.inst,
+                else => return false,
+            };
+            const band_lhs_data = func.dfg.insts.get(band_lhs_inst) orelse return false;
+
+            if (band_lhs_data.* == .binary and band_lhs_data.binary.opcode == .ishl) {
+                const x = band_lhs_data.binary.args[0];
+                const y = band_lhs_data.binary.args[1];
+
+                // Check if y == rhs (the shift amounts match)
+                if (y.index == rhs.index) {
+                    // Create (z >> y)
+                    const z_shr = try func.dfg.makeInst(.ushr, result_ty, &.{ z, y });
+                    // Create x & (z >> y)
+                    const result = try func.dfg.makeInst(.band, result_ty, &.{ x, z_shr });
+                    try self.replaceWithValue(func, inst, result);
+                    return true;
+                }
             }
         }
 
