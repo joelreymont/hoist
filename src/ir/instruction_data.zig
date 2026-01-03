@@ -11,6 +11,7 @@ const memflags = @import("memflags.zig");
 const value_list = @import("value_list.zig");
 const block_call = @import("block_call.zig");
 const atomics = @import("atomics.zig");
+const trapcode = @import("trapcode.zig");
 
 const Opcode = opcodes.Opcode;
 const Value = entities.Value;
@@ -25,12 +26,14 @@ const ValueList = value_list.ValueList;
 const BlockCall = block_call.BlockCall;
 const AtomicOrdering = atomics.AtomicOrdering;
 const AtomicRmwOp = atomics.AtomicRmwOp;
+const TrapCode = trapcode.TrapCode;
 
 /// Instruction data - core instruction representation.
 pub const InstructionData = union(enum) {
     nullary: NullaryData,
     unary_imm: UnaryImmData,
     unary: UnaryData,
+    unary_with_trap: UnaryWithTrapData,
     binary: BinaryData,
     int_compare: IntCompareData,
     float_compare: FloatCompareData,
@@ -77,6 +80,16 @@ pub const UnaryData = struct {
 
     pub fn init(op: Opcode, arg: Value) UnaryData {
         return .{ .opcode = op, .arg = arg };
+    }
+};
+
+pub const UnaryWithTrapData = struct {
+    opcode: Opcode,
+    arg: Value,
+    trap_code: TrapCode,
+
+    pub fn init(op: Opcode, arg: Value, trap_code: TrapCode) UnaryWithTrapData {
+        return .{ .opcode = op, .arg = arg, .trap_code = trap_code };
     }
 };
 
