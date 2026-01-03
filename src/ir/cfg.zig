@@ -119,7 +119,6 @@ pub const ControlFlowGraph = struct {
                 .br_table => {
                     // TODO: Look up jump table destinations from function.jump_tables
                     // For now, skip adding edges for br_table
-                    _ = inst_data;
                 },
                 else => {}, // Non-branching terminator (return, trap, etc)
             }

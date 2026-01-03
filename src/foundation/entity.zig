@@ -157,8 +157,8 @@ pub fn SecondaryMap(comptime K: type, comptime V: type) type {
             return init(allocator, std.mem.zeroes(V));
         }
 
-        pub fn deinit(self: *Self) void {
-            self.items.deinit();
+        pub fn deinit(self: *Self, allocator: Allocator) void {
+            self.items.deinit(allocator);
         }
 
         pub fn get(self: *const Self, key: K) V {
@@ -173,16 +173,16 @@ pub fn SecondaryMap(comptime K: type, comptime V: type) type {
             return &self.items.items[idx];
         }
 
-        pub fn set(self: *Self, key: K, value: V) !void {
+        pub fn set(self: *Self, allocator: Allocator, key: K, value: V) !void {
             const idx = key.toIndex();
-            try self.ensureCapacity(idx + 1);
+            try self.ensureCapacity(allocator, idx + 1);
             self.items.items[idx] = value;
         }
 
-        fn ensureCapacity(self: *Self, new_len: usize) !void {
+        fn ensureCapacity(self: *Self, allocator: Allocator, new_len: usize) !void {
             if (new_len <= self.items.items.len) return;
             const old_len = self.items.items.len;
-            try self.items.resize(new_len);
+            try self.items.resize(allocator, new_len);
             @memset(self.items.items[old_len..new_len], self.default);
         }
 
@@ -190,8 +190,8 @@ pub fn SecondaryMap(comptime K: type, comptime V: type) type {
             self.items.clearRetainingCapacity();
         }
 
-        pub fn resize(self: *Self, n: usize) !void {
-            try self.ensureCapacity(n);
+        pub fn resize(self: *Self, allocator: Allocator, n: usize) !void {
+            try self.ensureCapacity(allocator, n);
         }
 
         pub fn len(self: *const Self) usize {
@@ -231,7 +231,8 @@ pub fn EntitySet(comptime K: type) type {
             return .{ .bitset = try std.DynamicBitSet.initEmpty(allocator, capacity) };
         }
 
-        pub fn deinit(self: *Self) void {
+        pub fn deinit(self: *Self, allocator: Allocator) void {
+            _ = allocator;
             self.bitset.deinit();
         }
 
@@ -388,7 +389,7 @@ test "EntityRef format" {
 test "PrimaryMap basic" {
     const Block = EntityRef(u32, "block");
     var map = PrimaryMap(Block, i32).init(std.testing.allocator);
-    defer map.deinit();
+    defer map.deinit(std.testing.allocator);
 
     try std.testing.expect(map.isEmpty());
 
@@ -405,7 +406,7 @@ test "PrimaryMap basic" {
 test "PrimaryMap keys iterator" {
     const Block = EntityRef(u32, "block");
     var map = PrimaryMap(Block, i32).init(std.testing.allocator);
-    defer map.deinit();
+    defer map.deinit(std.testing.allocator);
 
     _ = try map.push(12);
     _ = try map.push(33);
@@ -419,7 +420,7 @@ test "PrimaryMap keys iterator" {
 test "SecondaryMap basic" {
     const Block = EntityRef(u32, "block");
     var map = SecondaryMap(Block, i32).init(std.testing.allocator, 0);
-    defer map.deinit();
+    defer map.deinit(std.testing.allocator);
 
     const r0 = Block.new(0);
     const r1 = Block.new(1);
@@ -429,8 +430,8 @@ test "SecondaryMap basic" {
     try std.testing.expectEqual(@as(i32, 0), map.get(r0));
     try std.testing.expectEqual(@as(i32, 0), map.get(r2));
 
-    try map.set(r2, 3);
-    try map.set(r1, 5);
+    try map.set(std.testing.allocator, r2, 3);
+    try map.set(std.testing.allocator, r1, 5);
 
     try std.testing.expectEqual(@as(i32, 0), map.get(r0));
     try std.testing.expectEqual(@as(i32, 5), map.get(r1));
