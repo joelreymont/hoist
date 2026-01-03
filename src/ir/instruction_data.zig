@@ -10,6 +10,7 @@ const condcodes = @import("condcodes.zig");
 const memflags = @import("memflags.zig");
 const value_list = @import("value_list.zig");
 const block_call = @import("block_call.zig");
+const atomics = @import("atomics.zig");
 
 const Opcode = opcodes.Opcode;
 const Value = entities.Value;
@@ -22,6 +23,8 @@ const FloatCC = condcodes.FloatCC;
 const MemFlags = memflags.MemFlags;
 const ValueList = value_list.ValueList;
 const BlockCall = block_call.BlockCall;
+const AtomicOrdering = atomics.AtomicOrdering;
+const AtomicRmwOp = atomics.AtomicRmwOp;
 
 /// Instruction data - core instruction representation.
 pub const InstructionData = union(enum) {
@@ -38,6 +41,11 @@ pub const InstructionData = union(enum) {
     call_indirect: CallIndirectData,
     load: LoadData,
     store: StoreData,
+    atomic_load: AtomicLoadData,
+    atomic_store: AtomicStoreData,
+    atomic_rmw: AtomicRmwData,
+    atomic_cas: AtomicCasData,
+    fence: FenceData,
 
     pub fn opcode(self: InstructionData) Opcode {
         return switch (self) {
@@ -167,6 +175,85 @@ pub const StoreData = struct {
 
     pub fn init(op: Opcode, flags: MemFlags, addr: Value, data: Value, offset: i32) StoreData {
         return .{ .opcode = op, .flags = flags, .args = .{ addr, data }, .offset = offset };
+    }
+};
+
+pub const AtomicLoadData = struct {
+    opcode: Opcode,
+    flags: MemFlags,
+    addr: Value,
+    ordering: AtomicOrdering,
+
+    pub fn init(op: Opcode, flags: MemFlags, addr: Value, ordering: AtomicOrdering) AtomicLoadData {
+        return .{ .opcode = op, .flags = flags, .addr = addr, .ordering = ordering };
+    }
+};
+
+pub const AtomicStoreData = struct {
+    opcode: Opcode,
+    flags: MemFlags,
+    addr: Value,
+    src: Value,
+    ordering: AtomicOrdering,
+
+    pub fn init(op: Opcode, flags: MemFlags, addr: Value, src: Value, ordering: AtomicOrdering) AtomicStoreData {
+        return .{ .opcode = op, .flags = flags, .addr = addr, .src = src, .ordering = ordering };
+    }
+};
+
+pub const AtomicRmwData = struct {
+    opcode: Opcode,
+    flags: MemFlags,
+    addr: Value,
+    src: Value,
+    op: AtomicRmwOp,
+    ordering: AtomicOrdering,
+
+    pub fn init(
+        opc: Opcode,
+        flags: MemFlags,
+        addr: Value,
+        src: Value,
+        rmw_op: AtomicRmwOp,
+        ordering: AtomicOrdering,
+    ) AtomicRmwData {
+        return .{ .opcode = opc, .flags = flags, .addr = addr, .src = src, .op = rmw_op, .ordering = ordering };
+    }
+};
+
+pub const AtomicCasData = struct {
+    opcode: Opcode,
+    flags: MemFlags,
+    addr: Value,
+    expected: Value,
+    replacement: Value,
+    ordering: AtomicOrdering,
+
+    pub fn init(
+        op: Opcode,
+        flags: MemFlags,
+        addr: Value,
+        expected: Value,
+        replacement: Value,
+        ordering: AtomicOrdering,
+    ) AtomicCasData {
+        return .{
+            .opcode = op,
+            .flags = flags,
+            .addr = addr,
+            .expected = expected,
+            .replacement = replacement,
+            .ordering = ordering,
+        };
+    }
+};
+
+pub const FenceData = struct {
+    opcode: Opcode,
+    ordering: AtomicOrdering,
+
+    pub fn init(op: Opcode, ordering: AtomicOrdering) FenceData {
+        return .{ .opcode = op, .ordering = ordering };
     }
 };
 
