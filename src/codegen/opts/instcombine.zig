@@ -568,6 +568,48 @@ pub const InstCombine = struct {
                         try self.replaceWithBinary(func, inst, new_opcode, x, y);
                         return;
                     }
+
+                    // Recognize iabs patterns: select(x >= 0, x, -x) => abs(x)
+                    const y_const = self.getConstant(func, y);
+                    if (y_const != null and y_const.? == 0) {
+                        // Check if false_val is ineg of x
+                        const false_def = func.dfg.valueDef(false_val) orelse return;
+                        const false_inst = switch (false_def) {
+                            .result => |r| r.inst,
+                            else => return,
+                        };
+                        const false_data = func.dfg.insts.get(false_inst) orelse return;
+
+                        if (false_data.* == .unary and false_data.unary.opcode == .ineg) {
+                            const negated = false_data.unary.arg;
+                            // select(x > 0, x, -x) => abs(x) or select(x >= 0, x, -x) => abs(x)
+                            if (true_val.index == x.index and negated.index == x.index) {
+                                if (icmp.cond == .sgt or icmp.cond == .sge) {
+                                    try self.replaceWithUnary(func, inst, .iabs, x);
+                                    return;
+                                }
+                            }
+                        }
+
+                        // Check if true_val is ineg of x for the flipped pattern
+                        const true_def = func.dfg.valueDef(true_val) orelse return;
+                        const true_inst = switch (true_def) {
+                            .result => |r| r.inst,
+                            else => return,
+                        };
+                        const true_data = func.dfg.insts.get(true_inst) orelse return;
+
+                        if (true_data.* == .unary and true_data.unary.opcode == .ineg) {
+                            const negated = true_data.unary.arg;
+                            // select(x <= 0, -x, x) => abs(x) or select(x < 0, -x, x) => abs(x)
+                            if (false_val.index == x.index and negated.index == x.index) {
+                                if (icmp.cond == .sle or icmp.cond == .slt) {
+                                    try self.replaceWithUnary(func, inst, .iabs, x);
+                                    return;
+                                }
+                            }
+                        }
+                    }
                 }
             },
             else => {},
@@ -2475,6 +2517,32 @@ pub const InstCombine = struct {
             .binary = .{
                 .opcode = opcode,
                 .args = .{ lhs, rhs },
+            },
+        });
+
+        // Set result type
+        try func.dfg.attachResult(new_inst, ty);
+
+        // Get new result value
+        const new_result = func.dfg.firstResult(new_inst) orelse return;
+
+        // Alias old result to new result
+        const result_data = func.dfg.values.getMut(result) orelse return;
+        result_data.* = ValueData.alias(ty, new_result);
+
+        self.changed = true;
+    }
+
+    /// Replace instruction with a unary operation.
+    fn replaceWithUnary(self: *InstCombine, func: *Function, inst: Inst, opcode: Opcode, arg: Value) !void {
+        const result = func.dfg.firstResult(inst) orelse return;
+        const ty = func.dfg.valueType(result) orelse return;
+
+        // Create new unary instruction
+        const new_inst = try func.dfg.createInst(.{
+            .unary = .{
+                .opcode = opcode,
+                .arg = arg,
             },
         });
 
