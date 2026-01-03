@@ -198,6 +198,13 @@ pub const InstCombine = struct {
             }
         }
 
+        // (x < y) & (x > y) = 0 (mutually exclusive)
+        if (data.opcode == .band) {
+            if (try self.simplifyMutuallyExclusiveComparisons(func, inst, lhs, rhs)) {
+                return;
+            }
+        }
+
         // (x & y) ^ (x ^ y) = x | y and (x | y) ^ (x & y) = x ^ y
         if (data.opcode == .bxor) {
             if (try self.simplifyAndXorToOr(func, inst, lhs, rhs)) {
@@ -1709,6 +1716,46 @@ pub const InstCombine = struct {
                     // Create (x op y) << z
                     const shift_inst = try func.dfg.makeInst(.ishl, result_ty, &.{ inner_inst, z1 });
                     try self.replaceWithValue(func, inst, shift_inst);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// Simplify (x < y) & (x > y) = 0 and similar mutually exclusive comparisons.
+    fn simplifyMutuallyExclusiveComparisons(self: *InstCombine, func: *Function, inst: Inst, lhs: Value, rhs: Value) !bool {
+        // Check if both lhs and rhs are integer comparisons
+        const lhs_def = func.dfg.valueDef(lhs) orelse return false;
+        const lhs_inst = switch (lhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const lhs_data = func.dfg.insts.get(lhs_inst) orelse return false;
+
+        const rhs_def = func.dfg.valueDef(rhs) orelse return false;
+        const rhs_inst = switch (rhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const rhs_data = func.dfg.insts.get(rhs_inst) orelse return false;
+
+        if (lhs_data.* == .int_compare and rhs_data.* == .int_compare) {
+            const lhs_cmp = lhs_data.int_compare;
+            const rhs_cmp = rhs_data.int_compare;
+
+            // Check if comparing the same values
+            if (lhs_cmp.args[0].index == rhs_cmp.args[0].index and
+                lhs_cmp.args[1].index == rhs_cmp.args[1].index)
+            {
+                // (x < y) & (x > y) = 0
+                if ((lhs_cmp.cond == .slt and rhs_cmp.cond == .sgt) or
+                    (lhs_cmp.cond == .sgt and rhs_cmp.cond == .slt) or
+                    (lhs_cmp.cond == .ult and rhs_cmp.cond == .ugt) or
+                    (lhs_cmp.cond == .ugt and rhs_cmp.cond == .ult))
+                {
+                    try self.replaceWithConst(func, inst, 0);
                     return true;
                 }
             }
