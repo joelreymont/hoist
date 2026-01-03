@@ -183,6 +183,18 @@ pub const InstCombine = struct {
             .band => lhs & rhs,
             .bor => lhs | rhs,
             .bxor => lhs ^ rhs,
+            .ishl => blk: {
+                const shift_amt = @as(u6, @truncate(@as(u64, @bitCast(rhs)) & 63));
+                break :blk @as(i64, @bitCast(@as(u64, @bitCast(lhs)) << shift_amt));
+            },
+            .ushr => blk: {
+                const shift_amt = @as(u6, @truncate(@as(u64, @bitCast(rhs)) & 63));
+                break :blk @as(i64, @bitCast(@as(u64, @bitCast(lhs)) >> shift_amt));
+            },
+            .sshr => blk: {
+                const shift_amt = @as(u6, @truncate(@as(u64, @bitCast(rhs)) & 63));
+                break :blk lhs >> shift_amt;
+            },
             else => return false,
         };
 
@@ -195,6 +207,9 @@ pub const InstCombine = struct {
         const result_val: i64 = switch (data.opcode) {
             .ineg => -%val,
             .bnot => ~val,
+            .clz => @clz(@as(u64, @bitCast(val))),
+            .ctz => @ctz(@as(u64, @bitCast(val))),
+            .popcnt => @popCount(@as(u64, @bitCast(val))),
             else => return false,
         };
 
