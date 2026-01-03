@@ -269,6 +269,90 @@ pub const Verifier = struct {
                             else => {},
                         }
                     },
+                    .atomic_load => |al| {
+                        // Atomic loads must be on integer types
+                        if (!result_ty.isInt()) {
+                            const msg = try std.fmt.allocPrint(
+                                self.allocator,
+                                "atomic_load: must operate on integer type, got {any} in inst {d}",
+                                .{ result_ty, inst.index },
+                            );
+                            try self.errors.append(self.allocator, msg);
+                        }
+                        // Load ordering cannot be Release-only
+                        if (al.ordering == .release) {
+                            const msg = try std.fmt.allocPrint(
+                                self.allocator,
+                                "atomic_load: invalid ordering 'release' (use acquire, acq_rel, or seq_cst) in inst {d}",
+                                .{inst.index},
+                            );
+                            try self.errors.append(self.allocator, msg);
+                        }
+                    },
+                    .atomic_store => |as| {
+                        const src_ty = self.func.dfg.valueType(as.src);
+                        // Atomic stores must be on integer types
+                        if (!src_ty.isInt()) {
+                            const msg = try std.fmt.allocPrint(
+                                self.allocator,
+                                "atomic_store: must operate on integer type, got {any} in inst {d}",
+                                .{ src_ty, inst.index },
+                            );
+                            try self.errors.append(self.allocator, msg);
+                        }
+                        // Store ordering cannot be Acquire-only
+                        if (as.ordering == .acquire) {
+                            const msg = try std.fmt.allocPrint(
+                                self.allocator,
+                                "atomic_store: invalid ordering 'acquire' (use release, acq_rel, or seq_cst) in inst {d}",
+                                .{inst.index},
+                            );
+                            try self.errors.append(self.allocator, msg);
+                        }
+                    },
+                    .atomic_rmw => |ar| {
+                        const src_ty = self.func.dfg.valueType(ar.src);
+                        // Atomic RMW must be on integer types
+                        if (!result_ty.isInt() or !src_ty.isInt()) {
+                            const msg = try std.fmt.allocPrint(
+                                self.allocator,
+                                "atomic_rmw: must operate on integer types, got result={any} src={any} in inst {d}",
+                                .{ result_ty, src_ty, inst.index },
+                            );
+                            try self.errors.append(self.allocator, msg);
+                        }
+                        // Result and source must have same type
+                        if (!std.meta.eql(result_ty, src_ty)) {
+                            const msg = try std.fmt.allocPrint(
+                                self.allocator,
+                                "atomic_rmw: result and source must have same type in inst {d}",
+                                .{inst.index},
+                            );
+                            try self.errors.append(self.allocator, msg);
+                        }
+                    },
+                    .atomic_cas => |ac| {
+                        const expected_ty = self.func.dfg.valueType(ac.expected);
+                        const replacement_ty = self.func.dfg.valueType(ac.replacement);
+                        // Atomic CAS must be on integer types
+                        if (!result_ty.isInt() or !expected_ty.isInt() or !replacement_ty.isInt()) {
+                            const msg = try std.fmt.allocPrint(
+                                self.allocator,
+                                "atomic_cas: must operate on integer types in inst {d}",
+                                .{inst.index},
+                            );
+                            try self.errors.append(self.allocator, msg);
+                        }
+                        // All types must match
+                        if (!std.meta.eql(result_ty, expected_ty) or !std.meta.eql(result_ty, replacement_ty)) {
+                            const msg = try std.fmt.allocPrint(
+                                self.allocator,
+                                "atomic_cas: result, expected, and replacement must have same type in inst {d}",
+                                .{inst.index},
+                            );
+                            try self.errors.append(self.allocator, msg);
+                        }
+                    },
                     else => {},
                 }
             }
