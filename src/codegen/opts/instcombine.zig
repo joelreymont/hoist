@@ -379,6 +379,13 @@ pub const InstCombine = struct {
                 return;
             }
         }
+
+        // eq(x, x ^ y) = eq(y, 0) and ne(x, x ^ y) = ne(y, 0)
+        if (data.cond == .eq or data.cond == .ne) {
+            if (try self.simplifyCompareWithXor(func, inst, data, lhs, rhs)) {
+                return;
+            }
+        }
     }
 
     /// Fold binary operation with two constants.
@@ -1079,6 +1086,85 @@ pub const InstCombine = struct {
                 if (inner.args[1].index == rhs.index) {
                     // rotl(rotr(x, y), y) = x or rotr(rotl(x, y), y) = x
                     try self.replaceWithValue(func, inst, inner.args[0]);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// Simplify eq(x, x ^ y) = eq(y, 0) and ne(x, x ^ y) = ne(y, 0).
+    fn simplifyCompareWithXor(self: *InstCombine, func: *Function, inst: Inst, data: IntCompareData, lhs: Value, rhs: Value) !bool {
+        const result_ty = func.dfg.instResultType(inst) orelse return false;
+
+        // Check if rhs is (x ^ y)
+        const rhs_def = func.dfg.valueDef(rhs) orelse return false;
+        const rhs_inst = switch (rhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const rhs_data = func.dfg.insts.get(rhs_inst) orelse return false;
+
+        if (rhs_data.* == .binary) {
+            const rhs_binary = rhs_data.binary;
+            if (rhs_binary.opcode == .bxor) {
+                const x = rhs_binary.args[0];
+                const y = rhs_binary.args[1];
+
+                // Check if lhs matches one of the xor operands
+                if (lhs.index == x.index) {
+                    // eq(x, x ^ y) = eq(y, 0)
+                    const zero = try func.dfg.makeConst(0);
+                    const new_cmp = try func.dfg.makeInstWithData(.icmp, result_ty, .{
+                        .int_compare = IntCompareData.init(.icmp, data.cond, y, zero),
+                    });
+                    try self.replaceWithValue(func, inst, new_cmp);
+                    return true;
+                }
+                if (lhs.index == y.index) {
+                    // eq(y, x ^ y) = eq(x, 0)
+                    const zero = try func.dfg.makeConst(0);
+                    const new_cmp = try func.dfg.makeInstWithData(.icmp, result_ty, .{
+                        .int_compare = IntCompareData.init(.icmp, data.cond, x, zero),
+                    });
+                    try self.replaceWithValue(func, inst, new_cmp);
+                    return true;
+                }
+            }
+        }
+
+        // Check if lhs is (x ^ y)
+        const lhs_def = func.dfg.valueDef(lhs) orelse return false;
+        const lhs_inst = switch (lhs_def) {
+            .result => |r| r.inst,
+            else => return false,
+        };
+        const lhs_data = func.dfg.insts.get(lhs_inst) orelse return false;
+
+        if (lhs_data.* == .binary) {
+            const lhs_binary = lhs_data.binary;
+            if (lhs_binary.opcode == .bxor) {
+                const x = lhs_binary.args[0];
+                const y = lhs_binary.args[1];
+
+                // Check if rhs matches one of the xor operands
+                if (rhs.index == x.index) {
+                    // eq(x ^ y, x) = eq(y, 0)
+                    const zero = try func.dfg.makeConst(0);
+                    const new_cmp = try func.dfg.makeInstWithData(.icmp, result_ty, .{
+                        .int_compare = IntCompareData.init(.icmp, data.cond, y, zero),
+                    });
+                    try self.replaceWithValue(func, inst, new_cmp);
+                    return true;
+                }
+                if (rhs.index == y.index) {
+                    // eq(x ^ y, y) = eq(x, 0)
+                    const zero = try func.dfg.makeConst(0);
+                    const new_cmp = try func.dfg.makeInstWithData(.icmp, result_ty, .{
+                        .int_compare = IntCompareData.init(.icmp, data.cond, x, zero),
+                    });
+                    try self.replaceWithValue(func, inst, new_cmp);
                     return true;
                 }
             }
