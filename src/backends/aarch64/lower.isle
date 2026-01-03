@@ -187,6 +187,10 @@
 (rule (lower (fmax ty x y))
       (aarch64_fmax ty x y))
 
+;; sqrt: Floating-point square root (FSQRT)
+(rule (lower (sqrt ty x))
+      (aarch64_fsqrt ty x))
+
 ;; fcvt_from_sint: Convert signed integer to float (SCVTF)
 (rule (lower (fcvt_from_sint dst_ty src_ty x))
       (aarch64_scvtf dst_ty src_ty x))
@@ -900,6 +904,7 @@
 (decl aarch64_fdiv (Type Value Value) Aarch64Inst)
 (decl aarch64_fmin (Type Value Value) Aarch64Inst)
 (decl aarch64_fmax (Type Value Value) Aarch64Inst)
+(decl aarch64_fsqrt (Type Value) Aarch64Inst)
 
 ;; Floating-point conversions
 (decl aarch64_fcvtzu_32 (Value) Aarch64Inst)  ;; FCVTZU: float to unsigned i32

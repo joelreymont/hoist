@@ -4,6 +4,7 @@ const testing = std.testing;
 const root = @import("root");
 const Inst = root.aarch64_inst.Inst;
 const OperandSize = root.aarch64_inst.OperandSize;
+const FpuOperandSize = root.aarch64_inst.FpuOperandSize;
 const VectorSize = root.aarch64_inst.VectorSize;
 const BarrierOption = root.aarch64_inst.BarrierOption;
 const CondCode = root.aarch64_inst.CondCode;
@@ -212,6 +213,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .fneg_d => |i| try emitFnegD(i.dst.toReg(), i.src, buffer),
         .fabs_s => |i| try emitFabsS(i.dst.toReg(), i.src, buffer),
         .fabs_d => |i| try emitFabsD(i.dst.toReg(), i.src, buffer),
+        .fsqrt => |i| try emitFsqrt(i.dst.toReg(), i.src, i.size, buffer),
         .fmax_s => |i| try emitFmaxS(i.dst.toReg(), i.src1, i.src2, buffer),
         .fmax_d => |i| try emitFmaxD(i.dst.toReg(), i.src1, i.src2, buffer),
         .fmin_s => |i| try emitFminS(i.dst.toReg(), i.src1, i.src2, buffer),
@@ -3544,6 +3546,27 @@ fn emitFabsD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (0b1 << 21) |
         (0b00000 << 16) |
         (0b010001 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    const bytes = std.mem.toBytes(insn);
+    try buffer.put(&bytes);
+}
+
+/// FSQRT - Floating-point square root
+/// Encoding: 0|0|0|11110|ftype|1|00000|011000|Rn|Rd
+/// ftype: 00=S (32-bit), 01=D (64-bit)
+fn emitFsqrt(dst: Reg, src: Reg, size: FpuOperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const ftype: u32 = if (size == .size32) 0b00 else 0b01;
+
+    const insn: u32 = (0b000 << 29) |
+        (0b11110 << 24) |
+        (ftype << 22) |
+        (0b1 << 21) |
+        (0b00000 << 16) |
+        (0b011000 << 10) | // opcode for FSQRT
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
