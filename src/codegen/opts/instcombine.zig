@@ -603,6 +603,13 @@ pub const InstCombine = struct {
                     try self.replaceWithValue(func, inst, inner.args[0]);
                     return true;
                 }
+                // (x - y) - x = -y
+                if (inner.opcode == .isub and inner.args[0].index == rhs.index) {
+                    const result_ty = func.dfg.instResultType(inst) orelse return false;
+                    const neg_inst = try func.dfg.makeInst(.ineg, result_ty, &.{inner.args[1]});
+                    try self.replaceWithValue(func, inst, neg_inst);
+                    return true;
+                }
             }
         }
 
