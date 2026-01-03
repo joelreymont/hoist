@@ -305,6 +305,27 @@ pub const InstCombine = struct {
             }
         }
 
+        // Chained extends: uextend(uextend(x)) = uextend(x), sextend(sextend(x)) = sextend(x)
+        if (data.opcode == .uextend or data.opcode == .sextend) {
+            const arg_def = func.dfg.valueDef(data.arg) orelse return;
+            const arg_inst = switch (arg_def) {
+                .result => |r| r.inst,
+                else => return,
+            };
+            const arg_inst_data = func.dfg.insts.get(arg_inst) orelse return;
+
+            if (arg_inst_data.* == .unary) {
+                const inner = arg_inst_data.unary;
+                if (inner.opcode == data.opcode) {
+                    // Found chained extend - create single extend from innermost value
+                    const result_ty = func.dfg.instResultType(inst) orelse return;
+                    const new_extend = try func.dfg.makeInst(data.opcode, result_ty, &.{inner.arg});
+                    try self.replaceWithValue(func, inst, new_extend);
+                    return;
+                }
+            }
+        }
+
         // iabs(ineg(x)) = iabs(x) and iabs(iabs(x)) = iabs(x)
         if (data.opcode == .iabs) {
             const arg_def = func.dfg.valueDef(data.arg) orelse return;
