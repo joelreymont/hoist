@@ -195,6 +195,18 @@ pub const InstCombine = struct {
                 const shift_amt = @as(u6, @truncate(@as(u64, @bitCast(rhs)) & 63));
                 break :blk lhs >> shift_amt;
             },
+            .rotl => blk: {
+                const val_u = @as(u64, @bitCast(lhs));
+                const shift_amt = @as(u6, @truncate(@as(u64, @bitCast(rhs)) & 63));
+                const rotated = (val_u << shift_amt) | (val_u >> (64 - shift_amt));
+                break :blk @as(i64, @bitCast(rotated));
+            },
+            .rotr => blk: {
+                const val_u = @as(u64, @bitCast(lhs));
+                const shift_amt = @as(u6, @truncate(@as(u64, @bitCast(rhs)) & 63));
+                const rotated = (val_u >> shift_amt) | (val_u << (64 - shift_amt));
+                break :blk @as(i64, @bitCast(rotated));
+            },
             else => return false,
         };
 
