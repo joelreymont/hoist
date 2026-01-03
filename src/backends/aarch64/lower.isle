@@ -163,6 +163,30 @@
 (rule (lower (ireduce dst_ty src_ty x))
       (aarch64_ireduce dst_ty x))
 
+;; fadd: Floating-point addition (FADD)
+(rule (lower (fadd ty x y))
+      (aarch64_fadd ty x y))
+
+;; fsub: Floating-point subtraction (FSUB)
+(rule (lower (fsub ty x y))
+      (aarch64_fsub ty x y))
+
+;; fmul: Floating-point multiplication (FMUL)
+(rule (lower (fmul ty x y))
+      (aarch64_fmul ty x y))
+
+;; fdiv: Floating-point division (FDIV)
+(rule (lower (fdiv ty x y))
+      (aarch64_fdiv ty x y))
+
+;; fmin: Floating-point minimum (FMIN)
+(rule (lower (fmin ty x y))
+      (aarch64_fmin ty x y))
+
+;; fmax: Floating-point maximum (FMAX)
+(rule (lower (fmax ty x y))
+      (aarch64_fmax ty x y))
+
 ;; fcvt_from_sint: Convert signed integer to float (SCVTF)
 (rule (lower (fcvt_from_sint dst_ty src_ty x))
       (aarch64_scvtf dst_ty src_ty x))
@@ -868,6 +892,14 @@
 ;; Constants
 (decl aarch64_movz (Type i64) Aarch64Inst)
 (decl aarch64_iconst (Type i64) Aarch64Inst)
+
+;; Floating-point arithmetic
+(decl aarch64_fadd (Type Value Value) Aarch64Inst)
+(decl aarch64_fsub (Type Value Value) Aarch64Inst)
+(decl aarch64_fmul (Type Value Value) Aarch64Inst)
+(decl aarch64_fdiv (Type Value Value) Aarch64Inst)
+(decl aarch64_fmin (Type Value Value) Aarch64Inst)
+(decl aarch64_fmax (Type Value Value) Aarch64Inst)
 
 ;; Floating-point conversions
 (decl aarch64_fcvtzu_32 (Value) Aarch64Inst)  ;; FCVTZU: float to unsigned i32

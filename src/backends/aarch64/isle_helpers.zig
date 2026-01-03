@@ -1019,3 +1019,123 @@ pub fn aarch64_bswap_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !I
         .src = src_reg,
     } };
 }
+
+/// FADD - Floating-point addition
+pub fn aarch64_fadd(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+
+    if (ty == types.Type.F32) {
+        return Inst{ .fadd_s = .{
+            .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
+            .src1 = x_reg,
+            .src2 = y_reg,
+        } };
+    } else { // F64
+        return Inst{ .fadd_d = .{
+            .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
+            .src1 = x_reg,
+            .src2 = y_reg,
+        } };
+    }
+}
+
+/// FSUB - Floating-point subtraction
+pub fn aarch64_fsub(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+
+    if (ty == types.Type.F32) {
+        return Inst{ .fsub_s = .{
+            .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
+            .src1 = x_reg,
+            .src2 = y_reg,
+        } };
+    } else { // F64
+        return Inst{ .fsub_d = .{
+            .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
+            .src1 = x_reg,
+            .src2 = y_reg,
+        } };
+    }
+}
+
+/// FMUL - Floating-point multiplication
+pub fn aarch64_fmul(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+
+    if (ty == types.Type.F32) {
+        return Inst{ .fmul_s = .{
+            .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
+            .src1 = x_reg,
+            .src2 = y_reg,
+        } };
+    } else { // F64
+        return Inst{ .fmul_d = .{
+            .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
+            .src1 = x_reg,
+            .src2 = y_reg,
+        } };
+    }
+}
+
+/// FDIV - Floating-point division
+pub fn aarch64_fdiv(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+
+    if (ty == types.Type.F32) {
+        return Inst{ .fdiv_s = .{
+            .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
+            .src1 = x_reg,
+            .src2 = y_reg,
+        } };
+    } else { // F64
+        return Inst{ .fdiv_d = .{
+            .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
+            .src1 = x_reg,
+            .src2 = y_reg,
+        } };
+    }
+}
+
+/// FMIN - Floating-point minimum
+pub fn aarch64_fmin(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+
+    if (ty == types.Type.F32) {
+        return Inst{ .fmin_s = .{
+            .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
+            .src1 = x_reg,
+            .src2 = y_reg,
+        } };
+    } else { // F64
+        return Inst{ .fmin_d = .{
+            .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
+            .src1 = x_reg,
+            .src2 = y_reg,
+        } };
+    }
+}
+
+/// FMAX - Floating-point maximum
+pub fn aarch64_fmax(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+
+    if (ty == types.Type.F32) {
+        return Inst{ .fmax_s = .{
+            .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
+            .src1 = x_reg,
+            .src2 = y_reg,
+        } };
+    } else { // F64
+        return Inst{ .fmax_d = .{
+            .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
+            .src1 = x_reg,
+            .src2 = y_reg,
+        } };
+    }
+}
