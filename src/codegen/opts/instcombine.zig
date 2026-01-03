@@ -326,6 +326,23 @@ pub const InstCombine = struct {
             }
         }
 
+        // sextend(icmp(...)) = uextend(icmp(...)) since icmp produces 0 or 1
+        if (data.opcode == .sextend) {
+            const arg_def = func.dfg.valueDef(data.arg) orelse return;
+            const arg_inst = switch (arg_def) {
+                .result => |r| r.inst,
+                else => return,
+            };
+            const arg_inst_data = func.dfg.insts.get(arg_inst) orelse return;
+
+            if (arg_inst_data.* == .int_compare) {
+                const result_ty = func.dfg.instResultType(inst) orelse return;
+                const uextend_inst = try func.dfg.makeInst(.uextend, result_ty, &.{data.arg});
+                try self.replaceWithValue(func, inst, uextend_inst);
+                return;
+            }
+        }
+
         // iabs(ineg(x)) = iabs(x) and iabs(iabs(x)) = iabs(x)
         if (data.opcode == .iabs) {
             const arg_def = func.dfg.valueDef(data.arg) orelse return;
