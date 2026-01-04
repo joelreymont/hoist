@@ -127,6 +127,42 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Signed saturating add (SQADD Xd, Xn, Xm).
+    /// Saturates to signed min/max on overflow.
+    sqadd: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Signed saturating subtract (SQSUB Xd, Xn, Xm).
+    /// Saturates to signed min/max on overflow.
+    sqsub: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Unsigned saturating add (UQADD Xd, Xn, Xm).
+    /// Saturates to 0 or unsigned max on overflow.
+    uqadd: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Unsigned saturating subtract (UQSUB Xd, Xn, Xm).
+    /// Saturates to 0 on underflow.
+    uqsub: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
     /// Multiply register (MUL Xd, Xn, Xm).
     /// Computes Xd = Xn * Xm (lower bits only).
     mul_rr: struct {
@@ -1562,6 +1598,10 @@ pub const Inst = union(enum) {
             .adds_imm => |i| try writer.print("adds.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
             .subs_rr => |i| try writer.print("subs.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .subs_imm => |i| try writer.print("subs.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .sqadd => |i| try writer.print("sqadd.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .sqsub => |i| try writer.print("sqsub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .uqadd => |i| try writer.print("uqadd.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .uqsub => |i| try writer.print("uqsub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .mul_rr => |i| try writer.print("mul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .madd => |i| try writer.print("madd.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.addend }),
             .msub => |i| try writer.print("msub.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.minuend }),

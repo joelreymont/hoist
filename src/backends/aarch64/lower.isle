@@ -330,6 +330,58 @@
 (rule (lower (umax ty x y))
       (aarch64_umax ty x y))
 
+;; sadd_sat: Signed saturating add (SQADD)
+(rule (lower (has_type $I8 (sadd_sat x y)))
+      (aarch64_sqadd_8 x y))
+
+(rule (lower (has_type $I16 (sadd_sat x y)))
+      (aarch64_sqadd_16 x y))
+
+(rule (lower (has_type $I32 (sadd_sat x y)))
+      (aarch64_sqadd_32 x y))
+
+(rule (lower (has_type $I64 (sadd_sat x y)))
+      (aarch64_sqadd_64 x y))
+
+;; ssub_sat: Signed saturating subtract (SQSUB)
+(rule (lower (has_type $I8 (ssub_sat x y)))
+      (aarch64_sqsub_8 x y))
+
+(rule (lower (has_type $I16 (ssub_sat x y)))
+      (aarch64_sqsub_16 x y))
+
+(rule (lower (has_type $I32 (ssub_sat x y)))
+      (aarch64_sqsub_32 x y))
+
+(rule (lower (has_type $I64 (ssub_sat x y)))
+      (aarch64_sqsub_64 x y))
+
+;; uadd_sat: Unsigned saturating add (UQADD)
+(rule (lower (has_type $I8 (uadd_sat x y)))
+      (aarch64_uqadd_8 x y))
+
+(rule (lower (has_type $I16 (uadd_sat x y)))
+      (aarch64_uqadd_16 x y))
+
+(rule (lower (has_type $I32 (uadd_sat x y)))
+      (aarch64_uqadd_32 x y))
+
+(rule (lower (has_type $I64 (uadd_sat x y)))
+      (aarch64_uqadd_64 x y))
+
+;; usub_sat: Unsigned saturating subtract (UQSUB)
+(rule (lower (has_type $I8 (usub_sat x y)))
+      (aarch64_uqsub_8 x y))
+
+(rule (lower (has_type $I16 (usub_sat x y)))
+      (aarch64_uqsub_16 x y))
+
+(rule (lower (has_type $I32 (usub_sat x y)))
+      (aarch64_uqsub_32 x y))
+
+(rule (lower (has_type $I64 (usub_sat x y)))
+      (aarch64_uqsub_64 x y))
+
 ;; bitselect: Bitwise select ((x & c) | (y & ~c))
 (rule (lower (bitselect c x y))
       (aarch64_bitselect c x y))
@@ -890,6 +942,24 @@
 (decl aarch64_smax (Type Value Value) Aarch64Inst)
 (decl aarch64_umax (Type Value Value) Aarch64Inst)
 (decl aarch64_bitselect (Value Value Value) Aarch64Inst)
+
+;; Saturating arithmetic operations
+(decl aarch64_sqadd_8 (Value Value) Aarch64Inst)
+(decl aarch64_sqadd_16 (Value Value) Aarch64Inst)
+(decl aarch64_sqadd_32 (Value Value) Aarch64Inst)
+(decl aarch64_sqadd_64 (Value Value) Aarch64Inst)
+(decl aarch64_sqsub_8 (Value Value) Aarch64Inst)
+(decl aarch64_sqsub_16 (Value Value) Aarch64Inst)
+(decl aarch64_sqsub_32 (Value Value) Aarch64Inst)
+(decl aarch64_sqsub_64 (Value Value) Aarch64Inst)
+(decl aarch64_uqadd_8 (Value Value) Aarch64Inst)
+(decl aarch64_uqadd_16 (Value Value) Aarch64Inst)
+(decl aarch64_uqadd_32 (Value Value) Aarch64Inst)
+(decl aarch64_uqadd_64 (Value Value) Aarch64Inst)
+(decl aarch64_uqsub_8 (Value Value) Aarch64Inst)
+(decl aarch64_uqsub_16 (Value Value) Aarch64Inst)
+(decl aarch64_uqsub_32 (Value Value) Aarch64Inst)
+(decl aarch64_uqsub_64 (Value Value) Aarch64Inst)
 
 ;; Shift operations
 (decl aarch64_lsl_rr (Type Value Value) Aarch64Inst)
