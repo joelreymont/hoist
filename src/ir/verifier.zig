@@ -219,7 +219,7 @@ pub const Verifier = struct {
                         }
                     },
                     .unary => |un| {
-                        const arg_ty = self.func.dfg.valueType(un.arg);
+                        const arg_ty = self.func.dfg.valueType(un.arg) orelse continue;
 
                         // Verify type conversion operations
                         switch (opcode) {
