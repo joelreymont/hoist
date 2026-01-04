@@ -747,6 +747,10 @@
       (if-let amt (valid_shift_imm k))
       (aarch64_lsl_imm ty x amt))
 
+;; ishl: Vector shift left by immediate (ty_vec128)
+(rule -2 (lower (has_type (ty_vec128 ty) (ishl x (iconst (u64_from_imm64 n)))))
+      (ushl_vec_imm x (shift_masked_imm ty n) (vector_size ty)))
+
 ;; ushr: I128 unsigned right shift using register pairs
 ;;     lsr       lo_rshift, src_lo, amt
 ;;     lsr       hi_rshift, src_hi, amt
@@ -783,6 +787,15 @@
 (rule (lower (ushr ty x (iconst k)))
       (if-let amt (valid_shift_imm k))
       (aarch64_lsr_imm ty x amt))
+
+;; ushr: Vector unsigned shift right by immediate (ty_vec128)
+(rule -3 (lower (has_type (ty_vec128 ty) (ushr x (iconst (u64_from_imm64 n)))))
+      (ushr_vec_imm x (shift_masked_imm ty n) (vector_size ty)))
+
+;; ushr: Vector shift-by-zero optimization (returns input unchanged)
+(rule -2 (lower (has_type (ty_vec128 ty) (ushr x (iconst (u64_from_imm64 n)))))
+      (if-let 0 (shift_masked_imm ty n))
+      x)
 
 ;; sshr: I128 signed right shift using register pairs
 ;;     lsr       lo_rshift, src_lo, amt
@@ -822,6 +835,15 @@
 (rule (lower (sshr ty x (iconst k)))
       (if-let amt (valid_shift_imm k))
       (aarch64_asr_imm ty x amt))
+
+;; sshr: Vector signed shift right by immediate (ty_vec128)
+(rule -2 (lower (has_type (ty_vec128 ty) (sshr x (iconst (u64_from_imm64 n)))))
+      (sshr_vec_imm x (shift_masked_imm ty n) (vector_size ty)))
+
+;; sshr: Vector shift-by-zero optimization (returns input unchanged)
+(rule -1 (lower (has_type (ty_vec128 ty) (sshr x (iconst (u64_from_imm64 n)))))
+      (if-let 0 (shift_masked_imm ty n))
+      x)
 
 ;; rotr: Rotate right (register form)
 (rule (lower (rotr ty x y))
