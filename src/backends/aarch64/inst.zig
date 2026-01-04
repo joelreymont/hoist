@@ -1392,6 +1392,15 @@ pub const Inst = union(enum) {
         size: VecElemSize,
     },
 
+    /// Duplicate vector element to all lanes (DUP Vd.T, Vn.T[lane]).
+    /// Broadcasts a single lane from source vector to all lanes of destination.
+    vec_dup_lane: struct {
+        dst: WritableReg,
+        src: Reg,
+        lane: u8,
+        size: VecElemSize,
+    },
+
     /// Extract vector element to scalar (UMOV).
     /// Copies vector lane to scalar: dst = src[lane].
     vec_extract_lane: struct {

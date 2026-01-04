@@ -10,6 +10,24 @@ const ImmLogic = root.aarch64_inst.ImmLogic;
 const ExtendOp = root.aarch64_inst.ExtendOp;
 const lower_mod = root.lower;
 const types = root.types;
+const trapcode = root.trapcode;
+const emit = @import("emit.zig");
+const entities = root.entities;
+
+// Type aliases for IR types
+const TrapCode = trapcode.TrapCode;
+const StackSlot = entities.StackSlot;
+const SigRef = entities.SigRef;
+const ExternalName = entities.ExternalName;
+const VectorSize = enum {
+    V8B,
+    V16B,
+    V4H,
+    V8H,
+    V2S,
+    V4S,
+    V2D,
+};
 
 /// Extractor: Try to extract Imm12 from u64.
 /// Returns the Imm12 if the value fits, null otherwise.
@@ -1253,6 +1271,29 @@ pub fn aarch64_splat(ty: types.Type, x: lower_mod.Value, ctx: *lower_mod.LowerCt
     } };
 }
 
+/// VEC_DUP_FROM_FPU - Duplicate vector element to all lanes (DUP Vd.T, Vn.T[lane])
+pub fn vec_dup_from_fpu(src: lower_mod.Value, size_enum: VectorSize, lane: u8, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src_reg = try ctx.getValueReg(src, .vector);
+
+    // Map ISLE VectorSize enum to VecElemSize
+    const size: Inst.VecElemSize = switch (size_enum) {
+        .V8B => .size8x8,
+        .V16B => .size8x16,
+        .V4H => .size16x4,
+        .V8H => .size16x8,
+        .V2S => .size32x2,
+        .V4S => .size32x4,
+        .V2D => .size64x2,
+    };
+
+    return Inst{ .vec_dup_lane = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
+        .src = src_reg,
+        .lane = lane,
+        .size = size,
+    } };
+}
+
 /// EXTRACTLANE - Extract vector lane to scalar (UMOV)
 pub fn aarch64_extractlane(ty: types.Type, vec: lower_mod.Value, lane_val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const vec_reg = try getValueReg(ctx, vec);
@@ -1599,12 +1640,12 @@ pub fn lane_fits_in_32(ty: types.Type) ?types.Type {
 }
 
 /// Trap operations (ISLE constructors)
-pub fn aarch64_trap(trap_code: ir.TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_trap(trap_code: TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     _ = ctx;
     return Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } };
 }
 
-pub fn aarch64_trapz(val: lower_mod.Value, trap_code: ir.TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_trapz(val: lower_mod.Value, trap_code: TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Compare value with zero
     const val_reg = try ctx.getValueReg(val, .int);
     try ctx.emit(Inst{ .cmp_imm = .{ .rn = val_reg, .imm = 0, .is_64 = true } });
@@ -1621,7 +1662,7 @@ pub fn aarch64_trapz(val: lower_mod.Value, trap_code: ir.TrapCode, ctx: *lower_m
     return Inst{ .invalid = {} };
 }
 
-pub fn aarch64_trapnz(val: lower_mod.Value, trap_code: ir.TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_trapnz(val: lower_mod.Value, trap_code: TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Compare value with zero
     const val_reg = try ctx.getValueReg(val, .int);
     try ctx.emit(Inst{ .cmp_imm = .{ .rn = val_reg, .imm = 0, .is_64 = true } });
@@ -1814,39 +1855,11 @@ pub fn aarch64_isplit(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower
     return x_regs;
 }
 
-/// Trap operations (ISLE constructors)
-pub fn aarch64_trap(trap_code: ir.TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    _ = ctx;
-    return Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } };
-}
-
-pub fn aarch64_trapz(val: lower_mod.Value, trap_code: ir.TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    const val_reg = try ctx.getValueReg(val, .int);
-    try ctx.emit(Inst{ .cmp_imm = .{ .rn = val_reg, .imm = 0, .is_64 = true } });
-    
-    const skip_label = ctx.allocLabel();
-    try ctx.emit(Inst{ .b_cond = .{ .cond = .ne, .label = skip_label } });
-    try ctx.emit(Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } });
-    try ctx.bindLabel(skip_label);
-    return Inst{ .invalid = {} };
-}
-
-pub fn aarch64_trapnz(val: lower_mod.Value, trap_code: ir.TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    const val_reg = try ctx.getValueReg(val, .int);
-    try ctx.emit(Inst{ .cmp_imm = .{ .rn = val_reg, .imm = 0, .is_64 = true } });
-    
-    const skip_label = ctx.allocLabel();
-    try ctx.emit(Inst{ .b_cond = .{ .cond = .eq, .label = skip_label } });
-    try ctx.emit(Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } });
-    try ctx.bindLabel(skip_label);
-    return Inst{ .invalid = {} };
-}
-
 /// Bitcast operations (ISLE constructors)
 pub fn aarch64_bitcast_noop(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    _ = ctx;
     // No-op: just return the value unchanged (type punning in same register file)
-    return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(try ctx.getValueReg(x, .int)), .src = try ctx.getValueReg(x, .int) } };
+    const reg = try ctx.getValueReg(x, .int);
+    return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(reg), .src = reg } };
 }
 
 pub fn aarch64_fmov_from_gpr(x: lower_mod.Value, in_ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
@@ -1902,21 +1915,23 @@ pub fn aarch64_debugtrap(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
 }
 
 /// Stack address computation (ISLE constructor)
-pub fn aarch64_stack_addr(stack_slot: ir.StackSlot, offset: i32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_stack_addr(stack_slot: StackSlot, offset: i32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Compute: SP + slot_offset + offset
     const slot_offset = ctx.getStackSlotOffset(stack_slot);
     const total_offset = @as(i64, slot_offset) + @as(i64, offset);
-    
+
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
-    
+
     if (total_offset >= 0 and total_offset <= 4095) {
         // Fits in immediate: ADD dst, SP, #offset
-        return Inst{ .add_imm = .{
-            .dst = dst,
-            .rn = Reg.gpr(31), // SP
-            .imm = @intCast(total_offset),
-            .is_64 = true,
-        } };
+        return Inst{
+            .add_imm = .{
+                .dst = dst,
+                .rn = Reg.gpr(31), // SP
+                .imm = @intCast(total_offset),
+                .is_64 = true,
+            },
+        };
     } else {
         // Large offset: MOV + ADD
         const offset_reg = lower_mod.WritableReg.allocReg(.int, ctx);
@@ -1925,26 +1940,28 @@ pub fn aarch64_stack_addr(stack_slot: ir.StackSlot, offset: i32, ctx: *lower_mod
             .imm = @bitCast(@as(i64, total_offset)),
             .is_64 = true,
         } });
-        return Inst{ .add_rr = .{
-            .dst = dst,
-            .rn = Reg.gpr(31), // SP
-            .rm = offset_reg.toReg(),
-            .is_64 = true,
-        } };
+        return Inst{
+            .add_rr = .{
+                .dst = dst,
+                .rn = Reg.gpr(31), // SP
+                .rm = offset_reg.toReg(),
+                .is_64 = true,
+            },
+        };
     }
 }
 
 /// Symbol address loading (ISLE constructors)
-pub fn aarch64_symbol_value(extname: ir.ExternalName, offset: i64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_symbol_value(extname: ExternalName, offset: i64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
-    
+
     // PC-relative addressing: ADRP + ADD
     // ADRP loads page address, ADD adds page offset
     try ctx.emit(Inst{ .adrp = .{
         .dst = dst,
         .symbol = extname,
     } });
-    
+
     return Inst{ .add_imm = .{
         .dst = dst,
         .rn = dst.toReg(),
@@ -1953,7 +1970,7 @@ pub fn aarch64_symbol_value(extname: ir.ExternalName, offset: i64, ctx: *lower_m
     } };
 }
 
-pub fn aarch64_func_addr(extname: ir.ExternalName, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_func_addr(extname: ExternalName, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Function address is just symbol_value with offset 0
     return aarch64_symbol_value(extname, 0, ctx);
 }
@@ -1965,7 +1982,7 @@ pub fn aarch64_uadd_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
     const b_reg = try ctx.getValueReg(b, .int);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     const is_64 = ty.bits() == 64;
-    
+
     // ADDS: Add and set flags
     try ctx.emit(Inst{ .add_s = .{
         .dst = dst,
@@ -1973,14 +1990,16 @@ pub fn aarch64_uadd_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
         .rm = b_reg,
         .is_64 = is_64,
     } });
-    
+
     // CSET: Set register to 1 if carry, 0 otherwise
     const overflow_reg = lower_mod.WritableReg.allocReg(.int, ctx);
-    try ctx.emit(Inst{ .cset = .{
-        .dst = overflow_reg,
-        .cond = .hs, // HS = unsigned higher or same (carry set)
-    } });
-    
+    try ctx.emit(Inst{
+        .cset = .{
+            .dst = overflow_reg,
+            .cond = .hs, // HS = unsigned higher or same (carry set)
+        },
+    });
+
     return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
 }
 
@@ -1989,7 +2008,7 @@ pub fn aarch64_usub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
     const b_reg = try ctx.getValueReg(b, .int);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     const is_64 = ty.bits() == 64;
-    
+
     // SUBS: Subtract and set flags
     try ctx.emit(Inst{ .sub_s = .{
         .dst = dst,
@@ -1997,14 +2016,16 @@ pub fn aarch64_usub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
         .rm = b_reg,
         .is_64 = is_64,
     } });
-    
+
     // CSET: Set register to 1 if borrow (carry clear), 0 otherwise
     const overflow_reg = lower_mod.WritableReg.allocReg(.int, ctx);
-    try ctx.emit(Inst{ .cset = .{
-        .dst = overflow_reg,
-        .cond = .lo, // LO = unsigned lower (borrow/carry clear)
-    } });
-    
+    try ctx.emit(Inst{
+        .cset = .{
+            .dst = overflow_reg,
+            .cond = .lo, // LO = unsigned lower (borrow/carry clear)
+        },
+    });
+
     return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
 }
 
@@ -2013,7 +2034,7 @@ pub fn aarch64_sadd_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
     const b_reg = try ctx.getValueReg(b, .int);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     const is_64 = ty.bits() == 64;
-    
+
     // ADDS: Add and set flags
     try ctx.emit(Inst{ .add_s = .{
         .dst = dst,
@@ -2021,14 +2042,16 @@ pub fn aarch64_sadd_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
         .rm = b_reg,
         .is_64 = is_64,
     } });
-    
+
     // CSET: Set register to 1 if signed overflow (V flag), 0 otherwise
     const overflow_reg = lower_mod.WritableReg.allocReg(.int, ctx);
-    try ctx.emit(Inst{ .cset = .{
-        .dst = overflow_reg,
-        .cond = .vs, // VS = signed overflow
-    } });
-    
+    try ctx.emit(Inst{
+        .cset = .{
+            .dst = overflow_reg,
+            .cond = .vs, // VS = signed overflow
+        },
+    });
+
     return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
 }
 
@@ -2037,7 +2060,7 @@ pub fn aarch64_ssub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
     const b_reg = try ctx.getValueReg(b, .int);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     const is_64 = ty.bits() == 64;
-    
+
     // SUBS: Subtract and set flags
     try ctx.emit(Inst{ .sub_s = .{
         .dst = dst,
@@ -2045,59 +2068,65 @@ pub fn aarch64_ssub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
         .rm = b_reg,
         .is_64 = is_64,
     } });
-    
+
     // CSET: Set register to 1 if signed overflow (V flag), 0 otherwise
     const overflow_reg = lower_mod.WritableReg.allocReg(.int, ctx);
-    try ctx.emit(Inst{ .cset = .{
-        .dst = overflow_reg,
-        .cond = .vs, // VS = signed overflow
-    } });
-    
+    try ctx.emit(Inst{
+        .cset = .{
+            .dst = overflow_reg,
+            .cond = .vs, // VS = signed overflow
+        },
+    });
+
     return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
 }
 
 /// Tail call operations (ISLE constructors)
-pub fn aarch64_return_call(sig_ref: ir.SigRef, name: ir.ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Tail call: marshal args, deallocate frame, branch (not call)
     _ = sig_ref;
     _ = args;
-    
+
     // TODO: Proper ABI argument marshaling
     // For now, emit simple sequence:
-    
+
     // 1. Deallocate stack frame (restore SP)
     const frame_size = ctx.getFrameSize();
     if (frame_size > 0) {
-        try ctx.emit(Inst{ .add_imm = .{
-            .dst = lower_mod.WritableReg.fromReg(Reg.gpr(31)), // SP
-            .rn = Reg.gpr(31),
-            .imm = @intCast(frame_size),
-            .is_64 = true,
-        } });
+        try ctx.emit(Inst{
+            .add_imm = .{
+                .dst = lower_mod.WritableReg.fromReg(Reg.gpr(31)), // SP
+                .rn = Reg.gpr(31),
+                .imm = @intCast(frame_size),
+                .is_64 = true,
+            },
+        });
     }
-    
+
     // 2. Branch to target (B, not BL - no link)
     return Inst{ .b = .{ .target = .{ .symbol = name } } };
 }
 
-pub fn aarch64_return_call_indirect(sig_ref: ir.SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Indirect tail call: marshal args, deallocate frame, branch via register
     _ = sig_ref;
     _ = args;
-    
+
     const ptr_reg = try ctx.getValueReg(ptr, .int);
-    
+
     // Deallocate stack frame
     const frame_size = ctx.getFrameSize();
     if (frame_size > 0) {
-        try ctx.emit(Inst{ .add_imm = .{
-            .dst = lower_mod.WritableReg.fromReg(Reg.gpr(31)), // SP
-            .rn = Reg.gpr(31),
-            .imm = @intCast(frame_size),
-            .is_64 = true,
-        } });
+        try ctx.emit(Inst{
+            .add_imm = .{
+                .dst = lower_mod.WritableReg.fromReg(Reg.gpr(31)), // SP
+                .rn = Reg.gpr(31),
+                .imm = @intCast(frame_size),
+                .is_64 = true,
+            },
+        });
     }
-    
+
     // Branch via register (BR, not BLR - no link)
     return Inst{ .br = .{ .rn = ptr_reg } };
 }
@@ -2106,7 +2135,7 @@ pub fn aarch64_return_call_indirect(sig_ref: ir.SigRef, ptr: lower_mod.Value, ar
 pub fn aarch64_vall_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const x_reg = try ctx.getValueReg(x, .vector);
     const vec_size = vectorSizeFromType(ty);
-    
+
     // Use UMINV to get minimum of all lanes
     const min_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     try ctx.emit(Inst{ .vec_uminv = .{
@@ -2114,7 +2143,7 @@ pub fn aarch64_vall_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.Low
         .src = x_reg,
         .size = vec_size,
     } });
-    
+
     // Extract scalar and compare with 0
     const scalar_reg = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{ .mov_from_vec = .{
@@ -2123,14 +2152,14 @@ pub fn aarch64_vall_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.Low
         .lane = 0,
         .size = .size64,
     } });
-    
+
     // Compare: all true if min != 0
     try ctx.emit(Inst{ .cmp_imm = .{
         .rn = scalar_reg.toReg(),
         .imm = 0,
         .is_64 = true,
     } });
-    
+
     // CSET: Set result to 1 if NE, 0 otherwise
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{ .cset = .{ .dst = dst, .cond = .ne } };
@@ -2139,7 +2168,7 @@ pub fn aarch64_vall_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.Low
 pub fn aarch64_vany_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const x_reg = try ctx.getValueReg(x, .vector);
     const vec_size = vectorSizeFromType(ty);
-    
+
     // Use UMAXV to get maximum of all lanes
     const max_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     try ctx.emit(Inst{ .vec_umaxv = .{
@@ -2147,7 +2176,7 @@ pub fn aarch64_vany_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.Low
         .src = x_reg,
         .size = vec_size,
     } });
-    
+
     // Extract scalar and compare with 0
     const scalar_reg = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{ .mov_from_vec = .{
@@ -2156,14 +2185,14 @@ pub fn aarch64_vany_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.Low
         .lane = 0,
         .size = .size64,
     } });
-    
+
     // Compare: any true if max != 0
     try ctx.emit(Inst{ .cmp_imm = .{
         .rn = scalar_reg.toReg(),
         .imm = 0,
         .is_64 = true,
     } });
-    
+
     // CSET: Set result to 1 if NE, 0 otherwise
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{ .cset = .{ .dst = dst, .cond = .ne } };
@@ -2172,11 +2201,11 @@ pub fn aarch64_vany_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.Low
 pub fn aarch64_vhigh_bits(vec: lower_mod.Value, ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const vec_reg = try ctx.getValueReg(vec, .vector);
     const lane_bits = ty.laneBits();
-    
+
     // Extract high bit from each lane by shifting and accumulating
     // For I8X16: shift each byte left by 7, then ADDV to sum
     const shift_amount: u8 = @intCast(lane_bits - 1);
-    
+
     // SHL to move high bit to position
     const shifted = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     try ctx.emit(Inst{ .vec_shl_imm = .{
@@ -2185,7 +2214,7 @@ pub fn aarch64_vhigh_bits(vec: lower_mod.Value, ty: types.Type, ctx: *lower_mod.
         .shift = shift_amount,
         .size = vectorSizeFromType(ty),
     } });
-    
+
     // ADDV to sum all lanes (creates bitmask)
     const sum_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     try ctx.emit(Inst{ .vec_addv = .{
@@ -2193,7 +2222,7 @@ pub fn aarch64_vhigh_bits(vec: lower_mod.Value, ty: types.Type, ctx: *lower_mod.
         .src = shifted.toReg(),
         .size = vectorSizeFromType(ty),
     } });
-    
+
     // Extract to GPR
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{ .mov_from_vec = .{
@@ -2215,30 +2244,30 @@ fn vectorSizeFromType(ty: types.Type) emit.VectorSize {
 }
 
 /// Call operations (ISLE constructors)
-pub fn aarch64_call(sig_ref: ir.SigRef, name: ir.ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
     // Marshal arguments according to ABI
     // TODO: Full ABI argument marshaling
     _ = sig_ref;
     _ = args;
-    
+
     // Direct call: BL (branch with link)
     try ctx.emit(Inst{ .bl = .{ .target = .{ .symbol = name } } });
-    
+
     // Return value in x0 (simplified - should handle multi-return)
     return lower_mod.ValueRegs.one(Reg.gpr(0));
 }
 
-pub fn aarch64_call_indirect(sig_ref: ir.SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
     // Marshal arguments according to ABI
     // TODO: Full ABI argument marshaling
     _ = sig_ref;
     _ = args;
-    
+
     const ptr_reg = try ctx.getValueReg(ptr, .int);
-    
+
     // Indirect call: BLR (branch with link to register)
     try ctx.emit(Inst{ .blr = .{ .rn = ptr_reg } });
-    
+
     // Return value in x0 (simplified - should handle multi-return)
     return lower_mod.ValueRegs.one(Reg.gpr(0));
 }
@@ -2248,14 +2277,14 @@ pub fn aarch64_call_indirect(sig_ref: ir.SigRef, ptr: lower_mod.Value, args: low
 pub fn shuffle_dup8_from_imm(imm: u128) ?u8 {
     // Extract first byte
     const lane: u8 = @truncate(imm);
-    
+
     // Check if all 16 bytes are the same
     var i: u8 = 0;
     while (i < 16) : (i += 1) {
         const byte: u8 = @truncate(imm >> (@as(u7, i) * 8));
         if (byte != lane) return null;
     }
-    
+
     // Return lane index (0-15)
     return lane;
 }
@@ -2263,14 +2292,14 @@ pub fn shuffle_dup8_from_imm(imm: u128) ?u8 {
 pub fn shuffle_dup16_from_imm(imm: u128) ?u8 {
     // Extract first 16-bit value (bytes 0-1)
     const lane16: u16 = @truncate(imm);
-    
+
     // Check if all 8 halfwords are the same
     var i: u8 = 0;
     while (i < 8) : (i += 1) {
         const hword: u16 = @truncate(imm >> (@as(u7, i) * 16));
         if (hword != lane16) return null;
     }
-    
+
     // Return lane index (lane16 should be 0-7 repeated as 0x0100, 0x0302, etc.)
     return @truncate(lane16);
 }
@@ -2278,14 +2307,14 @@ pub fn shuffle_dup16_from_imm(imm: u128) ?u8 {
 pub fn shuffle_dup32_from_imm(imm: u128) ?u8 {
     // Extract first 32-bit value (bytes 0-3)
     const lane32: u32 = @truncate(imm);
-    
+
     // Check if all 4 words are the same
     var i: u8 = 0;
     while (i < 4) : (i += 1) {
         const word: u32 = @truncate(imm >> (@as(u7, i) * 32));
         if (word != lane32) return null;
     }
-    
+
     // Return lane index (0-3)
     return @truncate(lane32);
 }
@@ -2294,10 +2323,10 @@ pub fn shuffle_dup64_from_imm(imm: u128) ?u8 {
     // Extract low and high 64-bit values
     const low: u64 = @truncate(imm);
     const high: u64 = @truncate(imm >> 64);
-    
+
     // Check if both are the same
     if (low != high) return null;
-    
+
     // Return lane index (0-1)
     return @truncate(low);
 }
@@ -2305,14 +2334,14 @@ pub fn shuffle_dup64_from_imm(imm: u128) ?u8 {
 pub fn vec_extract_imm4_from_immediate(imm: u128) ?u8 {
     // Check if pattern is: n, n+1, n+2, ..., n+15 (consecutive bytes)
     const first_byte: u8 = @truncate(imm);
-    
+
     var i: u8 = 0;
     while (i < 16) : (i += 1) {
         const expected: u8 = @truncate(@as(u16, first_byte) + i);
         const actual: u8 = @truncate(imm >> (@as(u7, i) * 8));
         if (actual != expected) return null;
     }
-    
+
     // Return starting byte offset (must be < 16 for valid EXT)
     if (first_byte < 16) return first_byte;
     return null;
@@ -2322,37 +2351,37 @@ pub fn vec_extract_imm4_from_immediate(imm: u128) ?u8 {
 pub fn aarch64_shuffle_tbl(a: lower_mod.Value, b: lower_mod.Value, mask: u128, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const a_reg = try ctx.getValueReg(a, .vector);
     const b_reg = try ctx.getValueReg(b, .vector);
-    
+
     // Load 128-bit mask into vector register
     const mask_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
-    
+
     // Load mask as two 64-bit immediates
     const mask_lo: u64 = @truncate(mask);
     const mask_hi: u64 = @truncate(mask >> 64);
-    
+
     // MOV immediate to vector (using FMOV for 64-bit chunks)
     const tmp_lo = lower_mod.WritableReg.allocReg(.int, ctx);
     const tmp_hi = lower_mod.WritableReg.allocReg(.int, ctx);
-    
+
     try ctx.emit(Inst{ .mov_imm = .{
         .dst = tmp_lo,
         .imm = @bitCast(mask_lo),
         .is_64 = true,
     } });
-    
+
     try ctx.emit(Inst{ .mov_imm = .{
         .dst = tmp_hi,
         .imm = @bitCast(mask_hi),
         .is_64 = true,
     } });
-    
+
     // Move to vector register (INS or FMOV)
     try ctx.emit(Inst{ .fmov_from_gpr = .{
         .dst = mask_reg,
         .src = tmp_lo.toReg(),
         .size = .size64,
     } });
-    
+
     try ctx.emit(Inst{ .vec_insert_lane = .{
         .dst = mask_reg,
         .vec = mask_reg.toReg(),
@@ -2360,7 +2389,7 @@ pub fn aarch64_shuffle_tbl(a: lower_mod.Value, b: lower_mod.Value, mask: u128, c
         .lane = 1,
         .size = .Size64x2,
     } });
-    
+
     // TBL2: Two-register table lookup
     // Concatenates a and b as 256-bit table, indexes with mask
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);

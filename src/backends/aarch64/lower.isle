@@ -1956,6 +1956,21 @@
 
 ;; Shuffle operations
 ;; shuffle: SIMD lane shuffle using 128-bit mask
+
+;; DUP (element) - Duplicate vector element to all lanes
+(decl vec_dup_from_fpu (Value VectorSize u8) Aarch64Inst)
+(extern constructor vec_dup_from_fpu vec_dup_from_fpu)
+
+;; DUP patterns - single element broadcast
+(rule 6 (lower (shuffle a b (shuffle_dup8_from_imm n)))
+      (vec_dup_from_fpu a (VectorSize.V16B) n))
+(rule 5 (lower (shuffle a b (shuffle_dup16_from_imm n)))
+      (vec_dup_from_fpu a (VectorSize.V8H) n))
+(rule 4 (lower (shuffle a b (shuffle_dup32_from_imm n)))
+      (vec_dup_from_fpu a (VectorSize.V4S) n))
+(rule 3 (lower (shuffle a b (shuffle_dup64_from_imm n)))
+      (vec_dup_from_fpu a (VectorSize.V2D) n))
+
 ;; TBL fallback: handles all shuffle patterns via table lookup
 (decl aarch64_shuffle_tbl (Value Value Immediate) Aarch64Inst)
 (rule 0 (lower (has_type ty (shuffle a b mask)))

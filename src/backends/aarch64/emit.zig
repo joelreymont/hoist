@@ -276,6 +276,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_fcvtl => |i| try emitVecFcvtl(i.dst.toReg(), i.src, i.high, buffer),
         .vec_fcvtn => |i| try emitVecFcvtn(i.dst.toReg(), i.src, i.high, buffer),
         .vec_dup => |i| try emitVecDup(i.dst.toReg(), i.src, i.size, buffer),
+        .vec_dup_lane => |i| try emitVecDupLane(i.dst.toReg(), i.src, i.lane, i.size, buffer),
         .vec_extract_lane => |i| try emitVecExtractLane(i.dst.toReg(), i.src, i.lane, i.size, buffer),
         .vec_insert_lane => |i| try emitVecInsertLane(i.dst.toReg(), i.vec, i.src, i.lane, i.size, buffer),
         .addv => |i| try emitAddv(i.dst.toReg(), i.src, i.size, buffer),
@@ -12232,6 +12233,49 @@ fn emitVecDup(dst: Reg, src: Reg, size: VecElemSize, buffer: *buffer_mod.MachBuf
         (0b001110000 << 21) |
         (imm5 << 16) |
         (0b000011 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    try buffer.put(&std.mem.toBytes(insn));
+}
+
+/// DUP (element) - Duplicate vector element to all lanes
+/// Encoding: 0|Q|001110000|imm5|000001|Rn|Rd
+/// Q: 0=64-bit, 1=128-bit
+/// imm5: encodes element size and lane index
+fn emitVecDupLane(dst: Reg, src: Reg, lane: u8, size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    // Determine Q bit and imm5 from VecElemSize and lane
+    const q: u32 = switch (size) {
+        .size8x8, .size16x4, .size32x2 => 0,
+        .size8x16, .size16x8, .size32x4, .size64x2 => 1,
+    };
+
+    const imm5: u32 = switch (size) {
+        .size8x8, .size8x16 => blk: {
+            std.debug.assert(lane < 16);
+            break :blk 0b00001 | (@as(u32, lane) << 1);
+        },
+        .size16x4, .size16x8 => blk: {
+            std.debug.assert(lane < 8);
+            break :blk 0b00010 | (@as(u32, lane) << 2);
+        },
+        .size32x2, .size32x4 => blk: {
+            std.debug.assert(lane < 4);
+            break :blk 0b00100 | (@as(u32, lane) << 3);
+        },
+        .size64x2 => blk: {
+            std.debug.assert(lane < 2);
+            break :blk 0b01000 | (@as(u32, lane) << 4);
+        },
+    };
+
+    const insn: u32 = (q << 30) |
+        (0b001110000 << 21) |
+        (imm5 << 16) |
+        (0b000001 << 10) |
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
