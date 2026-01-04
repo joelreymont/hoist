@@ -76,6 +76,7 @@ pub const Peephole = struct {
                     .rotl, .rotr => try self.optimizeRotate(func, inst, data),
                     .udiv, .sdiv => try self.optimizeDiv(func, inst, data),
                     .urem, .srem => try self.optimizeRem(func, inst, data),
+                    .smin, .smax, .umin, .umax => try self.optimizeMinMax(func, inst, data),
                     else => {},
                 }
             },
@@ -224,6 +225,14 @@ pub const Peephole = struct {
             result_mut.* = root.dfg.ValueData.inst(ty, 0, inst);
 
             self.changed = true;
+        }
+    }
+
+    /// Optimize min/max: min(x, x) = x, max(x, x) = x
+    fn optimizeMinMax(self: *Peephole, func: *Function, inst: Inst, data: BinaryData) !void {
+        if (data.args[0].index == data.args[1].index) {
+            // min(x, x) = x, max(x, x) = x
+            try self.replaceWithCopy(func, inst, data.args[0]);
         }
     }
 
