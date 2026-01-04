@@ -1957,3 +1957,101 @@ pub fn aarch64_func_addr(extname: ir.ExternalName, ctx: *lower_mod.LowerCtx(Inst
     // Function address is just symbol_value with offset 0
     return aarch64_symbol_value(extname, 0, ctx);
 }
+
+/// Overflow arithmetic (ISLE constructors)
+/// Returns ValueRegs: [result, overflow_flag]
+pub fn aarch64_uadd_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    const is_64 = ty.bits() == 64;
+    
+    // ADDS: Add and set flags
+    try ctx.emit(Inst{ .add_s = .{
+        .dst = dst,
+        .rn = a_reg,
+        .rm = b_reg,
+        .is_64 = is_64,
+    } });
+    
+    // CSET: Set register to 1 if carry, 0 otherwise
+    const overflow_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .cset = .{
+        .dst = overflow_reg,
+        .cond = .hs, // HS = unsigned higher or same (carry set)
+    } });
+    
+    return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
+}
+
+pub fn aarch64_usub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    const is_64 = ty.bits() == 64;
+    
+    // SUBS: Subtract and set flags
+    try ctx.emit(Inst{ .sub_s = .{
+        .dst = dst,
+        .rn = a_reg,
+        .rm = b_reg,
+        .is_64 = is_64,
+    } });
+    
+    // CSET: Set register to 1 if borrow (carry clear), 0 otherwise
+    const overflow_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .cset = .{
+        .dst = overflow_reg,
+        .cond = .lo, // LO = unsigned lower (borrow/carry clear)
+    } });
+    
+    return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
+}
+
+pub fn aarch64_sadd_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    const is_64 = ty.bits() == 64;
+    
+    // ADDS: Add and set flags
+    try ctx.emit(Inst{ .add_s = .{
+        .dst = dst,
+        .rn = a_reg,
+        .rm = b_reg,
+        .is_64 = is_64,
+    } });
+    
+    // CSET: Set register to 1 if signed overflow (V flag), 0 otherwise
+    const overflow_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .cset = .{
+        .dst = overflow_reg,
+        .cond = .vs, // VS = signed overflow
+    } });
+    
+    return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
+}
+
+pub fn aarch64_ssub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    const is_64 = ty.bits() == 64;
+    
+    // SUBS: Subtract and set flags
+    try ctx.emit(Inst{ .sub_s = .{
+        .dst = dst,
+        .rn = a_reg,
+        .rm = b_reg,
+        .is_64 = is_64,
+    } });
+    
+    // CSET: Set register to 1 if signed overflow (V flag), 0 otherwise
+    const overflow_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .cset = .{
+        .dst = overflow_reg,
+        .cond = .vs, // VS = signed overflow
+    } });
+    
+    return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
+}

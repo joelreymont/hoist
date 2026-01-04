@@ -1873,3 +1873,24 @@
 (decl aarch64_func_addr (ExternalName) Aarch64Inst)
 (rule (lower (func_addr (func_ref_data _ extname dist _)))
       (aarch64_func_addr extname))
+
+;; Overflow arithmetic
+;; uadd_overflow: Unsigned add with overflow detection
+(decl aarch64_uadd_overflow (Type Value Value) ValueRegs)
+(rule (lower (has_type (ty_32_or_64 ty) (uadd_overflow a b)))
+      (aarch64_uadd_overflow ty a b))
+
+;; usub_overflow: Unsigned subtract with overflow (borrow) detection
+(decl aarch64_usub_overflow (Type Value Value) ValueRegs)
+(rule (lower (has_type (ty_32_or_64 ty) (usub_overflow a b)))
+      (aarch64_usub_overflow ty a b))
+
+;; sadd_overflow: Signed add with overflow detection
+(decl aarch64_sadd_overflow (Type Value Value) ValueRegs)
+(rule (lower (has_type (ty_32_or_64 ty) (sadd_overflow a b)))
+      (aarch64_sadd_overflow ty a b))
+
+;; ssub_overflow: Signed subtract with overflow detection
+(decl aarch64_ssub_overflow (Type Value Value) ValueRegs)
+(rule (lower (has_type (ty_32_or_64 ty) (ssub_overflow a b)))
+      (aarch64_ssub_overflow ty a b))
