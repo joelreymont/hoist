@@ -1403,6 +1403,25 @@
 (rule (lower (fma ty x y z))
       (aarch64_fmadd ty x y z))
 
+;; Vector float binary operations
+(rule -1 (lower (has_type ty @ (multi_lane _ _) (fadd x y)))
+      (vec_rrr (VecALUOp.Fadd) x y (vector_size ty)))
+
+(rule -1 (lower (has_type ty @ (multi_lane _ _) (fsub x y)))
+      (vec_rrr (VecALUOp.Fsub) x y (vector_size ty)))
+
+(rule -1 (lower (has_type ty @ (multi_lane _ _) (fmul x y)))
+      (vec_rrr (VecALUOp.Fmul) x y (vector_size ty)))
+
+(rule -1 (lower (has_type ty @ (multi_lane _ _) (fdiv x y)))
+      (vec_rrr (VecALUOp.Fdiv) x y (vector_size ty)))
+
+(rule -1 (lower (has_type ty @ (multi_lane _ _) (fmin x y)))
+      (vec_rrr (VecALUOp.Fmin) x y (vector_size ty)))
+
+(rule -1 (lower (has_type ty @ (multi_lane _ _) (fmax x y)))
+      (vec_rrr (VecALUOp.Fmax) x y (vector_size ty)))
+
 ;; fcmp: FP comparison (FCMP)
 (rule (lower (fcmp cond x y))
       (aarch64_fcmp x y))
