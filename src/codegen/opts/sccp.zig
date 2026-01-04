@@ -393,6 +393,14 @@ fn evalUnaryOp(opcode: Opcode, arg: i64) !i64 {
         .popcnt => @popCount(@as(u64, @bitCast(arg))),
         .clz => @clz(@as(u64, @bitCast(arg))),
         .ctz => @ctz(@as(u64, @bitCast(arg))),
+        .fneg => blk: {
+            const f = @as(f64, @bitCast(arg));
+            break :blk @bitCast(-f);
+        },
+        .fabs => blk: {
+            const f = @as(f64, @bitCast(arg));
+            break :blk @bitCast(@abs(f));
+        },
         else => error.UnsupportedOp,
     };
 }
