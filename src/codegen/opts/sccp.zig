@@ -380,6 +380,14 @@ fn evalBinaryOp(opcode: Opcode, lhs: i64, rhs: i64) !i64 {
         .ishl => lhs << @intCast(rhs & 63),
         .ushr => @as(i64, @bitCast(@as(u64, @bitCast(lhs)) >> @intCast(rhs & 63))),
         .sshr => lhs >> @intCast(rhs & 63),
+        .rotl => blk: {
+            const amt = @as(u6, @intCast(rhs & 63));
+            break :blk @bitCast(std.math.rotl(u64, @bitCast(lhs), amt));
+        },
+        .rotr => blk: {
+            const amt = @as(u6, @intCast(rhs & 63));
+            break :blk @bitCast(std.math.rotr(u64, @bitCast(lhs), amt));
+        },
         else => error.UnsupportedOp,
     };
 }
