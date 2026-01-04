@@ -391,6 +391,8 @@ fn evalUnaryOp(opcode: Opcode, arg: i64) !i64 {
         .ineg => -%arg,
         .iabs => if (arg < 0) -%arg else arg,
         .popcnt => @popCount(@as(u64, @bitCast(arg))),
+        .clz => @clz(@as(u64, @bitCast(arg))),
+        .ctz => @ctz(@as(u64, @bitCast(arg))),
         else => error.UnsupportedOp,
     };
 }
