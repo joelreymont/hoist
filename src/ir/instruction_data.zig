@@ -37,6 +37,7 @@ pub const InstructionData = union(enum) {
     unary: UnaryData,
     unary_with_trap: UnaryWithTrapData,
     extract_lane: ExtractLaneData,
+    ternary: TernaryData,
     ternary_imm8: TernaryImm8Data,
     shuffle: ShuffleData,
     binary: BinaryData,
@@ -105,6 +106,15 @@ pub const ExtractLaneData = struct {
 
     pub fn init(op: Opcode, arg: Value, lane: u8) ExtractLaneData {
         return .{ .opcode = op, .arg = arg, .lane = lane };
+    }
+};
+
+pub const TernaryData = struct {
+    opcode: Opcode,
+    args: [3]Value,
+
+    pub fn init(op: Opcode, arg0: Value, arg1: Value, arg2: Value) TernaryData {
+        return .{ .opcode = op, .args = .{ arg0, arg1, arg2 } };
     }
 };
 

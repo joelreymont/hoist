@@ -244,6 +244,37 @@ pub const SCCP = struct {
                 const arg = arg_lat.getConstant();
                 return .{ .constant = try evalUnaryOp(d.opcode, arg) };
             },
+            .ternary => |d| {
+                // Handle select: select(cond, true_val, false_val)
+                if (d.opcode == .select) {
+                    const cond_lat = self.lattice.get(d.args[0]) orelse .bottom;
+
+                    if (cond_lat == .bottom) return .bottom;
+
+                    // If condition is constant, select the appropriate value
+                    if (cond_lat == .constant) {
+                        const cond = cond_lat.getConstant();
+                        const selected = if (cond != 0) d.args[1] else d.args[2];
+                        return self.lattice.get(selected) orelse .bottom;
+                    }
+
+                    // Condition is top - check if both branches are same constant
+                    const true_lat = self.lattice.get(d.args[1]) orelse .bottom;
+                    const false_lat = self.lattice.get(d.args[2]) orelse .bottom;
+
+                    if (true_lat == .bottom or false_lat == .bottom) return .bottom;
+
+                    // If both branches are same constant, result is that constant
+                    if (true_lat == .constant and false_lat == .constant) {
+                        if (true_lat.getConstant() == false_lat.getConstant()) {
+                            return true_lat;
+                        }
+                    }
+
+                    return .top;
+                }
+                return .top;
+            },
             else => .top, // Conservative: unknown instruction
         };
     }
