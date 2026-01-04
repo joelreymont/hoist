@@ -769,6 +769,20 @@
       (aarch64_popcnt_64 x))
 
 ;; ineg: Integer negation (implemented as NEG)
+;; ineg: I128 negation using subtraction from zero (0 - x)
+;; Priority 2 to match before generic ineg
+(rule 2 (lower (has_type $I128 (ineg x)))
+      (let ((zero_lo Reg (iconst_to_reg $I64 0))
+            (zero_hi Reg (iconst_to_reg $I64 0))
+            (zero_regs ValueRegs (value_regs zero_lo zero_hi))
+            (x_regs ValueRegs x)
+            (x_lo Reg (value_regs_get x_regs 0))
+            (x_hi Reg (value_regs_get x_regs 1)))
+        ;; 0 - x using SUBS + SBC
+        (with_flags
+          (sub_with_flags_paired $I64 zero_lo x_lo)
+          (sbc_paired $I64 zero_hi x_hi))))
+
 (rule (lower (ineg ty x))
       (aarch64_neg ty x))
 
