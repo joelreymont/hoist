@@ -1396,6 +1396,31 @@
       (let ((cmp_inst Aarch64Inst (aarch64_cmp_rr cmp_ty x y cc)))
             (aarch64_csel ty true_val false_val cmp_inst cc)))
 
+;;;; Rules for `select_spectre_guard` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; I64 condition with Spectre mitigation
+(rule -1 (lower (has_type ty (select_spectre_guard rcond @ (value_type (fits_in_64 _)) rn rm)))
+      (let ((rcond_reg Reg (put_in_reg_zext64 rcond)))
+       (lower_select
+        (cmp $I64 rcond_reg (zero_reg))
+        (IntCC.Ne)
+        ty
+        rn
+        rm)))
+
+;; I128 condition with Spectre mitigation: OR lo and hi parts, then compare
+(rule -2 (lower (has_type ty (select_spectre_guard rcond @ (value_type $I128) rn rm)))
+      (let ((c ValueRegs (put_in_regs rcond))
+            (c_lo Reg (value_regs_get c 0))
+            (c_hi Reg (value_regs_get c 1))
+            (rt Reg (orr $I64 c_lo c_hi)))
+       (lower_select
+        (cmp $I64 rt (zero_reg))
+        (IntCC.Ne)
+        ty
+        rn
+        rm)))
+
 ;; Immediate forms
 
 ;; iadd with 12-bit immediate (priority 1 - higher than generic, lower than extensions/fusions)
