@@ -431,6 +431,22 @@ fn evalUnaryOp(opcode: Opcode, arg: i64) !i64 {
             const f = @as(f64, @bitCast(arg));
             break :blk @bitCast(@abs(f));
         },
+        .ceil => blk: {
+            const f = @as(f64, @bitCast(arg));
+            break :blk @bitCast(@ceil(f));
+        },
+        .floor => blk: {
+            const f = @as(f64, @bitCast(arg));
+            break :blk @bitCast(@floor(f));
+        },
+        .trunc => blk: {
+            const f = @as(f64, @bitCast(arg));
+            break :blk @bitCast(@trunc(f));
+        },
+        .nearest => blk: {
+            const f = @as(f64, @bitCast(arg));
+            break :blk @bitCast(@round(f));
+        },
         else => error.UnsupportedOp,
     };
 }
