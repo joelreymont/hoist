@@ -417,6 +417,26 @@
 (rule 1 (lower (has_type ty @ (multi_lane _ _) (imax x y)))
       (max_vec x y (vector_size ty)))
 
+;; umin: Vector unsigned integer minimum
+;; Use native UMIN instruction for all lanes except I64X2
+(rule (lower (has_type ty @ (not_i64x2) (umin x y)))
+      (vec_rrr (VecALUOp.Umin) x y (vector_size ty)))
+
+;; umin: I64X2 unsigned minimum (emulated via compare + bitselect)
+;; No native I64X2 UMIN, use: BSL (x > y), x, y
+(rule 1 (lower (has_type $I64X2 (umin x y)))
+      (aarch64_bitselect (vec_rrr (VecALUOp.Cmhi) y x (VectorSize.Size64x2)) x y))
+
+;; umax: Vector unsigned integer maximum
+;; Use native UMAX instruction for all lanes except I64X2
+(rule (lower (has_type ty @ (not_i64x2) (umax x y)))
+      (vec_rrr (VecALUOp.Umax) x y (vector_size ty)))
+
+;; umax: I64X2 unsigned maximum (emulated via compare + bitselect)
+;; No native I64X2 UMAX, use: BSL (x > y), x, y
+(rule 1 (lower (has_type $I64X2 (umax x y)))
+      (aarch64_bitselect (vec_rrr (VecALUOp.Cmhi) x y (VectorSize.Size64x2)) x y))
+
 ;; Vector reduction operations (type-parameterized via multi_lane)
 
 ;; reduce_add: Horizontal vector addition (sum all elements)
