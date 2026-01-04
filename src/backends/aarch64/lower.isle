@@ -2459,6 +2459,15 @@
 ;; Base case: emit vec_rrr_mod op (FMLA/FMLS vector register form)
 (decl vec_rrr_mod (VecALUModOp Value Value Value VectorSize) Value)
 (extern constructor vec_rrr_mod vec_rrr_mod)
+
+;; Helper for binary vector operations (VecRRR - 3 registers)
+(decl vec_rrr (VecALUOp Value Value VectorSize) Value)
+(extern constructor vec_rrr vec_rrr)
+
+;; Helper for unary vector operations (VecMisc - 2 registers)
+(decl vec_misc (VecMisc2 Value VectorSize) Value)
+(extern constructor vec_misc vec_misc)
+
 (rule (lower_fmla op x y z size)
       (vec_rrr_mod op z x y size))
 

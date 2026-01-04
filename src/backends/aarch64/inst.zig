@@ -1601,6 +1601,25 @@ pub const Inst = union(enum) {
         size: VectorSize,
     },
 
+    /// VecRRR - Vector binary operation (3 registers).
+    /// rd = op(rn, rm)
+    vec_rrr: struct {
+        op: VecALUOp,
+        dst: WritableReg,
+        rn: Reg,
+        rm: Reg,
+        size: VectorSize,
+    },
+
+    /// VecMisc - Vector unary operation (2 registers).
+    /// rd = op(rn)
+    vec_misc: struct {
+        op: VecMisc2,
+        dst: WritableReg,
+        rn: Reg,
+        size: VectorSize,
+    },
+
     /// FMLA/FMLS - Vector fused multiply-add/subtract (element-indexed form).
     /// rd = ri + rn * rm[idx] (FMLA) or rd = ri - rn * rm[idx] (FMLS)
     vec_fmla_elem: struct {

@@ -2639,6 +2639,147 @@ pub fn vec_rrr_mod(
     return ctx.getValueFromReg(dst.toReg(), .vector);
 }
 
+/// vec_rrr: Binary vector operation (VecRRR - 3 registers)
+/// Emits vector ALU operation: dst = op(src1, src2)
+pub fn vec_rrr(
+    op: VecALUOp,
+    src1: lower_mod.Value,
+    src2: lower_mod.Value,
+    size_enum: VectorSize,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.Value {
+    const src1_reg = try ctx.getValueReg(src1, .vector);
+    const src2_reg = try ctx.getValueReg(src2, .vector);
+    const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+
+    const size: Inst.VectorSize = switch (size_enum) {
+        .V8B => .V8B,
+        .V16B => .V16B,
+        .V4H => .V4H,
+        .V8H => .V8H,
+        .V2S => .V2S,
+        .V4S => .V4S,
+        .V2D => .V2D,
+    };
+
+    const inst_op: Inst.VecALUOp = switch (op) {
+        .Sqadd => .Sqadd,
+        .Uqadd => .Uqadd,
+        .Sqsub => .Sqsub,
+        .Uqsub => .Uqsub,
+        .Cmeq => .Cmeq,
+        .Cmge => .Cmge,
+        .Cmgt => .Cmgt,
+        .Cmhs => .Cmhs,
+        .Cmhi => .Cmhi,
+        .Fcmeq => .Fcmeq,
+        .Fcmgt => .Fcmgt,
+        .Fcmge => .Fcmge,
+        .And => .And,
+        .Bic => .Bic,
+        .Orr => .Orr,
+        .Orn => .Orn,
+        .Eor => .Eor,
+        .Add => .Add,
+        .Sub => .Sub,
+        .Mul => .Mul,
+        .Sshl => .Sshl,
+        .Ushl => .Ushl,
+        .Umin => .Umin,
+        .Smin => .Smin,
+        .Umax => .Umax,
+        .Smax => .Smax,
+        .Umaxp => .Umaxp,
+        .Urhadd => .Urhadd,
+        .Fadd => .Fadd,
+        .Fsub => .Fsub,
+        .Fdiv => .Fdiv,
+        .Fmax => .Fmax,
+        .Fmin => .Fmin,
+        .Fmul => .Fmul,
+        .Addp => .Addp,
+        .Zip1 => .Zip1,
+        .Zip2 => .Zip2,
+        .Uzp1 => .Uzp1,
+        .Uzp2 => .Uzp2,
+        .Trn1 => .Trn1,
+        .Trn2 => .Trn2,
+        .Sqrdmulh => .Sqrdmulh,
+    };
+
+    try ctx.emit(Inst{ .vec_rrr = .{
+        .op = inst_op,
+        .dst = dst,
+        .rn = src1_reg,
+        .rm = src2_reg,
+        .size = size,
+    } });
+
+    return ctx.getValueFromReg(dst.toReg(), .vector);
+}
+
+/// vec_misc: Unary vector operation (VecMisc - 2 registers)
+/// Emits vector miscellaneous operation: dst = op(src)
+pub fn vec_misc(
+    op: VecMisc2,
+    src: lower_mod.Value,
+    size_enum: VectorSize,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.Value {
+    const src_reg = try ctx.getValueReg(src, .vector);
+    const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+
+    const size: Inst.VectorSize = switch (size_enum) {
+        .V8B => .V8B,
+        .V16B => .V16B,
+        .V4H => .V4H,
+        .V8H => .V8H,
+        .V2S => .V2S,
+        .V4S => .V4S,
+        .V2D => .V2D,
+    };
+
+    const inst_op: Inst.VecMisc2 = switch (op) {
+        .Not => .Not,
+        .Neg => .Neg,
+        .Abs => .Abs,
+        .Fabs => .Fabs,
+        .Fneg => .Fneg,
+        .Fsqrt => .Fsqrt,
+        .Rev16 => .Rev16,
+        .Rev32 => .Rev32,
+        .Rev64 => .Rev64,
+        .Fcvtzs => .Fcvtzs,
+        .Fcvtzu => .Fcvtzu,
+        .Scvtf => .Scvtf,
+        .Ucvtf => .Ucvtf,
+        .Frintn => .Frintn,
+        .Frintz => .Frintz,
+        .Frintm => .Frintm,
+        .Frintp => .Frintp,
+        .Cnt => .Cnt,
+        .Cmeq0 => .Cmeq0,
+        .Cmge0 => .Cmge0,
+        .Cmgt0 => .Cmgt0,
+        .Cmle0 => .Cmle0,
+        .Cmlt0 => .Cmlt0,
+        .Fcmeq0 => .Fcmeq0,
+        .Fcmge0 => .Fcmge0,
+        .Fcmgt0 => .Fcmgt0,
+        .Fcmle0 => .Fcmle0,
+        .Fcmlt0 => .Fcmlt0,
+    };
+
+    try ctx.emit(Inst{ .vec_misc = .{
+        .op = inst_op,
+        .dst = dst,
+        .rn = src_reg,
+        .size = size,
+    } });
+
+    return ctx.getValueFromReg(dst.toReg(), .vector);
+}
+
 /// vec_fmla_elem: Vector FMA element-indexed form
 /// Emits FMLA/FMLS with element index: dst = addend + (multiplicand1 * multiplicand2[idx])
 pub fn vec_fmla_elem(
