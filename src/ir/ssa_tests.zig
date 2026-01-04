@@ -582,12 +582,12 @@ test "SSA: complex CFG with nested diamonds" {
 
     // Verify dominance frontiers
     var df_b3 = try domtree.dominanceFrontier(testing.allocator, b3, &cfg);
-    defer df_b3.deinit();
+    defer df_b3.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 1), df_b3.items.len);
     try testing.expect(std.meta.eql(b5, df_b3.items[0]));
 
     var df_b4 = try domtree.dominanceFrontier(testing.allocator, b4, &cfg);
-    defer df_b4.deinit();
+    defer df_b4.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 1), df_b4.items.len);
     try testing.expect(std.meta.eql(b5, df_b4.items[0]));
 }
