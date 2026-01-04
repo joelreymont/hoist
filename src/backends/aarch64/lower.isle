@@ -243,6 +243,30 @@
 (rule 1 (lower (has_type ty @ (multi_lane _ _) (isub x y)))
       (sub_vec x y (vector_size ty)))
 
+;; imul: I128 multiplication using register pairs
+;; Formula: dst_lo = x_lo * y_lo
+;;          dst_hi = umulh(x_lo, y_lo) + (x_lo * y_hi) + (x_hi * y_lo)
+;; Implemented as:
+;;   dst_hi = umulh(x_lo, y_lo)
+;;   dst_hi = madd(x_lo, y_hi, dst_hi)
+;;   dst_hi = madd(x_hi, y_lo, dst_hi)
+;;   dst_lo = madd(x_lo, y_lo, 0)
+(rule -1 (lower (has_type $I128 (imul x y)))
+      (let ((x_regs ValueRegs x)
+            (x_lo Reg (value_regs_get x_regs 0))
+            (x_hi Reg (value_regs_get x_regs 1))
+            (y_regs ValueRegs y)
+            (y_lo Reg (value_regs_get y_regs 0))
+            (y_hi Reg (value_regs_get y_regs 1))
+            (zero Reg (iconst_to_reg $I64 0))
+            ;; Compute high part contributions
+            (dst_hi1 Reg (aarch64_umulh x_lo y_lo))
+            (dst_hi2 Reg (aarch64_madd $I64 x_lo y_hi dst_hi1))
+            (dst_hi Reg (aarch64_madd $I64 x_hi y_lo dst_hi2))
+            ;; Compute low part
+            (dst_lo Reg (aarch64_madd $I64 x_lo y_lo zero)))
+        (value_regs dst_lo dst_hi)))
+
 ;; imul: Multiply integers (scalar)
 (rule (lower (imul ty x y))
       (aarch64_mul_rr ty x y))
@@ -865,6 +889,22 @@
 
 (rule (lower (ineg ty x))
       (aarch64_neg ty x))
+
+;; iabs: I128 absolute value
+;; Algorithm: sign = x_hi >> 63 (arithmetic); result = (x ^ sign) - sign
+(rule (lower (has_type $I128 (iabs x)))
+      (let ((x_regs ValueRegs x)
+            (x_lo Reg (value_regs_get x_regs 0))
+            (x_hi Reg (value_regs_get x_regs 1))
+            ;; Extract sign bit: arithmetic shift right by 63
+            (asr_reg Reg (aarch64_asr_imm $I64 x_hi 63))
+            ;; XOR both parts with sign
+            (eor_hi Reg (aarch64_eor_rr $I64 x_hi asr_reg))
+            (eor_lo Reg (aarch64_eor_rr $I64 x_lo asr_reg)))
+        ;; Subtract sign from XOR result: (x ^ sign) - sign
+        (with_flags
+          (sub_with_flags_paired $I64 eor_lo asr_reg)
+          (sbc_paired $I64 eor_hi asr_reg))))
 
 ;; iabs: Integer absolute value
 ;; Implemented as (x XOR sign) - sign, where sign = x >> (bits-1)
