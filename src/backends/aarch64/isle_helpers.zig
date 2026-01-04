@@ -2213,3 +2213,32 @@ fn vectorSizeFromType(ty: types.Type) emit.VectorSize {
         else => .Size8x16, // Default
     };
 }
+
+/// Call operations (ISLE constructors)
+pub fn aarch64_call(sig_ref: ir.SigRef, name: ir.ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    // Marshal arguments according to ABI
+    // TODO: Full ABI argument marshaling
+    _ = sig_ref;
+    _ = args;
+    
+    // Direct call: BL (branch with link)
+    try ctx.emit(Inst{ .bl = .{ .target = .{ .symbol = name } } });
+    
+    // Return value in x0 (simplified - should handle multi-return)
+    return lower_mod.ValueRegs.one(Reg.gpr(0));
+}
+
+pub fn aarch64_call_indirect(sig_ref: ir.SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    // Marshal arguments according to ABI
+    // TODO: Full ABI argument marshaling
+    _ = sig_ref;
+    _ = args;
+    
+    const ptr_reg = try ctx.getValueReg(ptr, .int);
+    
+    // Indirect call: BLR (branch with link to register)
+    try ctx.emit(Inst{ .blr = .{ .rn = ptr_reg } });
+    
+    // Return value in x0 (simplified - should handle multi-return)
+    return lower_mod.ValueRegs.one(Reg.gpr(0));
+}
