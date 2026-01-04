@@ -389,6 +389,7 @@ fn evalUnaryOp(opcode: Opcode, arg: i64) !i64 {
     return switch (opcode) {
         .bnot => ~arg,
         .ineg => -%arg,
+        .iabs => if (arg < 0) -%arg else arg,
         else => error.UnsupportedOp,
     };
 }
