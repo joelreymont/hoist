@@ -316,11 +316,9 @@ pub const SCCP = struct {
             changed = true;
         }
 
-        // TODO: Remove instructions in non-executable blocks
-        // This requires:
-        // 1. Iterating through all blocks
-        // 2. For blocks not in executable_blocks, remove their instructions
-        // 3. Update control flow to remove branches to dead blocks
+        // Note: Unreachable block removal is handled by the UCE (Unreachable Code
+        // Elimination) pass in the pipeline. SCCP marks blocks as non-executable,
+        // and UCE removes them.
 
         return changed;
     }
