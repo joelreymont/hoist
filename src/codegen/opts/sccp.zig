@@ -388,6 +388,10 @@ fn evalBinaryOp(opcode: Opcode, lhs: i64, rhs: i64) !i64 {
             const amt = @as(u6, @intCast(rhs & 63));
             break :blk @bitCast(std.math.rotr(u64, @bitCast(lhs), amt));
         },
+        .smin => @min(lhs, rhs),
+        .smax => @max(lhs, rhs),
+        .umin => @bitCast(@min(@as(u64, @bitCast(lhs)), @as(u64, @bitCast(rhs)))),
+        .umax => @bitCast(@max(@as(u64, @bitCast(lhs)), @as(u64, @bitCast(rhs)))),
         else => error.UnsupportedOp,
     };
 }
