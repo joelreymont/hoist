@@ -2048,6 +2048,116 @@ pub const VecALUModOp = enum {
     Fmls, // Fused multiply-subtract
 };
 
+/// Vector ALU binary operations for ISLE integration.
+pub const VecALUOp = enum {
+    // Saturating arithmetic
+    Sqadd,   // Signed saturating add
+    Uqadd,   // Unsigned saturating add
+    Sqsub,   // Signed saturating subtract
+    Uqsub,   // Unsigned saturating subtract
+
+    // Comparisons
+    Cmeq,    // Compare bitwise equal
+    Cmge,    // Compare signed greater than or equal
+    Cmgt,    // Compare signed greater than
+    Cmhs,    // Compare unsigned higher or same
+    Cmhi,    // Compare unsigned higher
+    Fcmeq,   // Floating-point compare equal
+    Fcmgt,   // Floating-point compare greater than
+    Fcmge,   // Floating-point compare greater than or equal
+
+    // Bitwise
+    And,     // Bitwise and
+    Bic,     // Bitwise bit clear
+    Orr,     // Bitwise inclusive or
+    Orn,     // Bitwise inclusive or not
+    Eor,     // Bitwise exclusive or
+
+    // Arithmetic
+    Add,     // Add
+    Sub,     // Subtract
+    Mul,     // Multiply
+
+    // Shifts
+    Sshl,    // Signed shift left
+    Ushl,    // Unsigned shift left
+
+    // Min/Max
+    Umin,    // Unsigned minimum
+    Smin,    // Signed minimum
+    Umax,    // Unsigned maximum
+    Smax,    // Signed maximum
+    Umaxp,   // Unsigned maximum pairwise
+    Urhadd,  // Unsigned rounding halving add
+
+    // Float arithmetic
+    Fadd,    // Floating-point add
+    Fsub,    // Floating-point subtract
+    Fdiv,    // Floating-point divide
+    Fmax,    // Floating-point maximum
+    Fmin,    // Floating-point minimum
+    Fmul,    // Floating-point multiply
+
+    // Pairwise/Zip
+    Addp,    // Add pairwise
+    Zip1,    // Zip vectors (primary/high halves)
+    Zip2,    // Zip vectors (secondary)
+    Uzp1,    // Unzip vectors (primary)
+    Uzp2,    // Unzip vectors (secondary)
+    Trn1,    // Transpose vectors (primary)
+    Trn2,    // Transpose vectors (secondary)
+
+    // Special
+    Sqrdmulh, // Signed saturating rounding doubling multiply returning high half
+};
+
+/// Vector miscellaneous unary operations for ISLE integration.
+pub const VecMisc2 = enum {
+    // Bitwise
+    Not,     // Bitwise NOT
+
+    // Integer unary
+    Neg,     // Negate
+    Abs,     // Absolute value
+
+    // Float unary
+    Fabs,    // Floating-point absolute value
+    Fneg,    // Floating-point negate
+    Fsqrt,   // Floating-point square root
+
+    // Reversals
+    Rev16,   // Reverse elements in 16-bit lanes
+    Rev32,   // Reverse elements in 32-bit lanes
+    Rev64,   // Reverse elements in 64-bit doublewords
+
+    // Float conversions
+    Fcvtzs,  // Floating-point convert to signed integer, rounding toward zero
+    Fcvtzu,  // Floating-point convert to unsigned integer, rounding toward zero
+    Scvtf,   // Signed integer convert to floating-point
+    Ucvtf,   // Unsigned integer convert to floating-point
+
+    // Float rounding
+    Frintn,  // Floating point round to integral, rounding towards nearest
+    Frintz,  // Floating point round to integral, rounding towards zero
+    Frintm,  // Floating point round to integral, rounding towards minus infinity
+    Frintp,  // Floating point round to integral, rounding towards plus infinity
+
+    // Special
+    Cnt,     // Population count per byte
+
+    // Comparisons with zero
+    Cmeq0,   // Compare bitwise equal to 0
+    Cmge0,   // Compare signed greater than or equal to 0
+    Cmgt0,   // Compare signed greater than 0
+    Cmle0,   // Compare signed less than or equal to 0
+    Cmlt0,   // Compare signed less than 0
+    Fcmeq0,  // Floating point compare equal to 0
+    Fcmge0,  // Floating point compare greater than or equal to 0
+    Fcmgt0,  // Floating point compare greater than 0
+    Fcmle0,  // Floating point compare less than or equal to 0
+    Fcmlt0,  // Floating point compare less than 0
+};
+
 /// Vector size for ISLE integration (maps to ISLE VectorSize enum).
 pub const VectorSize = enum {
     V8B,
