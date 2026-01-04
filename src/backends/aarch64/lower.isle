@@ -1,6 +1,13 @@
 ;; aarch64 ISLE lowering rules
 ;; Minimal bootstrap set for ARM64 instruction selection
 
+;; Primitive types (required by ISLE compiler)
+(type Unit (primitive Unit))
+(type Type (primitive Type))
+(type Value (primitive Value))
+(type Inst (primitive Inst))
+
+;; Integer arithmetic lowering
 ;; Integer arithmetic lowering
 
 ;; iadd: Add two integers (default, lowest priority)
@@ -893,57 +900,48 @@
 
 ;; Helper extractors
 
-;; Check if value fits in unsigned 12-bit
-(extractor (uimm12 val)
-  (if (<= 0 val 4095)
-      val))
+;; Immediate value extractors (extern - implemented in isle_helpers.zig)
 
-;; Check if value fits in unsigned 16-bit
-(extractor (uimm16 val)
-  (if (<= 0 val 65535)
-      val))
+;; Check if value fits in unsigned 12-bit (0-4095)
+(decl uimm12 (u64) u64)
+(extern extractor uimm12 uimm12)
 
-;; Check if value is a valid shift amount (0-63, suitable for both I32 and I64)
-(extractor (valid_shift_imm val)
-  (if (<= 0 val 63)
-      val))
+;; Check if value fits in unsigned 16-bit (0-65535)
+(decl uimm16 (u64) u64)
+(extern extractor uimm16 uimm16)
+
+;; Check if value is a valid shift amount (0-63)
+(decl valid_shift_imm (u64) u64)
+(extern extractor valid_shift_imm valid_shift_imm)
 
 ;; Extract rotl immediate and convert to rotr immediate
 ;; rotl(x, k) = rotr(x, width - k)
-(extractor (valid_rotl_imm ty k)
-  (let ((width u32 (ty_bits ty)))
-  (if (<= 0 k 63)
-      (if (< k width)
-          (- width k)))))
+(decl valid_rotl_imm (u32 u64) u32)
+(extern extractor valid_rotl_imm valid_rotl_imm)
 
 ;; Check if value is in range where negation fits in unsigned 12-bit
-;; Returns $true if -4095 <= val <= -1 (i.e., -val fits in 0-4095)
-(extractor (in_neg_uimm12_range val)
-  (if (<= -4095 val -1)
-      $true))
+;; Returns true if -4095 <= val <= -1
+(decl in_neg_uimm12_range (i64) Unit)
+(extern extractor in_neg_uimm12_range in_neg_uimm12_range)
 
 ;; Addressing mode extractors
 
-;; Check if offset is valid for load immediate addressing (simplified)
-;; For now, accept offsets 0-32760 (max for I64 8-byte aligned access)
-(extractor (valid_ldr_imm_offset ty offset)
-  (if (<= 0 offset 32760)
-      offset))
+;; Check if offset is valid for load immediate addressing
+;; Accepts offsets 0-32760 (max for I64 8-byte aligned access)
+(decl valid_ldr_imm_offset (Type u64) u64)
+(extern extractor valid_ldr_imm_offset valid_ldr_imm_offset)
 
-;; Check if offset is valid for store immediate addressing (simplified)
-(extractor (valid_str_imm_offset val offset)
-  (if (<= 0 offset 32760)
-      offset))
+;; Check if offset is valid for store immediate addressing
+(decl valid_str_imm_offset (Value u64) u64)
+(extern extractor valid_str_imm_offset valid_str_imm_offset)
 
 ;; Check if shift is valid for load (must be 0-3)
-(extractor (valid_ldr_shift ty shift)
-  (if (<= 0 shift 3)
-      shift))
+(decl valid_ldr_shift (Type u64) u64)
+(extern extractor valid_ldr_shift valid_ldr_shift)
 
 ;; Check if shift is valid for store (must be 0-3)
-(extractor (valid_str_shift val shift)
-  (if (<= 0 shift 3)
-      shift))
+(decl valid_str_shift (Value u64) u64)
+(extern extractor valid_str_shift valid_str_shift)
 
 ;; Type declarations
 
@@ -975,7 +973,7 @@
 
 ;; Multi-register value type for wide operations (I128)
 ;; Maps to Zig's ValueRegs(VReg) type
-(type ValueRegs extern)
+(type ValueRegs extern (enum))
 
 ;; Constructor terms for aarch64 instructions
 
