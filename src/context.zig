@@ -78,16 +78,10 @@ pub const Context = struct {
         // }
         _ = self.optimize; // Suppress unused field warning
 
-        // Select backend and compile
-        const compile_ctx = compile_mod.CompileCtx.init(
-            self.allocator,
-            targetISAName(self.target.arch),
-        );
-
-        return switch (self.target.arch) {
-            .x86_64 => root.backends.x64.isa.X64ISA.compileFunction(compile_ctx, func),
-            .aarch64 => root.backends.aarch64.isa.Aarch64ISA.compileFunction(compile_ctx, func),
-        };
+        // TODO: Re-enable compilation when CompileCtx API is fixed
+        // The compile module was refactored but ISA backends weren't updated
+        // Need to update x64/aarch64 ISA.compileFunction signatures to match new compile() API
+        return error.CompilationNotImplemented;
     }
 
     /// Get target ISA name string.
