@@ -1311,6 +1311,67 @@ pub fn vec_extract(a: lower_mod.Value, b: lower_mod.Value, index: u8, ctx: *lowe
     };
 }
 
+/// Map ISLE VectorSize enum to Inst.VecElemSize
+fn vectorSizeToElemSize(size_enum: VectorSize) Inst.VecElemSize {
+    return switch (size_enum) {
+        .V8B => .size8x8,
+        .V16B => .size8x16,
+        .V4H => .size16x4,
+        .V8H => .size16x8,
+        .V2S => .size32x2,
+        .V4S => .size32x4,
+        .V2D => .size64x2,
+    };
+}
+
+/// VEC_UZP1 - De-interleave even lanes (UZP1 Vd, Vn, Vm)
+pub fn vec_uzp1(a: lower_mod.Value, b: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const a_reg = try ctx.getValueReg(a, .vector);
+    const b_reg = try ctx.getValueReg(b, .vector);
+    const size = vectorSizeToElemSize(size_enum);
+    return Inst{ .uzp1 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src1 = a_reg, .src2 = b_reg, .size = size } };
+}
+
+/// VEC_UZP2 - De-interleave odd lanes (UZP2 Vd, Vn, Vm)
+pub fn vec_uzp2(a: lower_mod.Value, b: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const a_reg = try ctx.getValueReg(a, .vector);
+    const b_reg = try ctx.getValueReg(b, .vector);
+    const size = vectorSizeToElemSize(size_enum);
+    return Inst{ .uzp2 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src1 = a_reg, .src2 = b_reg, .size = size } };
+}
+
+/// VEC_ZIP1 - Interleave low halves (ZIP1 Vd, Vn, Vm)
+pub fn vec_zip1(a: lower_mod.Value, b: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const a_reg = try ctx.getValueReg(a, .vector);
+    const b_reg = try ctx.getValueReg(b, .vector);
+    const size = vectorSizeToElemSize(size_enum);
+    return Inst{ .zip1 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src1 = a_reg, .src2 = b_reg, .size = size } };
+}
+
+/// VEC_ZIP2 - Interleave high halves (ZIP2 Vd, Vn, Vm)
+pub fn vec_zip2(a: lower_mod.Value, b: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const a_reg = try ctx.getValueReg(a, .vector);
+    const b_reg = try ctx.getValueReg(b, .vector);
+    const size = vectorSizeToElemSize(size_enum);
+    return Inst{ .zip2 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src1 = a_reg, .src2 = b_reg, .size = size } };
+}
+
+/// VEC_TRN1 - Transpose low halves (TRN1 Vd, Vn, Vm)
+pub fn vec_trn1(a: lower_mod.Value, b: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const a_reg = try ctx.getValueReg(a, .vector);
+    const b_reg = try ctx.getValueReg(b, .vector);
+    const size = vectorSizeToElemSize(size_enum);
+    return Inst{ .trn1 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src1 = a_reg, .src2 = b_reg, .size = size } };
+}
+
+/// VEC_TRN2 - Transpose high halves (TRN2 Vd, Vn, Vm)
+pub fn vec_trn2(a: lower_mod.Value, b: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const a_reg = try ctx.getValueReg(a, .vector);
+    const b_reg = try ctx.getValueReg(b, .vector);
+    const size = vectorSizeToElemSize(size_enum);
+    return Inst{ .trn2 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src1 = a_reg, .src2 = b_reg, .size = size } };
+}
+
 /// EXTRACTLANE - Extract vector lane to scalar (UMOV)
 pub fn aarch64_extractlane(ty: types.Type, vec: lower_mod.Value, lane_val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const vec_reg = try getValueReg(ctx, vec);
@@ -2361,6 +2422,13 @@ pub fn vec_extract_imm4_from_immediate(imm: u128) ?u8 {
 
     // Return starting byte offset (must be < 16 for valid EXT)
     if (first_byte < 16) return first_byte;
+    return null;
+}
+
+/// u128_from_immediate - Extract u128 constant from Immediate
+/// Used for matching specific shuffle patterns (UZP/ZIP/TRN/REV)
+pub fn u128_from_immediate(expected: u128, actual: u128) ?u128 {
+    if (expected == actual) return actual;
     return null;
 }
 

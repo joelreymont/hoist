@@ -1521,6 +1521,54 @@ pub const Inst = union(enum) {
         high: bool, // false = FCVTN (write to low half), true = FCVTN2 (write to high half)
     },
 
+    /// ZIP1 - Interleave low halves of two vectors.
+    zip1: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// ZIP2 - Interleave high halves of two vectors.
+    zip2: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// UZP1 - De-interleave even lanes from two vectors.
+    uzp1: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// UZP2 - De-interleave odd lanes from two vectors.
+    uzp2: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// TRN1 - Transpose low halves (interleave alternating lanes).
+    trn1: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// TRN2 - Transpose high halves (interleave alternating lanes).
+    trn2: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
     /// Call - saves return address to link register and jumps.
     /// Pseudo-instruction that becomes BL.
     call: struct {
