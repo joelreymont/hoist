@@ -1905,3 +1905,19 @@
 (decl aarch64_return_call_indirect (SigRef Value ValueSlice) Aarch64Inst)
 (rule (lower (return_call_indirect sig_ref ptr args))
       (aarch64_return_call_indirect sig_ref ptr args))
+
+;; Vector test operations
+;; vall_true: Test if all vector lanes are non-zero
+(decl aarch64_vall_true (Value Type) Aarch64Inst)
+(rule (lower (vall_true x @ (value_type ty)))
+      (aarch64_vall_true x ty))
+
+;; vany_true: Test if any vector lane is non-zero
+(decl aarch64_vany_true (Value Type) Aarch64Inst)
+(rule (lower (vany_true x @ (value_type ty)))
+      (aarch64_vany_true x ty))
+
+;; vhigh_bits: Extract high bit from each lane
+(decl aarch64_vhigh_bits (Value Type) Aarch64Inst)
+(rule (lower (vhigh_bits vec @ (value_type ty)))
+      (aarch64_vhigh_bits vec ty))

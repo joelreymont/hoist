@@ -2101,3 +2101,115 @@ pub fn aarch64_return_call_indirect(sig_ref: ir.SigRef, ptr: lower_mod.Value, ar
     // Branch via register (BR, not BLR - no link)
     return Inst{ .br = .{ .rn = ptr_reg } };
 }
+
+/// Vector test operations (ISLE constructors)
+pub fn aarch64_vall_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try ctx.getValueReg(x, .vector);
+    const vec_size = vectorSizeFromType(ty);
+    
+    // Use UMINV to get minimum of all lanes
+    const min_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    try ctx.emit(Inst{ .vec_uminv = .{
+        .dst = min_reg,
+        .src = x_reg,
+        .size = vec_size,
+    } });
+    
+    // Extract scalar and compare with 0
+    const scalar_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .mov_from_vec = .{
+        .dst = scalar_reg,
+        .src = min_reg.toReg(),
+        .lane = 0,
+        .size = .size64,
+    } });
+    
+    // Compare: all true if min != 0
+    try ctx.emit(Inst{ .cmp_imm = .{
+        .rn = scalar_reg.toReg(),
+        .imm = 0,
+        .is_64 = true,
+    } });
+    
+    // CSET: Set result to 1 if NE, 0 otherwise
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    return Inst{ .cset = .{ .dst = dst, .cond = .ne } };
+}
+
+pub fn aarch64_vany_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try ctx.getValueReg(x, .vector);
+    const vec_size = vectorSizeFromType(ty);
+    
+    // Use UMAXV to get maximum of all lanes
+    const max_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    try ctx.emit(Inst{ .vec_umaxv = .{
+        .dst = max_reg,
+        .src = x_reg,
+        .size = vec_size,
+    } });
+    
+    // Extract scalar and compare with 0
+    const scalar_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .mov_from_vec = .{
+        .dst = scalar_reg,
+        .src = max_reg.toReg(),
+        .lane = 0,
+        .size = .size64,
+    } });
+    
+    // Compare: any true if max != 0
+    try ctx.emit(Inst{ .cmp_imm = .{
+        .rn = scalar_reg.toReg(),
+        .imm = 0,
+        .is_64 = true,
+    } });
+    
+    // CSET: Set result to 1 if NE, 0 otherwise
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    return Inst{ .cset = .{ .dst = dst, .cond = .ne } };
+}
+
+pub fn aarch64_vhigh_bits(vec: lower_mod.Value, ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const vec_reg = try ctx.getValueReg(vec, .vector);
+    const lane_bits = ty.laneBits();
+    
+    // Extract high bit from each lane by shifting and accumulating
+    // For I8X16: shift each byte left by 7, then ADDV to sum
+    const shift_amount: u8 = @intCast(lane_bits - 1);
+    
+    // SHL to move high bit to position
+    const shifted = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    try ctx.emit(Inst{ .vec_shl_imm = .{
+        .dst = shifted,
+        .src = vec_reg,
+        .shift = shift_amount,
+        .size = vectorSizeFromType(ty),
+    } });
+    
+    // ADDV to sum all lanes (creates bitmask)
+    const sum_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    try ctx.emit(Inst{ .vec_addv = .{
+        .dst = sum_reg,
+        .src = shifted.toReg(),
+        .size = vectorSizeFromType(ty),
+    } });
+    
+    // Extract to GPR
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    return Inst{ .mov_from_vec = .{
+        .dst = dst,
+        .src = sum_reg.toReg(),
+        .lane = 0,
+        .size = .size64,
+    } };
+}
+
+fn vectorSizeFromType(ty: types.Type) emit.VectorSize {
+    return switch (ty) {
+        .I8X16 => .Size8x16,
+        .I16X8 => .Size16x8,
+        .I32X4 => .Size32x4,
+        .I64X2 => .Size64x2,
+        else => .Size8x16, // Default
+    };
+}
