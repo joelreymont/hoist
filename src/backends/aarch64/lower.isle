@@ -2005,6 +2005,29 @@
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1f1e1d1c1b1a1918_0f0e0d0c0b0a0908)))
       (vec_uzp2 a b (VectorSize.V2D)))
 
+;; ZIP1/ZIP2 patterns - interleave low/high halves
+(decl vec_zip1 (Value Value VectorSize) Aarch64Inst)
+(extern constructor vec_zip1 vec_zip1)
+(decl vec_zip2 (Value Value VectorSize) Aarch64Inst)
+(extern constructor vec_zip2 vec_zip2)
+
+(rule 1 (lower (shuffle a b (u128_from_immediate 0x1707_1606_1505_1404_1303_1202_1101_1000)))
+      (vec_zip1 a b (VectorSize.V16B)))
+(rule 1 (lower (shuffle a b (u128_from_immediate 0x1f0f_1e0e_1d0d_1c0c_1b0b_1a0a_1909_1808)))
+      (vec_zip2 a b (VectorSize.V16B)))
+(rule 1 (lower (shuffle a b (u128_from_immediate 0x1716_0706_1514_0504_1312_0302_1110_0100)))
+      (vec_zip1 a b (VectorSize.V8H)))
+(rule 1 (lower (shuffle a b (u128_from_immediate 0x1f1e_0f0e_1d1c_0d0c_1b1a_0b0a_1918_0908)))
+      (vec_zip2 a b (VectorSize.V8H)))
+(rule 1 (lower (shuffle a b (u128_from_immediate 0x17161514_07060504_13121110_03020100)))
+      (vec_zip1 a b (VectorSize.V4S)))
+(rule 1 (lower (shuffle a b (u128_from_immediate 0x1f1e1d1c_0f0e0d0c_1b1a1918_0b0a0908)))
+      (vec_zip2 a b (VectorSize.V4S)))
+(rule 1 (lower (shuffle a b (u128_from_immediate 0x1716151413121110_0706050403020100)))
+      (vec_zip1 a b (VectorSize.V2D)))
+(rule 1 (lower (shuffle a b (u128_from_immediate 0x1f1e1d1c1b1a1918_0f0e0d0c0b0a0908)))
+      (vec_zip2 a b (VectorSize.V2D)))
+
 ;; TBL fallback: handles all shuffle patterns via table lookup
 (decl aarch64_shuffle_tbl (Value Value Immediate) Aarch64Inst)
 (rule 0 (lower (has_type ty (shuffle a b mask)))
