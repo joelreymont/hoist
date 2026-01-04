@@ -896,6 +896,15 @@
 ;; Bitwise operations lowering
 
 ;; band: Bitwise AND (register form)
+
+;; Vector AND (64-bit vectors)
+(rule -2 (lower (has_type ty @ (ty_vec64 _) (band x y)))
+      (and_vec x y (vector_size ty)))
+
+;; Vector AND (128-bit vectors)
+(rule -1 (lower (has_type ty @ (ty_vec128 _) (band x y)))
+      (and_vec x y (vector_size ty)))
+
 ;; band: I128 bitwise AND (operate on low/high parts independently)
 (rule (lower (has_type $I128 (band x y)))
       (let ((x_regs ValueRegs x)
@@ -908,18 +917,42 @@
           (aarch64_and_rr $I64 x_lo y_lo)
           (aarch64_and_rr $I64 x_hi y_hi))))
 
+;; Scalar AND
 (rule (lower (band ty x y))
       (aarch64_and_rr ty x y))
 
 ;; band: Fusion with bnot -> BIC instruction
-;; band(x, bnot(y)) -> band_not(x, y) -> BIC
+
+;; Vector BIC (64-bit vectors)
+(rule 5 (lower (has_type ty @ (ty_vec64 _) (band x (bnot y))))
+      (bic_vec x y (vector_size ty)))
+
+(rule 6 (lower (has_type ty @ (ty_vec64 _) (band (bnot y) x)))
+      (bic_vec x y (vector_size ty)))
+
+;; Vector BIC (128-bit vectors)
+(rule 7 (lower (has_type ty @ (ty_vec128 _) (band x (bnot y))))
+      (bic_vec x y (vector_size ty)))
+
+(rule 8 (lower (has_type ty @ (ty_vec128 _) (band (bnot y) x)))
+      (bic_vec x y (vector_size ty)))
+
+;; Scalar BIC
 (rule 1 (lower (has_type ty @ (fits_in_64 _) (band x (bnot _ y))))
       (aarch64_bic_rr ty x y))
 
-;; band: Fusion with bnot (commuted) -> BIC instruction
-;; band(bnot(x), y) -> band_not(y, x) -> BIC
 (rule 2 (lower (has_type ty @ (fits_in_64 _) (band (bnot _ x) y)))
       (aarch64_bic_rr ty y x))
+
+;; bor: Bitwise OR
+
+;; Vector OR (64-bit vectors)
+(rule -2 (lower (has_type ty @ (ty_vec64 _) (bor x y)))
+      (or_vec x y (vector_size ty)))
+
+;; Vector OR (128-bit vectors)
+(rule -1 (lower (has_type ty @ (ty_vec128 _) (bor x y)))
+      (or_vec x y (vector_size ty)))
 
 ;; bor: I128 bitwise OR (operate on low/high parts independently)
 (rule (lower (has_type $I128 (bor x y)))
