@@ -386,6 +386,10 @@
 (rule (lower (bitselect c x y))
       (aarch64_bitselect c x y))
 
+;; iabs: Integer absolute value (CMP + NEG + CSEL)
+(rule (lower (iabs ty x))
+      (aarch64_iabs ty x))
+
 ;; Comparison operations lowering
 
 ;; icmp: Integer comparison with Equal condition
@@ -986,6 +990,7 @@
 (decl aarch64_smax (Type Value Value) Aarch64Inst)
 (decl aarch64_umax (Type Value Value) Aarch64Inst)
 (decl aarch64_bitselect (Value Value Value) Aarch64Inst)
+(decl aarch64_iabs (Type Value) Aarch64Inst)
 
 ;; Saturating arithmetic operations
 (decl aarch64_sqadd_8 (Value Value) Aarch64Inst)

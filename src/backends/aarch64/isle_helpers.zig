@@ -1610,3 +1610,35 @@ pub fn aarch64_fcvtzs_32_trap(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)
     } };
 }
 
+/// IABS - Integer absolute value
+/// Implemented as: cmp x, 0; neg tmp, x; csel result, x, tmp, ge
+pub fn aarch64_iabs(ty: types.Type, x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
+
+    // Compare x with 0
+    const cmp_inst = Inst{ .cmp_imm = .{
+        .src = x_reg,
+        .imm = 0,
+        .size = size,
+    } };
+    try ctx.emit(cmp_inst);
+
+    // Negate x
+    const tmp = lower_mod.WritableVReg.allocVReg(.int, ctx);
+    const neg_inst = Inst{ .neg = .{
+        .dst = tmp,
+        .src = x_reg,
+        .size = size,
+    } };
+    try ctx.emit(neg_inst);
+
+    // Select x if >= 0, otherwise negated value
+    return Inst{ .csel = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src1 = x_reg,
+        .src2 = tmp.toReg(),
+        .cond = .ge,
+        .size = size,
+    } };
+}
