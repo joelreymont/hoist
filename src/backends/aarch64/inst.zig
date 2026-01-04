@@ -1569,6 +1569,27 @@ pub const Inst = union(enum) {
         size: VecElemSize,
     },
 
+    /// REV16 - Reverse bytes within 16-bit halfwords (vector).
+    vec_rev16: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VecElemSize,
+    },
+
+    /// REV32 - Reverse bytes within 32-bit words (vector).
+    vec_rev32: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VecElemSize,
+    },
+
+    /// REV64 - Reverse bytes within 64-bit doublewords (vector).
+    vec_rev64: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: VecElemSize,
+    },
+
     /// Call - saves return address to link register and jumps.
     /// Pseudo-instruction that becomes BL.
     call: struct {

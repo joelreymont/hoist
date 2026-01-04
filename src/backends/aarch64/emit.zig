@@ -290,6 +290,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .uzp2 => |i| try emitUzp2(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .trn1 => |i| try emitTrn1(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .trn2 => |i| try emitTrn2(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_rev16 => |i| try emitVecRev16(i.dst.toReg(), i.src, i.size, buffer),
+        .vec_rev32 => |i| try emitVecRev32(i.dst.toReg(), i.src, i.size, buffer),
+        .vec_rev64 => |i| try emitVecRev64(i.dst.toReg(), i.src, i.size, buffer),
         .ld1 => |i| try emitLd1(i.dst.toReg(), i.addr, i.size, buffer),
         .st1 => |i| try emitSt1(i.src, i.addr, i.size, buffer),
         .ins => |i| try emitIns(i.dst.toReg(), i.src, i.index, i.size, buffer),
@@ -11019,6 +11022,69 @@ fn emitTrn2(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffe
 
     const bytes = std.mem.toBytes(insn);
     try buffer.put(&bytes);
+}
+
+/// REV16 - Reverse bytes within 16-bit halfwords (vector)
+/// Encoding: 0|Q|001110|size|100000|00001|10|Rn|Rd
+fn emitVecRev16(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q: u32 = vec_size.qBit();
+    const size: u32 = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b001110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b100000 << 16) |
+        (0b00001 << 12) |
+        (0b10 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    try buffer.put(&std.mem.toBytes(insn));
+}
+
+/// REV32 - Reverse bytes within 32-bit words (vector)
+/// Encoding: 0|Q|101110|size|100000|00000|10|Rn|Rd
+fn emitVecRev32(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q: u32 = vec_size.qBit();
+    const size: u32 = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b101110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b100000 << 16) |
+        (0b00000 << 12) |
+        (0b10 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    try buffer.put(&std.mem.toBytes(insn));
+}
+
+/// REV64 - Reverse bytes within 64-bit doublewords (vector)
+/// Encoding: 0|Q|001110|size|100000|00000|10|Rn|Rd
+fn emitVecRev64(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q: u32 = vec_size.qBit();
+    const size: u32 = vec_size.sizeBits();
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (0b001110 << 24) |
+        (@as(u32, size) << 22) |
+        (0b100000 << 16) |
+        (0b00000 << 12) |
+        (0b10 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    try buffer.put(&std.mem.toBytes(insn));
 }
 
 /// LD1 (load single structure, one register): LD1 {Vt.T}, [Xn]

@@ -1372,6 +1372,27 @@ pub fn vec_trn2(a: lower_mod.Value, b: lower_mod.Value, size_enum: VectorSize, c
     return Inst{ .trn2 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src1 = a_reg, .src2 = b_reg, .size = size } };
 }
 
+/// REV16 - Reverse bytes within 16-bit halfwords
+pub fn rev16(a: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const a_reg = try ctx.getValueReg(a, .vector);
+    const size = vectorSizeToElemSize(size_enum);
+    return Inst{ .vec_rev16 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src = a_reg, .size = size } };
+}
+
+/// REV32 - Reverse bytes within 32-bit words
+pub fn rev32(a: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const a_reg = try ctx.getValueReg(a, .vector);
+    const size = vectorSizeToElemSize(size_enum);
+    return Inst{ .vec_rev32 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src = a_reg, .size = size } };
+}
+
+/// REV64 - Reverse bytes within 64-bit doublewords
+pub fn rev64(a: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const a_reg = try ctx.getValueReg(a, .vector);
+    const size = vectorSizeToElemSize(size_enum);
+    return Inst{ .vec_rev64 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src = a_reg, .size = size } };
+}
+
 /// EXTRACTLANE - Extract vector lane to scalar (UMOV)
 pub fn aarch64_extractlane(ty: types.Type, vec: lower_mod.Value, lane_val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const vec_reg = try getValueReg(ctx, vec);
