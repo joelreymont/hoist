@@ -390,6 +390,7 @@ fn evalUnaryOp(opcode: Opcode, arg: i64) !i64 {
         .bnot => ~arg,
         .ineg => -%arg,
         .iabs => if (arg < 0) -%arg else arg,
+        .popcnt => @popCount(@as(u64, @bitCast(arg))),
         else => error.UnsupportedOp,
     };
 }
