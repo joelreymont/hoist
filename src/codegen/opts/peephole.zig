@@ -72,6 +72,8 @@ pub const Peephole = struct {
                     .band => try self.optimizeAnd(func, inst, data),
                     .bor => try self.optimizeOr(func, inst, data),
                     .bxor => try self.optimizeXor(func, inst, data),
+                    .ishl, .ushr, .sshr => try self.optimizeShift(func, inst, data),
+                    .rotl, .rotr => try self.optimizeRotate(func, inst, data),
                     else => {},
                 }
             },
@@ -173,6 +175,20 @@ pub const Peephole = struct {
             result_mut.* = root.dfg.ValueData.inst(ty, 0, inst);
 
             self.changed = true;
+        }
+    }
+
+    /// Optimize shift: x << 0 = x, x >> 0 = x
+    fn optimizeShift(self: *Peephole, func: *Function, inst: Inst, data: BinaryData) !void {
+        if (try self.isZero(func, data.args[1])) {
+            try self.replaceWithCopy(func, inst, data.args[0]);
+        }
+    }
+
+    /// Optimize rotate: rotl/rotr by 0 = x
+    fn optimizeRotate(self: *Peephole, func: *Function, inst: Inst, data: BinaryData) !void {
+        if (try self.isZero(func, data.args[1])) {
+            try self.replaceWithCopy(func, inst, data.args[0]);
         }
     }
 
