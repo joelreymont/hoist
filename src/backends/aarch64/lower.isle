@@ -1426,6 +1426,28 @@
 (rule (lower (fcmp cond x y))
       (aarch64_fcmp x y))
 
+;; Vector float unary operations
+(rule -1 (lower (has_type ty @ (multi_lane _ _) (sqrt x)))
+      (vec_misc (VecMisc2.Fsqrt) x (vector_size ty)))
+
+(rule -1 (lower (has_type ty @ (multi_lane _ _) (fneg x)))
+      (vec_misc (VecMisc2.Fneg) x (vector_size ty)))
+
+(rule -1 (lower (has_type ty @ (multi_lane _ _) (fabs x)))
+      (vec_misc (VecMisc2.Fabs) x (vector_size ty)))
+
+(rule -1 (lower (has_type ty @ (multi_lane _ _) (ceil x)))
+      (vec_misc (VecMisc2.Frintp) x (vector_size ty)))
+
+(rule -1 (lower (has_type ty @ (multi_lane _ _) (floor x)))
+      (vec_misc (VecMisc2.Frintm) x (vector_size ty)))
+
+(rule -1 (lower (has_type ty @ (multi_lane _ _) (trunc x)))
+      (vec_misc (VecMisc2.Frintz) x (vector_size ty)))
+
+(rule -1 (lower (has_type ty @ (multi_lane _ _) (nearest x)))
+      (vec_misc (VecMisc2.Frintn) x (vector_size ty)))
+
 ;; fabs: FP absolute value (FABS)
 (rule (lower (fabs ty x))
       (aarch64_fabs ty x))
