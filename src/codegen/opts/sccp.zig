@@ -519,6 +519,38 @@ fn evalUnaryOp(opcode: Opcode, arg: i64) !i64 {
         },
         .bswap => @bitCast(@byteSwap(@as(u64, @bitCast(arg)))),
         .bitrev => @bitCast(@bitReverse(@as(u64, @bitCast(arg)))),
+        .fcvt_from_sint => blk: {
+            const f = @as(f64, @floatFromInt(arg));
+            break :blk @bitCast(f);
+        },
+        .fcvt_from_uint => blk: {
+            const arg_u = @as(u64, @bitCast(arg));
+            const f = @as(f64, @floatFromInt(arg_u));
+            break :blk @bitCast(f);
+        },
+        .fcvt_to_sint => blk: {
+            const f = @as(f64, @bitCast(arg));
+            const result = @as(i64, @intFromFloat(f));
+            break :blk result;
+        },
+        .fcvt_to_sint_sat => blk: {
+            const f = @as(f64, @bitCast(arg));
+            if (std.math.isNan(f)) break :blk 0;
+            if (f >= @as(f64, @floatFromInt(std.math.maxInt(i64)))) break :blk std.math.maxInt(i64);
+            if (f <= @as(f64, @floatFromInt(std.math.minInt(i64)))) break :blk std.math.minInt(i64);
+            break :blk @as(i64, @intFromFloat(f));
+        },
+        .fcvt_to_uint => blk: {
+            const f = @as(f64, @bitCast(arg));
+            const result = @as(u64, @intFromFloat(f));
+            break :blk @bitCast(result);
+        },
+        .fcvt_to_uint_sat => blk: {
+            const f = @as(f64, @bitCast(arg));
+            if (std.math.isNan(f) or f <= 0.0) break :blk 0;
+            if (f >= @as(f64, @floatFromInt(std.math.maxInt(u64)))) break :blk @bitCast(std.math.maxInt(u64));
+            break :blk @bitCast(@as(u64, @intFromFloat(f)));
+        },
         else => error.UnsupportedOp,
     };
 }
