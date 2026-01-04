@@ -68,6 +68,22 @@
 (decl max_vec (Value Value VectorSize) Aarch64Inst)
 (rule (max_vec x y size) (aarch64_vec_smax size x y))
 
+;; Vector bitwise helpers (wrappers for type-parameterized rules)
+(decl and_vec (Value Value VectorSize) Aarch64Inst)
+(rule (and_vec x y size) (aarch64_vec_and size x y))
+
+(decl or_vec (Value Value VectorSize) Aarch64Inst)
+(rule (or_vec x y size) (aarch64_vec_orr size x y))
+
+(decl xor_vec (Value Value VectorSize) Aarch64Inst)
+(rule (xor_vec x y size) (aarch64_vec_eor size x y))
+
+(decl not_vec (Value VectorSize) Aarch64Inst)
+(rule (not_vec x size) (aarch64_vec_not size x))
+
+(decl bic_vec (Value Value VectorSize) Aarch64Inst)
+(rule (bic_vec x y size) (aarch64_vec_bic size x y))
+
 ;; Vector reduction helpers (wrappers for type-parameterized rules)
 (decl reduce_add_vec (Value VectorSize) Aarch64Inst)
 (rule (reduce_add_vec x size) (aarch64_addv size x))
@@ -985,6 +1001,16 @@
 (rule 3 (lower (has_type ty @ (fits_in_64 _) (bor (bnot _ x) y)))
       (aarch64_orn_rr ty y x))
 
+;; bxor: Bitwise XOR
+
+;; Vector XOR (64-bit vectors)
+(rule -2 (lower (has_type ty @ (ty_vec64 _) (bxor x y)))
+      (xor_vec x y (vector_size ty)))
+
+;; Vector XOR (128-bit vectors)
+(rule -1 (lower (has_type ty @ (ty_vec128 _) (bxor x y)))
+      (xor_vec x y (vector_size ty)))
+
 ;; bxor: I128 bitwise XOR (operate on low/high parts independently)
 (rule (lower (has_type $I128 (bxor x y)))
       (let ((x_regs ValueRegs x)
@@ -997,7 +1023,7 @@
           (aarch64_eor_rr $I64 x_lo y_lo)
           (aarch64_eor_rr $I64 x_hi y_hi))))
 
-;; bxor: Bitwise XOR (register form)
+;; Scalar XOR
 (rule (lower (bxor ty x y))
       (aarch64_eor_rr ty x y))
 
@@ -1016,6 +1042,16 @@
 (rule 3 (lower (has_type ty @ (fits_in_64 _) (bxor (bnot _ x) y)))
       (aarch64_eon_rr ty y x))
 
+;; bnot: Bitwise NOT
+
+;; Vector NOT (64-bit vectors)
+(rule -2 (lower (has_type ty @ (ty_vec64 _) (bnot x)))
+      (not_vec x (vector_size ty)))
+
+;; Vector NOT (128-bit vectors)
+(rule -1 (lower (has_type ty @ (ty_vec128 _) (bnot x)))
+      (not_vec x (vector_size ty)))
+
 ;; bnot: I128 bitwise NOT (operate on low/high parts independently)
 (rule (lower (has_type $I128 (bnot x)))
       (let ((x_regs ValueRegs x)
@@ -1025,7 +1061,7 @@
           (aarch64_mvn_rr $I64 x_lo)
           (aarch64_mvn_rr $I64 x_hi))))
 
-;; bnot: Bitwise NOT (implemented as MVN)
+;; Scalar NOT (implemented as MVN)
 (rule (lower (bnot ty x))
       (aarch64_mvn_rr ty x))
 
