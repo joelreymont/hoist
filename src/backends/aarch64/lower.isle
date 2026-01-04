@@ -10,6 +10,9 @@
 ;; Relocation distance for calls/symbols
 (type RelocDistance extern (enum (Near) (Far)))
 
+;; Vector ALU operation which modifies a source register
+(type VecALUModOp extern (enum (Fmla) (Fmls)))
+
 ;; Type extractors (foundation for type-parameterized patterns)
 (decl multi_lane (Type) (u32 u32))
 (extern extractor multi_lane multi_lane)
@@ -880,6 +883,12 @@
 
 ;; fma: FP fused multiply-add (FMADD)
 ;; fma(x, y, z) = x * y + z
+
+;; Vector FMA - delegate to lower_fmla helper (priority 1)
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (fma x y z)))
+      (lower_fmla (VecALUModOp.Fmla) x y z (vector_size ty)))
+
+;; Scalar FMA (priority 0 - fallback)
 (rule (lower (fma ty x y z))
       (aarch64_fmadd ty x y z))
 
@@ -2101,3 +2110,41 @@
 (decl aarch64_shuffle_tbl (Value Value Immediate) Aarch64Inst)
 (rule 0 (lower (has_type ty (shuffle a b mask)))
       (aarch64_shuffle_tbl a b mask))
+
+;;; FMA fusion helpers
+
+;; Lowers a fused-multiply-add operation handling various forms of the
+;; instruction to get maximal coverage of what's available on AArch64.
+(decl lower_fmla (VecALUModOp Value Value Value VectorSize) Value)
+
+;; Base case: emit vec_rrr_mod op (FMLA/FMLS vector register form)
+(decl vec_rrr_mod (VecALUModOp Value Value Value VectorSize) Value)
+(extern constructor vec_rrr_mod vec_rrr_mod)
+(rule (lower_fmla op x y z size)
+      (vec_rrr_mod op z x y size))
+
+;; Shuffle fusion: if one operand is a shuffle broadcasting a single element,
+;; use element-indexed FMLA (FMLA Vd.T, Vn.T, Vm.T[idx])
+(decl vec_fmla_elem (VecALUModOp Value Value Value VectorSize u8) Value)
+(extern constructor vec_fmla_elem vec_fmla_elem)
+
+;; 32-bit float shuffle fusion (V4S)
+(rule 3 (lower_fmla op (bitcast _ (shuffle x x (shuffle32_from_imm n n n n))) y z size @ (VectorSize.V4S))
+      (if-let true (u64_lt n 4))
+      (vec_fmla_elem op z y x size n))
+(rule 4 (lower_fmla op x (bitcast _ (shuffle y y (shuffle32_from_imm n n n n))) z size @ (VectorSize.V4S))
+      (if-let true (u64_lt n 4))
+      (vec_fmla_elem op z x y size n))
+
+;; 64-bit float shuffle fusion (V2D)
+(rule 3 (lower_fmla op (bitcast _ (shuffle x x (shuffle64_from_imm n n))) y z size @ (VectorSize.V2D))
+      (if-let true (u64_lt n 2))
+      (vec_fmla_elem op z y x size n))
+(rule 4 (lower_fmla op x (bitcast _ (shuffle y y (shuffle64_from_imm n n))) z size @ (VectorSize.V2D))
+      (if-let true (u64_lt n 2))
+      (vec_fmla_elem op z x y size n))
+
+;; Helper to negate FMA op (Fmla <-> Fmls)
+(decl neg_fmla (VecALUModOp) VecALUModOp)
+(rule (neg_fmla (VecALUModOp.Fmla)) (VecALUModOp.Fmls))
+(rule (neg_fmla (VecALUModOp.Fmls)) (VecALUModOp.Fmla))

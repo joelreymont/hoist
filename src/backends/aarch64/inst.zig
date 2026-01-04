@@ -1590,6 +1590,29 @@ pub const Inst = union(enum) {
         size: VecElemSize,
     },
 
+    /// FMLA/FMLS - Vector fused multiply-add/subtract (3-register form).
+    /// rd = ri + rn * rm (FMLA) or rd = ri - rn * rm (FMLS)
+    vec_rrr_mod: struct {
+        op: VecALUModOp,
+        dst: WritableReg,
+        ri: Reg, // Addend register (also destination)
+        rn: Reg, // First multiplicand
+        rm: Reg, // Second multiplicand
+        size: VectorSize,
+    },
+
+    /// FMLA/FMLS - Vector fused multiply-add/subtract (element-indexed form).
+    /// rd = ri + rn * rm[idx] (FMLA) or rd = ri - rn * rm[idx] (FMLS)
+    vec_fmla_elem: struct {
+        op: VecALUModOp,
+        dst: WritableReg,
+        ri: Reg, // Addend register (also destination)
+        rn: Reg, // First multiplicand vector
+        rm: Reg, // Second multiplicand vector (element indexed)
+        size: VectorSize,
+        idx: u8, // Element index in rm
+    },
+
     /// Call - saves return address to link register and jumps.
     /// Pseudo-instruction that becomes BL.
     call: struct {
@@ -2017,6 +2040,23 @@ pub const VecElemSize = enum {
             .size64x2 => try writer.print("2d", .{}),
         }
     }
+};
+
+/// Vector ALU modify operation (FMA/FMS variants).
+pub const VecALUModOp = enum {
+    Fmla, // Fused multiply-add
+    Fmls, // Fused multiply-subtract
+};
+
+/// Vector size for ISLE integration (maps to ISLE VectorSize enum).
+pub const VectorSize = enum {
+    V8B,
+    V16B,
+    V4H,
+    V8H,
+    V2S,
+    V4S,
+    V2D,
 };
 
 /// Condition code for conditional instructions.

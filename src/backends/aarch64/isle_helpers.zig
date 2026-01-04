@@ -29,6 +29,11 @@ const VectorSize = enum {
     V2D,
 };
 
+const VecALUModOp = enum {
+    Fmla,
+    Fmls,
+};
+
 /// Extractor: Try to extract Imm12 from u64.
 /// Returns the Imm12 if the value fits, null otherwise.
 pub fn imm12_from_u64(val: u64) ?Imm12 {
@@ -2586,4 +2591,97 @@ pub fn aarch64_shuffle_tbl(a: lower_mod.Value, b: lower_mod.Value, mask: u128, c
         .src2 = b_reg,
         .idx = mask_reg.toReg(),
     } };
+}
+
+/// FMA constructors (ISLE constructors)
+/// vec_rrr_mod: Vector FMA register-register form
+/// Emits FMLA/FMLS: dst = addend + (multiplicand1 * multiplicand2)
+pub fn vec_rrr_mod(
+    op: VecALUModOp,
+    addend: lower_mod.Value,
+    multiplicand1: lower_mod.Value,
+    multiplicand2: lower_mod.Value,
+    size_enum: VectorSize,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.Value {
+    const addend_reg = try ctx.getValueReg(addend, .vector);
+    const mul1_reg = try ctx.getValueReg(multiplicand1, .vector);
+    const mul2_reg = try ctx.getValueReg(multiplicand2, .vector);
+
+    const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+
+    // Convert ISLE VectorSize to inst.VectorSize
+    const size: Inst.VectorSize = switch (size_enum) {
+        .V8B => .V8B,
+        .V16B => .V16B,
+        .V4H => .V4H,
+        .V8H => .V8H,
+        .V2S => .V2S,
+        .V4S => .V4S,
+        .V2D => .V2D,
+    };
+
+    // Convert ISLE VecALUModOp to inst.VecALUModOp
+    const inst_op: Inst.VecALUModOp = switch (op) {
+        .Fmla => .Fmla,
+        .Fmls => .Fmls,
+    };
+
+    try ctx.emit(Inst{ .vec_rrr_mod = .{
+        .op = inst_op,
+        .dst = dst,
+        .ri = addend_reg,
+        .rn = mul1_reg,
+        .rm = mul2_reg,
+        .size = size,
+    } });
+
+    return ctx.getValueFromReg(dst.toReg(), .vector);
+}
+
+/// vec_fmla_elem: Vector FMA element-indexed form
+/// Emits FMLA/FMLS with element index: dst = addend + (multiplicand1 * multiplicand2[idx])
+pub fn vec_fmla_elem(
+    op: VecALUModOp,
+    addend: lower_mod.Value,
+    multiplicand1: lower_mod.Value,
+    multiplicand2: lower_mod.Value,
+    size_enum: VectorSize,
+    idx: u8,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.Value {
+    const addend_reg = try ctx.getValueReg(addend, .vector);
+    const mul1_reg = try ctx.getValueReg(multiplicand1, .vector);
+    const mul2_reg = try ctx.getValueReg(multiplicand2, .vector);
+
+    const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+
+    // Convert ISLE VectorSize to inst.VectorSize
+    const size: Inst.VectorSize = switch (size_enum) {
+        .V8B => .V8B,
+        .V16B => .V16B,
+        .V4H => .V4H,
+        .V8H => .V8H,
+        .V2S => .V2S,
+        .V4S => .V4S,
+        .V2D => .V2D,
+    };
+
+    // Convert ISLE VecALUModOp to inst.VecALUModOp
+    const inst_op: Inst.VecALUModOp = switch (op) {
+        .Fmla => .Fmla,
+        .Fmls => .Fmls,
+    };
+
+    try ctx.emit(Inst{ .vec_fmla_elem = .{
+        .op = inst_op,
+        .dst = dst,
+        .ri = addend_reg,
+        .rn = mul1_reg,
+        .rm = mul2_reg,
+        .size = size,
+        .idx = idx,
+    } });
+
+    return ctx.getValueFromReg(dst.toReg(), .vector);
 }
