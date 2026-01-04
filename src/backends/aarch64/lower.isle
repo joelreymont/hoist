@@ -1797,3 +1797,7 @@
 (decl aarch64_trapnz (Value TrapCode) Aarch64Inst)
 (rule (lower (trapnz val trap_code))
       (aarch64_trapnz val trap_code))
+
+;; nop: No operation (emits nothing)
+(rule (lower (nop))
+      (invalid_reg))
