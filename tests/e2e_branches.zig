@@ -100,5 +100,5 @@ test "E2E: conditional branch if-then-else" {
     var code_copy = code;
     defer code_copy.deinit();
 
-    try testing.expect(code.code.len > 0);
+    try testing.expect(code.code.items.len > 0);
 }

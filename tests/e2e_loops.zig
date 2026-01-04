@@ -150,7 +150,7 @@ test "E2E: while loop with phi node" {
     var code_copy = code;
     defer code_copy.deinit();
 
-    try testing.expect(code.code.len > 0);
+    try testing.expect(code.code.items.len > 0);
 }
 
 // Test: E2E compilation of nested loop
@@ -334,7 +334,7 @@ test "E2E: nested loops with phi nodes" {
     var code_copy = code;
     defer code_copy.deinit();
 
-    try testing.expect(code.code.len > 0);
+    try testing.expect(code.code.items.len > 0);
 }
 
 // Test: E2E compilation of loop with accumulator
@@ -488,5 +488,5 @@ test "E2E: loop with accumulator phi" {
     var code_copy = code;
     defer code_copy.deinit();
 
-    try testing.expect(code.code.len > 0);
+    try testing.expect(code.code.items.len > 0);
 }

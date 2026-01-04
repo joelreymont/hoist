@@ -131,11 +131,11 @@ test "JIT: compile and execute return constant i32" {
     defer code_copy.deinit();
 
     // Allocate executable memory
-    const exec_mem = try allocExecutableMemory(testing.allocator, code.code.len);
+    const exec_mem = try allocExecutableMemory(testing.allocator, code.code.items.len);
     defer freeExecutableMemory(exec_mem);
 
     // Copy machine code to executable memory
-    @memcpy(exec_mem[0..code.code.len], code.code);
+    @memcpy(exec_mem[0..code.code.items.len], code.code.items);
 
     // Make memory executable
     try makeExecutable(exec_mem);
@@ -203,11 +203,11 @@ test "JIT: compile and execute i32 add" {
     defer code_copy.deinit();
 
     // Allocate executable memory
-    const exec_mem = try allocExecutableMemory(testing.allocator, code.code.len);
+    const exec_mem = try allocExecutableMemory(testing.allocator, code.code.items.len);
     defer freeExecutableMemory(exec_mem);
 
     // Copy machine code to executable memory
-    @memcpy(exec_mem[0..code.code.len], code.code);
+    @memcpy(exec_mem[0..code.code.items.len], code.code.items);
 
     // Make memory executable
     try makeExecutable(exec_mem);
@@ -276,11 +276,11 @@ test "JIT: compile and execute i64 multiply" {
     defer code_copy.deinit();
 
     // Allocate executable memory
-    const exec_mem = try allocExecutableMemory(testing.allocator, code.code.len);
+    const exec_mem = try allocExecutableMemory(testing.allocator, code.code.items.len);
     defer freeExecutableMemory(exec_mem);
 
     // Copy machine code to executable memory
-    @memcpy(exec_mem[0..code.code.len], code.code);
+    @memcpy(exec_mem[0..code.code.items.len], code.code.items);
 
     // Make memory executable
     try makeExecutable(exec_mem);
