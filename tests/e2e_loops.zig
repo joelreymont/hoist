@@ -141,8 +141,8 @@ test "E2E: while loop with phi node" {
     try verifier.verify();
 
     // Compile and verify code generation
-    var ctx = ContextBuilder.init(testing.allocator)
-        .target(.x86_64, .linux)
+    var builder = ContextBuilder.init(testing.allocator);
+    var ctx = builder.target(.x86_64, .linux)
         .optLevel(.none)
         .build();
 
@@ -325,8 +325,8 @@ test "E2E: nested loops with phi nodes" {
     try verifier.verify();
 
     // Compile
-    var ctx = ContextBuilder.init(testing.allocator)
-        .target(.x86_64, .linux)
+    var builder = ContextBuilder.init(testing.allocator);
+    var ctx = builder.target(.x86_64, .linux)
         .optLevel(.none)
         .build();
 
@@ -479,8 +479,8 @@ test "E2E: loop with accumulator phi" {
     try verifier.verify();
 
     // Compile
-    var ctx = ContextBuilder.init(testing.allocator)
-        .target(.x86_64, .linux)
+    var builder = ContextBuilder.init(testing.allocator);
+    var ctx = builder.target(.x86_64, .linux)
         .optLevel(.none)
         .build();
 

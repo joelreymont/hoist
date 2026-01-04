@@ -91,8 +91,8 @@ test "E2E: conditional branch if-then-else" {
     defer verifier.deinit();
     try verifier.verify();
 
-    var ctx = ContextBuilder.init(testing.allocator)
-        .target(.x86_64, .linux)
+    var builder = ContextBuilder.init(testing.allocator);
+    var ctx = builder.target(.x86_64, .linux)
         .optLevel(.none)
         .build();
 
