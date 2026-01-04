@@ -9,13 +9,13 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const root = @import("root");
-const Function = root.function.Function;
-const Block = root.entities.Block;
-const Inst = root.entities.Inst;
-const Value = root.entities.Value;
-const Opcode = root.opcodes.Opcode;
-const InstructionData = root.instruction_data.InstructionData;
+const ir = @import("../../ir.zig");
+const Function = ir.Function;
+const Block = ir.Block;
+const Inst = ir.Inst;
+const Value = ir.Value;
+const Opcode = @import("../../ir/opcodes.zig").Opcode;
+const InstructionData = ir.InstructionData;
 
 /// Branch simplification pass.
 pub const SimplifyBranch = struct {
@@ -38,7 +38,7 @@ pub const SimplifyBranch = struct {
     pub fn run(self: *SimplifyBranch, func: *Function) !bool {
         self.changed = false;
 
-        var block_iter = func.layout.blocks();
+        var block_iter = func.layout.blockIter();
         while (block_iter.next()) |block| {
             try self.simplifyBlock(func, block);
         }

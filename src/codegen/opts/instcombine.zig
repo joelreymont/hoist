@@ -11,19 +11,22 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const root = @import("root");
-const Function = root.function.Function;
-const Block = root.entities.Block;
-const Inst = root.entities.Inst;
-const Value = root.entities.Value;
-const Opcode = root.opcodes.Opcode;
-const InstructionData = root.instruction_data.InstructionData;
-const BinaryData = root.instruction_data.BinaryData;
-const UnaryData = root.instruction_data.UnaryData;
-const IntCompareData = root.instruction_data.IntCompareData;
-const IntCC = root.condcodes.IntCC;
-const Imm64 = root.immediates.Imm64;
-const ValueData = root.dfg.ValueData;
+const ir = @import("../../ir.zig");
+const Function = ir.Function;
+const Block = ir.Block;
+const Inst = ir.Inst;
+const Value = ir.Value;
+const Opcode = @import("../../ir/opcodes.zig").Opcode;
+const InstructionData = ir.InstructionData;
+const instruction_data = @import("../../ir/instruction_data.zig");
+const BinaryData = instruction_data.BinaryData;
+const UnaryData = instruction_data.UnaryData;
+const IntCompareData = instruction_data.IntCompareData;
+const condcodes = @import("../../ir/condcodes.zig");
+const IntCC = condcodes.IntCC;
+const immediates = @import("../../ir/immediates.zig");
+const Imm64 = immediates.Imm64;
+const ValueData = @import("../../ir/dfg.zig").ValueData;
 
 /// Instruction combining pass.
 pub const InstCombine = struct {
@@ -46,7 +49,7 @@ pub const InstCombine = struct {
     pub fn run(self: *InstCombine, func: *Function) !bool {
         self.changed = false;
 
-        var block_iter = func.layout.blocks();
+        var block_iter = func.layout.blockIter();
         while (block_iter.next()) |block| {
             try self.processBlock(func, block);
         }

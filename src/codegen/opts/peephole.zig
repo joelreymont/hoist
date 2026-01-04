@@ -11,15 +11,17 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const root = @import("root");
-const Function = root.function.Function;
-const Block = root.entities.Block;
-const Inst = root.entities.Inst;
-const Value = root.entities.Value;
-const Opcode = root.opcodes.Opcode;
-const InstructionData = root.instruction_data.InstructionData;
-const BinaryData = root.instruction_data.BinaryData;
-const UnaryData = root.instruction_data.UnaryData;
+const ir = @import("../../ir.zig");
+const Function = ir.Function;
+const Block = ir.Block;
+const Inst = ir.Inst;
+const Value = ir.Value;
+const Opcode = @import("../../ir/opcodes.zig").Opcode;
+const InstructionData = ir.InstructionData;
+const instruction_data = @import("../../ir/instruction_data.zig");
+const BinaryData = instruction_data.BinaryData;
+const UnaryData = instruction_data.UnaryData;
+const ValueData = @import("../../ir/dfg.zig").ValueData;
 
 /// Peephole optimization pass.
 pub const Peephole = struct {
@@ -46,7 +48,7 @@ pub const Peephole = struct {
         self.changed = false;
         self.loads.clearRetainingCapacity();
 
-        var block_iter = func.layout.blocks();
+        var block_iter = func.layout.blockIter();
         while (block_iter.next()) |block| {
             try self.processBlock(func, block);
         }
@@ -135,7 +137,7 @@ pub const Peephole = struct {
             // Update result type
             const result = func.dfg.firstResult(inst) orelse return;
             const result_mut = func.dfg.values.getMut(result) orelse return;
-            result_mut.* = root.dfg.ValueData.inst(ty, 0, inst);
+            result_mut.* = ValueData.inst(ty, 0, inst);
 
             self.changed = true;
         }
@@ -187,7 +189,7 @@ pub const Peephole = struct {
             // Update result type
             const result = func.dfg.firstResult(inst) orelse return;
             const result_mut = func.dfg.values.getMut(result) orelse return;
-            result_mut.* = root.dfg.ValueData.inst(ty, 0, inst);
+            result_mut.* = ValueData.inst(ty, 0, inst);
 
             self.changed = true;
         }
@@ -226,7 +228,7 @@ pub const Peephole = struct {
             // Update result type
             const result = func.dfg.firstResult(inst) orelse return;
             const result_mut = func.dfg.values.getMut(result) orelse return;
-            result_mut.* = root.dfg.ValueData.inst(ty, 0, inst);
+            result_mut.* = ValueData.inst(ty, 0, inst);
 
             self.changed = true;
         }
@@ -254,7 +256,7 @@ pub const Peephole = struct {
 
             const result = func.dfg.firstResult(inst) orelse return;
             const result_mut = func.dfg.values.getMut(result) orelse return;
-            result_mut.* = root.dfg.ValueData.inst(ty, 0, inst);
+            result_mut.* = ValueData.inst(ty, 0, inst);
 
             self.changed = true;
         } else if (data.args[0].index == data.args[1].index) {
@@ -266,7 +268,7 @@ pub const Peephole = struct {
 
             const result = func.dfg.firstResult(inst) orelse return;
             const result_mut = func.dfg.values.getMut(result) orelse return;
-            result_mut.* = root.dfg.ValueData.inst(ty, 0, inst);
+            result_mut.* = ValueData.inst(ty, 0, inst);
 
             self.changed = true;
         }
@@ -283,7 +285,7 @@ pub const Peephole = struct {
 
             const result = func.dfg.firstResult(inst) orelse return;
             const result_mut = func.dfg.values.getMut(result) orelse return;
-            result_mut.* = root.dfg.ValueData.inst(ty, -1, inst);
+            result_mut.* = ValueData.inst(ty, -1, inst);
 
             self.changed = true;
         } else if (data.args[0].index == data.args[1].index) {
@@ -295,7 +297,7 @@ pub const Peephole = struct {
 
             const result = func.dfg.firstResult(inst) orelse return;
             const result_mut = func.dfg.values.getMut(result) orelse return;
-            result_mut.* = root.dfg.ValueData.inst(ty, -1, inst);
+            result_mut.* = ValueData.inst(ty, -1, inst);
 
             self.changed = true;
         }
@@ -312,7 +314,7 @@ pub const Peephole = struct {
 
             const result = func.dfg.firstResult(inst) orelse return;
             const result_mut = func.dfg.values.getMut(result) orelse return;
-            result_mut.* = root.dfg.ValueData.inst(ty, -1, inst);
+            result_mut.* = ValueData.inst(ty, -1, inst);
 
             self.changed = true;
         }
@@ -419,7 +421,7 @@ pub const Peephole = struct {
 
         // Create alias to the source value
         const result_mut = func.dfg.values.getMut(result) orelse return;
-        result_mut.* = root.dfg.ValueData.alias(ty, value);
+        result_mut.* = ValueData.alias(ty, value);
 
         self.changed = true;
     }

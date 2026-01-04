@@ -27,16 +27,18 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const root = @import("root");
-const Function = root.function.Function;
-const Block = root.entities.Block;
-const Inst = root.entities.Inst;
-const Value = root.entities.Value;
-const Type = root.types.Type;
-const Opcode = root.opcodes.Opcode;
-const InstructionData = root.instruction_data.InstructionData;
-const ValueData = root.dfg.ValueData;
-const FloatCC = root.condcodes.FloatCC;
+const ir = @import("../../ir.zig");
+const Function = ir.Function;
+const Block = ir.Block;
+const Inst = ir.Inst;
+const Value = ir.Value;
+const Type = ir.Type;
+const Opcode = @import("../../ir/opcodes.zig").Opcode;
+const InstructionData = ir.InstructionData;
+const ValueData = @import("../../ir/dfg.zig").ValueData;
+const condcodes = @import("../../ir/condcodes.zig");
+const FloatCC = condcodes.FloatCC;
+const Signature = ir.Signature;
 
 /// Lattice value representing knowledge about an SSA value.
 const LatticeValue = union(enum) {
@@ -99,16 +101,16 @@ pub const SCCP = struct {
             .allocator = allocator,
             .lattice = std.AutoHashMap(Value, LatticeValue).init(allocator),
             .executable_blocks = std.AutoHashMap(Block, void).init(allocator),
-            .ssa_worklist = std.ArrayList(Inst).init(allocator),
-            .cfg_worklist = std.ArrayList(Block).init(allocator),
+            .ssa_worklist = std.ArrayList(Inst){},
+            .cfg_worklist = std.ArrayList(Block){},
         };
     }
 
     pub fn deinit(self: *SCCP) void {
         self.lattice.deinit();
         self.executable_blocks.deinit();
-        self.ssa_worklist.deinit();
-        self.cfg_worklist.deinit();
+        self.ssa_worklist.deinit(self.allocator);
+        self.cfg_worklist.deinit(self.allocator);
     }
 
     /// Run SCCP on the function.
@@ -116,17 +118,17 @@ pub const SCCP = struct {
     pub fn run(self: *SCCP, func: *Function) !bool {
         // Initialize: entry block is executable
         const entry = func.layout.entryBlock() orelse return false;
-        try self.cfg_worklist.append(entry);
+        try self.cfg_worklist.append(self.allocator, entry);
 
         // Process worklists until fixedpoint
         while (self.cfg_worklist.items.len > 0 or self.ssa_worklist.items.len > 0) {
             // Process CFG edges: mark blocks executable
-            while (self.cfg_worklist.popOrNull()) |block| {
+            while (self.cfg_worklist.pop()) |block| {
                 try self.visitBlock(func, block);
             }
 
             // Process SSA edges: evaluate instructions
-            while (self.ssa_worklist.popOrNull()) |inst| {
+            while (self.ssa_worklist.pop()) |inst| {
                 try self.visitInst(func, inst);
             }
         }
@@ -152,7 +154,7 @@ pub const SCCP = struct {
         // Add all instructions in this block to SSA worklist
         var inst_iter = func.layout.blockInsts(block);
         while (inst_iter.next()) |inst| {
-            try self.ssa_worklist.append(inst);
+            try self.ssa_worklist.append(self.allocator, inst);
         }
     }
 
@@ -290,24 +292,24 @@ pub const SCCP = struct {
                     .bottom => return, // Not yet reached
                     .top => {
                         // Condition is not constant - both branches possible
-                        if (d.then_dest) |then_block| try self.cfg_worklist.append(then_block);
-                        if (d.else_dest) |else_block| try self.cfg_worklist.append(else_block);
+                        if (d.then_dest) |then_block| try self.cfg_worklist.append(self.allocator, then_block);
+                        if (d.else_dest) |else_block| try self.cfg_worklist.append(self.allocator, else_block);
                     },
                     .constant => |k| {
                         // Condition is constant - take only one branch
                         if (k != 0) {
                             // Non-zero: take then branch
-                            if (d.then_dest) |then_block| try self.cfg_worklist.append(then_block);
+                            if (d.then_dest) |then_block| try self.cfg_worklist.append(self.allocator, then_block);
                         } else {
                             // Zero: take else branch
-                            if (d.else_dest) |else_block| try self.cfg_worklist.append(else_block);
+                            if (d.else_dest) |else_block| try self.cfg_worklist.append(self.allocator, else_block);
                         }
                     },
                 }
             },
             .jump => |d| {
                 // Unconditional jump - always take destination
-                try self.cfg_worklist.append(d.destination);
+                try self.cfg_worklist.append(self.allocator, d.destination);
             },
             else => {
                 // Not a control flow instruction, ignore
@@ -318,7 +320,7 @@ pub const SCCP = struct {
     /// Add all uses of a value to the SSA worklist.
     fn addUsesToWorklist(self: *SCCP, func: *Function, value: Value) !void {
         // Iterate through all instructions and find those that use this value
-        var block_iter = func.layout.blocks();
+        var block_iter = func.layout.blockIter();
         while (block_iter.next()) |block| {
             // Only process executable blocks
             if (!self.executable_blocks.contains(block)) continue;
@@ -329,7 +331,7 @@ pub const SCCP = struct {
 
                 // Check if this instruction uses the value
                 if (instUsesValue(func, inst_data.*, value)) {
-                    try self.ssa_worklist.append(inst);
+                    try self.ssa_worklist.append(self.allocator, inst);
                 }
             }
         }
@@ -682,11 +684,11 @@ test "SCCP: init and deinit" {
 }
 
 test "SCCP: constant branch folding" {
-    const sig = root.signature.Signature.init(testing.allocator, .fast);
+    const sig = Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
-    var fbuilder = root.builder.FunctionBuilder.init(&func);
+    var fbuilder = ir.FunctionBuilder.init(&func);
 
     // Build: if (iconst 0) then block1 else block2
     const entry = try fbuilder.createBlock();

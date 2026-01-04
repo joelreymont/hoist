@@ -12,13 +12,13 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const root = @import("root");
-const Function = root.function.Function;
-const Block = root.entities.Block;
-const Inst = root.entities.Inst;
-const Value = root.entities.Value;
-const Opcode = root.opcodes.Opcode;
-const ValueData = root.dfg.ValueData;
+const ir = @import("../../ir.zig");
+const Function = ir.Function;
+const Block = ir.Block;
+const Inst = ir.Inst;
+const Value = ir.Value;
+const Opcode = @import("../../ir/opcodes.zig").Opcode;
+const ValueData = @import("../../ir/dfg.zig").ValueData;
 
 /// Copy propagation pass.
 pub const CopyProp = struct {
@@ -60,7 +60,7 @@ pub const CopyProp = struct {
 
     /// Find copy instructions in the function.
     fn findCopies(self: *CopyProp, func: *Function) !void {
-        var block_iter = func.layout.blocks();
+        var block_iter = func.layout.blockIter();
         while (block_iter.next()) |block| {
             var inst_iter = func.layout.blockInsts(block);
             while (inst_iter.next()) |inst| {

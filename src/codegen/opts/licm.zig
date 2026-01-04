@@ -13,16 +13,17 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const root = @import("root");
-const Function = root.function.Function;
-const Block = root.entities.Block;
-const Inst = root.entities.Inst;
-const Value = root.entities.Value;
-const Opcode = root.opcodes.Opcode;
-const Loop = root.loops.Loop;
-const LoopInfo = root.loops.LoopInfo;
-const DominatorTree = root.domtree.DominatorTree;
-const CFG = root.domtree.CFG;
+const ir = @import("../../ir.zig");
+const Function = ir.Function;
+const Block = ir.Block;
+const Inst = ir.Inst;
+const Value = ir.Value;
+const Opcode = @import("../../ir/opcodes.zig").Opcode;
+const loops = @import("../../ir/loops.zig");
+const Loop = loops.Loop;
+const LoopInfo = ir.LoopInfo;
+const DominatorTree = ir.DominatorTree;
+const CFG = ir.ControlFlowGraph;
 
 /// Loop-Invariant Code Motion pass.
 pub const LICM = struct {

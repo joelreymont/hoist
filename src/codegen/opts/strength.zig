@@ -10,14 +10,15 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const root = @import("root");
-const Function = root.function.Function;
-const Block = root.entities.Block;
-const Inst = root.entities.Inst;
-const Value = root.entities.Value;
-const Opcode = root.opcodes.Opcode;
-const InstructionData = root.instruction_data.InstructionData;
-const BinaryData = root.instruction_data.BinaryData;
+const ir = @import("../../ir.zig");
+const Function = ir.Function;
+const Block = ir.Block;
+const Inst = ir.Inst;
+const Value = ir.Value;
+const Opcode = @import("../../ir/opcodes.zig").Opcode;
+const InstructionData = ir.InstructionData;
+const instruction_data = @import("../../ir/instruction_data.zig");
+const BinaryData = instruction_data.BinaryData;
 
 /// Strength reduction pass.
 pub const StrengthReduction = struct {
@@ -40,7 +41,7 @@ pub const StrengthReduction = struct {
     pub fn run(self: *StrengthReduction, func: *Function) !bool {
         self.changed = false;
 
-        var block_iter = func.layout.blocks();
+        var block_iter = func.layout.blockIter();
         while (block_iter.next()) |block| {
             try self.processBlock(func, block);
         }
