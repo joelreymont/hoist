@@ -435,7 +435,8 @@ pub const Verifier = struct {
         // Check that each block ends with a terminator
         var block_iter = self.func.layout.blockIter();
         while (block_iter.next()) |block| {
-            const last_inst = self.func.layout.lastInst(block);
+            const block_node = self.func.layout.blocks.get(block);
+            const last_inst = if (block_node) |node| node.last_inst else null;
             if (last_inst == null) {
                 const msg = try std.fmt.allocPrint(
                     self.allocator,
