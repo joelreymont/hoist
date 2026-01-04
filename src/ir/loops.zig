@@ -136,7 +136,7 @@ pub const LoopInfo = struct {
         try loop.addBlock(back_edge_src);
 
         while (worklist.items.len > 0) {
-            const block = worklist.pop();
+            const block: Block = worklist.pop();
 
             // Add all predecessors that are dominated by the header
             const preds = cfg.predecessors(block);
