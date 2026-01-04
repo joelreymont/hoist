@@ -158,7 +158,6 @@ pub const SCCP = struct {
     /// Evaluate an instruction and update lattice values.
     fn visitInst(self: *SCCP, func: *Function, inst: Inst) !void {
         const inst_data = func.dfg.insts.get(inst) orelse return;
-        const opcode = inst_data.opcode();
 
         // Get result value (if any)
         const result = func.dfg.firstResult(inst) orelse {
@@ -185,7 +184,7 @@ pub const SCCP = struct {
     }
 
     /// Evaluate an instruction and return its lattice value.
-    fn evaluateInst(self: *SCCP, func: *Function, inst_data: InstructionData) !LatticeValue {
+    fn evaluateInst(self: *SCCP, _: *Function, inst_data: InstructionData) !LatticeValue {
         return switch (inst_data) {
             .unary_imm => |d| switch (d.opcode) {
                 .iconst => {
@@ -225,10 +224,7 @@ pub const SCCP = struct {
     }
 
     /// Evaluate branch instructions for constant conditions.
-    fn evaluateBranch(self: *SCCP, func: *Function, inst: Inst, inst_data: InstructionData) !void {
-        _ = func;
-        _ = inst;
-        _ = inst_data;
+    fn evaluateBranch(_: *SCCP, _: *Function, _: Inst, _: InstructionData) !void {
         // TODO: Implement branch evaluation
         // For now, conservatively assume all branches can go either way
     }
@@ -286,9 +282,8 @@ pub const SCCP = struct {
             // For constant values, we could create an iconst and alias to it
             // However, this requires allocating new instructions in the DFG
             // For now, mark as changed to indicate constants were discovered
+            _ = ty; // Will be needed when creating iconst instructions
             changed = true;
-            _ = ty;
-            _ = value;
         }
 
         // TODO: Remove instructions in non-executable blocks
