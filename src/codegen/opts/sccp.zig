@@ -392,6 +392,24 @@ fn evalBinaryOp(opcode: Opcode, lhs: i64, rhs: i64) !i64 {
         .smax => @max(lhs, rhs),
         .umin => @bitCast(@min(@as(u64, @bitCast(lhs)), @as(u64, @bitCast(rhs)))),
         .umax => @bitCast(@max(@as(u64, @bitCast(lhs)), @as(u64, @bitCast(rhs)))),
+        .fmin => blk: {
+            const lhs_f = @as(f64, @bitCast(lhs));
+            const rhs_f = @as(f64, @bitCast(rhs));
+            // If either is NaN, return NaN; otherwise return min
+            if (std.math.isNan(lhs_f) or std.math.isNan(rhs_f)) {
+                break :blk @bitCast(std.math.nan(f64));
+            }
+            break :blk @bitCast(@min(lhs_f, rhs_f));
+        },
+        .fmax => blk: {
+            const lhs_f = @as(f64, @bitCast(lhs));
+            const rhs_f = @as(f64, @bitCast(rhs));
+            // If either is NaN, return NaN; otherwise return max
+            if (std.math.isNan(lhs_f) or std.math.isNan(rhs_f)) {
+                break :blk @bitCast(std.math.nan(f64));
+            }
+            break :blk @bitCast(@max(lhs_f, rhs_f));
+        },
         else => error.UnsupportedOp,
     };
 }
