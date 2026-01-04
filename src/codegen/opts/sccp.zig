@@ -415,6 +415,26 @@ fn evalBinaryOp(opcode: Opcode, lhs: i64, rhs: i64) !i64 {
             const rhs_f = @as(f64, @bitCast(rhs));
             break :blk @bitCast(std.math.copysign(lhs_f, rhs_f));
         },
+        .fadd => blk: {
+            const lhs_f = @as(f64, @bitCast(lhs));
+            const rhs_f = @as(f64, @bitCast(rhs));
+            break :blk @bitCast(lhs_f + rhs_f);
+        },
+        .fsub => blk: {
+            const lhs_f = @as(f64, @bitCast(lhs));
+            const rhs_f = @as(f64, @bitCast(rhs));
+            break :blk @bitCast(lhs_f - rhs_f);
+        },
+        .fmul => blk: {
+            const lhs_f = @as(f64, @bitCast(lhs));
+            const rhs_f = @as(f64, @bitCast(rhs));
+            break :blk @bitCast(lhs_f * rhs_f);
+        },
+        .fdiv => blk: {
+            const lhs_f = @as(f64, @bitCast(lhs));
+            const rhs_f = @as(f64, @bitCast(rhs));
+            break :blk @bitCast(lhs_f / rhs_f);
+        },
         else => error.UnsupportedOp,
     };
 }
