@@ -62,13 +62,21 @@ pub const SimplifyBranch = struct {
 
     /// Simplify unconditional jump.
     fn simplifyJump(self: *SimplifyBranch, func: *Function, block: Block, inst: Inst, inst_data: *const InstructionData) !void {
-        _ = self;
-        _ = func;
-        _ = block;
-        _ = inst;
-        _ = inst_data;
+        const jump_data = switch (inst_data.*) {
+            .jump => |d| d,
+            else => return,
+        };
+
         // Eliminate jump to next block (fall-through)
-        // This requires layout analysis - deferred for now
+        const block_node = func.layout.blocks.get(block) orelse return;
+        if (block_node.next_block) |next| {
+            if (next.index == jump_data.destination.index) {
+                // Jump to next block - can be eliminated (becomes fall-through)
+                func.layout.removeInst(inst);
+                func.dfg.removeInst(inst);
+                self.changed = true;
+            }
+        }
     }
 
     /// Simplify conditional branch.
