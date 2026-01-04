@@ -1971,6 +1971,13 @@
 (rule 3 (lower (shuffle a b (shuffle_dup64_from_imm n)))
       (vec_dup_from_fpu a (VectorSize.V2D) n))
 
+;; EXT pattern - byte-wise concatenate and shift
+(decl vec_extract (Value Value u8) Aarch64Inst)
+(extern constructor vec_extract vec_extract)
+
+(rule 2 (lower (shuffle a b (vec_extract_imm4_from_immediate n)))
+      (vec_extract a b n))
+
 ;; TBL fallback: handles all shuffle patterns via table lookup
 (decl aarch64_shuffle_tbl (Value Value Immediate) Aarch64Inst)
 (rule 0 (lower (has_type ty (shuffle a b mask)))

@@ -1294,6 +1294,23 @@ pub fn vec_dup_from_fpu(src: lower_mod.Value, size_enum: VectorSize, lane: u8, c
     } };
 }
 
+/// VEC_EXTRACT - Extract bytes and concatenate (EXT Vd, Vn, Vm, #index)
+/// Extracts consecutive bytes from concatenated pair: dst = (a:b)[index..index+16]
+pub fn vec_extract(a: lower_mod.Value, b: lower_mod.Value, index: u8, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const a_reg = try ctx.getValueReg(a, .vector);
+    const b_reg = try ctx.getValueReg(b, .vector);
+
+    return Inst{
+        .vec_ext = .{
+            .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
+            .src1 = a_reg,
+            .src2 = b_reg,
+            .index = index,
+            .size = .size8x16, // EXT always operates on 128-bit vectors
+        },
+    };
+}
+
 /// EXTRACTLANE - Extract vector lane to scalar (UMOV)
 pub fn aarch64_extractlane(ty: types.Type, vec: lower_mod.Value, lane_val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const vec_reg = try getValueReg(ctx, vec);
