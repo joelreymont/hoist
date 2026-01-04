@@ -911,6 +911,20 @@
 (rule (lower (iconst ty k))
       (aarch64_iconst ty k))
 
+;; f32const: 32-bit floating-point constant
+(decl constant_f32 (u32) Aarch64Inst)
+(extern constructor constant_f32 constant_f32)
+
+(rule (lower (f32const (u32_from_ieee32 n)))
+      (constant_f32 n))
+
+;; f64const: 64-bit floating-point constant
+(decl constant_f64 (u64) Aarch64Inst)
+(extern constructor constant_f64 constant_f64)
+
+(rule (lower (f64const (u64_from_ieee64 n)))
+      (constant_f64 n))
+
 ;; Helper extractors
 
 ;; Immediate value extractors (extern - implemented in isle_helpers.zig)

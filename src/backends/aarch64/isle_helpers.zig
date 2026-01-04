@@ -2013,6 +2013,41 @@ pub fn aarch64_debugtrap(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     return Inst{ .brk = .{ .imm = 0 } };
 }
 
+/// Float constant constructors (ISLE constructors)
+pub fn constant_f32(bits: u32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Load 32-bit constant via GPR, then FMOV to FPU
+    const tmp_gpr = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .mov_imm = .{
+        .dst = tmp_gpr,
+        .imm = bits,
+        .is_64 = false,
+    } });
+
+    const dst_fpr = lower_mod.WritableVReg.allocVReg(.float, ctx);
+    return Inst{ .fmov_from_gpr = .{
+        .dst = dst_fpr,
+        .src = tmp_gpr.toReg(),
+        .size = .size32,
+    } };
+}
+
+pub fn constant_f64(bits: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Load 64-bit constant via GPR, then FMOV to FPU
+    const tmp_gpr = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .mov_imm = .{
+        .dst = tmp_gpr,
+        .imm = bits,
+        .is_64 = true,
+    } });
+
+    const dst_fpr = lower_mod.WritableVReg.allocVReg(.float, ctx);
+    return Inst{ .fmov_from_gpr = .{
+        .dst = dst_fpr,
+        .src = tmp_gpr.toReg(),
+        .size = .size64,
+    } };
+}
+
 /// Stack address computation (ISLE constructor)
 pub fn aarch64_stack_addr(stack_slot: StackSlot, offset: i32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Compute: SP + slot_offset + offset
