@@ -406,6 +406,33 @@ fn evalBinaryOp(opcode: Opcode, lhs: i64, rhs: i64) !i64 {
         .smax => @max(lhs, rhs),
         .umin => @bitCast(@min(@as(u64, @bitCast(lhs)), @as(u64, @bitCast(rhs)))),
         .umax => @bitCast(@max(@as(u64, @bitCast(lhs)), @as(u64, @bitCast(rhs)))),
+        .uadd_sat => blk: {
+            const lhs_u = @as(u64, @bitCast(lhs));
+            const rhs_u = @as(u64, @bitCast(rhs));
+            const result = lhs_u +| rhs_u; // Saturating add
+            break :blk @bitCast(result);
+        },
+        .sadd_sat => blk: {
+            const result = lhs +| rhs; // Saturating add (signed)
+            break :blk result;
+        },
+        .usub_sat => blk: {
+            const lhs_u = @as(u64, @bitCast(lhs));
+            const rhs_u = @as(u64, @bitCast(rhs));
+            const result = lhs_u -| rhs_u; // Saturating sub
+            break :blk @bitCast(result);
+        },
+        .ssub_sat => blk: {
+            const result = lhs -| rhs; // Saturating sub (signed)
+            break :blk result;
+        },
+        .avg_round => blk: {
+            const lhs_u = @as(u64, @bitCast(lhs));
+            const rhs_u = @as(u64, @bitCast(rhs));
+            // Rounding average: (a + b + 1) / 2
+            const sum: u128 = @as(u128, lhs_u) + @as(u128, rhs_u) + 1;
+            break :blk @bitCast(@as(u64, @truncate(sum >> 1)));
+        },
         .fmin => blk: {
             const lhs_f = @as(f64, @bitCast(lhs));
             const rhs_f = @as(f64, @bitCast(rhs));
