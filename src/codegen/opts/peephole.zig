@@ -88,6 +88,7 @@ pub const Peephole = struct {
                     .ineg, .fneg => try self.optimizeNeg(func, inst, data),
                     .bnot => try self.optimizeBnot(func, inst, data),
                     .iabs, .fabs => try self.optimizeAbs(func, inst, data),
+                    .bswap, .bitrev => try self.optimizeInvolution(func, inst, data),
                     else => {},
                 }
             },
@@ -376,6 +377,28 @@ pub const Peephole = struct {
                 if (d.opcode == data.opcode) {
                     // Double abs: replace with inner abs (the argument instruction)
                     try self.replaceWithCopy(func, inst, data.arg);
+                }
+            },
+            else => {},
+        }
+    }
+
+    /// Optimize involution operations: op(op(x)) = x for bswap, bitrev
+    fn optimizeInvolution(self: *Peephole, func: *Function, inst: Inst, data: UnaryData) !void {
+        // Check if argument has the same operation
+        const arg_def = func.dfg.valueDef(data.arg) orelse return;
+        const arg_inst = switch (arg_def) {
+            .result => |r| r.inst,
+            else => return,
+        };
+
+        const arg_data = func.dfg.insts.get(arg_inst) orelse return;
+        switch (arg_data.*) {
+            .unary => |d| {
+                // Check if it's the same operation (bswap/bitrev)
+                if (d.opcode == data.opcode) {
+                    // Double involution: op(op(x)) = x
+                    try self.replaceWithCopy(func, inst, d.arg);
                 }
             },
             else => {},
