@@ -160,6 +160,10 @@
 (decl orr (Type Reg Reg) Reg)
 (rule (orr ty x y) (aarch64_orr_rr ty x y))
 
+;; SUB helper: sub dst, src1, src2
+(decl sub (Type Reg Reg) Reg)
+(rule (sub ty x y) (aarch64_sub_rr ty x y))
+
 ;; TST immediate: test bits and set flags
 (decl tst_imm (Type Reg i64) ProducesFlags)
 (rule (tst_imm ty reg imm)
@@ -407,6 +411,13 @@
 
 ;; Type conversion operations lowering
 
+;; sextend: I128 sign-extend (64-bit to 128-bit)
+;; Sign-extend by copying sign bit (bit 63) to all bits of high 64
+(rule -2 (lower (has_type $I128 (sextend x)))
+      (let ((lo Reg (value_regs_get x 0))
+            (hi Reg (aarch64_asr_imm $I64 lo 63)))
+        (value_regs lo hi)))
+
 ;; sextend: Sign-extend to target type
 ;; I8 -> I16/I32/I64 => SXTB
 (rule (lower (sextend dst_ty src_ty x))
@@ -423,6 +434,11 @@
       (if-let 32 (ty_bits src_ty))
       (if-let 64 (ty_bits dst_ty))
       (aarch64_sxtw x))
+
+;; uextend: I128 zero-extend (64-bit to 128-bit)
+;; Zero-extend by setting high 64 bits to 0
+(rule -1 (lower (has_type $I128 (uextend x)))
+      (value_regs (value_regs_get x 0) (iconst_to_reg $I64 0)))
 
 ;; uextend: Zero-extend to target type
 ;; I8 -> I16/I32/I64 => UXTB
@@ -705,6 +721,18 @@
       (if-let amt (valid_shift_imm k))
       (aarch64_ror_imm ty x amt))
 
+;; rotr: I128 rotate right (rotateright(x, amt) = (x >> amt) | (x << (128 - amt)))
+(rule (lower (has_type $I128 (rotr x y)))
+      (let ((val ValueRegs x)
+            (amt Reg (value_regs_get y 0))
+            (const_128 Reg (iconst_to_reg $I64 128))
+            (neg_amt Reg (sub $I64 const_128 amt))
+            (rshift ValueRegs (lower_ushr128 val amt))
+            (lshift ValueRegs (lower_shl128 val neg_amt))
+            (hi Reg (orr $I64 (value_regs_get rshift 1) (value_regs_get lshift 1)))
+            (lo Reg (orr $I64 (value_regs_get rshift 0) (value_regs_get lshift 0))))
+        (value_regs lo hi)))
+
 ;; rotl: Rotate left (register form) - implemented as rotr(x, bits - y)
 (rule (lower (rotl ty x y))
       (aarch64_rotl_rr ty x y))
@@ -714,6 +742,18 @@
       (if-let amt (valid_rotl_imm ty k))
       (aarch64_ror_imm ty x amt))
 ;; rotl(x, k) = rotr(x, width - k)
+
+;; rotl: I128 rotate left (rotateleft(x, amt) = (x << amt) | (x >> (128 - amt)))
+(rule (lower (has_type $I128 (rotl x y)))
+      (let ((val ValueRegs x)
+            (amt Reg (value_regs_get y 0))
+            (const_128 Reg (iconst_to_reg $I64 128))
+            (neg_amt Reg (sub $I64 const_128 amt))
+            (lshift ValueRegs (lower_shl128 val amt))
+            (rshift ValueRegs (lower_ushr128 val neg_amt)))
+        (value_regs
+          (orr $I64 (value_regs_get lshift 0) (value_regs_get rshift 0))
+          (orr $I64 (value_regs_get lshift 1) (value_regs_get rshift 1)))))
 
 ;; smin: Signed minimum (CMP + CSEL)
 (rule (lower (smin ty x y))
