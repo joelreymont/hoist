@@ -13,6 +13,22 @@
 ;; Vector ALU operation which modifies a source register
 (type VecALUModOp extern (enum (Fmla) (Fmls)))
 
+;; Flags infrastructure for instructions that produce/consume CPU flags
+;; Used for I128 arithmetic with carry (ADDS+ADC, SUBS+SBC)
+(type ProducesFlags (enum
+  ;; Instruction produces flags and returns a result that can be consumed
+  (ProducesFlagsReturnsResultWithConsumer (inst Aarch64Inst) (result Reg))
+  ;; Instruction produces flags as side effect only
+  (ProducesFlagsSideEffect (inst Aarch64Inst))))
+
+(type ConsumesFlags (enum
+  ;; Instruction consumes flags and returns result, to be paired with producer
+  (ConsumesFlagsReturnsResultWithProducer (inst Aarch64Inst) (result Reg))
+  ;; Instruction consumes flags, returns result, but stands alone
+  (ConsumesFlagsReturnsReg (inst Aarch64Inst) (result Reg))
+  ;; Instruction consumes flags, two instructions returning ValueRegs
+  (ConsumesFlagsTwiceReturnsValueRegs (inst1 Aarch64Inst) (inst2 Aarch64Inst) (result ValueRegs))))
+
 ;; Type extractors (foundation for type-parameterized patterns)
 (decl multi_lane (Type) (u32 u32))
 (extern extractor multi_lane multi_lane)
@@ -67,6 +83,47 @@
 
 (decl reduce_umax_vec (Value VectorSize) Aarch64Inst)
 (rule (reduce_umax_vec x size) (aarch64_umaxv size x))
+
+;; Flags infrastructure combinators
+
+;; Combine a flags-producing instruction with a flags-consuming instruction
+;; This handles the common case: producer returns result, consumer returns result
+(decl with_flags (ProducesFlags ConsumesFlags) ValueRegs)
+(rule (with_flags (ProducesFlags.ProducesFlagsReturnsResultWithConsumer producer_inst producer_result)
+                  (ConsumesFlags.ConsumesFlagsReturnsResultWithProducer consumer_inst consumer_result))
+      (value_regs producer_result consumer_result))
+
+;; Helper for ADDS instruction (add with flags, returns result + produces flags)
+(decl add_with_flags_paired (Type Reg Reg) ProducesFlags)
+(rule (add_with_flags_paired ty src1 src2)
+      (let ((dst Reg (temp_reg $I64)))
+        (ProducesFlags.ProducesFlagsReturnsResultWithConsumer
+         (aarch64_adds_rr ty dst src1 src2)
+         dst)))
+
+;; Helper for ADC instruction (add with carry, consumes flags + returns result)
+(decl adc_paired (Type Reg Reg) ConsumesFlags)
+(rule (adc_paired ty src1 src2)
+      (let ((dst Reg (temp_reg $I64)))
+        (ConsumesFlags.ConsumesFlagsReturnsResultWithProducer
+         (aarch64_adc_rr ty dst src1 src2)
+         dst)))
+
+;; Helper for SUBS instruction (subtract with flags, returns result + produces flags)
+(decl sub_with_flags_paired (Type Reg Reg) ProducesFlags)
+(rule (sub_with_flags_paired ty src1 src2)
+      (let ((dst Reg (temp_reg $I64)))
+        (ProducesFlags.ProducesFlagsReturnsResultWithConsumer
+         (aarch64_subs_rr ty dst src1 src2)
+         dst)))
+
+;; Helper for SBC instruction (subtract with carry, consumes flags + returns result)
+(decl sbc_paired (Type Reg Reg) ConsumesFlags)
+(rule (sbc_paired ty src1 src2)
+      (let ((dst Reg (temp_reg $I64)))
+        (ConsumesFlags.ConsumesFlagsReturnsResultWithProducer
+         (aarch64_sbc_rr ty dst src1 src2)
+         dst)))
 
 ;; Integer arithmetic lowering
 
@@ -1137,6 +1194,13 @@
 (decl aarch64_add_extended (Type Value Value ExtendOp) Aarch64Inst)
 (decl aarch64_sub_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_sub_imm (Type Value i64) Aarch64Inst)
+
+;; Arithmetic instructions that set flags (for I128 operations)
+(decl aarch64_adds_rr (Type Reg Reg Reg) Aarch64Inst)
+(decl aarch64_adc_rr (Type Reg Reg Reg) Aarch64Inst)
+(decl aarch64_subs_rr (Type Reg Reg Reg) Aarch64Inst)
+(decl aarch64_sbc_rr (Type Reg Reg Reg) Aarch64Inst)
+
 (decl aarch64_mul_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_madd (Type Value Value Value) Aarch64Inst)
 (decl aarch64_msub (Type Value Value Value) Aarch64Inst)
