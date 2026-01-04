@@ -223,17 +223,17 @@ test "SSA: dominance frontier for diamond CFG" {
     try testing.expectEqual(@as(usize, 0), df_b0.items.len);
 
     var df_b1 = try domtree.dominanceFrontier(testing.allocator, b1, &cfg);
-    defer df_b1.deinit();
+    defer df_b1.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 1), df_b1.items.len);
     try testing.expect(std.meta.eql(b3, df_b1.items[0]));
 
     var df_b2 = try domtree.dominanceFrontier(testing.allocator, b2, &cfg);
-    defer df_b2.deinit();
+    defer df_b2.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 1), df_b2.items.len);
     try testing.expect(std.meta.eql(b3, df_b2.items[0]));
 
     var df_b3 = try domtree.dominanceFrontier(testing.allocator, b3, &cfg);
-    defer df_b3.deinit();
+    defer df_b3.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 0), df_b3.items.len);
 }
 
@@ -271,7 +271,7 @@ test "SSA: dominance frontier for loop" {
     // DF(b2) = {b1} (b2 dominates itself, and b1 has multiple predecessors)
 
     var df_b2 = try domtree.dominanceFrontier(testing.allocator, b2, &cfg);
-    defer df_b2.deinit();
+    defer df_b2.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 1), df_b2.items.len);
     try testing.expect(std.meta.eql(b1, df_b2.items[0]));
 }
