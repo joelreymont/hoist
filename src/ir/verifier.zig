@@ -368,8 +368,8 @@ pub const Verifier = struct {
                         }
                     },
                     .atomic_cas => |ac| {
-                        const expected_ty = self.func.dfg.valueType(ac.expected);
-                        const replacement_ty = self.func.dfg.valueType(ac.replacement);
+                        const expected_ty = self.func.dfg.valueType(ac.expected) orelse continue;
+                        const replacement_ty = self.func.dfg.valueType(ac.replacement) orelse continue;
                         // Atomic CAS must be on integer types
                         if (!result_ty.isInt() or !expected_ty.isInt() or !replacement_ty.isInt()) {
                             const msg = try std.fmt.allocPrint(
