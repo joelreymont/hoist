@@ -89,12 +89,17 @@ pub const SimplifyBranch = struct {
             else => return,
         };
 
-        // Check if destination is a BlockCall with condition
-        // For now, work with what we have
-        _ = self;
-        _ = func;
-        _ = inst;
-        _ = branch_data;
+        // Check if condition is a constant
+        if (self.isConstant(func, branch_data.condition)) |const_val| {
+            // Replace with unconditional jump
+            const dest = if (const_val != 0) branch_data.then_dest else branch_data.else_dest;
+            if (dest) |target| {
+                const new_data = InstructionData{ .jump = .{ .opcode = .jump, .destination = target } };
+                const inst_mut = func.dfg.insts.getMut(inst) orelse return;
+                inst_mut.* = new_data;
+                self.changed = true;
+            }
+        }
     }
 
     /// Check if value is a constant.
@@ -108,10 +113,7 @@ pub const SimplifyBranch = struct {
 
         const inst_data = func.dfg.insts.get(defining_inst) orelse return null;
         return switch (inst_data.*) {
-            .unary => |d| if (d.opcode == .iconst) blk: {
-                // iconst stores value in arg field - would need proper Imm64 decoding
-                break :blk null;
-            } else null,
+            .unary_imm => |d| if (d.opcode == .iconst) d.imm.bits() else null,
             else => null,
         };
     }
