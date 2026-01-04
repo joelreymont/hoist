@@ -1953,3 +1953,10 @@
 ;; Extract byte offset for EXT (concatenate + shift) pattern
 (decl vec_extract_imm4_from_immediate (Immediate) u8)
 (extern extractor vec_extract_imm4_from_immediate vec_extract_imm4_from_immediate)
+
+;; Shuffle operations
+;; shuffle: SIMD lane shuffle using 128-bit mask
+;; TBL fallback: handles all shuffle patterns via table lookup
+(decl aarch64_shuffle_tbl (Value Value Immediate) Aarch64Inst)
+(rule 0 (lower (has_type ty (shuffle a b mask)))
+      (aarch64_shuffle_tbl a b mask))

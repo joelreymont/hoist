@@ -2317,3 +2317,57 @@ pub fn vec_extract_imm4_from_immediate(imm: u128) ?u8 {
     if (first_byte < 16) return first_byte;
     return null;
 }
+
+/// Shuffle operations (ISLE constructor)
+pub fn aarch64_shuffle_tbl(a: lower_mod.Value, b: lower_mod.Value, mask: u128, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const a_reg = try ctx.getValueReg(a, .vector);
+    const b_reg = try ctx.getValueReg(b, .vector);
+    
+    // Load 128-bit mask into vector register
+    const mask_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    
+    // Load mask as two 64-bit immediates
+    const mask_lo: u64 = @truncate(mask);
+    const mask_hi: u64 = @truncate(mask >> 64);
+    
+    // MOV immediate to vector (using FMOV for 64-bit chunks)
+    const tmp_lo = lower_mod.WritableReg.allocReg(.int, ctx);
+    const tmp_hi = lower_mod.WritableReg.allocReg(.int, ctx);
+    
+    try ctx.emit(Inst{ .mov_imm = .{
+        .dst = tmp_lo,
+        .imm = @bitCast(mask_lo),
+        .is_64 = true,
+    } });
+    
+    try ctx.emit(Inst{ .mov_imm = .{
+        .dst = tmp_hi,
+        .imm = @bitCast(mask_hi),
+        .is_64 = true,
+    } });
+    
+    // Move to vector register (INS or FMOV)
+    try ctx.emit(Inst{ .fmov_from_gpr = .{
+        .dst = mask_reg,
+        .src = tmp_lo.toReg(),
+        .size = .size64,
+    } });
+    
+    try ctx.emit(Inst{ .vec_insert_lane = .{
+        .dst = mask_reg,
+        .vec = mask_reg.toReg(),
+        .src = tmp_hi.toReg(),
+        .lane = 1,
+        .size = .Size64x2,
+    } });
+    
+    // TBL2: Two-register table lookup
+    // Concatenates a and b as 256-bit table, indexes with mask
+    const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    return Inst{ .vec_tbl2 = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .idx = mask_reg.toReg(),
+    } };
+}
