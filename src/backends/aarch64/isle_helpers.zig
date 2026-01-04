@@ -2453,6 +2453,52 @@ pub fn u128_from_immediate(expected: u128, actual: u128) ?u128 {
     return null;
 }
 
+/// Helper: Check if bytes form a valid lane index
+fn shuffleImmAsLeLaneIdx(size: u8, bytes: []const u8) ?u8 {
+    if (bytes.len != size) return null;
+
+    // First index must be aligned to size boundary
+    if (bytes[0] % size != 0) return null;
+
+    // Bytes must be contiguous (little-endian lane)
+    var i: u8 = 0;
+    while (i < size - 1) : (i += 1) {
+        if (bytes[i] +% 1 != bytes[i + 1]) return null;
+    }
+
+    return bytes[0] / size;
+}
+
+/// shuffle32_from_imm - Extract four 32-bit lane indices from shuffle mask
+pub fn shuffle32_from_imm(imm: u128) ?struct { u8, u8, u8, u8 } {
+    var bytes: [16]u8 = undefined;
+    var i: u8 = 0;
+    while (i < 16) : (i += 1) {
+        bytes[i] = @truncate(imm >> (@as(u7, i) * 8));
+    }
+
+    const a = shuffleImmAsLeLaneIdx(4, bytes[0..4]) orelse return null;
+    const b = shuffleImmAsLeLaneIdx(4, bytes[4..8]) orelse return null;
+    const c = shuffleImmAsLeLaneIdx(4, bytes[8..12]) orelse return null;
+    const d = shuffleImmAsLeLaneIdx(4, bytes[12..16]) orelse return null;
+
+    return .{ a, b, c, d };
+}
+
+/// shuffle64_from_imm - Extract two 64-bit lane indices from shuffle mask
+pub fn shuffle64_from_imm(imm: u128) ?struct { u8, u8 } {
+    var bytes: [16]u8 = undefined;
+    var i: u8 = 0;
+    while (i < 16) : (i += 1) {
+        bytes[i] = @truncate(imm >> (@as(u7, i) * 8));
+    }
+
+    const a = shuffleImmAsLeLaneIdx(8, bytes[0..8]) orelse return null;
+    const b = shuffleImmAsLeLaneIdx(8, bytes[8..16]) orelse return null;
+
+    return .{ a, b };
+}
+
 /// Shuffle operations (ISLE constructor)
 pub fn aarch64_shuffle_tbl(a: lower_mod.Value, b: lower_mod.Value, mask: u128, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const a_reg = try ctx.getValueReg(a, .vector);
