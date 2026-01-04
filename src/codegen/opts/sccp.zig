@@ -210,6 +210,18 @@ pub const SCCP = struct {
 
                 return .{ .constant = try evalBinaryOp(d.opcode, lhs, rhs) };
             },
+            .int_compare => |d| {
+                const lhs_lat = self.lattice.get(d.lhs) orelse .bottom;
+                const rhs_lat = self.lattice.get(d.rhs) orelse .bottom;
+
+                if (lhs_lat == .bottom or rhs_lat == .bottom) return .bottom;
+                if (lhs_lat == .top or rhs_lat == .top) return .top;
+
+                const lhs = lhs_lat.getConstant();
+                const rhs = rhs_lat.getConstant();
+
+                return .{ .constant = try evalIntCompare(d.cond, lhs, rhs) };
+            },
             .unary => |d| {
                 const arg_lat = self.lattice.get(d.arg) orelse .bottom;
 
@@ -366,6 +378,24 @@ fn evalUnaryOp(opcode: Opcode, arg: i64) !i64 {
         .ineg => -%arg,
         else => error.UnsupportedOp,
     };
+}
+
+/// Evaluate an integer comparison on constant operands.
+/// Returns 1 if true, 0 if false.
+fn evalIntCompare(cond: InstructionData.IntCC, lhs: i64, rhs: i64) !i64 {
+    const result = switch (cond) {
+        .eq => lhs == rhs,
+        .ne => lhs != rhs,
+        .slt => lhs < rhs,
+        .sge => lhs >= rhs,
+        .sgt => lhs > rhs,
+        .sle => lhs <= rhs,
+        .ult => @as(u64, @bitCast(lhs)) < @as(u64, @bitCast(rhs)),
+        .uge => @as(u64, @bitCast(lhs)) >= @as(u64, @bitCast(rhs)),
+        .ugt => @as(u64, @bitCast(lhs)) > @as(u64, @bitCast(rhs)),
+        .ule => @as(u64, @bitCast(lhs)) <= @as(u64, @bitCast(rhs)),
+    };
+    return if (result) 1 else 0;
 }
 
 // Tests
