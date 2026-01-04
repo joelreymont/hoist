@@ -1894,3 +1894,14 @@
 (decl aarch64_ssub_overflow (Type Value Value) ValueRegs)
 (rule (lower (has_type (ty_32_or_64 ty) (ssub_overflow a b)))
       (aarch64_ssub_overflow ty a b))
+
+;; Tail call operations
+;; return_call: Direct tail call (deallocate frame, then branch)
+(decl aarch64_return_call (SigRef ExternalName ValueSlice) Aarch64Inst)
+(rule (lower (return_call (func_ref_data sig_ref name dist _) args))
+      (aarch64_return_call sig_ref name args))
+
+;; return_call_indirect: Indirect tail call
+(decl aarch64_return_call_indirect (SigRef Value ValueSlice) Aarch64Inst)
+(rule (lower (return_call_indirect sig_ref ptr args))
+      (aarch64_return_call_indirect sig_ref ptr args))

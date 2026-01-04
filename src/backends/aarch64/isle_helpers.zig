@@ -2055,3 +2055,49 @@ pub fn aarch64_ssub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
     
     return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
 }
+
+/// Tail call operations (ISLE constructors)
+pub fn aarch64_return_call(sig_ref: ir.SigRef, name: ir.ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Tail call: marshal args, deallocate frame, branch (not call)
+    _ = sig_ref;
+    _ = args;
+    
+    // TODO: Proper ABI argument marshaling
+    // For now, emit simple sequence:
+    
+    // 1. Deallocate stack frame (restore SP)
+    const frame_size = ctx.getFrameSize();
+    if (frame_size > 0) {
+        try ctx.emit(Inst{ .add_imm = .{
+            .dst = lower_mod.WritableReg.fromReg(Reg.gpr(31)), // SP
+            .rn = Reg.gpr(31),
+            .imm = @intCast(frame_size),
+            .is_64 = true,
+        } });
+    }
+    
+    // 2. Branch to target (B, not BL - no link)
+    return Inst{ .b = .{ .target = .{ .symbol = name } } };
+}
+
+pub fn aarch64_return_call_indirect(sig_ref: ir.SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Indirect tail call: marshal args, deallocate frame, branch via register
+    _ = sig_ref;
+    _ = args;
+    
+    const ptr_reg = try ctx.getValueReg(ptr, .int);
+    
+    // Deallocate stack frame
+    const frame_size = ctx.getFrameSize();
+    if (frame_size > 0) {
+        try ctx.emit(Inst{ .add_imm = .{
+            .dst = lower_mod.WritableReg.fromReg(Reg.gpr(31)), // SP
+            .rn = Reg.gpr(31),
+            .imm = @intCast(frame_size),
+            .is_64 = true,
+        } });
+    }
+    
+    // Branch via register (BR, not BLR - no link)
+    return Inst{ .br = .{ .rn = ptr_reg } };
+}
