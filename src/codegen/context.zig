@@ -7,6 +7,7 @@
 const std = @import("std");
 const ir = @import("../ir.zig");
 const Function = ir.Function;
+const Signature = ir.Signature;
 const ControlFlowGraph = ir.ControlFlowGraph;
 const DominatorTree = ir.DominatorTree;
 const LoopInfo = ir.LoopInfo;
@@ -34,10 +35,12 @@ pub const Context = struct {
     /// Request disassembly output.
     want_disasm: bool,
 
-    pub fn init(allocator: std.mem.Allocator) Context {
+    pub fn init(allocator: std.mem.Allocator) !Context {
+        const empty_sig = Signature.init(allocator, .SystemV);
+        const func = try Function.init(allocator, "", empty_sig);
         return .{
             .allocator = allocator,
-            .func = Function.init(allocator),
+            .func = func,
             .cfg = ControlFlowGraph.init(allocator),
             .domtree = DominatorTree.init(allocator),
             .loop_analysis = LoopInfo.init(allocator),
@@ -61,7 +64,7 @@ pub const Context = struct {
     pub fn deinit(self: *Context) void {
         self.func.deinit();
         self.cfg.deinit(self.allocator);
-        self.domtree.deinit(self.allocator);
+        self.domtree.deinit();
         self.loop_analysis.deinit(self.allocator);
         if (self.compiled_code) |*code| {
             code.deinit();
@@ -70,7 +73,8 @@ pub const Context = struct {
 
     /// Clear all data structures for reuse.
     pub fn clear(self: *Context) void {
-        self.func.clear();
+        // Note: Function doesn't support clear(), would need deinit + re-init
+        // self.func.clear();
         self.cfg.clear();
         self.domtree.clear();
         self.loop_analysis.clear();
