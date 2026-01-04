@@ -76,7 +76,8 @@ pub const Context = struct {
         // Note: Function doesn't support clear(), would need deinit + re-init
         // self.func.clear();
         self.cfg.clear();
-        self.domtree.clear();
+        // Note: DominatorTree doesn't support clear(), would need recompute
+        // self.domtree.clear();
         self.loop_analysis.clear();
         if (self.compiled_code) |*code| {
             code.deinit();
