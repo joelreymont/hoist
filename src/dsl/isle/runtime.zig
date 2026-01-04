@@ -161,6 +161,64 @@ pub const Context = struct {
         return ty.isInt();
     }
 
+    // ========================================================================
+    // Type Extractors
+    // ========================================================================
+
+    /// Extractor: Match multi-lane vector types, extracting (lane_bits, lane_count).
+    /// Returns null for scalar types (lane_count == 1).
+    pub fn multiLane(self: *Self, ty: Type) ?struct { bits: u32, lanes: u32 } {
+        _ = self;
+        const lane_count = ty.laneCount();
+        if (lane_count > 1) {
+            return .{
+                .bits = ty.laneBits(),
+                .lanes = lane_count,
+            };
+        }
+        return null;
+    }
+
+    /// Extractor: Match 128-bit vector types.
+    /// Returns the type if it's a vector with exactly 128 bits, else null.
+    pub fn tyVec128(self: *Self, ty: Type) ?Type {
+        _ = self;
+        if (ty.isVector() and ty.bits() == 128) {
+            return ty;
+        }
+        return null;
+    }
+
+    /// Extractor: Match 128-bit integer vector types.
+    /// Returns the type if it's a 128-bit vector with integer lanes, else null.
+    pub fn tyVec128Int(self: *Self, ty: Type) ?Type {
+        _ = self;
+        if (ty.isVector() and ty.bits() == 128 and ty.laneType().isInt()) {
+            return ty;
+        }
+        return null;
+    }
+
+    /// Extractor: Match 64-bit vector types.
+    /// Returns the type if it's a vector with exactly 64 bits, else null.
+    pub fn tyVec64(self: *Self, ty: Type) ?Type {
+        _ = self;
+        if (ty.isVector() and ty.bits() == 64) {
+            return ty;
+        }
+        return null;
+    }
+
+    /// Extractor: Match 64-bit integer vector types.
+    /// Returns the type if it's a 64-bit vector with integer lanes, else null.
+    pub fn tyVec64Int(self: *Self, ty: Type) ?Type {
+        _ = self;
+        if (ty.isVector() and ty.bits() == 64 and ty.laneType().isInt()) {
+            return ty;
+        }
+        return null;
+    }
+
     /// Check if type is a float type.
     pub fn isFloatType(self: *Self, ty: Type) bool {
         _ = self;
@@ -443,4 +501,101 @@ test "Context get operand" {
     try testing.expect(op2 == null);
     try testing.expect(op0.?.eql(val0));
     try testing.expect(op1.?.eql(val1));
+}
+
+test "multi_lane extractor" {
+    const type_env = TypeEnv.init(testing.allocator);
+    const term_env = TermEnv.init(testing.allocator);
+    var dfg = DataFlowGraph.init(testing.allocator);
+    defer dfg.deinit();
+
+    var ctx = Context.init(&dfg, &type_env, &term_env, testing.allocator);
+
+    // Scalars should return null
+    const i32_ty = Type.i32();
+    try testing.expect(ctx.multiLane(i32_ty) == null);
+
+    // Vector types should extract (lane_bits, lane_count)
+    const i32x4 = Type.vector(Type.i32(), 4);
+    const result = ctx.multiLane(i32x4);
+    try testing.expect(result != null);
+    try testing.expectEqual(@as(u32, 32), result.?.bits);
+    try testing.expectEqual(@as(u32, 4), result.?.lanes);
+
+    const i8x16 = Type.vector(Type.i8(), 16);
+    const result2 = ctx.multiLane(i8x16);
+    try testing.expect(result2 != null);
+    try testing.expectEqual(@as(u32, 8), result2.?.bits);
+    try testing.expectEqual(@as(u32, 16), result2.?.lanes);
+}
+
+test "ty_vec128 extractor" {
+    const type_env = TypeEnv.init(testing.allocator);
+    const term_env = TermEnv.init(testing.allocator);
+    var dfg = DataFlowGraph.init(testing.allocator);
+    defer dfg.deinit();
+
+    var ctx = Context.init(&dfg, &type_env, &term_env, testing.allocator);
+
+    // Scalars should return null
+    const i32_ty = Type.i32();
+    try testing.expect(ctx.tyVec128(i32_ty) == null);
+
+    // 64-bit vectors should return null
+    const i32x2 = Type.vector(Type.i32(), 2);
+    try testing.expect(ctx.tyVec128(i32x2) == null);
+
+    // 128-bit vectors should return the type
+    const i32x4 = Type.vector(Type.i32(), 4);
+    const result = ctx.tyVec128(i32x4);
+    try testing.expect(result != null);
+    try testing.expect(result.?.eql(i32x4));
+
+    const f32x4 = Type.vector(Type.f32(), 4);
+    const result2 = ctx.tyVec128(f32x4);
+    try testing.expect(result2 != null);
+    try testing.expect(result2.?.eql(f32x4));
+
+    const i8x16 = Type.vector(Type.i8(), 16);
+    const result3 = ctx.tyVec128(i8x16);
+    try testing.expect(result3 != null);
+    try testing.expect(result3.?.eql(i8x16));
+}
+
+test "ty_vec128_int extractor" {
+    const type_env = TypeEnv.init(testing.allocator);
+    const term_env = TermEnv.init(testing.allocator);
+    var dfg = DataFlowGraph.init(testing.allocator);
+    defer dfg.deinit();
+
+    var ctx = Context.init(&dfg, &type_env, &term_env, testing.allocator);
+
+    // Integer 128-bit vectors should match
+    const i32x4 = Type.vector(Type.i32(), 4);
+    const result = ctx.tyVec128Int(i32x4);
+    try testing.expect(result != null);
+    try testing.expect(result.?.eql(i32x4));
+
+    // Float 128-bit vectors should return null
+    const f32x4 = Type.vector(Type.f32(), 4);
+    try testing.expect(ctx.tyVec128Int(f32x4) == null);
+}
+
+test "ty_vec64 extractor" {
+    const type_env = TypeEnv.init(testing.allocator);
+    const term_env = TermEnv.init(testing.allocator);
+    var dfg = DataFlowGraph.init(testing.allocator);
+    defer dfg.deinit();
+
+    var ctx = Context.init(&dfg, &type_env, &term_env, testing.allocator);
+
+    // 64-bit vectors should match
+    const i32x2 = Type.vector(Type.i32(), 2);
+    const result = ctx.tyVec64(i32x2);
+    try testing.expect(result != null);
+    try testing.expect(result.?.eql(i32x2));
+
+    // 128-bit vectors should return null
+    const i32x4 = Type.vector(Type.i32(), 4);
+    try testing.expect(ctx.tyVec64(i32x4) == null);
 }
