@@ -2639,6 +2639,86 @@ pub fn vec_rrr_mod(
     return ctx.getValueFromReg(dst.toReg(), .vector);
 }
 
+/// float_cc_cmp_zero_to_vec_misc_op: Map FloatCC to VecMisc2 for zero comparison
+pub fn float_cc_cmp_zero_to_vec_misc_op(cond: FloatCC) VecMisc2 {
+    return switch (cond) {
+        .eq => .Fcmeq0,
+        .ge => .Fcmge0,
+        .le => .Fcmle0,
+        .gt => .Fcmgt0,
+        .lt => .Fcmlt0,
+        else => unreachable, // Other FloatCC values not valid for zero comparison
+    };
+}
+
+/// float_cc_cmp_zero_to_vec_misc_op_swap: Map FloatCC to VecMisc2 for swapped zero comparison
+pub fn float_cc_cmp_zero_to_vec_misc_op_swap(cond: FloatCC) VecMisc2 {
+    return switch (cond) {
+        .eq => .Fcmeq0,
+        .ge => .Fcmle0, // x >= 0 becomes 0 >= x (le)
+        .le => .Fcmge0, // x <= 0 becomes 0 <= x (ge)
+        .gt => .Fcmlt0, // x > 0 becomes 0 > x (lt)
+        .lt => .Fcmgt0, // x < 0 becomes 0 < x (gt)
+        else => unreachable,
+    };
+}
+
+/// int_cc_cmp_zero_to_vec_misc_op: Map IntCC to VecMisc2 for zero comparison
+pub fn int_cc_cmp_zero_to_vec_misc_op(cond: IntCC) VecMisc2 {
+    return switch (cond) {
+        .eq => .Cmeq0,
+        .sge => .Cmge0,
+        .sle => .Cmle0,
+        .sgt => .Cmgt0,
+        .slt => .Cmlt0,
+        else => unreachable, // Other IntCC values not valid for zero comparison
+    };
+}
+
+/// int_cc_cmp_zero_to_vec_misc_op_swap: Map IntCC to VecMisc2 for swapped zero comparison
+pub fn int_cc_cmp_zero_to_vec_misc_op_swap(cond: IntCC) VecMisc2 {
+    return switch (cond) {
+        .eq => .Cmeq0,
+        .sge => .Cmle0, // x >= 0 becomes 0 >= x (le)
+        .sle => .Cmge0, // x <= 0 becomes 0 <= x (ge)
+        .sgt => .Cmlt0, // x > 0 becomes 0 > x (lt)
+        .slt => .Cmgt0, // x < 0 becomes 0 < x (gt)
+        else => unreachable,
+    };
+}
+
+/// fcmp_zero_cond: Extractor for valid fcmp zero conditions (not NotEqual)
+pub fn fcmp_zero_cond(cond: FloatCC) ?FloatCC {
+    return switch (cond) {
+        .eq, .ge, .gt, .le, .lt => cond,
+        else => null,
+    };
+}
+
+/// fcmp_zero_cond_not_eq: Extractor for fcmp NotEqual condition
+pub fn fcmp_zero_cond_not_eq(cond: FloatCC) ?FloatCC {
+    return switch (cond) {
+        .ne => .ne,
+        else => null,
+    };
+}
+
+/// icmp_zero_cond: Extractor for valid icmp zero conditions (not NotEqual)
+pub fn icmp_zero_cond(cond: IntCC) ?IntCC {
+    return switch (cond) {
+        .eq, .sge, .sgt, .sle, .slt => cond,
+        else => null,
+    };
+}
+
+/// icmp_zero_cond_not_eq: Extractor for icmp NotEqual condition
+pub fn icmp_zero_cond_not_eq(cond: IntCC) ?IntCC {
+    return switch (cond) {
+        .ne => .ne,
+        else => null,
+    };
+}
+
 /// vec_rrr: Binary vector operation (VecRRR - 3 registers)
 /// Emits vector ALU operation: dst = op(src1, src2)
 pub fn vec_rrr(
@@ -2825,4 +2905,84 @@ pub fn vec_fmla_elem(
     } });
 
     return ctx.getValueFromReg(dst.toReg(), .vector);
+}
+
+/// float_cc_cmp_zero_to_vec_misc_op: Map FloatCC to VecMisc2 for zero comparison
+pub fn float_cc_cmp_zero_to_vec_misc_op(cond: FloatCC) VecMisc2 {
+    return switch (cond) {
+        .eq => .Fcmeq0,
+        .ge => .Fcmge0,
+        .le => .Fcmle0,
+        .gt => .Fcmgt0,
+        .lt => .Fcmlt0,
+        else => unreachable, // Other FloatCC values not valid for zero comparison
+    };
+}
+
+/// float_cc_cmp_zero_to_vec_misc_op_swap: Map FloatCC to VecMisc2 for swapped zero comparison
+pub fn float_cc_cmp_zero_to_vec_misc_op_swap(cond: FloatCC) VecMisc2 {
+    return switch (cond) {
+        .eq => .Fcmeq0,
+        .ge => .Fcmle0, // x >= 0 becomes 0 >= x (le)
+        .le => .Fcmge0, // x <= 0 becomes 0 <= x (ge)
+        .gt => .Fcmlt0, // x > 0 becomes 0 > x (lt)
+        .lt => .Fcmgt0, // x < 0 becomes 0 < x (gt)
+        else => unreachable,
+    };
+}
+
+/// int_cc_cmp_zero_to_vec_misc_op: Map IntCC to VecMisc2 for zero comparison
+pub fn int_cc_cmp_zero_to_vec_misc_op(cond: IntCC) VecMisc2 {
+    return switch (cond) {
+        .eq => .Cmeq0,
+        .sge => .Cmge0,
+        .sle => .Cmle0,
+        .sgt => .Cmgt0,
+        .slt => .Cmlt0,
+        else => unreachable, // Other IntCC values not valid for zero comparison
+    };
+}
+
+/// int_cc_cmp_zero_to_vec_misc_op_swap: Map IntCC to VecMisc2 for swapped zero comparison
+pub fn int_cc_cmp_zero_to_vec_misc_op_swap(cond: IntCC) VecMisc2 {
+    return switch (cond) {
+        .eq => .Cmeq0,
+        .sge => .Cmle0, // x >= 0 becomes 0 >= x (le)
+        .sle => .Cmge0, // x <= 0 becomes 0 <= x (ge)
+        .sgt => .Cmlt0, // x > 0 becomes 0 > x (lt)
+        .slt => .Cmgt0, // x < 0 becomes 0 < x (gt)
+        else => unreachable,
+    };
+}
+
+/// fcmp_zero_cond: Extractor for valid fcmp zero conditions (not NotEqual)
+pub fn fcmp_zero_cond(cond: FloatCC) ?FloatCC {
+    return switch (cond) {
+        .eq, .ge, .gt, .le, .lt => cond,
+        else => null,
+    };
+}
+
+/// fcmp_zero_cond_not_eq: Extractor for fcmp NotEqual condition
+pub fn fcmp_zero_cond_not_eq(cond: FloatCC) ?FloatCC {
+    return switch (cond) {
+        .ne => .ne,
+        else => null,
+    };
+}
+
+/// icmp_zero_cond: Extractor for valid icmp zero conditions (not NotEqual)
+pub fn icmp_zero_cond(cond: IntCC) ?IntCC {
+    return switch (cond) {
+        .eq, .sge, .sgt, .sle, .slt => cond,
+        else => null,
+    };
+}
+
+/// icmp_zero_cond_not_eq: Extractor for icmp NotEqual condition
+pub fn icmp_zero_cond_not_eq(cond: IntCC) ?IntCC {
+    return switch (cond) {
+        .ne => .ne,
+        else => null,
+    };
 }
