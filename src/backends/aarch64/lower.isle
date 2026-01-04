@@ -509,6 +509,20 @@
 (rule (lower (ineg ty x))
       (aarch64_neg ty x))
 
+;; iabs: Integer absolute value
+;; Implemented as (x XOR sign) - sign, where sign = x >> (bits-1)
+(rule (lower (has_type $I8 (iabs x)))
+      (aarch64_iabs_8 x))
+
+(rule (lower (has_type $I16 (iabs x)))
+      (aarch64_iabs_16 x))
+
+(rule (lower (has_type $I32 (iabs x)))
+      (aarch64_iabs_32 x))
+
+(rule (lower (has_type $I64 (iabs x)))
+      (aarch64_iabs_64 x))
+
 ;; Conditional select lowering
 
 ;; select: Conditional select based on comparison result
@@ -1000,6 +1014,10 @@
 ;; Negation operations
 (decl aarch64_neg (Type Value) Aarch64Inst)
 (decl aarch64_ngc (Type Value) Aarch64Inst)
+(decl aarch64_iabs_8 (Value) Aarch64Inst)
+(decl aarch64_iabs_16 (Value) Aarch64Inst)
+(decl aarch64_iabs_32 (Value) Aarch64Inst)
+(decl aarch64_iabs_64 (Value) Aarch64Inst)
 
 ;; Sign/zero extend operations
 (decl aarch64_sxtb (Type Value) Aarch64Inst)
