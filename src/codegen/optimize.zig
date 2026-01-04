@@ -17,6 +17,7 @@ const copyprop = @import("opts/copyprop.zig");
 const licm = @import("opts/licm.zig");
 const simplifybranch = @import("opts/simplifybranch.zig");
 const sccp = @import("opts/sccp.zig");
+const unreachable_pass = @import("opts/unreachable.zig");
 
 /// Pass execution statistics.
 pub const PassStats = struct {
@@ -68,6 +69,7 @@ pub const PassManager = struct {
         // Run optimization passes
         try self.runPass(func, "SCCP", runSCCP); // Sparse conditional constant propagation (early)
         try self.runPass(func, "SimplifyBranch", runSimplifyBranch);
+        try self.runPass(func, "UCE", runUCE); // Unreachable code elimination (after SCCP/SimplifyBranch)
         try self.runPass(func, "InstCombine", runInstCombine);
         try self.runPass(func, "GVN", runGVN);
         try self.runPass(func, "CopyProp", runCopyProp);
@@ -173,6 +175,13 @@ fn runSCCP(allocator: Allocator, func: *Function) !bool {
     return try pass.run(func);
 }
 
+/// Run UCE (Unreachable Code Elimination) pass.
+fn runUCE(allocator: Allocator, func: *Function) !bool {
+    var pass = unreachable_pass.UCE.init(allocator);
+    defer pass.deinit();
+    return try pass.run(func);
+}
+
 // Tests
 
 const testing = std.testing;
@@ -212,16 +221,17 @@ test "PassManager: statistics collection" {
 
     // Should have stats for all passes
     const stats = pm.getStats();
-    try testing.expectEqual(@as(usize, 9), stats.len);
+    try testing.expectEqual(@as(usize, 10), stats.len);
     try testing.expectEqualStrings("SCCP", stats[0].name);
     try testing.expectEqualStrings("SimplifyBranch", stats[1].name);
-    try testing.expectEqualStrings("InstCombine", stats[2].name);
-    try testing.expectEqualStrings("GVN", stats[3].name);
-    try testing.expectEqualStrings("CopyProp", stats[4].name);
-    try testing.expectEqualStrings("Strength", stats[5].name);
-    try testing.expectEqualStrings("LICM", stats[6].name);
-    try testing.expectEqualStrings("Peephole", stats[7].name);
-    try testing.expectEqualStrings("DCE", stats[8].name);
+    try testing.expectEqualStrings("UCE", stats[2].name);
+    try testing.expectEqualStrings("InstCombine", stats[3].name);
+    try testing.expectEqualStrings("GVN", stats[4].name);
+    try testing.expectEqualStrings("CopyProp", stats[5].name);
+    try testing.expectEqualStrings("Strength", stats[6].name);
+    try testing.expectEqualStrings("LICM", stats[7].name);
+    try testing.expectEqualStrings("Peephole", stats[8].name);
+    try testing.expectEqualStrings("DCE", stats[9].name);
 }
 
 test "PassManager: clear statistics" {
