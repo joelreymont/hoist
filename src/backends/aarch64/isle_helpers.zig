@@ -1748,6 +1748,33 @@ pub fn lane_fits_in_32(ty: types.Type) ?types.Type {
     return null;
 }
 
+/// Extractor: Match only 128-bit vector types
+pub fn ty_vec128(ty: types.Type) ?types.Type {
+    if (ty.isVector() and ty.bytes() == 16) {
+        return ty;
+    }
+    return null;
+}
+
+/// Extractor: Match only 128-bit integer vector types
+pub fn ty_vec128_int(ty: types.Type) ?types.Type {
+    if (ty.isVector() and ty.bytes() == 16) {
+        const lane_ty = ty.laneType();
+        if (lane_ty.isInt()) {
+            return ty;
+        }
+    }
+    return null;
+}
+
+/// Extractor: Match everything except I64X2
+pub fn not_i64x2(ty: types.Type) ?types.Type {
+    if (ty == types.I64X2) {
+        return null;
+    }
+    return ty;
+}
+
 /// Trap operations (ISLE constructors)
 pub fn aarch64_trap(trap_code: TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     _ = ctx;
