@@ -289,9 +289,24 @@ pub const SCCP = struct {
             .branch => |d| std.meta.eql(d.condition, value),
             .load => |d| std.meta.eql(d.addr, value),
             .store => |d| std.meta.eql(d.addr, value) or std.meta.eql(d.value, value),
-            // TODO: Add more instruction types as needed
+            .atomic_load => |d| std.meta.eql(d.addr, value),
+            .atomic_store => |d| std.meta.eql(d.addr, value) or std.meta.eql(d.value, value),
+            .atomic_rmw => |d| std.meta.eql(d.addr, value) or std.meta.eql(d.src, value),
+            .atomic_cas => |d| std.meta.eql(d.addr, value) or std.meta.eql(d.expected, value) or std.meta.eql(d.replacement, value),
+            .call => |d| valueListContains(d.args, value),
+            .call_indirect => |d| valueListContains(d.args, value),
             else => false,
         };
+    }
+
+    /// Check if a ValueList contains a specific value.
+    fn valueListContains(list: InstructionData.ValueList, value: Value) bool {
+        // ValueList is an opaque type - we can't iterate it here without access to DFG
+        // For now, conservatively return false for call instructions
+        // TODO: Add DFG parameter to enable proper ValueList iteration
+        _ = list;
+        _ = value;
+        return false;
     }
 
     /// Rewrite function with discovered constants.
