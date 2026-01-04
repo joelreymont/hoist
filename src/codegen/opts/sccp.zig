@@ -36,6 +36,7 @@ const Type = root.types.Type;
 const Opcode = root.opcodes.Opcode;
 const InstructionData = root.instruction_data.InstructionData;
 const ValueData = root.dfg.ValueData;
+const FloatCC = root.condcodes.FloatCC;
 
 /// Lattice value representing knowledge about an SSA value.
 const LatticeValue = union(enum) {
@@ -222,6 +223,18 @@ pub const SCCP = struct {
 
                 return .{ .constant = try evalIntCompare(d.cond, lhs, rhs) };
             },
+            .float_compare => |d| {
+                const lhs_lat = self.lattice.get(d.args[0]) orelse .bottom;
+                const rhs_lat = self.lattice.get(d.args[1]) orelse .bottom;
+
+                if (lhs_lat == .bottom or rhs_lat == .bottom) return .bottom;
+                if (lhs_lat == .top or rhs_lat == .top) return .top;
+
+                const lhs = lhs_lat.getConstant();
+                const rhs = rhs_lat.getConstant();
+
+                return .{ .constant = try evalFloatCompare(d.cond, lhs, rhs) };
+            },
             .unary => |d| {
                 const arg_lat = self.lattice.get(d.arg) orelse .bottom;
 
@@ -394,6 +407,36 @@ fn evalIntCompare(cond: InstructionData.IntCC, lhs: i64, rhs: i64) !i64 {
         .uge => @as(u64, @bitCast(lhs)) >= @as(u64, @bitCast(rhs)),
         .ugt => @as(u64, @bitCast(lhs)) > @as(u64, @bitCast(rhs)),
         .ule => @as(u64, @bitCast(lhs)) <= @as(u64, @bitCast(rhs)),
+    };
+    return if (result) 1 else 0;
+}
+
+/// Evaluate a floating-point comparison on constant operands.
+/// Returns 1 if true, 0 if false.
+/// Interprets i64 lattice values as f64 bit patterns.
+fn evalFloatCompare(cond: FloatCC, lhs: i64, rhs: i64) !i64 {
+    const lhs_f = @as(f64, @bitCast(lhs));
+    const rhs_f = @as(f64, @bitCast(rhs));
+
+    const is_nan_lhs = std.math.isNan(lhs_f);
+    const is_nan_rhs = std.math.isNan(rhs_f);
+    const is_unordered = is_nan_lhs or is_nan_rhs;
+
+    const result = switch (cond) {
+        .ord => !is_unordered,
+        .uno => is_unordered,
+        .eq => !is_unordered and lhs_f == rhs_f,
+        .ne => is_unordered or lhs_f != rhs_f,
+        .one => !is_unordered and lhs_f != rhs_f,
+        .ueq => is_unordered or lhs_f == rhs_f,
+        .lt => !is_unordered and lhs_f < rhs_f,
+        .le => !is_unordered and lhs_f <= rhs_f,
+        .gt => !is_unordered and lhs_f > rhs_f,
+        .ge => !is_unordered and lhs_f >= rhs_f,
+        .ult => is_unordered or lhs_f < rhs_f,
+        .ule => is_unordered or lhs_f <= rhs_f,
+        .ugt => is_unordered or lhs_f > rhs_f,
+        .uge => is_unordered or lhs_f >= rhs_f,
     };
     return if (result) 1 else 0;
 }
