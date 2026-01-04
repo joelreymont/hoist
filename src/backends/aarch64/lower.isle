@@ -125,6 +125,55 @@
          (aarch64_sbc_rr ty dst src1 src2)
          dst)))
 
+;; Helper to concatenate two flags-consuming instructions into ValueRegs
+(decl consumes_flags_concat (ConsumesFlags ConsumesFlags) ConsumesFlags)
+(rule (consumes_flags_concat (ConsumesFlags.ConsumesFlagsReturnsReg inst1 reg1)
+                             (ConsumesFlags.ConsumesFlagsReturnsReg inst2 reg2))
+      (ConsumesFlags.ConsumesFlagsTwiceReturnsValueRegs inst1 inst2 (value_regs reg1 reg2)))
+
+;; Zero register helper
+(decl zero_reg () Reg)
+(rule (zero_reg) (iconst_to_reg $I64 0))
+
+;; Register-form shift helpers that wrap ISLE instructions
+(decl lsl (Type Reg Reg) Reg)
+(rule (lsl ty x amt) (aarch64_lsl_rr ty x amt))
+
+(decl lsr (Type Reg Reg) Reg)
+(rule (lsr ty x amt) (aarch64_lsr_rr ty x amt))
+
+(decl asr (Type Reg Reg) Reg)
+(rule (asr ty x amt) (aarch64_asr_rr ty x amt))
+
+;; Immediate-form shift helpers
+(decl lsl_imm (Type Reg i64) Reg)
+(rule (lsl_imm ty x imm) (aarch64_lsl_imm ty x imm))
+
+(decl lsr_imm (Type Reg i64) Reg)
+(rule (lsr_imm ty x imm) (aarch64_lsr_imm ty x imm))
+
+;; ORR-NOT helper: orr dst, src1, NOT(src2)
+(decl orr_not (Type Reg Reg) Reg)
+(rule (orr_not ty src1 src2) (aarch64_orn_rr ty src1 src2))
+
+;; ORR helper: orr dst, src1, src2
+(decl orr (Type Reg Reg) Reg)
+(rule (orr ty x y) (aarch64_orr_rr ty x y))
+
+;; TST immediate: test bits and set flags
+(decl tst_imm (Type Reg i64) ProducesFlags)
+(rule (tst_imm ty reg imm)
+      (ProducesFlags.ProducesFlagsSideEffect
+       (aarch64_tst_imm ty reg imm)))
+
+;; Conditional select: returns reg based on condition flags
+(decl csel (IntCC Reg Reg) ConsumesFlags)
+(rule (csel cc true_val false_val)
+      (let ((dst Reg (temp_reg $I64)))
+        (ConsumesFlags.ConsumesFlagsReturnsReg
+         (aarch64_csel $I64 true_val false_val (iconst_to_reg $I64 0) cc)
+         dst)))
+
 ;; Helper for I128 bitwise operations (no carry, just operate on low/high independently)
 (decl i128_bitwise (Value Value (Type Value Value) Aarch64Inst) ValueRegs)
 (rule (i128_bitwise x y op)
@@ -534,6 +583,34 @@
 
 ;; Shift operations lowering
 
+;; ishl: I128 left shift using register pairs
+;;     lsl     lo_lshift, src_lo, amt
+;;     lsl     hi_lshift, src_hi, amt
+;;     mvn     inv_amt, amt
+;;     lsr     lo_rshift, src_lo, #1
+;;     lsr     lo_rshift, lo_rshift, inv_amt
+;;     orr     maybe_hi, hi_lshift, lo_rshift
+;;     tst     amt, #0x40
+;;     csel    dst_hi, lo_lshift, maybe_hi, ne
+;;     csel    dst_lo, xzr, lo_lshift, ne
+(decl lower_shl128 (ValueRegs Reg) ValueRegs)
+(rule (lower_shl128 src amt)
+      (let ((src_lo Reg (value_regs_get src 0))
+            (src_hi Reg (value_regs_get src 1))
+            (lo_lshift Reg (lsl $I64 src_lo amt))
+            (hi_lshift Reg (lsl $I64 src_hi amt))
+            (inv_amt Reg (orr_not $I32 (zero_reg) amt))
+            (lo_rshift Reg (lsr $I64 (lsr_imm $I64 src_lo 1) inv_amt))
+            (maybe_hi Reg (orr $I64 hi_lshift lo_rshift)))
+        (with_flags
+         (tst_imm $I64 amt 64)
+         (consumes_flags_concat
+          (csel (IntCC.Ne) (zero_reg) lo_lshift)
+          (csel (IntCC.Ne) lo_lshift maybe_hi)))))
+
+(rule (lower (has_type $I128 (ishl x y)))
+      (lower_shl128 x (value_regs_get y 0)))
+
 ;; ishl: Integer shift left (register form)
 (rule (lower (ishl ty x y))
       (aarch64_lsl_rr ty x y))
@@ -543,6 +620,34 @@
       (if-let amt (valid_shift_imm k))
       (aarch64_lsl_imm ty x amt))
 
+;; ushr: I128 unsigned right shift using register pairs
+;;     lsr       lo_rshift, src_lo, amt
+;;     lsr       hi_rshift, src_hi, amt
+;;     mvn       inv_amt, amt
+;;     lsl       hi_lshift, src_hi, #1
+;;     lsl       hi_lshift, hi_lshift, inv_amt
+;;     tst       amt, #0x40
+;;     orr       maybe_lo, lo_rshift, hi_lshift
+;;     csel      dst_hi, xzr, hi_rshift, ne
+;;     csel      dst_lo, hi_rshift, maybe_lo, ne
+(decl lower_ushr128 (ValueRegs Reg) ValueRegs)
+(rule (lower_ushr128 src amt)
+      (let ((src_lo Reg (value_regs_get src 0))
+            (src_hi Reg (value_regs_get src 1))
+            (lo_rshift Reg (lsr $I64 src_lo amt))
+            (hi_rshift Reg (lsr $I64 src_hi amt))
+            (inv_amt Reg (orr_not $I32 (zero_reg) amt))
+            (hi_lshift Reg (lsl $I64 (lsl_imm $I64 src_hi 1) inv_amt))
+            (maybe_lo Reg (orr $I64 lo_rshift hi_lshift)))
+        (with_flags
+         (tst_imm $I64 amt 64)
+         (consumes_flags_concat
+          (csel (IntCC.Ne) hi_rshift maybe_lo)
+          (csel (IntCC.Ne) (zero_reg) hi_rshift)))))
+
+(rule (lower (has_type $I128 (ushr x y)))
+      (lower_ushr128 x (value_regs_get y 0)))
+
 ;; ushr: Unsigned shift right (register form)
 (rule (lower (ushr ty x y))
       (aarch64_lsr_rr ty x y))
@@ -551,6 +656,36 @@
 (rule (lower (ushr ty x (iconst k)))
       (if-let amt (valid_shift_imm k))
       (aarch64_lsr_imm ty x amt))
+
+;; sshr: I128 signed right shift using register pairs
+;;     lsr       lo_rshift, src_lo, amt
+;;     asr       hi_rshift, src_hi, amt
+;;     mvn       inv_amt, amt
+;;     lsl       hi_lshift, src_hi, #1
+;;     lsl       hi_lshift, hi_lshift, inv_amt
+;;     asr       hi_sign, src_hi, #63
+;;     orr       maybe_lo, lo_rshift, hi_lshift
+;;     tst       amt, #0x40
+;;     csel      dst_hi, hi_sign, hi_rshift, ne
+;;     csel      dst_lo, hi_rshift, maybe_lo, ne
+(decl lower_sshr128 (ValueRegs Reg) ValueRegs)
+(rule (lower_sshr128 src amt)
+      (let ((src_lo Reg (value_regs_get src 0))
+            (src_hi Reg (value_regs_get src 1))
+            (lo_rshift Reg (lsr $I64 src_lo amt))
+            (hi_rshift Reg (asr $I64 src_hi amt))
+            (inv_amt Reg (orr_not $I32 (zero_reg) amt))
+            (hi_lshift Reg (lsl $I64 (lsl_imm $I64 src_hi 1) inv_amt))
+            (hi_sign Reg (aarch64_asr_imm $I64 src_hi 63))
+            (maybe_lo Reg (orr $I64 lo_rshift hi_lshift)))
+        (with_flags
+         (tst_imm $I64 amt 64)
+         (consumes_flags_concat
+          (csel (IntCC.Ne) hi_rshift maybe_lo)
+          (csel (IntCC.Ne) hi_sign hi_rshift)))))
+
+(rule (lower (has_type $I128 (sshr x y)))
+      (lower_sshr128 x (value_regs_get y 0)))
 
 ;; sshr: Signed shift right (register form)
 (rule (lower (sshr ty x y))
@@ -1459,6 +1594,7 @@
 ;; Comparison operations
 (decl aarch64_cmp_rr (Type Value Value IntCC) Aarch64Inst)
 (decl aarch64_cmp_imm (Type Value i64 IntCC) Aarch64Inst)
+(decl aarch64_tst_imm (Type Value i64) Aarch64Inst)
 
 ;; Conditional select operations
 (decl aarch64_csel (Type Value Value Value IntCC) Aarch64Inst)
