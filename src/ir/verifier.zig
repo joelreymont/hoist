@@ -390,7 +390,7 @@ pub const Verifier = struct {
                         }
                     },
                     .extract_lane => |el| {
-                        const arg_ty = self.func.dfg.valueType(el.arg);
+                        const arg_ty = self.func.dfg.valueType(el.arg) orelse continue;
 
                         // extract_lane requires vector input
                         if (!arg_ty.isVector()) {
