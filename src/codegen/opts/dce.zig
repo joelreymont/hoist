@@ -83,7 +83,7 @@ pub const DCE = struct {
         const inst_data = func.dfg.insts.get(inst) orelse return;
 
         // Mark operands based on instruction type
-        switch (inst_data) {
+        switch (inst_data.*) {
             .unary => |d| try self.markValueLive(func, d.arg),
             .binary => |d| {
                 try self.markValueLive(func, d.args[0]);
