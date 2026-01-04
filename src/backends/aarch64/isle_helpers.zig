@@ -3,6 +3,7 @@
 const std = @import("std");
 const root = @import("root");
 const Inst = root.aarch64_inst.Inst;
+const Reg = root.aarch64_inst.Reg;
 const Imm12 = root.aarch64_inst.Imm12;
 const ImmShift = root.aarch64_inst.ImmShift;
 const ImmLogic = root.aarch64_inst.ImmLogic;
@@ -1420,6 +1421,192 @@ pub fn aarch64_eor_imm(ty: types.Type, x: lower_mod.Value, imm: ImmLogic, ctx: *
         .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
         .src = x_reg,
         .imm = imm,
+    } };
+}
+
+/// Calculate the minimum floating-point bound for conversion from float to integer.
+/// Returns a register containing the minimum representable value minus epsilon.
+/// signed: whether the output integer type is signed
+/// in_bits: size of input float type (32 or 64)
+/// out_bits: size of output integer type (8, 16, 32, or 64)
+pub fn min_fp_value(signed: bool, in_bits: u8, out_bits: u8, ctx: *lower_mod.LowerCtx(Inst)) !Reg {
+    if (in_bits == 32) {
+        // From f32
+        const min_f32: f32 = switch (signed) {
+            true => switch (out_bits) {
+                8 => @as(f32, @floatFromInt(std.math.minInt(i8))) - 1.0,
+                16 => @as(f32, @floatFromInt(std.math.minInt(i16))) - 1.0,
+                32 => @as(f32, @floatFromInt(std.math.minInt(i32))), // I32_MIN - 1 not precisely representable
+                64 => @as(f32, @floatFromInt(std.math.minInt(i64))), // I64_MIN - 1 not precisely representable
+                else => unreachable, // Invalid integer size
+            },
+            false => -1.0, // Unsigned minimum bound
+        };
+
+        const bits: u32 = @bitCast(min_f32);
+        // Load constant into integer register, then move to FPU
+        const int_reg = try ctx.getValueReg(lower_mod.Value.new(0), .int); // Temp allocation
+        const load_inst = Inst{ .mov_imm = .{
+            .dst = lower_mod.WritableVReg.fromReg(int_reg),
+            .imm = @intCast(bits),
+            .size = .size32,
+        } };
+        try ctx.emit(load_inst);
+
+        const fpu_reg = lower_mod.WritableVReg.allocVReg(.float, ctx);
+        const fmov_inst = Inst{ .fmov_from_gpr = .{
+            .dst = fpu_reg,
+            .src = int_reg,
+            .size = .size32,
+        } };
+        try ctx.emit(fmov_inst);
+        return fpu_reg.toReg();
+    } else if (in_bits == 64) {
+        // From f64
+        const min_f64: f64 = switch (signed) {
+            true => switch (out_bits) {
+                8 => @as(f64, @floatFromInt(std.math.minInt(i8))) - 1.0,
+                16 => @as(f64, @floatFromInt(std.math.minInt(i16))) - 1.0,
+                32 => @as(f64, @floatFromInt(std.math.minInt(i32))) - 1.0,
+                64 => @as(f64, @floatFromInt(std.math.minInt(i64))), // I64_MIN - 1 not precisely representable
+                else => unreachable,
+            },
+            false => -1.0,
+        };
+
+        const bits: u64 = @bitCast(min_f64);
+        // Load constant into integer register, then move to FPU
+        const int_reg = try ctx.getValueReg(lower_mod.Value.new(0), .int);
+        const load_inst = Inst{ .mov_imm = .{
+            .dst = lower_mod.WritableVReg.fromReg(int_reg),
+            .imm = @intCast(bits),
+            .size = .size64,
+        } };
+        try ctx.emit(load_inst);
+
+        const fpu_reg = lower_mod.WritableVReg.allocVReg(.float, ctx);
+        const fmov_inst = Inst{ .fmov_from_gpr = .{
+            .dst = fpu_reg,
+            .src = int_reg,
+            .size = .size64,
+        } };
+        try ctx.emit(fmov_inst);
+        return fpu_reg.toReg();
+    } else {
+        unreachable; // Only 32 and 64 bit floats supported
+    }
+}
+
+/// Get type bit width
+fn ty_bits(ty: types.Type) u8 {
+    return switch (ty) {
+        .I8 => 8,
+        .I16 => 16,
+        .I32, .F32 => 32,
+        .I64, .F64 => 64,
+        else => 64, // Default
+    };
+}
+
+/// Calculate the maximum floating-point bound for conversion from float to integer.
+/// Returns a register containing the maximum representable value plus epsilon.
+/// signed: whether the output integer type is signed
+/// in_bits: size of input float type (32 or 64)
+/// out_bits: size of output integer type (8, 16, 32, or 64)
+pub fn max_fp_value(signed: bool, in_bits: u8, out_bits: u8, ctx: *lower_mod.LowerCtx(Inst)) !Reg {
+    if (in_bits == 32) {
+        // From f32
+        const max_f32: f32 = if (signed) switch (out_bits) {
+            8 => @as(f32, @floatFromInt(std.math.maxInt(i8))) + 1.0,
+            16 => @as(f32, @floatFromInt(std.math.maxInt(i16))) + 1.0,
+            32 => @as(f32, @floatFromInt(@as(u64, @bitCast(@as(i64, std.math.maxInt(i32)))) + 1)),
+            64 => @as(f32, @floatFromInt(@as(u64, @bitCast(@as(i64, std.math.maxInt(i64)))) + 1)),
+            else => unreachable,
+        } else switch (out_bits) {
+            8 => @as(f32, @floatFromInt(std.math.maxInt(u8))) + 1.0,
+            16 => @as(f32, @floatFromInt(std.math.maxInt(u16))) + 1.0,
+            32 => @as(f32, @floatFromInt(@as(u64, std.math.maxInt(u32)) + 1)),
+            64 => @as(f32, @floatFromInt(@as(u128, std.math.maxInt(u64)) + 1)),
+            else => unreachable,
+        };
+
+        const bits: u32 = @bitCast(max_f32);
+        const int_reg = try ctx.getValueReg(lower_mod.Value.new(0), .int);
+        const load_inst = Inst{ .mov_imm = .{
+            .dst = lower_mod.WritableVReg.fromReg(int_reg),
+            .imm = @intCast(bits),
+            .size = .size32,
+        } };
+        try ctx.emit(load_inst);
+
+        const fpu_reg = lower_mod.WritableVReg.allocVReg(.float, ctx);
+        const fmov_inst = Inst{ .fmov_from_gpr = .{
+            .dst = fpu_reg,
+            .src = int_reg,
+            .size = .size32,
+        } };
+        try ctx.emit(fmov_inst);
+        return fpu_reg.toReg();
+    } else if (in_bits == 64) {
+        // From f64
+        const max_f64: f64 = if (signed) switch (out_bits) {
+            8 => @as(f64, @floatFromInt(std.math.maxInt(i8))) + 1.0,
+            16 => @as(f64, @floatFromInt(std.math.maxInt(i16))) + 1.0,
+            32 => @as(f64, @floatFromInt(std.math.maxInt(i32))) + 1.0,
+            64 => @as(f64, @floatFromInt(@as(u64, @bitCast(@as(i64, std.math.maxInt(i64)))) + 1)),
+            else => unreachable,
+        } else switch (out_bits) {
+            8 => @as(f64, @floatFromInt(std.math.maxInt(u8))) + 1.0,
+            16 => @as(f64, @floatFromInt(std.math.maxInt(u16))) + 1.0,
+            32 => @as(f64, @floatFromInt(std.math.maxInt(u32))) + 1.0,
+            64 => @as(f64, @floatFromInt(@as(u128, std.math.maxInt(u64)) + 1)),
+            else => unreachable,
+        };
+
+        const bits: u64 = @bitCast(max_f64);
+        const int_reg = try ctx.getValueReg(lower_mod.Value.new(0), .int);
+        const load_inst = Inst{ .mov_imm = .{
+            .dst = lower_mod.WritableVReg.fromReg(int_reg),
+            .imm = @intCast(bits),
+            .size = .size64,
+        } };
+        try ctx.emit(load_inst);
+
+        const fpu_reg = lower_mod.WritableVReg.allocVReg(.float, ctx);
+        const fmov_inst = Inst{ .fmov_from_gpr = .{
+            .dst = fpu_reg,
+            .src = int_reg,
+            .size = .size64,
+        } };
+        try ctx.emit(fmov_inst);
+        return fpu_reg.toReg();
+    } else {
+        unreachable;
+    }
+}
+
+/// FCVTZS with bounds checking (F32 -> I32).
+/// Traps on NaN, overflow, or underflow.
+/// NOTE: This is a simplified initial implementation that always uses saturating conversion.
+/// Full trap support requires trap blocks and control flow, which is complex.
+/// For now, this serves as a placeholder that compiles and provides the function signature.
+pub fn aarch64_fcvtzs_32_trap(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+
+    // TODO: Implement full bounds checking with traps
+    // This requires:
+    // 1. NaN check: FCMP x, x; if VS then trap
+    // 2. Underflow check: FCMP x, min_fp_value; if LE then trap
+    // 3. Overflow check: FCMP x, max_fp_value; if GE then trap
+    // 4. Then FCVTZS
+    //
+    // For now, use saturating FCVTZS (native ARM64 behavior)
+
+    return Inst{ .fcvtzs = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src = x_reg,
+        .dst_size = .size32,
+        .src_size = .size32,
     } };
 }
 
