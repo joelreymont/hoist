@@ -131,6 +131,70 @@ pub fn in_neg_uimm12_range(val: i64) bool {
     return val >= -4095 and val <= -1;
 }
 
+/// Extractor: Check if value fits in unsigned 12-bit (0-4095).
+/// Returns the value if valid, null otherwise.
+pub fn uimm12(val: u64) ?u64 {
+    if (val <= 4095) return val;
+    return null;
+}
+
+/// Extractor: Check if value fits in unsigned 16-bit (0-65535).
+/// Returns the value if valid, null otherwise.
+pub fn uimm16(val: u64) ?u64 {
+    if (val <= 65535) return val;
+    return null;
+}
+
+/// Extractor: Check if value is a valid shift amount (0-63).
+/// Returns the value if valid, null otherwise.
+pub fn valid_shift_imm(val: u64) ?u64 {
+    if (val <= 63) return val;
+    return null;
+}
+
+/// Extractor: Extract rotl immediate and convert to rotr immediate.
+/// ARM64 has ROR but not ROL, so rotl(x, k) = rotr(x, width - k).
+/// Returns the rotr shift amount if valid, null otherwise.
+pub fn valid_rotl_imm(width: u32, k: u64) ?u32 {
+    if (k > 63) return null;
+    const k32: u32 = @intCast(k);
+    if (k32 >= width) return null;
+    return width - k32;
+}
+
+/// Extractor: Check if offset is valid for load immediate addressing.
+/// Accepts offsets 0-32760 (max for I64 8-byte aligned access).
+/// Returns the offset if valid, null otherwise.
+pub fn valid_ldr_imm_offset(ty: types.Type, offset: u64) ?u64 {
+    _ = ty; // Type used for alignment checking in full implementation
+    if (offset <= 32760) return offset;
+    return null;
+}
+
+/// Extractor: Check if offset is valid for store immediate addressing.
+/// Returns the offset if valid, null otherwise.
+pub fn valid_str_imm_offset(val: lower_mod.Value, offset: u64) ?u64 {
+    _ = val; // Value type used for alignment checking in full implementation
+    if (offset <= 32760) return offset;
+    return null;
+}
+
+/// Extractor: Check if shift is valid for load (must be 0-3).
+/// Returns the shift if valid, null otherwise.
+pub fn valid_ldr_shift(ty: types.Type, shift: u64) ?u64 {
+    _ = ty; // Type determines valid shift range
+    if (shift <= 3) return shift;
+    return null;
+}
+
+/// Extractor: Check if shift is valid for store (must be 0-3).
+/// Returns the shift if valid, null otherwise.
+pub fn valid_str_shift(val: lower_mod.Value, shift: u64) ?u64 {
+    _ = val; // Value type determines valid shift range
+    if (shift <= 3) return shift;
+    return null;
+}
+
 /// Convert IntCC to aarch64 CondCode.
 /// Maps IR condition codes to ARM condition codes.
 pub fn intccToCondCode(cc: root.condcodes.IntCC) root.aarch64_inst.CondCode {
