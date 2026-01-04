@@ -131,7 +131,7 @@ test "SimplifyBranch: init and deinit" {
 }
 
 test "SimplifyBranch: run on empty function" {
-    const sig = try @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
+    const sig = @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -143,7 +143,7 @@ test "SimplifyBranch: run on empty function" {
 }
 
 test "SimplifyBranch: preserve non-branch instructions" {
-    const sig = try @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
+    const sig = @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 

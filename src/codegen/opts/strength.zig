@@ -300,7 +300,7 @@ test "StrengthReduction: init and deinit" {
 }
 
 test "StrengthReduction: run on empty function" {
-    const sig = try @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
+    const sig = @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -312,7 +312,7 @@ test "StrengthReduction: run on empty function" {
 }
 
 test "StrengthReduction: preserve non-arithmetic instructions" {
-    const sig = try @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
+    const sig = @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -330,7 +330,7 @@ test "StrengthReduction: preserve non-arithmetic instructions" {
     try testing.expect(!changed);
 }
 test "StrengthReduction: sdiv by power-of-2 generates bias correction" {
-    const sig = try @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
+    const sig = @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -367,7 +367,7 @@ test "StrengthReduction: sdiv by power-of-2 generates bias correction" {
 }
 
 test "StrengthReduction: srem by power-of-2 generates bias correction" {
-    const sig = try @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
+    const sig = @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -404,7 +404,7 @@ test "StrengthReduction: srem by power-of-2 generates bias correction" {
 }
 
 test "StrengthReduction: sdiv/srem by non-power-of-2 unchanged" {
-    const sig = try @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
+    const sig = @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
