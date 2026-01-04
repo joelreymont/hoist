@@ -29,7 +29,6 @@ pub const DominatorTree = struct {
     }
 
     pub fn deinit(self: *DominatorTree) void {
-
         self.idom.deinit();
 
         var iter = self.children.valueIterator();
@@ -356,11 +355,11 @@ pub const DominatorTree = struct {
             if (self.idom.get(block.*)) |ptr| {
                 const idom = ptr.* orelse continue;
 
-            const preds = cfg.predecessors(block.*);
-            for (preds) |pred| {
-                if (!self.dominates(idom, pred)) {
-                    return error.IdomDoesNotDominatePredecessor;
-            }
+                const preds = cfg.predecessors(block.*);
+                for (preds) |pred| {
+                    if (!self.dominates(idom, pred)) {
+                        return error.IdomDoesNotDominatePredecessor;
+                    }
                 }
             }
         }
@@ -668,7 +667,6 @@ fn intersect(
     b1: Block,
     b2: Block,
 ) Block {
-
     var finger1 = b1;
     var finger2 = b2;
 
@@ -684,7 +682,6 @@ fn intersect(
 
         finger1 = if (tree.ipdom.get(finger1)) |ptr| ptr.* orelse break else break;
         finger2 = if (tree.ipdom.get(finger2)) |ptr| ptr.* orelse break else break;
-
     }
     return finger1;
 }
@@ -901,17 +898,17 @@ test "DominatorTree: dominance frontier - diamond" {
     try tree.compute(testing.allocator, b0, &cfg);
 
     var df_b1 = try tree.dominanceFrontier(testing.allocator, b1, &cfg);
-    defer df_b1.deinit();
+    defer df_b1.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 1), df_b1.items.len);
     try testing.expect(std.meta.eql(df_b1.items[0], b3));
 
     var df_b2 = try tree.dominanceFrontier(testing.allocator, b2, &cfg);
-    defer df_b2.deinit();
+    defer df_b2.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 1), df_b2.items.len);
     try testing.expect(std.meta.eql(df_b2.items[0], b3));
 
     var df_b0 = try tree.dominanceFrontier(testing.allocator, b0, &cfg);
-    defer df_b0.deinit();
+    defer df_b0.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 0), df_b0.items.len);
 }
 
