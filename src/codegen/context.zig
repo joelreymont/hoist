@@ -36,7 +36,7 @@ pub const Context = struct {
     want_disasm: bool,
 
     pub fn init(allocator: std.mem.Allocator) !Context {
-        const empty_sig = Signature.init(allocator, .SystemV);
+        const empty_sig = Signature.init(allocator, .system_v);
         const func = try Function.init(allocator, "", empty_sig);
         return .{
             .allocator = allocator,
@@ -159,7 +159,7 @@ pub const RelocKind = enum {
 const testing = std.testing;
 
 test "Context: basic lifecycle" {
-    var ctx = Context.init(testing.allocator);
+    var ctx = try Context.init(testing.allocator);
     defer ctx.deinit();
 
     try testing.expect(ctx.compiled_code == null);
@@ -167,7 +167,7 @@ test "Context: basic lifecycle" {
 }
 
 test "Context: clear and reuse" {
-    var ctx = Context.init(testing.allocator);
+    var ctx = try Context.init(testing.allocator);
     defer ctx.deinit();
 
     ctx.want_disasm = true;
