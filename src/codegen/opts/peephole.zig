@@ -74,6 +74,8 @@ pub const Peephole = struct {
                     .bxor => try self.optimizeXor(func, inst, data),
                     .ishl, .ushr, .sshr => try self.optimizeShift(func, inst, data),
                     .rotl, .rotr => try self.optimizeRotate(func, inst, data),
+                    .udiv, .sdiv => try self.optimizeDiv(func, inst, data),
+                    .urem, .srem => try self.optimizeRem(func, inst, data),
                     else => {},
                 }
             },
@@ -189,6 +191,31 @@ pub const Peephole = struct {
     fn optimizeRotate(self: *Peephole, func: *Function, inst: Inst, data: BinaryData) !void {
         if (try self.isZero(func, data.args[1])) {
             try self.replaceWithCopy(func, inst, data.args[0]);
+        }
+    }
+
+    /// Optimize division: x / 1 = x
+    fn optimizeDiv(self: *Peephole, func: *Function, inst: Inst, data: BinaryData) !void {
+        if (try self.isOne(func, data.args[1])) {
+            try self.replaceWithCopy(func, inst, data.args[0]);
+        }
+    }
+
+    /// Optimize remainder: x % 1 = 0
+    fn optimizeRem(self: *Peephole, func: *Function, inst: Inst, data: BinaryData) !void {
+        if (try self.isOne(func, data.args[1])) {
+            // x % 1 = 0: Replace with zero constant
+            const ty = func.dfg.valueType(data.args[0]) orelse return;
+            const zero_data = InstructionData{ .unary = UnaryData.init(.iconst, data.args[0]) };
+            const inst_mut = func.dfg.insts.getMut(inst) orelse return;
+            inst_mut.* = zero_data;
+
+            // Update result type
+            const result = func.dfg.firstResult(inst) orelse return;
+            const result_mut = func.dfg.values.getMut(result) orelse return;
+            result_mut.* = root.dfg.ValueData.inst(ty, 0, inst);
+
+            self.changed = true;
         }
     }
 
