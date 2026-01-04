@@ -476,6 +476,8 @@ fn evalUnaryOp(opcode: Opcode, arg: i64) !i64 {
             const f = @as(f64, @bitCast(arg));
             break :blk @bitCast(@sqrt(f));
         },
+        .bswap => @bitCast(@byteSwap(@as(u64, @bitCast(arg)))),
+        .bitrev => @bitCast(@bitReverse(@as(u64, @bitCast(arg)))),
         else => error.UnsupportedOp,
     };
 }
