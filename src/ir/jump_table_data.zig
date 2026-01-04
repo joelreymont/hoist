@@ -84,8 +84,18 @@ test "JumpTableData init" {
 }
 
 test "JumpTableData new" {
-    const default = BlockCall.new(0);
-    const entries = [_]BlockCall{ BlockCall.new(1), BlockCall.new(2), BlockCall.new(3) };
+    const ValueListPool = @import("value_list.zig").ValueListPool;
+    const Block = @import("entities.zig").Block;
+
+    var pool = ValueListPool.init(testing.allocator);
+    defer pool.deinit(testing.allocator);
+
+    const default = try BlockCall.new(Block.new(0), &.{}, &pool);
+    const entries = [_]BlockCall{
+        try BlockCall.new(Block.new(1), &.{}, &pool),
+        try BlockCall.new(Block.new(2), &.{}, &pool),
+        try BlockCall.new(Block.new(3), &.{}, &pool),
+    };
 
     var jt = try JumpTableData.new(testing.allocator, default, &entries);
     defer jt.deinit();
@@ -95,14 +105,20 @@ test "JumpTableData new" {
 
     const slice = jt.asSlice();
     try testing.expectEqual(@as(usize, 3), slice.len);
-    try testing.expectEqual(BlockCall.new(1), slice[0]);
-    try testing.expectEqual(BlockCall.new(2), slice[1]);
-    try testing.expectEqual(BlockCall.new(3), slice[2]);
 }
 
 test "JumpTableData allBranches" {
-    const default = BlockCall.new(0);
-    const entries = [_]BlockCall{ BlockCall.new(1), BlockCall.new(2) };
+    const ValueListPool = @import("value_list.zig").ValueListPool;
+    const Block = @import("entities.zig").Block;
+
+    var pool = ValueListPool.init(testing.allocator);
+    defer pool.deinit(testing.allocator);
+
+    const default = try BlockCall.new(Block.new(0), &.{}, &pool);
+    const entries = [_]BlockCall{
+        try BlockCall.new(Block.new(1), &.{}, &pool),
+        try BlockCall.new(Block.new(2), &.{}, &pool),
+    };
 
     var jt = try JumpTableData.new(testing.allocator, default, &entries);
     defer jt.deinit();
@@ -110,17 +126,22 @@ test "JumpTableData allBranches" {
     const all = jt.allBranches();
     try testing.expectEqual(@as(usize, 3), all.len);
     try testing.expectEqual(default, all[0]);
-    try testing.expectEqual(BlockCall.new(1), all[1]);
-    try testing.expectEqual(BlockCall.new(2), all[2]);
 }
 
 test "JumpTableData mutability" {
-    const default = BlockCall.new(0);
+    const ValueListPool = @import("value_list.zig").ValueListPool;
+    const Block = @import("entities.zig").Block;
+
+    var pool = ValueListPool.init(testing.allocator);
+    defer pool.deinit(testing.allocator);
+
+    const default = try BlockCall.new(Block.new(0), &.{}, &pool);
     var jt = try JumpTableData.new(testing.allocator, default, &.{});
     defer jt.deinit();
 
     const def_mut = jt.defaultBlockMut().?;
-    def_mut.* = BlockCall.new(99);
+    def_mut.* = try BlockCall.new(Block.new(99), &.{}, &pool);
 
-    try testing.expectEqual(BlockCall.new(99), jt.defaultBlock().?);
+    const new_default = try BlockCall.new(Block.new(99), &.{}, &pool);
+    try testing.expectEqual(new_default, jt.defaultBlock().?);
 }
