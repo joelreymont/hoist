@@ -408,6 +408,13 @@
 (rule (lower (has_type $I64 (clz x)))
       (aarch64_clz_64 x))
 
+;; cls: Count leading sign bits (CLS)
+(rule (lower (has_type $I32 (cls x)))
+      (aarch64_cls_32 x))
+
+(rule (lower (has_type $I64 (cls x)))
+      (aarch64_cls_64 x))
+
 ;; ctz: Count trailing zeros (RBIT + CLZ)
 ;; ARM64 doesn't have CTZ, so we reverse bits then count leading zeros
 (rule (lower (has_type $I32 (ctz x)))
@@ -904,6 +911,8 @@
 ;; Bit manipulation operations
 (decl aarch64_clz_32 (Value) Aarch64Inst)
 (decl aarch64_clz_64 (Value) Aarch64Inst)
+(decl aarch64_cls_32 (Value) Aarch64Inst)
+(decl aarch64_cls_64 (Value) Aarch64Inst)
 (decl aarch64_ctz_32 (Value) Aarch64Inst)
 (decl aarch64_ctz_64 (Value) Aarch64Inst)
 (decl aarch64_rbit_32 (Value) Aarch64Inst)

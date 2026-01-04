@@ -399,6 +399,13 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Count leading sign bits (CLS).
+    cls: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
     /// Count trailing zeros (CTZ variant using RBIT + CLZ).
     /// Not a real ARM instruction - implemented as RBIT Xd, Xn; CLZ Xd, Xd.
     ctz: struct {
@@ -1667,6 +1674,7 @@ pub const Inst = union(enum) {
             .cset => |i| try writer.print("cset.{} {}, {}", .{ i.size, i.dst, i.cond }),
             .cinc => |i| try writer.print("cinc.{} {}, {}, {}", .{ i.size, i.dst, i.src, i.cond }),
             .clz => |i| try writer.print("clz.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .cls => |i| try writer.print("cls.{} {}, {}", .{ i.size, i.dst, i.src }),
             .ctz => |i| try writer.print("ctz.{} {}, {}", .{ i.size, i.dst, i.src }),
             .rbit => |i| try writer.print("rbit.{} {}, {}", .{ i.size, i.dst, i.src }),
             .rev16 => |i| try writer.print("rev16.{} {}, {}", .{ i.size, i.dst, i.src }),
