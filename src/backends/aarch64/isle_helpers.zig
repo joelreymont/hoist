@@ -1841,3 +1841,24 @@ pub fn aarch64_trapnz(val: lower_mod.Value, trap_code: ir.TrapCode, ctx: *lower_
     try ctx.bindLabel(skip_label);
     return Inst{ .invalid = {} };
 }
+
+/// Bitcast operations (ISLE constructors)
+pub fn aarch64_bitcast_noop(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    _ = ctx;
+    // No-op: just return the value unchanged (type punning in same register file)
+    return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(try ctx.getValueReg(x, .int)), .src = try ctx.getValueReg(x, .int) } };
+}
+
+pub fn aarch64_fmov_from_gpr(x: lower_mod.Value, in_ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const gpr = try ctx.getValueReg(x, .int);
+    const fpr = lower_mod.WritableVReg.allocVReg(.float, ctx);
+    const size: emit.ScalarSize = if (in_ty.bits() == 32) .size32 else .size64;
+    return Inst{ .fmov_from_gpr = .{ .dst = fpr, .src = gpr, .size = size } };
+}
+
+pub fn aarch64_fmov_to_gpr(x: lower_mod.Value, out_ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const fpr = try ctx.getValueReg(x, .float);
+    const gpr = lower_mod.WritableReg.allocReg(.int, ctx);
+    const size: emit.ScalarSize = if (out_ty.bits() == 32) .size32 else .size64;
+    return Inst{ .fmov_to_gpr = .{ .dst = gpr, .src = fpr, .size = size } };
+}

@@ -1801,3 +1801,31 @@
 ;; nop: No operation (emits nothing)
 (rule (lower (nop))
       (invalid_reg))
+
+;; bitcast: Type punning between same-size types
+;; Float/Vector <-> Float/Vector: no-op (same register file)
+(decl aarch64_bitcast_noop (Value) Aarch64Inst)
+(rule 7 (lower (has_type (ty_float_or_vec _) (bitcast _ x @ (value_type (ty_float_or_vec _)))))
+      (aarch64_bitcast_noop x))
+
+;; GPR <-> GPR: no-op (same size)
+(rule 6 (lower (has_type out_ty (bitcast _ x @ (value_type in_ty))))
+      (if (ty_int_ref_scalar_64 out_ty))
+      (if (ty_int_ref_scalar_64 in_ty))
+      (aarch64_bitcast_noop x))
+
+;; GPR -> Float/Vector: FMOV (GPR to FPR)
+(decl aarch64_fmov_from_gpr (Value Type) Aarch64Inst)
+(rule 5 (lower (has_type (ty_float_or_vec _) (bitcast _ x @ (value_type in_ty))))
+      (if (ty_int_ref_scalar_64 in_ty))
+      (aarch64_fmov_from_gpr x in_ty))
+
+;; Float/Vector -> GPR: FMOV (FPR to GPR)
+(decl aarch64_fmov_to_gpr (Value Type) Aarch64Inst)
+(rule 4 (lower (has_type out_ty (bitcast _ x @ (value_type (fits_in_64 (ty_float_or_vec _))))))
+      (if (ty_int_ref_scalar_64 out_ty))
+      (aarch64_fmov_to_gpr x out_ty))
+
+;; I128 <-> I128: no-op
+(rule 3 (lower (has_type $I128 (bitcast _ x @ (value_type $I128))))
+      (aarch64_bitcast_noop x))
