@@ -143,7 +143,7 @@ pub const LoopInfo = struct {
             for (preds) |pred| {
                 if (domtree.dominates(header, pred) and !loop.contains(pred)) {
                     try loop.addBlock(pred);
-                    try worklist.append(pred);
+                    try worklist.append(self.allocator, pred);
                 }
             }
         }

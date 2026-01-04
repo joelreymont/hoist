@@ -19,7 +19,6 @@ const Signature = ir.Signature;
 
 const lower_helpers = @import("lower_helpers.zig");
 const ValueRegs = lower_helpers.ValueRegs;
-const RegClass = lower_helpers.RegClass;
 
 const vcode_mod = @import("../machinst/vcode.zig");
 const reg_mod = @import("../machinst/reg.zig");
@@ -85,13 +84,13 @@ pub fn LowerCtx(comptime MachInst: type) type {
 
         /// Get virtual register(s) for an IR value, allocating if needed.
         /// This is the primary way to get a vreg for a value during lowering.
-        pub fn getValueReg(self: *Self, value: Value, class: RegClass) !VReg {
+        pub fn getValueReg(self: *Self, value: Value, class: reg_mod.RegClass) !VReg {
             const regs = try self.getValueRegs(value, class);
             return regs.onlyReg() orelse error.ValueRequiresMultipleRegs;
         }
 
         /// Get virtual register(s) for an IR value (may be multiple for wide types).
-        pub fn getValueRegs(self: *Self, value: Value, class: RegClass) !ValueRegs(VReg) {
+        pub fn getValueRegs(self: *Self, value: Value, class: reg_mod.RegClass) !ValueRegs(VReg) {
             const entry = try self.value_regs.getOrPut(value);
             if (!entry.found_existing) {
                 const ty = self.valueType(value);
@@ -111,8 +110,19 @@ pub fn LowerCtx(comptime MachInst: type) type {
             return entry.value_ptr.*;
         }
 
+        /// Map IR type to register class for allocation.
+        fn regClassForType(ty: Type) reg_mod.RegClass {
+            if (ty.isFloat()) {
+                return .float;
+            } else if (ty.isVector()) {
+                return .vector;
+            } else {
+                return .int;
+            }
+        }
+
         /// Allocate a fresh virtual register.
-        pub fn allocVReg(self: *Self, class: RegClass) VReg {
+        pub fn allocVReg(self: *Self, class: reg_mod.RegClass) VReg {
             const vreg = VReg.new(self.next_vreg, class);
             self.next_vreg += 1;
             return vreg;
@@ -120,7 +130,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
 
         /// Allocate a temporary virtual register of the given type.
         pub fn allocTemp(self: *Self, ty: Type) ValueRegs(VReg) {
-            const class = RegClass.forType(ty);
+            const class = regClassForType(ty);
             const num_regs = lower_helpers.numRegsForType(ty);
 
             if (num_regs == 1) {
@@ -322,13 +332,13 @@ test "LowerCtx: vreg allocation" {
 
     const r1 = ctx.allocVReg(.int);
     const r2 = ctx.allocVReg(.int);
-    const r3 = ctx.allocVReg(.fp);
+    const r3 = ctx.allocVReg(.float);
 
-    try testing.expectEqual(@as(u32, 0), r1.index);
-    try testing.expectEqual(@as(u32, 1), r2.index);
-    try testing.expectEqual(@as(u32, 2), r3.index);
-    try testing.expectEqual(RegClass.gpr, r1.class);
-    try testing.expectEqual(RegClass.fp, r3.class);
+    try testing.expectEqual(@as(u32, 0), r1.index());
+    try testing.expectEqual(@as(u32, 1), r2.index());
+    try testing.expectEqual(@as(u32, 2), r3.index());
+    try testing.expectEqual(reg_mod.RegClass.int, r1.class());
+    try testing.expectEqual(reg_mod.RegClass.float, r3.class());
 }
 
 test "LowerCtx: value to register mapping" {
