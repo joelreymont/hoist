@@ -2542,6 +2542,138 @@
 (decl vec_misc (VecMisc2 Value VectorSize) Value)
 (extern constructor vec_misc vec_misc)
 
+;; Condition code converters for zero comparisons
+(decl float_cc_cmp_zero_to_vec_misc_op (FloatCC) VecMisc2)
+(extern constructor float_cc_cmp_zero_to_vec_misc_op float_cc_cmp_zero_to_vec_misc_op)
+
+(decl float_cc_cmp_zero_to_vec_misc_op_swap (FloatCC) VecMisc2)
+(extern constructor float_cc_cmp_zero_to_vec_misc_op_swap float_cc_cmp_zero_to_vec_misc_op_swap)
+
+(decl int_cc_cmp_zero_to_vec_misc_op (IntCC) VecMisc2)
+(extern constructor int_cc_cmp_zero_to_vec_misc_op int_cc_cmp_zero_to_vec_misc_op)
+
+(decl int_cc_cmp_zero_to_vec_misc_op_swap (IntCC) VecMisc2)
+(extern constructor int_cc_cmp_zero_to_vec_misc_op_swap int_cc_cmp_zero_to_vec_misc_op_swap)
+
+;; Extractors for valid zero comparison conditions
+(decl fcmp_zero_cond (FloatCC) FloatCC)
+(extern extractor fcmp_zero_cond fcmp_zero_cond)
+
+(decl fcmp_zero_cond_not_eq (FloatCC) FloatCC)
+(extern extractor fcmp_zero_cond_not_eq fcmp_zero_cond_not_eq)
+
+(decl icmp_zero_cond (IntCC) IntCC)
+(extern extractor icmp_zero_cond icmp_zero_cond)
+
+(decl icmp_zero_cond_not_eq (IntCC) IntCC)
+(extern extractor icmp_zero_cond_not_eq icmp_zero_cond_not_eq)
+
+;; Helper for generating float compare equal to zero instruction
+(decl fcmeq0 (Reg VectorSize) Reg)
+(rule (fcmeq0 rn size)
+      (vec_misc (VecMisc2.Fcmeq0) rn size))
+
+;; Helper for generating float compare to zero instructions where 2nd argument is zero
+(decl float_cmp_zero (FloatCC Reg VectorSize) Reg)
+(rule (float_cmp_zero cond rn size)
+      (vec_misc (float_cc_cmp_zero_to_vec_misc_op cond) rn size))
+
+;; Helper for generating float compare to zero instructions in case where 1st argument is zero
+(decl float_cmp_zero_swap (FloatCC Reg VectorSize) Reg)
+(rule (float_cmp_zero_swap cond rn size)
+      (vec_misc (float_cc_cmp_zero_to_vec_misc_op_swap cond) rn size))
+
+;; Helper for generating int compare equal to zero instruction
+(decl cmeq0 (Reg VectorSize) Reg)
+(rule (cmeq0 rn size)
+      (vec_misc (VecMisc2.Cmeq0) rn size))
+
+;; Helper for generating int compare to zero instructions where 2nd argument is zero
+(decl int_cmp_zero (IntCC Reg VectorSize) Reg)
+(rule (int_cmp_zero cond rn size)
+      (vec_misc (int_cc_cmp_zero_to_vec_misc_op cond) rn size))
+
+;; Helper for generating int compare to zero instructions in case where 1st argument is zero
+(decl int_cmp_zero_swap (IntCC Reg VectorSize) Reg)
+(rule (int_cmp_zero_swap cond rn size)
+      (vec_misc (int_cc_cmp_zero_to_vec_misc_op_swap cond) rn size))
+
+;; Helper for vector comparisons using VecALUOp
+(decl vec_cmp_vc (Reg Reg VectorSize) Reg)
+(rule (vec_cmp_vc rn rm size)
+      (let ((dst Reg (vec_rrr (VecALUOp.Fcmeq) rn rn size))
+            (tmp Reg (vec_rrr (VecALUOp.Fcmeq) rm rm size))
+            (dst Reg (vec_rrr (VecALUOp.And) dst tmp size)))
+       dst))
+
+;; Main vector comparison helper - dispatches based on type and condition
+(decl vec_cmp (Reg Reg Type Cond) Reg)
+
+;; Floating point Vs / Vc
+(rule (vec_cmp rn rm ty (Cond.Vc))
+      (if (ty_vector_float ty))
+      (vec_cmp_vc rn rm (vector_size ty)))
+(rule (vec_cmp rn rm ty (Cond.Vs))
+      (if (ty_vector_float ty))
+      (let ((tmp Reg (vec_cmp_vc rn rm (vector_size ty))))
+       (vec_misc (VecMisc2.Not) tmp (vector_size ty))))
+
+;; Floating-point comparisons
+(rule (vec_cmp rn rm ty (Cond.Eq))
+      (if (ty_vector_float ty))
+      (vec_rrr (VecALUOp.Fcmeq) rn rm (vector_size ty)))
+(rule (vec_cmp rn rm ty (Cond.Ne))
+      (if (ty_vector_float ty))
+      (let ((tmp Reg (vec_rrr (VecALUOp.Fcmeq) rn rm (vector_size ty))))
+       (vec_misc (VecMisc2.Not) tmp (vector_size ty))))
+(rule (vec_cmp rn rm ty (Cond.Ge))
+      (if (ty_vector_float ty))
+      (vec_rrr (VecALUOp.Fcmge) rn rm (vector_size ty)))
+(rule (vec_cmp rn rm ty (Cond.Gt))
+      (if (ty_vector_float ty))
+      (vec_rrr (VecALUOp.Fcmgt) rn rm (vector_size ty)))
+;; Floating-point swapped-operands
+(rule (vec_cmp rn rm ty (Cond.Mi))
+      (if (ty_vector_float ty))
+      (vec_rrr (VecALUOp.Fcmgt) rm rn (vector_size ty)))
+(rule (vec_cmp rn rm ty (Cond.Ls))
+      (if (ty_vector_float ty))
+      (vec_rrr (VecALUOp.Fcmge) rm rn (vector_size ty)))
+
+;; Integer comparisons
+(rule 1 (vec_cmp rn rm ty (Cond.Eq))
+      (if (ty_vector_not_float ty))
+      (vec_rrr (VecALUOp.Cmeq) rn rm (vector_size ty)))
+(rule 1 (vec_cmp rn rm ty (Cond.Ne))
+      (if (ty_vector_not_float ty))
+      (let ((tmp Reg (vec_rrr (VecALUOp.Cmeq) rn rm (vector_size ty))))
+       (vec_misc (VecMisc2.Not) tmp (vector_size ty))))
+(rule 1 (vec_cmp rn rm ty (Cond.Ge))
+      (if (ty_vector_not_float ty))
+      (vec_rrr (VecALUOp.Cmge) rn rm (vector_size ty)))
+(rule 1 (vec_cmp rn rm ty (Cond.Gt))
+      (if (ty_vector_not_float ty))
+      (vec_rrr (VecALUOp.Cmgt) rn rm (vector_size ty)))
+(rule (vec_cmp rn rm ty (Cond.Hs))
+      (if (ty_vector_not_float ty))
+      (vec_rrr (VecALUOp.Cmhs) rn rm (vector_size ty)))
+(rule (vec_cmp rn rm ty (Cond.Hi))
+      (if (ty_vector_not_float ty))
+      (vec_rrr (VecALUOp.Cmhi) rn rm (vector_size ty)))
+;; Integer swapped-operands
+(rule (vec_cmp rn rm ty (Cond.Le))
+      (if (ty_vector_not_float ty))
+      (vec_rrr (VecALUOp.Cmge) rm rn (vector_size ty)))
+(rule (vec_cmp rn rm ty (Cond.Lt))
+      (if (ty_vector_not_float ty))
+      (vec_rrr (VecALUOp.Cmgt) rm rn (vector_size ty)))
+(rule 1 (vec_cmp rn rm ty (Cond.Ls))
+      (if (ty_vector_not_float ty))
+      (vec_rrr (VecALUOp.Cmhs) rm rn (vector_size ty)))
+(rule (vec_cmp rn rm ty (Cond.Lo))
+      (if (ty_vector_not_float ty))
+      (vec_rrr (VecALUOp.Cmhi) rm rn (vector_size ty)))
+
 (rule (lower_fmla op x y z size)
       (vec_rrr_mod op z x y size))
 
