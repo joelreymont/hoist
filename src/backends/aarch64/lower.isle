@@ -1455,9 +1455,74 @@
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fmax x y)))
       (vec_rrr (VecALUOp.Fmax) x y (vector_size ty)))
 
-;; fcmp: FP comparison (FCMP)
+;;;; Rules for `fcmp` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Vector fcmp: zero-optimized rules (y == 0, not-equal case)
+(rule 4 (lower (has_type ty @ (multi_lane _ _) (fcmp (fcmp_zero_cond_not_eq cond) x y)))
+      (if (zero_value y))
+      (let ((rn Reg x)
+            (vec_size VectorSize (vector_size ty)))
+          (value_reg (not (fcmeq0 rn vec_size) vec_size))))
+
+;; Vector fcmp: zero-optimized rules (y == 0, other conditions)
+(rule 3 (lower (has_type ty @ (multi_lane _ _) (fcmp (fcmp_zero_cond cond) x y)))
+      (if (zero_value y))
+      (let ((rn Reg x)
+            (vec_size VectorSize (vector_size ty)))
+          (value_reg (float_cmp_zero cond rn vec_size))))
+
+;; Vector fcmp: zero-optimized rules (x == 0, not-equal case)
+(rule 2 (lower (has_type ty @ (multi_lane _ _) (fcmp (fcmp_zero_cond_not_eq cond) x y)))
+      (if (zero_value x))
+      (let ((rn Reg y)
+            (vec_size VectorSize (vector_size ty)))
+          (value_reg (not (fcmeq0 rn vec_size) vec_size))))
+
+;; Vector fcmp: zero-optimized rules (x == 0, other conditions)
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (fcmp (fcmp_zero_cond cond) x y)))
+      (if (zero_value x))
+      (let ((rn Reg y)
+            (vec_size VectorSize (vector_size ty)))
+          (value_reg (float_cmp_zero_swap cond rn vec_size))))
+
+;; Vector fcmp: general case for vector floats
+(rule -1 (lower (has_type out_ty (fcmp cond x @ (value_type in_ty) y)))
+      (if (ty_vector_float in_ty))
+      (vec_cmp x y in_ty (fp_cond_code cond)))
+
+;; Scalar fcmp: FP comparison (FCMP)
 (rule (lower (fcmp cond x y))
       (aarch64_fcmp x y))
+
+;;;; Rules for `icmp` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Vector icmp: zero-optimized rules (y == 0, not-equal case)
+(rule 3 (lower (has_type ty @ (multi_lane _ _) (icmp (icmp_zero_cond_not_eq cond) x y)))
+      (if (zero_value y))
+      (let ((rn Reg x)
+            (vec_size VectorSize (vector_size ty)))
+          (value_reg (not (cmeq0 rn vec_size) vec_size))))
+
+;; Vector icmp: zero-optimized rules (y == 0, other conditions)
+(rule 2 (lower (has_type ty @ (multi_lane _ _) (icmp (icmp_zero_cond cond) x y)))
+      (if (zero_value y))
+      (let ((rn Reg x)
+            (vec_size VectorSize (vector_size ty)))
+          (value_reg (int_cmp_zero cond rn vec_size))))
+
+;; Vector icmp: zero-optimized rules (x == 0, not-equal case)
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (icmp (icmp_zero_cond_not_eq cond) x y)))
+      (if (zero_value x))
+      (let ((rn Reg y)
+            (vec_size VectorSize (vector_size ty)))
+          (value_reg (not (cmeq0 rn vec_size) vec_size))))
+
+;; Vector icmp: zero-optimized rules (x == 0, other conditions)
+(rule 0 (lower (has_type ty @ (multi_lane _ _) (icmp (icmp_zero_cond cond) x y)))
+      (if (zero_value x))
+      (let ((rn Reg y)
+            (vec_size VectorSize (vector_size ty)))
+          (value_reg (int_cmp_zero_swap cond rn vec_size))))
 
 ;; Vector float unary operations
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (sqrt x)))
