@@ -1620,6 +1620,16 @@ pub const Inst = union(enum) {
         size: VectorSize,
     },
 
+    /// VecShiftImm - Vector shift by immediate
+    /// rd = op(rn, imm)
+    vec_shift_imm: struct {
+        op: VecShiftImmOp,
+        dst: WritableReg,
+        rn: Reg,
+        size: VectorSize,
+        imm: u8,
+    },
+
     /// FMLA/FMLS - Vector fused multiply-add/subtract (element-indexed form).
     /// rd = ri + rn * rm[idx] (FMLA) or rd = ri - rn * rm[idx] (FMLS)
     vec_fmla_elem: struct {
@@ -2175,6 +2185,13 @@ pub const VecMisc2 = enum {
     Fcmgt0,  // Floating point compare greater than 0
     Fcmle0,  // Floating point compare less than or equal to 0
     Fcmlt0,  // Floating point compare less than 0
+};
+
+/// Vector shift immediate operations
+pub const VecShiftImmOp = enum {
+    Shl,   // Unsigned shift left
+    Ushr,  // Unsigned shift right
+    Sshr,  // Signed shift right
 };
 
 /// Vector size for ISLE integration (maps to ISLE VectorSize enum).

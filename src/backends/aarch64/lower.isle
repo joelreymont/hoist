@@ -112,6 +112,23 @@
 (decl reduce_umax_vec (Value VectorSize) Aarch64Inst)
 (rule (reduce_umax_vec x size) (aarch64_umaxv size x))
 
+;; Vector shift by immediate helpers
+(decl vec_shift_imm (VecShiftImmOp u8 Value VectorSize) Aarch64Inst)
+(rule (vec_shift_imm op imm src size)
+      (aarch64_vec_shift_imm op imm src size))
+
+(decl ushl_vec_imm (Value u8 VectorSize) Aarch64Inst)
+(rule (ushl_vec_imm x amt size)
+      (vec_shift_imm (VecShiftImmOp.Shl) amt x size))
+
+(decl ushr_vec_imm (Value u8 VectorSize) Aarch64Inst)
+(rule (ushr_vec_imm x amt size)
+      (vec_shift_imm (VecShiftImmOp.Ushr) amt x size))
+
+(decl sshr_vec_imm (Value u8 VectorSize) Aarch64Inst)
+(rule (sshr_vec_imm x amt size)
+      (vec_shift_imm (VecShiftImmOp.Sshr) amt x size))
+
 ;; Flags infrastructure combinators
 
 ;; Combine a flags-producing instruction with a flags-consuming instruction
@@ -2263,6 +2280,13 @@
   V2S   ;; 2 singles (2x i32/f32)
   V4S   ;; 4 singles (4x i32/f32)
   V2D   ;; 2 doubles (2x i64/f64)
+))
+
+;; Vector shift immediate operations
+(type VecShiftImmOp (enum
+  Shl   ;; Unsigned shift left
+  Ushr  ;; Unsigned shift right
+  Sshr  ;; Signed shift right
 ))
 
 ;; SIMD/Vector lowering rules

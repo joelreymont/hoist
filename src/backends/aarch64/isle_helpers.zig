@@ -3856,3 +3856,24 @@ pub fn lower_popcnt128(
     const zero = lower_mod.WritableReg.zero().toReg();
     return lower_mod.ValueRegs.two(result_dst.toReg(), zero);
 }
+
+/// Vector shift by immediate
+pub fn aarch64_vec_shift_imm(
+    op: Inst.VecShiftImmOp,
+    imm: u8,
+    src: lower_mod.Value,
+    size: Inst.VectorSize,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const src_reg = try ctx.getValueReg(src, .vec);
+    const dst = lower_mod.WritableReg.allocReg(.vec, ctx);
+    return Inst{
+        .vec_shift_imm = .{
+            .op = op,
+            .dst = dst,
+            .rn = src_reg,
+            .size = size,
+            .imm = imm,
+        },
+    };
+}
