@@ -3591,3 +3591,241 @@ pub fn aarch64_smul_overflow_i64(
     
     return lower_mod.ValueRegs.two(out_dst.toReg(), of_dst.toReg());
 }
+
+// I128 bit manipulation helpers
+
+/// Count leading zeros for I128
+/// Algorithm from Cranelift:
+/// clz hi_clz, hi
+/// clz lo_clz, lo  
+/// lsr tmp, hi_clz, #6
+/// madd dst_lo, lo_clz, tmp, hi_clz
+/// mov dst_hi, 0
+pub fn lower_clz128(
+    val: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const hi = lower_mod.ValueRegs.getReg(val, 1);
+    const lo = lower_mod.ValueRegs.getReg(val, 0);
+    
+    // CLZ on both halves
+    const hi_clz_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .clz = .{
+            .dst = hi_clz_dst,
+            .src = hi,
+            .size = .Size64,
+        },
+    });
+    const hi_clz = hi_clz_dst.toReg();
+    
+    const lo_clz_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .clz = .{
+            .dst = lo_clz_dst,
+            .src = lo,
+            .size = .Size64,
+        },
+    });
+    const lo_clz = lo_clz_dst.toReg();
+    
+    // LSR tmp, hi_clz, #6 (shift right by 6 to get 0 or 1)
+    const tmp_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .lsr_imm = .{
+            .dst = tmp_dst,
+            .src = hi_clz,
+            .shift = 6,
+            .size = .Size64,
+        },
+    });
+    const tmp = tmp_dst.toReg();
+    
+    // MADD result, lo_clz, tmp, hi_clz
+    // result = lo_clz * tmp + hi_clz
+    const result_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .madd = .{
+            .dst = result_dst,
+            .src1 = lo_clz,
+            .src2 = tmp,
+            .src3 = hi_clz,
+            .size = .Size64,
+        },
+    });
+    
+    const zero = lower_mod.WritableReg.zero().toReg();
+    return lower_mod.ValueRegs.two(result_dst.toReg(), zero);
+}
+
+/// Count leading sign bits for I128  
+/// Complex algorithm from Cranelift - counts consecutive sign bits
+pub fn lower_cls128(
+    val: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lo = lower_mod.ValueRegs.getReg(val, 0);
+    const hi = lower_mod.ValueRegs.getReg(val, 1);
+    
+    // CLS on both halves
+    const lo_cls_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .cls = .{
+            .dst = lo_cls_dst,
+            .src = lo,
+            .size = .Size64,
+        },
+    });
+    const lo_cls = lo_cls_dst.toReg();
+    
+    const hi_cls_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .cls = .{
+            .dst = hi_cls_dst,
+            .src = hi,
+            .size = .Size64,
+        },
+    });
+    const hi_cls = hi_cls_dst.toReg();
+    
+    // EON sign_eq_eon, hi, lo (XOR with NOT)
+    const sign_eq_eon_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .eon = .{
+            .dst = sign_eq_eon_dst,
+            .src1 = hi,
+            .src2 = lo,
+            .size = .Size64,
+        },
+    });
+    const sign_eq_eon = sign_eq_eon_dst.toReg();
+    
+    // LSR sign_eq, sign_eq_eon, #63
+    const sign_eq_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .lsr_imm = .{
+            .dst = sign_eq_dst,
+            .src = sign_eq_eon,
+            .shift = 63,
+            .size = .Size64,
+        },
+    });
+    const sign_eq = sign_eq_dst.toReg();
+    
+    // MADD lo_sign_bits, lo_cls, sign_eq, sign_eq
+    const lo_sign_bits_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .madd = .{
+            .dst = lo_sign_bits_dst,
+            .src1 = lo_cls,
+            .src2 = sign_eq,
+            .src3 = sign_eq,
+            .size = .Size64,
+        },
+    });
+    const lo_sign_bits = lo_sign_bits_dst.toReg();
+    
+    // CMP hi_cls, #63
+    try ctx.emit(Inst{
+        .cmp_imm = .{
+            .size = .Size64,
+            .rn = hi_cls,
+            .imm = 63,
+        },
+    });
+    
+    // CSEL maybe_lo, lo_sign_bits, xzr, eq
+    const maybe_lo_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .csel = .{
+            .rd = maybe_lo_dst,
+            .cond = intccToCondCode(.eq),
+            .rn = lo_sign_bits,
+            .rm = lower_mod.WritableReg.zero().toReg(),
+        },
+    });
+    const maybe_lo = maybe_lo_dst.toReg();
+    
+    // ADD result, maybe_lo, hi_cls
+    const result_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .add_rr = .{
+            .dst = result_dst,
+            .src1 = maybe_lo,
+            .src2 = hi_cls,
+            .size = .Size64,
+        },
+    });
+    
+    const zero = lower_mod.WritableReg.zero().toReg();
+    return lower_mod.ValueRegs.two(result_dst.toReg(), zero);
+}
+
+/// Population count for I128
+/// Move both halves to vector, use CNT, sum all bytes
+pub fn lower_popcnt128(
+    val: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lo = lower_mod.ValueRegs.getReg(val, 0);
+    const hi = lower_mod.ValueRegs.getReg(val, 1);
+    
+    // Move lo to FPU (D register, lower half of Q)
+    const tmp_half_dst = lower_mod.WritableReg.allocReg(.fpu, ctx);
+    try ctx.emit(Inst{
+        .fmov_from_gpr = .{
+            .dst = tmp_half_dst,
+            .src = lo,
+            .size = .Size64,
+        },
+    });
+    const tmp_half = tmp_half_dst.toReg();
+    
+    // Insert hi into upper half to make full 128-bit vector
+    const tmp_dst = lower_mod.WritableReg.allocReg(.fpu, ctx);
+    try ctx.emit(Inst{
+        .vec_ins = .{
+            .dst = tmp_dst,
+            .src1 = tmp_half,
+            .src2 = hi,
+            .lane = 1,
+            .size = .Size64x2,
+        },
+    });
+    const tmp = tmp_dst.toReg();
+    
+    // CNT (count bits in each byte)
+    const nbits_dst = lower_mod.WritableReg.allocReg(.fpu, ctx);
+    try ctx.emit(Inst{
+        .vec_cnt = .{
+            .dst = nbits_dst,
+            .src = tmp,
+            .size = .Size8x16,
+        },
+    });
+    const nbits = nbits_dst.toReg();
+    
+    // ADDV (sum all bytes across vector)
+    const added_dst = lower_mod.WritableReg.allocReg(.fpu, ctx);
+    try ctx.emit(Inst{
+        .vec_addv = .{
+            .dst = added_dst,
+            .src = nbits,
+            .size = .Size8x16,
+        },
+    });
+    const added = added_dst.toReg();
+    
+    // Move result back to GPR
+    const result_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .fmov_to_gpr = .{
+            .dst = result_dst,
+            .src = added,
+            .size = .Size8,
+        },
+    });
+    
+    const zero = lower_mod.WritableReg.zero().toReg();
+    return lower_mod.ValueRegs.two(result_dst.toReg(), zero);
+}

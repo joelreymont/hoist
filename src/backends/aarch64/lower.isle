@@ -1141,6 +1141,14 @@
 (rule (lower (has_type $I64 (bitrev x)))
       (aarch64_rbit_64 x))
 
+;; bitrev I128: Reverse bits in each half, then swap order
+(rule (lower (has_type $I128 (bitrev x)))
+      (let ((lo Reg (value_regs_get x 0))
+            (hi Reg (value_regs_get x 1))
+            (lo_rev Reg (aarch64_rbit_64 lo))
+            (hi_rev Reg (aarch64_rbit_64 hi)))
+        (value_regs hi_rev lo_rev)))
+
 ;; bswap: Byte swap (REV16, REV32, REV64)
 (rule (lower (has_type $I16 (bswap x)))
       (aarch64_bswap_16 x))
@@ -1150,6 +1158,12 @@
 
 (rule (lower (has_type $I64 (bswap x)))
       (aarch64_bswap_64 x))
+
+;; bswap I128: Reverse bytes in each half, then swap order
+(rule (lower (has_type $I128 (bswap x)))
+      (value_regs
+       (aarch64_bswap_64 (value_regs_get x 1))
+       (aarch64_bswap_64 (value_regs_get x 0))))
 
 ;; popcnt: Population count (count set bits)
 (rule (lower (has_type $I8 (popcnt x)))
@@ -1164,6 +1178,35 @@
 (rule (lower (has_type $I64 (popcnt x)))
       (aarch64_popcnt_64 x))
 
+
+;; bswap I128: Reverse bytes in each half, then swap order
+(rule (lower (has_type $I128 (bswap x)))
+      (value_regs
+       (aarch64_bswap_64 (value_regs_get x 1))
+       (aarch64_bswap_64 (value_regs_get x 0))))
+
+;; clz I128: Count leading zeros across both registers
+;; Uses lower_clz128 helper from isle_helpers.zig
+(rule (lower (has_type $I128 (clz x)))
+      (lower_clz128 x))
+
+;; ctz I128: Count trailing zeros by reversing bits then counting leading zeros
+(rule (lower (has_type $I128 (ctz x)))
+      (let ((lo Reg (value_regs_get x 0))
+            (hi Reg (value_regs_get x 1))
+            (lo_rev Reg (aarch64_rbit_64 lo))
+            (hi_rev Reg (aarch64_rbit_64 hi)))
+        (lower_clz128 (value_regs hi_rev lo_rev))))
+
+;; cls I128: Count leading sign bits
+;; Uses lower_cls128 helper from isle_helpers.zig
+(rule (lower (has_type $I128 (cls x)))
+      (lower_cls128 x))
+
+;; popcnt I128: Count set bits across both registers
+;; Uses lower_popcnt128 helper from isle_helpers.zig
+(rule (lower (has_type $I128 (popcnt x)))
+      (lower_popcnt128 x))
 ;; ineg: Integer negation
 
 ;; Vector negation (128-bit vectors)
@@ -1948,6 +1991,9 @@
 (decl aarch64_popcnt_16 (Value) Aarch64Inst)
 (decl aarch64_popcnt_32 (Value) Aarch64Inst)
 (decl aarch64_popcnt_64 (Value) Aarch64Inst)
+(decl lower_clz128 (ValueRegs) ValueRegs)
+(decl lower_cls128 (ValueRegs) ValueRegs)
+(decl lower_popcnt128 (ValueRegs) ValueRegs)
 
 ;; Negation operations
 (decl aarch64_neg (Type Value) Aarch64Inst)
