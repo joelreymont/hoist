@@ -1732,6 +1732,9 @@
 (decl aarch64_fmul (Type Value Value) Aarch64Inst)
 (decl aarch64_fdiv (Type Value Value) Aarch64Inst)
 (decl aarch64_fmadd (Type Value Value Value) Aarch64Inst)
+(decl aarch64_fmsub (Type Value Value Value) Aarch64Inst)
+(decl aarch64_fnmadd (Type Value Value Value) Aarch64Inst)
+(decl aarch64_fnmsub (Type Value Value Value) Aarch64Inst)
 (decl aarch64_fcmp (Value Value) Aarch64Inst)
 (decl aarch64_fabs (Type Value) Aarch64Inst)
 (decl aarch64_fneg (Type Value) Aarch64Inst)
@@ -2458,6 +2461,18 @@
 (extern constructor vec_rrr_mod vec_rrr_mod)
 (rule (lower_fmla op x y z size)
       (vec_rrr_mod op z x y size))
+
+;; Special case: if one multiplicand is splat, use element-based FMA with index 0
+(rule 1 (lower_fmla op (splat x) y z size)
+      (vec_fmla_elem op z y x size 0))
+(rule 2 (lower_fmla op x (splat y) z size)
+      (vec_fmla_elem op z x y size 0))
+
+;; Special case: if one multiplicand is fneg, peel it and flip operation
+(rule 5 (lower_fmla op (fneg x) y z size)
+      (lower_fmla (neg_fmla op) x y z size))
+(rule 6 (lower_fmla op x (fneg y) z size)
+      (lower_fmla (neg_fmla op) x y z size))
 
 ;; Shuffle fusion: if one operand is a shuffle broadcasting a single element,
 ;; use element-indexed FMLA (FMLA Vd.T, Vn.T, Vm.T[idx])
