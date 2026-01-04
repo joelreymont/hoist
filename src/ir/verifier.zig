@@ -326,7 +326,7 @@ pub const Verifier = struct {
                         }
                     },
                     .atomic_store => |as| {
-                        const src_ty = self.func.dfg.valueType(as.src);
+                        const src_ty = self.func.dfg.valueType(as.src) orelse continue;
                         // Atomic stores must be on integer types
                         if (!src_ty.isInt()) {
                             const msg = try std.fmt.allocPrint(
@@ -347,7 +347,7 @@ pub const Verifier = struct {
                         }
                     },
                     .atomic_rmw => |ar| {
-                        const src_ty = self.func.dfg.valueType(ar.src);
+                        const src_ty = self.func.dfg.valueType(ar.src) orelse continue;
                         // Atomic RMW must be on integer types
                         if (!result_ty.isInt() or !src_ty.isInt()) {
                             const msg = try std.fmt.allocPrint(
