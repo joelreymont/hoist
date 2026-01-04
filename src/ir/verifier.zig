@@ -200,7 +200,8 @@ pub const Verifier = struct {
             while (inst_iter.next()) |inst| {
                 const inst_data = self.func.dfg.insts.get(inst) orelse continue;
                 const opcode = inst_data.opcode();
-                const result_ty = self.func.dfg.instResultType(inst) orelse continue;
+                const result_val = self.func.dfg.firstResult(inst) orelse continue;
+                const result_ty = self.func.dfg.valueType(result_val) orelse continue;
 
                 switch (inst_data.*) {
                     .binary => |bin| {
