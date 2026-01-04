@@ -275,6 +275,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_uqxtn => |i| try emitVecUqxtn(i.dst.toReg(), i.src, i.size, i.high, buffer),
         .vec_fcvtl => |i| try emitVecFcvtl(i.dst.toReg(), i.src, i.high, buffer),
         .vec_fcvtn => |i| try emitVecFcvtn(i.dst.toReg(), i.src, i.high, buffer),
+        .vec_dup => |i| try emitVecDup(i.dst.toReg(), i.src, i.size, buffer),
+        .vec_extract_lane => |i| try emitVecExtractLane(i.dst.toReg(), i.src, i.lane, i.size, buffer),
+        .vec_insert_lane => |i| try emitVecInsertLane(i.dst.toReg(), i.vec, i.src, i.lane, i.size, buffer),
         .addv => |i| try emitAddv(i.dst.toReg(), i.src, i.size, buffer),
         .sminv => |i| try emitSminv(i.dst.toReg(), i.src, i.size, buffer),
         .smaxv => |i| try emitSmaxv(i.dst.toReg(), i.src, i.size, buffer),
@@ -12263,6 +12266,50 @@ fn emitVecExtractLane(dst: Reg, src: Reg, lane: u8, size: VecElemSize, buffer: *
         (0b001110000 << 21) |
         (imm5 << 16) |
         (0b001111 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    try buffer.put(&std.mem.toBytes(insn));
+}
+
+/// INS (general) - Insert general-purpose register into vector lane
+/// Encoding: 0|Q|001110000|imm5|000111|Rn|Rd
+/// Q: 0=64-bit, 1=128-bit
+/// imm5: encodes element size and lane index
+fn emitVecInsertLane(dst: Reg, vec: Reg, src: Reg, lane: u8, size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const rv = hwEnc(vec);
+
+    // First, move vec to dst if they're different (INS modifies destination)
+    // Vector MOV is implemented as ORR Vd.16B, Vn.16B, Vn.16B
+    if (dst.toU8() != vec.toU8()) {
+        const mov_insn: u32 = (0b01 << 30) | // Q=1 (128-bit)
+            (0b001110101 << 21) |
+            (@as(u32, rv) << 16) |
+            (0b000111 << 10) |
+            (@as(u32, rv) << 5) |
+            @as(u32, rd);
+        try buffer.put(&std.mem.toBytes(mov_insn));
+    }
+
+    // Determine Q bit and imm5 encoding
+    const q: u32 = switch (size) {
+        .size8x8, .size16x4, .size32x2 => 0,
+        .size8x16, .size16x8, .size32x4, .size64x2 => 1,
+    };
+
+    const imm5: u32 = switch (size) {
+        .size8x8, .size8x16 => (@as(u32, lane) << 1) | 0b00001,
+        .size16x4, .size16x8 => (@as(u32, lane) << 2) | 0b00010,
+        .size32x2, .size32x4 => (@as(u32, lane) << 3) | 0b00100,
+        .size64x2 => (@as(u32, lane) << 4) | 0b01000,
+    };
+
+    const insn: u32 = (q << 30) |
+        (0b001110000 << 21) |
+        (imm5 << 16) |
+        (0b000111 << 10) |
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 

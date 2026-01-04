@@ -1401,6 +1401,16 @@ pub const Inst = union(enum) {
         size: VecElemSize,
     },
 
+    /// Insert scalar into vector lane (INS).
+    /// Copies scalar into vector lane: dst[lane] = src.
+    vec_insert_lane: struct {
+        dst: WritableReg,
+        vec: Reg,
+        src: Reg,
+        lane: u8,
+        size: VecElemSize,
+    },
+
     /// Extract bytes and concatenate (EXT).
     /// Extract bytes from concatenated pair: dst = (src1:src2)[index..index+bytes].
     vec_ext: struct {
@@ -1786,6 +1796,7 @@ pub const Inst = union(enum) {
             .vec_umaxv => |i| try writer.print("vec_umaxv.{} {}, {}", .{ i.size, i.dst, i.src }),
             .vec_dup => |i| try writer.print("vec_dup.{} {}, {}", .{ i.size, i.dst, i.src }),
             .vec_extract_lane => |i| try writer.print("vec_extract_lane.{} {}, {}[{}]", .{ i.size, i.dst, i.src, i.lane }),
+            .vec_insert_lane => |i| try writer.print("vec_insert_lane.{} {}[{}], {}", .{ i.size, i.dst, i.lane, i.src }),
             .vec_ext => |i| try writer.print("vec_ext.{} {}, {}, {}, #{}", .{ i.size, i.dst, i.src1, i.src2, i.index }),
             .vec_addp => |i| try writer.print("vec_addp.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_umaxp => |i| try writer.print("vec_umaxp.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),

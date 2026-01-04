@@ -199,6 +199,10 @@
 (rule (lower (extractlane ty vec lane))
       (aarch64_extractlane ty vec lane))
 
+;; insertlane: Insert scalar into vector lane (INS)
+(rule (lower (insertlane ty vec x lane))
+      (aarch64_insertlane ty vec x lane))
+
 ;; fcvt_from_sint: Convert signed integer to float (SCVTF)
 (rule (lower (fcvt_from_sint dst_ty src_ty x))
       (aarch64_scvtf dst_ty src_ty x))
@@ -1111,6 +1115,7 @@
 (decl aarch64_fsqrt (Type Value) Aarch64Inst)
 (decl aarch64_splat (Type Value) Aarch64Inst)
 (decl aarch64_extractlane (Type Value Value) Aarch64Inst)
+(decl aarch64_insertlane (Type Value Value Value) Aarch64Inst)
 
 ;; Floating-point conversions
 (decl aarch64_fcvtzu_32 (Value) Aarch64Inst)  ;; FCVTZU: float to unsigned i32

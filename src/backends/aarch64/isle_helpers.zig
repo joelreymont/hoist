@@ -1642,3 +1642,33 @@ pub fn aarch64_iabs(ty: types.Type, x: lower_mod.Value, ctx: *lower_mod.LowerCtx
         .size = size,
     } };
 }
+
+/// INSERTLANE - Insert scalar into vector lane (INS)
+pub fn aarch64_insertlane(ty: types.Type, vec: lower_mod.Value, x: lower_mod.Value, lane_val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const vec_reg = try getValueReg(ctx, vec);
+    const x_reg = try getValueReg(ctx, x);
+
+    // Extract lane index from constant value
+    const lane_node = try ctx.getValue(lane_val);
+    const lane: u8 = switch (lane_node) {
+        .iconst => |c| @intCast(c.value),
+        else => return error.NonConstantLane,
+    };
+
+    // Determine vector element size from type
+    const size: Inst.VecElemSize = switch (ty) {
+        types.Type.V8x16 => .size8x16,
+        types.Type.V16x8 => .size16x8,
+        types.Type.V32x4 => .size32x4,
+        types.Type.V64x2 => .size64x2,
+        else => return error.UnsupportedType,
+    };
+
+    return Inst{ .vec_insert_lane = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
+        .vec = vec_reg,
+        .src = x_reg,
+        .lane = lane,
+        .size = size,
+    } };
+}
