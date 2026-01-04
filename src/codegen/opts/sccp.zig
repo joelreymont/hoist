@@ -410,6 +410,11 @@ fn evalBinaryOp(opcode: Opcode, lhs: i64, rhs: i64) !i64 {
             }
             break :blk @bitCast(@max(lhs_f, rhs_f));
         },
+        .fcopysign => blk: {
+            const lhs_f = @as(f64, @bitCast(lhs));
+            const rhs_f = @as(f64, @bitCast(rhs));
+            break :blk @bitCast(std.math.copysign(lhs_f, rhs_f));
+        },
         else => error.UnsupportedOp,
     };
 }
@@ -446,6 +451,10 @@ fn evalUnaryOp(opcode: Opcode, arg: i64) !i64 {
         .nearest => blk: {
             const f = @as(f64, @bitCast(arg));
             break :blk @bitCast(@round(f));
+        },
+        .sqrt => blk: {
+            const f = @as(f64, @bitCast(arg));
+            break :blk @bitCast(@sqrt(f));
         },
         else => error.UnsupportedOp,
     };
