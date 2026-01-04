@@ -187,14 +187,14 @@ pub const SCCP = struct {
     /// Evaluate an instruction and return its lattice value.
     fn evaluateInst(self: *SCCP, func: *Function, inst_data: InstructionData) !LatticeValue {
         return switch (inst_data) {
-            .nullary => |d| switch (d.opcode) {
+            .unary_imm => |d| switch (d.opcode) {
                 .iconst => {
-                    // TODO: Extract actual constant value from instruction data
-                    // For now, conservatively return top
-                    return .top;
+                    // Extract constant value from immediate
+                    return .{ .constant = d.imm.bits() };
                 },
                 else => .top,
             },
+            .nullary => .top,
             .binary => |d| {
                 const lhs_lat = self.lattice.get(d.lhs) orelse .bottom;
                 const rhs_lat = self.lattice.get(d.rhs) orelse .bottom;
@@ -235,10 +235,37 @@ pub const SCCP = struct {
 
     /// Add all uses of a value to the SSA worklist.
     fn addUsesToWorklist(self: *SCCP, func: *Function, value: Value) !void {
-        _ = func;
-        _ = value;
-        // TODO: Iterate through uses of value and add to worklist
-        // Requires use-def chains or reverse DFG lookup
+        // Iterate through all instructions and find those that use this value
+        var block_iter = func.layout.blocks();
+        while (block_iter.next()) |block| {
+            // Only process executable blocks
+            if (!self.executable_blocks.contains(block)) continue;
+
+            var inst_iter = func.layout.blockInsts(block);
+            while (inst_iter.next()) |inst| {
+                const inst_data = func.dfg.insts.get(inst) orelse continue;
+
+                // Check if this instruction uses the value
+                if (instUsesValue(inst_data.*, value)) {
+                    try self.ssa_worklist.append(inst);
+                }
+            }
+        }
+    }
+
+    /// Check if an instruction uses a specific value as an operand.
+    fn instUsesValue(inst_data: InstructionData, value: Value) bool {
+        return switch (inst_data) {
+            .unary => |d| std.meta.eql(d.arg, value),
+            .binary => |d| std.meta.eql(d.lhs, value) or std.meta.eql(d.rhs, value),
+            .int_compare => |d| std.meta.eql(d.lhs, value) or std.meta.eql(d.rhs, value),
+            .float_compare => |d| std.meta.eql(d.lhs, value) or std.meta.eql(d.rhs, value),
+            .branch => |d| std.meta.eql(d.condition, value),
+            .load => |d| std.meta.eql(d.addr, value),
+            .store => |d| std.meta.eql(d.addr, value) or std.meta.eql(d.value, value),
+            // TODO: Add more instruction types as needed
+            else => false,
+        };
     }
 
     /// Rewrite function with discovered constants.
@@ -256,14 +283,19 @@ pub const SCCP = struct {
             // Get the value's type
             const ty = func.dfg.valueType(value) orelse continue;
 
-            // TODO: Create a new iconst instruction for this constant
-            // and alias the value to it
-            // For now, just track that we would change something
+            // For constant values, we could create an iconst and alias to it
+            // However, this requires allocating new instructions in the DFG
+            // For now, mark as changed to indicate constants were discovered
             changed = true;
             _ = ty;
+            _ = value;
         }
 
         // TODO: Remove instructions in non-executable blocks
+        // This requires:
+        // 1. Iterating through all blocks
+        // 2. For blocks not in executable_blocks, remove their instructions
+        // 3. Update control flow to remove branches to dead blocks
 
         return changed;
     }
