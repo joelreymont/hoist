@@ -293,6 +293,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_rev16 => |i| try emitVecRev16(i.dst.toReg(), i.src, i.size, buffer),
         .vec_rev32 => |i| try emitVecRev32(i.dst.toReg(), i.src, i.size, buffer),
         .vec_rev64 => |i| try emitVecRev64(i.dst.toReg(), i.src, i.size, buffer),
+        .vec_shift_imm => |i| try emitVecShiftImm(i.op, i.dst.toReg(), i.rn, i.size, i.imm, buffer),
         .ld1 => |i| try emitLd1(i.dst.toReg(), i.addr, i.size, buffer),
         .st1 => |i| try emitSt1(i.src, i.addr, i.size, buffer),
         .ins => |i| try emitIns(i.dst.toReg(), i.src, i.index, i.size, buffer),
@@ -11081,6 +11082,54 @@ fn emitVecRev64(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.Ma
         (0b100000 << 16) |
         (0b00000 << 12) |
         (0b10 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    try buffer.put(&std.mem.toBytes(insn));
+}
+
+/// Vector shift by immediate
+/// SHL:  0Q 0 01111 immh immb 010101 Rn Rd
+/// USHR: 0Q 1 01111 immh immb 000001 Rn Rd
+/// SSHR: 0Q 0 01111 immh immb 000001 Rn Rd
+fn emitVecShiftImm(
+    op: root.aarch64_inst.VecShiftImmOp,
+    dst: Reg,
+    src: Reg,
+    vec_size: VectorSize,
+    imm: u8,
+    buffer: *buffer_mod.MachBuffer,
+) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const q: u32 = vec_size.qBit();
+
+    // Encode immh:immb based on element size
+    // immh:immb = shift_amount + (8 << element_size_log2)
+    const elem_size_log2 = vec_size.elemSizeLog2();
+    const immh_immb: u32 = (@as(u32, imm) + (@as(u32, 8) << elem_size_log2));
+    const immh: u32 = (immh_immb >> 3) & 0xF;
+    const immb: u32 = immh_immb & 0x7;
+
+    const u_bit: u32 = switch (op) {
+        .Shl => 0,
+        .Ushr => 1,
+        .Sshr => 0,
+    };
+
+    const opcode: u32 = switch (op) {
+        .Shl => 0b010101,
+        .Ushr => 0b000001,
+        .Sshr => 0b000001,
+    };
+
+    const insn: u32 = (0b0 << 31) |
+        (@as(u32, q) << 30) |
+        (@as(u32, u_bit) << 29) |
+        (0b01111 << 24) |
+        (immh << 19) |
+        (immb << 16) |
+        (opcode << 10) |
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
