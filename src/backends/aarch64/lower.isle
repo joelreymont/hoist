@@ -1288,6 +1288,11 @@
       (if-let $true (uimm12 k))
       (aarch64_add_imm ty x k))
 
+;; iadd with commuted immediate (iconst on left)
+(rule 1 (lower (iadd ty (iconst k) x))
+      (if-let $true (uimm12 k))
+      (aarch64_add_imm ty x k))
+
 ;; isub with negated 12-bit immediate optimization
 ;; Lower (isub x iconst) as (iadd x -iconst) when -imm fits in 12-bit
 ;; This provides more flexibility in immediate selection
