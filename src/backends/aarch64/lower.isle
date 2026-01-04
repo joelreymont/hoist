@@ -1858,3 +1858,8 @@
 
 (rule (lower (sequence_point))
       (invalid_reg))
+
+;; stack_addr: Compute address of stack slot
+(decl aarch64_stack_addr (StackSlot Offset32) Aarch64Inst)
+(rule (lower (stack_addr stack_slot offset))
+      (aarch64_stack_addr stack_slot offset))

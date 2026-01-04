@@ -1900,3 +1900,36 @@ pub fn aarch64_debugtrap(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // BRK #0 - debugger breakpoint
     return Inst{ .brk = .{ .imm = 0 } };
 }
+
+/// Stack address computation (ISLE constructor)
+pub fn aarch64_stack_addr(stack_slot: ir.StackSlot, offset: i32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Compute: SP + slot_offset + offset
+    const slot_offset = ctx.getStackSlotOffset(stack_slot);
+    const total_offset = @as(i64, slot_offset) + @as(i64, offset);
+    
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    
+    if (total_offset >= 0 and total_offset <= 4095) {
+        // Fits in immediate: ADD dst, SP, #offset
+        return Inst{ .add_imm = .{
+            .dst = dst,
+            .rn = Reg.gpr(31), // SP
+            .imm = @intCast(total_offset),
+            .is_64 = true,
+        } };
+    } else {
+        // Large offset: MOV + ADD
+        const offset_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+        try ctx.emit(Inst{ .mov_imm = .{
+            .dst = offset_reg,
+            .imm = @bitCast(@as(i64, total_offset)),
+            .is_64 = true,
+        } });
+        return Inst{ .add_rr = .{
+            .dst = dst,
+            .rn = Reg.gpr(31), // SP
+            .rm = offset_reg.toReg(),
+            .is_64 = true,
+        } };
+    }
+}
