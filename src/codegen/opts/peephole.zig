@@ -72,6 +72,9 @@ pub const Peephole = struct {
                     .band => try self.optimizeAnd(func, inst, data),
                     .bor => try self.optimizeOr(func, inst, data),
                     .bxor => try self.optimizeXor(func, inst, data),
+                    .band_not => try self.optimizeAndNot(func, inst, data),
+                    .bor_not => try self.optimizeOrNot(func, inst, data),
+                    .bxor_not => try self.optimizeXorNot(func, inst, data),
                     .ishl, .ushr, .sshr => try self.optimizeShift(func, inst, data),
                     .rotl, .rotr => try self.optimizeRotate(func, inst, data),
                     .udiv, .sdiv => try self.optimizeDiv(func, inst, data),
@@ -233,6 +236,84 @@ pub const Peephole = struct {
         if (data.args[0].index == data.args[1].index) {
             // min(x, x) = x, max(x, x) = x
             try self.replaceWithCopy(func, inst, data.args[0]);
+        }
+    }
+
+    /// Optimize AND-NOT: band_not(x, 0) = x, band_not(x, -1) = 0, band_not(x, x) = 0
+    fn optimizeAndNot(self: *Peephole, func: *Function, inst: Inst, data: BinaryData) !void {
+        if (try self.isZero(func, data.args[1])) {
+            // band_not(x, 0) = x & ~0 = x & -1 = x
+            try self.replaceWithCopy(func, inst, data.args[0]);
+        } else if (try self.isAllOnes(func, data.args[1])) {
+            // band_not(x, -1) = x & ~(-1) = x & 0 = 0
+            const ty = func.dfg.valueType(data.args[0]) orelse return;
+            const zero_data = InstructionData{ .unary = UnaryData.init(.iconst, data.args[0]) };
+            const inst_mut = func.dfg.insts.getMut(inst) orelse return;
+            inst_mut.* = zero_data;
+
+            const result = func.dfg.firstResult(inst) orelse return;
+            const result_mut = func.dfg.values.getMut(result) orelse return;
+            result_mut.* = root.dfg.ValueData.inst(ty, 0, inst);
+
+            self.changed = true;
+        } else if (data.args[0].index == data.args[1].index) {
+            // band_not(x, x) = x & ~x = 0
+            const ty = func.dfg.valueType(data.args[0]) orelse return;
+            const zero_data = InstructionData{ .unary = UnaryData.init(.iconst, data.args[0]) };
+            const inst_mut = func.dfg.insts.getMut(inst) orelse return;
+            inst_mut.* = zero_data;
+
+            const result = func.dfg.firstResult(inst) orelse return;
+            const result_mut = func.dfg.values.getMut(result) orelse return;
+            result_mut.* = root.dfg.ValueData.inst(ty, 0, inst);
+
+            self.changed = true;
+        }
+    }
+
+    /// Optimize OR-NOT: bor_not(x, 0) = -1, bor_not(0, y) = ~y, bor_not(x, x) = -1
+    fn optimizeOrNot(self: *Peephole, func: *Function, inst: Inst, data: BinaryData) !void {
+        if (try self.isZero(func, data.args[1])) {
+            // bor_not(x, 0) = x | ~0 = x | -1 = -1
+            const ty = func.dfg.valueType(data.args[0]) orelse return;
+            const ones_data = InstructionData{ .unary = UnaryData.init(.iconst, data.args[0]) };
+            const inst_mut = func.dfg.insts.getMut(inst) orelse return;
+            inst_mut.* = ones_data;
+
+            const result = func.dfg.firstResult(inst) orelse return;
+            const result_mut = func.dfg.values.getMut(result) orelse return;
+            result_mut.* = root.dfg.ValueData.inst(ty, -1, inst);
+
+            self.changed = true;
+        } else if (data.args[0].index == data.args[1].index) {
+            // bor_not(x, x) = x | ~x = -1
+            const ty = func.dfg.valueType(data.args[0]) orelse return;
+            const ones_data = InstructionData{ .unary = UnaryData.init(.iconst, data.args[0]) };
+            const inst_mut = func.dfg.insts.getMut(inst) orelse return;
+            inst_mut.* = ones_data;
+
+            const result = func.dfg.firstResult(inst) orelse return;
+            const result_mut = func.dfg.values.getMut(result) orelse return;
+            result_mut.* = root.dfg.ValueData.inst(ty, -1, inst);
+
+            self.changed = true;
+        }
+    }
+
+    /// Optimize XOR-NOT: bxor_not(x, x) = -1
+    fn optimizeXorNot(self: *Peephole, func: *Function, inst: Inst, data: BinaryData) !void {
+        if (data.args[0].index == data.args[1].index) {
+            // bxor_not(x, x) = x ^ ~x = -1
+            const ty = func.dfg.valueType(data.args[0]) orelse return;
+            const ones_data = InstructionData{ .unary = UnaryData.init(.iconst, data.args[0]) };
+            const inst_mut = func.dfg.insts.getMut(inst) orelse return;
+            inst_mut.* = ones_data;
+
+            const result = func.dfg.firstResult(inst) orelse return;
+            const result_mut = func.dfg.values.getMut(result) orelse return;
+            result_mut.* = root.dfg.ValueData.inst(ty, -1, inst);
+
+            self.changed = true;
         }
     }
 
