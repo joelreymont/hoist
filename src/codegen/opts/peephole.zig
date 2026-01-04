@@ -79,6 +79,14 @@ pub const Peephole = struct {
                     else => {},
                 }
             },
+            .unary => |data| {
+                switch (data.opcode) {
+                    .ineg, .fneg => try self.optimizeNeg(func, inst, data),
+                    .bnot => try self.optimizeBnot(func, inst, data),
+                    .iabs, .fabs => try self.optimizeAbs(func, inst, data),
+                    else => {},
+                }
+            },
             .load => |data| {
                 try self.trackLoad(func, inst, data.arg);
             },
@@ -216,6 +224,71 @@ pub const Peephole = struct {
             result_mut.* = root.dfg.ValueData.inst(ty, 0, inst);
 
             self.changed = true;
+        }
+    }
+
+    /// Optimize negation: -(-x) = x
+    fn optimizeNeg(self: *Peephole, func: *Function, inst: Inst, data: UnaryData) !void {
+        // Check if argument is also a negation
+        const arg_def = func.dfg.valueDef(data.arg) orelse return;
+        const arg_inst = switch (arg_def) {
+            .result => |r| r.inst,
+            else => return,
+        };
+
+        const arg_data = func.dfg.insts.get(arg_inst) orelse return;
+        switch (arg_data.*) {
+            .unary => |d| {
+                // Check if it's the same negation opcode (ineg/fneg)
+                if (d.opcode == data.opcode) {
+                    // Double negation: replace with original value
+                    try self.replaceWithCopy(func, inst, d.arg);
+                }
+            },
+            else => {},
+        }
+    }
+
+    /// Optimize bitwise NOT: ~~x = x
+    fn optimizeBnot(self: *Peephole, func: *Function, inst: Inst, data: UnaryData) !void {
+        // Check if argument is also a bnot
+        const arg_def = func.dfg.valueDef(data.arg) orelse return;
+        const arg_inst = switch (arg_def) {
+            .result => |r| r.inst,
+            else => return,
+        };
+
+        const arg_data = func.dfg.insts.get(arg_inst) orelse return;
+        switch (arg_data.*) {
+            .unary => |d| {
+                if (d.opcode == .bnot) {
+                    // Double NOT: replace with original value
+                    try self.replaceWithCopy(func, inst, d.arg);
+                }
+            },
+            else => {},
+        }
+    }
+
+    /// Optimize absolute value: abs(abs(x)) = abs(x)
+    fn optimizeAbs(self: *Peephole, func: *Function, inst: Inst, data: UnaryData) !void {
+        // Check if argument is also an abs
+        const arg_def = func.dfg.valueDef(data.arg) orelse return;
+        const arg_inst = switch (arg_def) {
+            .result => |r| r.inst,
+            else => return,
+        };
+
+        const arg_data = func.dfg.insts.get(arg_inst) orelse return;
+        switch (arg_data.*) {
+            .unary => |d| {
+                // Check if it's the same abs opcode (iabs/fabs)
+                if (d.opcode == data.opcode) {
+                    // Double abs: replace with inner abs (the argument instruction)
+                    try self.replaceWithCopy(func, inst, data.arg);
+                }
+            },
+            else => {},
         }
     }
 
