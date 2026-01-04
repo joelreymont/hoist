@@ -3098,3 +3098,123 @@ pub fn cmp(
         },
     );
 }
+
+// Extending load helpers
+
+/// Load byte (unsigned, zero-extend)
+pub fn aarch64_uload8(
+    addr: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(addr, .int);
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    return Inst{
+        .ldrb = .{
+            .dst = dst,
+            .base = base,
+            .offset = 0,
+            .size = .Size64,
+        },
+    };
+}
+
+/// Load halfword (unsigned, zero-extend)
+pub fn aarch64_uload16(
+    addr: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(addr, .int);
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    return Inst{
+        .ldrh = .{
+            .dst = dst,
+            .base = base,
+            .offset = 0,
+            .size = .Size64,
+        },
+    };
+}
+
+/// Load word (unsigned, zero-extend to 64)
+pub fn aarch64_uload32(
+    addr: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(addr, .int);
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    return Inst{
+        .ldr = .{
+            .dst = dst,
+            .base = base,
+            .offset = 0,
+            .size = .Size32, // LDR Wd auto zero-extends to 64
+        },
+    };
+}
+
+/// Load doubleword (64-bit)
+pub fn aarch64_uload64(
+    addr: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(addr, .int);
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    return Inst{
+        .ldr = .{
+            .dst = dst,
+            .base = base,
+            .offset = 0,
+            .size = .Size64,
+        },
+    };
+}
+
+/// Load signed byte (sign-extend to 64)
+pub fn aarch64_sload8(
+    addr: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(addr, .int);
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    return Inst{
+        .ldrsb = .{
+            .dst = dst,
+            .base = base,
+            .offset = 0,
+            .size = .Size64,
+        },
+    };
+}
+
+/// Load signed halfword (sign-extend to 64)
+pub fn aarch64_sload16(
+    addr: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(addr, .int);
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    return Inst{
+        .ldrsh = .{
+            .dst = dst,
+            .base = base,
+            .offset = 0,
+            .size = .Size64,
+        },
+    };
+}
+
+/// Load signed word (sign-extend to 64)
+pub fn aarch64_sload32(
+    addr: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(addr, .int);
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    return Inst{
+        .ldrsw = .{
+            .dst = dst,
+            .base = base,
+            .offset = 0,
+        },
+    };
+}

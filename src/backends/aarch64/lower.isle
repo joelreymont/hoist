@@ -452,6 +452,21 @@
             (hi Reg (aarch64_asr_imm $I64 lo 63)))
         (value_regs lo hi)))
 
+;; sextend+load fusion: Fuse sign-extension with load into extending load instruction
+;; This avoids separate load + extend instructions
+
+;; sextend(load I8) => LDRSB (sign-extending load byte)
+(rule 5 (lower (sextend _ $I8 (load $I8 addr _flags _offset)))
+      (aarch64_sload8 addr))
+
+;; sextend(load I16) => LDRSH (sign-extending load halfword)
+(rule 5 (lower (sextend _ $I16 (load $I16 addr _flags _offset)))
+      (aarch64_sload16 addr))
+
+;; sextend(load I32) => LDRSW (sign-extending load word to 64)
+(rule 5 (lower (sextend $I64 $I32 (load $I32 addr _flags _offset)))
+      (aarch64_sload32 addr))
+
 ;; sextend: Sign-extend to target type
 ;; I8 -> I16/I32/I64 => SXTB
 (rule (lower (sextend dst_ty src_ty x))
@@ -473,6 +488,21 @@
 ;; Zero-extend by setting high 64 bits to 0
 (rule -1 (lower (has_type $I128 (uextend x)))
       (value_regs (value_regs_get x 0) (iconst_to_reg $I64 0)))
+
+;; uextend+load fusion: Fuse zero-extension with load into extending load instruction
+;; This avoids separate load + extend instructions
+
+;; uextend(load I8) => LDRB (zero-extending load byte)
+(rule 5 (lower (uextend _ $I8 (load $I8 addr _flags _offset)))
+      (aarch64_uload8 addr))
+
+;; uextend(load I16) => LDRH (zero-extending load halfword)
+(rule 5 (lower (uextend _ $I16 (load $I16 addr _flags _offset)))
+      (aarch64_uload16 addr))
+
+;; uextend(load I32) => LDR Wd (zero-extending load word to 64)
+(rule 5 (lower (uextend $I64 $I32 (load $I32 addr _flags _offset)))
+      (aarch64_uload32 addr))
 
 ;; uextend: Zero-extend to target type
 ;; I8 -> I16/I32/I64 => UXTB
@@ -1308,7 +1338,26 @@
       (if-let shift_amt (valid_ldr_shift ty shift))
       (aarch64_ldr_shifted ty base index shift_amt))
 
-;; load: Load from memory (base register only)
+;; Extending loads: Use specialized load instructions for narrow types
+;; These have higher priority than the generic load to use LDRB/LDRH/LDRSB/LDRSH/LDRSW
+
+;; load I8: Use LDRB (zero-extending load byte)
+(rule 1 (lower (load $I8 addr _flags _offset))
+      (aarch64_uload8 addr))
+
+;; load I16: Use LDRH (zero-extending load halfword)
+(rule 1 (lower (load $I16 addr _flags _offset))
+      (aarch64_uload16 addr))
+
+;; load I32: Use LDR Wd (zero-extending load word)
+(rule 1 (lower (load $I32 addr _flags _offset))
+      (aarch64_uload32 addr))
+
+;; load I64: Use LDR Xd (load doubleword)
+(rule 1 (lower (load $I64 addr _flags _offset))
+      (aarch64_uload64 addr))
+
+;; load: Load from memory (base register only) - fallback
 (rule (lower (load ty addr _flags _offset))
       (aarch64_ldr ty addr))
 
@@ -1936,6 +1985,15 @@
 (decl aarch64_str_shifted (Value Value Value i64) Aarch64Inst)
 (decl aarch64_str_pre (Value Value i64) Aarch64Inst)  ;; Pre-index: base+=offset, then store
 (decl aarch64_str_post (Value Value i64) Aarch64Inst) ;; Post-index: store, then base+=offset
+
+;; Extending loads (load with zero/sign extension)
+(decl aarch64_uload8 (Value) Aarch64Inst)   ;; LDRB: load byte, zero-extend to 32/64
+(decl aarch64_uload16 (Value) Aarch64Inst)  ;; LDRH: load halfword, zero-extend to 32/64
+(decl aarch64_uload32 (Value) Aarch64Inst)  ;; LDR (W): load word, zero-extend to 64
+(decl aarch64_uload64 (Value) Aarch64Inst)  ;; LDR (X): load doubleword
+(decl aarch64_sload8 (Value) Aarch64Inst)   ;; LDRSB: load signed byte, sign-extend to 32/64
+(decl aarch64_sload16 (Value) Aarch64Inst)  ;; LDRSH: load signed halfword, sign-extend to 32/64
+(decl aarch64_sload32 (Value) Aarch64Inst)  ;; LDRSW: load signed word, sign-extend to 64
 
 ;; Control flow
 (decl aarch64_b (Block) Aarch64Inst)
