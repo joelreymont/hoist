@@ -125,6 +125,19 @@
          (aarch64_sbc_rr ty dst src1 src2)
          dst)))
 
+;; Helper for I128 bitwise operations (no carry, just operate on low/high independently)
+(decl i128_bitwise (Value Value (Type Value Value) Aarch64Inst) ValueRegs)
+(rule (i128_bitwise x y op)
+      (let ((x_regs ValueRegs x)
+            (x_lo Reg (value_regs_get x_regs 0))
+            (x_hi Reg (value_regs_get x_regs 1))
+            (y_regs ValueRegs y)
+            (y_lo Reg (value_regs_get y_regs 0))
+            (y_hi Reg (value_regs_get y_regs 1)))
+        (value_regs
+          (op $I64 x_lo y_lo)
+          (op $I64 x_hi y_hi))))
+
 ;; Integer arithmetic lowering
 
 ;; iadd: Add two integers (default, lowest priority)
@@ -647,6 +660,18 @@
 ;; Bitwise operations lowering
 
 ;; band: Bitwise AND (register form)
+;; band: I128 bitwise AND (operate on low/high parts independently)
+(rule (lower (has_type $I128 (band x y)))
+      (let ((x_regs ValueRegs x)
+            (x_lo Reg (value_regs_get x_regs 0))
+            (x_hi Reg (value_regs_get x_regs 1))
+            (y_regs ValueRegs y)
+            (y_lo Reg (value_regs_get y_regs 0))
+            (y_hi Reg (value_regs_get y_regs 1)))
+        (value_regs
+          (aarch64_and_rr $I64 x_lo y_lo)
+          (aarch64_and_rr $I64 x_hi y_hi))))
+
 (rule (lower (band ty x y))
       (aarch64_and_rr ty x y))
 
@@ -659,6 +684,18 @@
 ;; band(bnot(x), y) -> band_not(y, x) -> BIC
 (rule 2 (lower (has_type ty @ (fits_in_64 _) (band (bnot _ x) y)))
       (aarch64_bic_rr ty y x))
+
+;; bor: I128 bitwise OR (operate on low/high parts independently)
+(rule (lower (has_type $I128 (bor x y)))
+      (let ((x_regs ValueRegs x)
+            (x_lo Reg (value_regs_get x_regs 0))
+            (x_hi Reg (value_regs_get x_regs 1))
+            (y_regs ValueRegs y)
+            (y_lo Reg (value_regs_get y_regs 0))
+            (y_hi Reg (value_regs_get y_regs 1)))
+        (value_regs
+          (aarch64_orr_rr $I64 x_lo y_lo)
+          (aarch64_orr_rr $I64 x_hi y_hi))))
 
 ;; bor: Bitwise OR (register form)
 (rule (lower (bor ty x y))
@@ -679,6 +716,18 @@
 (rule 3 (lower (has_type ty @ (fits_in_64 _) (bor (bnot _ x) y)))
       (aarch64_orn_rr ty y x))
 
+;; bxor: I128 bitwise XOR (operate on low/high parts independently)
+(rule (lower (has_type $I128 (bxor x y)))
+      (let ((x_regs ValueRegs x)
+            (x_lo Reg (value_regs_get x_regs 0))
+            (x_hi Reg (value_regs_get x_regs 1))
+            (y_regs ValueRegs y)
+            (y_lo Reg (value_regs_get y_regs 0))
+            (y_hi Reg (value_regs_get y_regs 1)))
+        (value_regs
+          (aarch64_eor_rr $I64 x_lo y_lo)
+          (aarch64_eor_rr $I64 x_hi y_hi))))
+
 ;; bxor: Bitwise XOR (register form)
 (rule (lower (bxor ty x y))
       (aarch64_eor_rr ty x y))
@@ -697,6 +746,15 @@
 ;; bxor(bnot(x), y) -> bxor_not(y, x) -> EON
 (rule 3 (lower (has_type ty @ (fits_in_64 _) (bxor (bnot _ x) y)))
       (aarch64_eon_rr ty y x))
+
+;; bnot: I128 bitwise NOT (operate on low/high parts independently)
+(rule (lower (has_type $I128 (bnot x)))
+      (let ((x_regs ValueRegs x)
+            (x_lo Reg (value_regs_get x_regs 0))
+            (x_hi Reg (value_regs_get x_regs 1)))
+        (value_regs
+          (aarch64_mvn_rr $I64 x_lo)
+          (aarch64_mvn_rr $I64 x_hi))))
 
 ;; bnot: Bitwise NOT (implemented as MVN)
 (rule (lower (bnot ty x))
