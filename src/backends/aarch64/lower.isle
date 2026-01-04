@@ -244,6 +244,11 @@
 (rule (lower (has_type $I128 (iconcat lo hi)))
       (value_regs_from_values lo hi))
 
+;; isplit: Split wider integer into two parts (I128 → I64 + I64)
+;; Returns ValueRegs with low and high parts
+(rule (lower (isplit x))
+      (aarch64_isplit x))
+
 ;; Atomic operations lowering
 
 ;; atomic_load with acquire ordering: LDAR
@@ -995,6 +1000,7 @@
 (decl aarch64_umax (Type Value Value) Aarch64Inst)
 (decl aarch64_bitselect (Value Value Value) Aarch64Inst)
 (decl aarch64_iabs (Type Value) Aarch64Inst)
+(decl aarch64_isplit (Value) ValueRegs)
 
 ;; Saturating arithmetic operations
 (decl aarch64_sqadd_8 (Value Value) Aarch64Inst)

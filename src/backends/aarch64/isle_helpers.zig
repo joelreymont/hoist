@@ -1672,3 +1672,14 @@ pub fn aarch64_insertlane(ty: types.Type, vec: lower_mod.Value, x: lower_mod.Val
         .size = size,
     } };
 }
+
+/// ISPLIT - Split I128 into low and high I64 parts
+/// Returns ValueRegs containing the two 64-bit halves
+pub fn aarch64_isplit(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    // Get the I128 value as ValueRegs (should already be a register pair)
+    const x_regs = try ctx.getValueRegs(x);
+
+    // I128 is stored as two I64 registers: [0] = low, [1] = high
+    // Just return the existing register pair
+    return x_regs;
+}
