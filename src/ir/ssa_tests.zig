@@ -218,21 +218,21 @@ test "SSA: dominance frontier for diamond CFG" {
     // DF(b2) = {b3}
     // DF(b3) = {}
 
-    const df_b0 = try domtree.dominanceFrontier(testing.allocator, b0, &cfg);
+    var df_b0 = try domtree.dominanceFrontier(testing.allocator, b0, &cfg);
     defer df_b0.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 0), df_b0.items.len);
 
-    const df_b1 = try domtree.dominanceFrontier(testing.allocator, b1, &cfg);
+    var df_b1 = try domtree.dominanceFrontier(testing.allocator, b1, &cfg);
     defer df_b1.deinit();
     try testing.expectEqual(@as(usize, 1), df_b1.items.len);
     try testing.expect(std.meta.eql(b3, df_b1.items[0]));
 
-    const df_b2 = try domtree.dominanceFrontier(testing.allocator, b2, &cfg);
+    var df_b2 = try domtree.dominanceFrontier(testing.allocator, b2, &cfg);
     defer df_b2.deinit();
     try testing.expectEqual(@as(usize, 1), df_b2.items.len);
     try testing.expect(std.meta.eql(b3, df_b2.items[0]));
 
-    const df_b3 = try domtree.dominanceFrontier(testing.allocator, b3, &cfg);
+    var df_b3 = try domtree.dominanceFrontier(testing.allocator, b3, &cfg);
     defer df_b3.deinit();
     try testing.expectEqual(@as(usize, 0), df_b3.items.len);
 }
@@ -270,7 +270,7 @@ test "SSA: dominance frontier for loop" {
     // DF(b1) = {}
     // DF(b2) = {b1} (b2 dominates itself, and b1 has multiple predecessors)
 
-    const df_b2 = try domtree.dominanceFrontier(testing.allocator, b2, &cfg);
+    var df_b2 = try domtree.dominanceFrontier(testing.allocator, b2, &cfg);
     defer df_b2.deinit();
     try testing.expectEqual(@as(usize, 1), df_b2.items.len);
     try testing.expect(std.meta.eql(b1, df_b2.items[0]));
@@ -581,12 +581,12 @@ test "SSA: complex CFG with nested diamonds" {
     try testing.expect(!domtree.dominates(b2, b5));
 
     // Verify dominance frontiers
-    const df_b3 = try domtree.dominanceFrontier(testing.allocator, b3, &cfg);
+    var df_b3 = try domtree.dominanceFrontier(testing.allocator, b3, &cfg);
     defer df_b3.deinit();
     try testing.expectEqual(@as(usize, 1), df_b3.items.len);
     try testing.expect(std.meta.eql(b5, df_b3.items[0]));
 
-    const df_b4 = try domtree.dominanceFrontier(testing.allocator, b4, &cfg);
+    var df_b4 = try domtree.dominanceFrontier(testing.allocator, b4, &cfg);
     defer df_b4.deinit();
     try testing.expectEqual(@as(usize, 1), df_b4.items.len);
     try testing.expect(std.meta.eql(b5, df_b4.items[0]));
