@@ -71,10 +71,12 @@ pub const Context = struct {
         }
 
         // Run optimization passes if enabled
-        if (self.optimize) {
-            var opt_pass = root.passes.optimize.OptimizationPass.init(self.allocator, func);
-            _ = try opt_pass.run();
-        }
+        // TODO: Re-enable when passes module is implemented
+        // if (self.optimize) {
+        //     var opt_pass = root.passes.optimize.OptimizationPass.init(self.allocator, func);
+        //     _ = try opt_pass.run();
+        // }
+        _ = self.optimize; // Suppress unused field warning
 
         // Select backend and compile
         const compile_ctx = compile_mod.CompileCtx.init(
