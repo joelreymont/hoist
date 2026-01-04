@@ -258,13 +258,15 @@ pub const ControlFlowGraph = struct {
 
         // Verify successors match terminator targets
         switch (inst_data.opcode()) {
-                .jump => {
-                    try self.validateEdge(block, last_inst, inst_data.jump.destination);
-                },
-                .brif => {
-                    try self.addEdge(block, last_inst, inst_data.branch.then_dest);
-                    try self.addEdge(block, last_inst, inst_data.branch.else_dest);
-                },
+            .jump => {
+                try self.validateEdge(block, last_inst, inst_data.jump.destination);
+            },
+            .brif => {
+                const then_dest = inst_data.branch.then_dest orelse return error.MissingBranchTarget;
+                const else_dest = inst_data.branch.else_dest orelse return error.MissingBranchTarget;
+                try self.validateEdge(block, last_inst, then_dest);
+                try self.validateEdge(block, last_inst, else_dest);
+            },
             .br_table => {
                 if (inst_data.branch_table.default_dest) |default| {
                     try self.validateEdge(block, last_inst, default);
