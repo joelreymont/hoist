@@ -369,6 +369,18 @@ fn evalBinaryOp(opcode: Opcode, lhs: i64, rhs: i64) !i64 {
         .iadd => lhs +% rhs,
         .isub => lhs -% rhs,
         .imul => lhs *% rhs,
+        .umulhi => blk: {
+            const lhs_u = @as(u64, @bitCast(lhs));
+            const rhs_u = @as(u64, @bitCast(rhs));
+            const result = @as(u128, lhs_u) * @as(u128, rhs_u);
+            break :blk @bitCast(@as(u64, @truncate(result >> 64)));
+        },
+        .smulhi => blk: {
+            const lhs_i = @as(i128, lhs);
+            const rhs_i = @as(i128, rhs);
+            const result = lhs_i * rhs_i;
+            break :blk @truncate(result >> 64);
+        },
         .sdiv => if (rhs == 0) error.DivisionByZero else @divTrunc(lhs, rhs),
         .udiv => if (rhs == 0) error.DivisionByZero else @divTrunc(@as(u64, @bitCast(lhs)), @as(u64, @bitCast(rhs))),
         .srem => if (rhs == 0) error.DivisionByZero else @rem(lhs, rhs),
