@@ -297,7 +297,7 @@ pub const SCCP = struct {
                 const inst_data = func.dfg.insts.get(inst) orelse continue;
 
                 // Check if this instruction uses the value
-                if (instUsesValue(inst_data.*, value)) {
+                if (instUsesValue(func, inst_data.*, value)) {
                     try self.ssa_worklist.append(inst);
                 }
             }
@@ -305,7 +305,7 @@ pub const SCCP = struct {
     }
 
     /// Check if an instruction uses a specific value as an operand.
-    fn instUsesValue(inst_data: InstructionData, value: Value) bool {
+    fn instUsesValue(func: *const Function, inst_data: InstructionData, value: Value) bool {
         return switch (inst_data) {
             .unary => |d| std.meta.eql(d.arg, value),
             .binary => |d| std.meta.eql(d.lhs, value) or std.meta.eql(d.rhs, value),
@@ -318,19 +318,18 @@ pub const SCCP = struct {
             .atomic_store => |d| std.meta.eql(d.addr, value) or std.meta.eql(d.value, value),
             .atomic_rmw => |d| std.meta.eql(d.addr, value) or std.meta.eql(d.src, value),
             .atomic_cas => |d| std.meta.eql(d.addr, value) or std.meta.eql(d.expected, value) or std.meta.eql(d.replacement, value),
-            .call => |d| valueListContains(d.args, value),
-            .call_indirect => |d| valueListContains(d.args, value),
+            .call => |d| valueListContains(func, d.args, value),
+            .call_indirect => |d| valueListContains(func, d.args, value),
             else => false,
         };
     }
 
     /// Check if a ValueList contains a specific value.
-    fn valueListContains(list: InstructionData.ValueList, value: Value) bool {
-        // ValueList is an opaque type - we can't iterate it here without access to DFG
-        // For now, conservatively return false for call instructions
-        // TODO: Add DFG parameter to enable proper ValueList iteration
-        _ = list;
-        _ = value;
+    fn valueListContains(func: *const Function, list: InstructionData.ValueList, value: Value) bool {
+        const values = func.dfg.value_lists.asSlice(list);
+        for (values) |v| {
+            if (std.meta.eql(v, value)) return true;
+        }
         return false;
     }
 
