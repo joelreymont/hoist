@@ -26,7 +26,7 @@ pub const Uimm8 = u8;
 /// 128-bit immediate operand.
 ///
 /// Used for shuffle masks and vector constants.
-pub const Imm128 = packed struct {
+pub const Imm128 = struct {
     bytes: [16]u8,
 
     pub fn new(b: [16]u8) Imm128 {
