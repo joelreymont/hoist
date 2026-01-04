@@ -141,7 +141,7 @@ test "JIT: compile and execute return constant i32" {
     try makeExecutable(exec_mem);
 
     // Execute compiled code
-    const FnType = *const fn () callconv(.C) i32;
+    const FnType = *const fn () callconv(.c) i32;
     const jit_fn: FnType = @ptrCast(exec_mem.ptr);
     const result = jit_fn();
 
@@ -213,7 +213,7 @@ test "JIT: compile and execute i32 add" {
     try makeExecutable(exec_mem);
 
     // Execute compiled code with different inputs
-    const FnType = *const fn (i32, i32) callconv(.C) i32;
+    const FnType = *const fn (i32, i32) callconv(.c) i32;
     const jit_fn: FnType = @ptrCast(exec_mem.ptr);
 
     try testing.expectEqual(@as(i32, 5), jit_fn(2, 3));
@@ -286,7 +286,7 @@ test "JIT: compile and execute i64 multiply" {
     try makeExecutable(exec_mem);
 
     // Execute compiled code with different inputs
-    const FnType = *const fn (i64, i64) callconv(.C) i64;
+    const FnType = *const fn (i64, i64) callconv(.c) i64;
     const jit_fn: FnType = @ptrCast(exec_mem.ptr);
 
     try testing.expectEqual(@as(i64, 6), jit_fn(2, 3));
