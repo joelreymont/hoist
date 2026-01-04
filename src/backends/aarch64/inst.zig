@@ -294,6 +294,24 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Bitwise OR NOT (ORN Xd, Xn, Xm).
+    /// Computes Xd = Xn OR (NOT Xm).
+    orn_rr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
+    /// Bitwise XOR NOT (EON Xd, Xn, Xm).
+    /// Computes Xd = Xn XOR (NOT Xm).
+    eon_rr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
     /// Bitwise NOT (MVN Xd, Xm).
     mvn: struct {
         dst: WritableReg,
@@ -1618,6 +1636,8 @@ pub const Inst = union(enum) {
             .eor_rr => |i| try writer.print("eor.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .eor_imm => |i| try writer.print("eor.{} {}, {}, #0x{x}", .{ i.imm.size, i.dst, i.src, i.imm.value }),
             .bic_rr => |i| try writer.print("bic.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .orn_rr => |i| try writer.print("orn.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .eon_rr => |i| try writer.print("eon.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .mvn => |i| try writer.print("mvn.{} {}, {}", .{ i.size, i.dst, i.src }),
             .lsl_rr => |i| try writer.print("lsl.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .lsl_imm => |i| try writer.print("lsl.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),

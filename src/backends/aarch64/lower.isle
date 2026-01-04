@@ -451,6 +451,18 @@
 (rule (lower (bnot ty x))
       (aarch64_mvn_rr ty x))
 
+;; band_not: Bitwise AND NOT (BIC)
+(rule (lower (band_not ty x y))
+      (aarch64_bic_rr ty x y))
+
+;; bor_not: Bitwise OR NOT (ORN)
+(rule (lower (bor_not ty x y))
+      (aarch64_orn_rr ty x y))
+
+;; bxor_not: Bitwise XOR NOT (EON)
+(rule (lower (bxor_not ty x y))
+      (aarch64_eon_rr ty x y))
+
 ;; Bit manipulation operations
 
 ;; clz: Count leading zeros (CLZ)
@@ -991,6 +1003,9 @@
 (decl aarch64_orr_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_eor_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_mvn_rr (Type Value) Aarch64Inst)
+(decl aarch64_bic_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_orn_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_eon_rr (Type Value Value) Aarch64Inst)
 
 ;; Bit manipulation operations
 (decl aarch64_clz_32 (Value) Aarch64Inst)
