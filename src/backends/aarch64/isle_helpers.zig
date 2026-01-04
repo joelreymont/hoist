@@ -1399,44 +1399,27 @@ pub fn aarch64_fcopysign_32(x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_
     } };
 }
 
-/// FCOPYSIGN (F64) - Copy sign from y to magnitude of x
-/// Implemented as: abs_x = fabs(x); neg_abs_x = fneg(abs_x); fcmp y, #0.0; fcsel result, neg_abs_x, abs_x, lt
-pub fn aarch64_fcopysign_64(x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+/// ORR (immediate) - Bitwise OR with logical immediate
+pub fn aarch64_orr_imm(ty: types.Type, x: lower_mod.Value, imm: ImmLogic, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const x_reg = try getValueReg(ctx, x);
-    const y_reg = try getValueReg(ctx, y);
-    const size: Inst.FpuOperandSize = .size64;
-
-    // abs_x = fabs(x)
-    const abs_x = lower_mod.WritableVReg.allocVReg(.float, ctx);
-    const fabs_inst = Inst{ .fabs = .{
-        .dst = abs_x,
+    const size = typeToOperandSize(ty);
+    _ = size; // ImmLogic already encodes size
+    return Inst{ .orr_imm = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
         .src = x_reg,
-        .size = size,
-    } };
-    try ctx.emit(fabs_inst);
-
-    // neg_abs_x = fneg(abs_x)
-    const neg_abs_x = lower_mod.WritableVReg.allocVReg(.float, ctx);
-    const fneg_inst = Inst{ .fneg = .{
-        .dst = neg_abs_x,
-        .src = abs_x.toReg(),
-        .size = size,
-    } };
-    try ctx.emit(fneg_inst);
-
-    // fcmp y, #0.0
-    const fcmp_inst = Inst{ .fcmp_zero = .{
-        .src = y_reg,
-        .size = size,
-    } };
-    try ctx.emit(fcmp_inst);
-
-    // fcsel result, neg_abs_x, abs_x, lt  (if y < 0, use neg_abs_x, else abs_x)
-    return Inst{ .fcsel = .{
-        .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
-        .src1 = neg_abs_x.toReg(),
-        .src2 = abs_x.toReg(),
-        .cond = .lt,
-        .size = size,
+        .imm = imm,
     } };
 }
+
+/// EOR (immediate) - Bitwise XOR with logical immediate
+pub fn aarch64_eor_imm(ty: types.Type, x: lower_mod.Value, imm: ImmLogic, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const size = typeToOperandSize(ty);
+    _ = size; // ImmLogic already encodes size
+    return Inst{ .eor_imm = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src = x_reg,
+        .imm = imm,
+    } };
+}
+

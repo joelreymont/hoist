@@ -443,9 +443,19 @@
 (rule (lower (bor ty x y))
       (aarch64_orr_rr ty x y))
 
+;; bor: Bitwise OR (immediate form with logical immediate)
+(rule 1 (lower (bor ty x (iconst k)))
+      (if-let imm (imm_logic_from_u64 ty k))
+      (aarch64_orr_imm ty x imm))
+
 ;; bxor: Bitwise XOR (register form)
 (rule (lower (bxor ty x y))
       (aarch64_eor_rr ty x y))
+
+;; bxor: Bitwise XOR (immediate form with logical immediate)
+(rule 1 (lower (bxor ty x (iconst k)))
+      (if-let imm (imm_logic_from_u64 ty k))
+      (aarch64_eor_imm ty x imm))
 
 ;; bnot: Bitwise NOT (implemented as MVN)
 (rule (lower (bnot ty x))
@@ -1009,7 +1019,9 @@
 ;; Bitwise operations
 (decl aarch64_and_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_orr_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_orr_imm (Type Value ImmLogic) Aarch64Inst)
 (decl aarch64_eor_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_eor_imm (Type Value ImmLogic) Aarch64Inst)
 (decl aarch64_mvn_rr (Type Value) Aarch64Inst)
 (decl aarch64_bic_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_orn_rr (Type Value Value) Aarch64Inst)
