@@ -2779,3 +2779,83 @@
 (decl neg_fmla (VecALUModOp) VecALUModOp)
 (rule (neg_fmla (VecALUModOp.Fmla)) (VecALUModOp.Fmls))
 (rule (neg_fmla (VecALUModOp.Fmls)) (VecALUModOp.Fmla))
+
+;; ============================================================================
+;; Helpers for lower_select
+;; ============================================================================
+
+;; Check if type is a scalar float
+(decl ty_scalar_float (Type) Type)
+(extern extractor ty_scalar_float ty_scalar_float)
+
+;; FPU conditional select (for F32/F64)
+(decl fpu_csel (Type IntCC Value Value) ConsumesFlags)
+(extern constructor fpu_csel fpu_csel)
+
+;; Vector conditional select (for 128-bit vectors and F128)
+(decl vec_csel (IntCC Value Value) ConsumesFlags)
+(extern constructor vec_csel vec_csel)
+
+;; Put value into registers (returns ValueRegs)
+(decl put_in_regs (Value) ValueRegs)
+(extern constructor put_in_regs put_in_regs)
+
+;; Extract register from ValueRegs at index
+(decl value_regs_get (ValueRegs u8) Reg)
+(extern extractor value_regs_get value_regs_get)
+
+;; Consume flags with two CSELs for I128
+(decl consumes_flags_two_csel (IntCC Reg Reg Reg Reg) ConsumesFlags)
+(extern constructor consumes_flags_two_csel consumes_flags_two_csel)
+
+;; ============================================================================
+;; lower_select: Conditional select based on flags and condition code
+;; ============================================================================
+;; Lowers conditional select (select based on condition flags).
+;; Takes flags, condition code, result type, and two values (true/false).
+;; Returns ValueRegs containing the selected value(s).
+;;
+;; Pattern hierarchy (priority via rule numbers):
+;; - Scalars fits_in_64: Use integer CSEL
+;; - F32/F64 floats: Use FPU FCSEL
+;; - F128: Use vector CSEL (treated as 128-bit vector)
+;; - 128-bit vectors: Use vector BSL (bitselect with condition mask)
+;; - 64-bit vectors: Reinterpret as F64, use FPU CSEL
+;; - I128: Split into two 64-bit CSELs (lo/hi parts)
+
+(decl lower_select (ProducesFlags IntCC Type Value Value) ValueRegs)
+
+;; Scalar floats (F32, F64): Use FPU conditional select
+(rule 2 (lower_select flags cond (fits_in_64 ty) rn rm)
+      (if (ty_scalar_float ty))
+      (with_flags flags (fpu_csel ty cond rn rm)))
+
+;; F128: Treat as 128-bit vector, use vector conditional select
+(rule 4 (lower_select flags cond $F128 rn rm)
+      (with_flags flags (vec_csel cond rn rm)))
+
+;; 128-bit vectors: Use vector conditional select
+(rule 3 (lower_select flags cond ty rn rm)
+      (if (ty_vec128 ty))
+      (with_flags flags (vec_csel cond rn rm)))
+
+;; 64-bit vectors: Reinterpret as F64 scalar, use FPU CSEL
+(rule (lower_select flags cond ty rn rm)
+      (if (ty_vec64 ty))
+      (with_flags flags (fpu_csel $F64 cond rn rm)))
+
+;; I128: Split into two 64-bit conditional selects (lo and hi)
+(rule 4 (lower_select flags cond $I128 rn rm)
+      (let ((rn_regs ValueRegs (put_in_regs rn))
+            (rm_regs ValueRegs (put_in_regs rm))
+            (rn_lo Reg (value_regs_get rn_regs 0))
+            (rn_hi Reg (value_regs_get rn_regs 1))
+            (rm_lo Reg (value_regs_get rm_regs 0))
+            (rm_hi Reg (value_regs_get rm_regs 1)))
+       (with_flags flags
+        (consumes_flags_two_csel cond rn_lo rn_hi rm_lo rm_hi))))
+
+;; Scalar integers (I8, I16, I32, I64): Use integer CSEL
+(rule 1 (lower_select flags cond ty rn rm)
+      (if (fits_in_64 ty))
+      (with_flags flags (csel cond rn rm)))

@@ -15,6 +15,9 @@ const emit = @import("emit.zig");
 const entities = root.entities;
 
 // Type aliases for IR types
+const Type = types.Type;
+const IntCC = root.condcodes.IntCC;
+const FloatCC = root.condcodes.FloatCC;
 const TrapCode = trapcode.TrapCode;
 const StackSlot = entities.StackSlot;
 const SigRef = entities.SigRef;
@@ -2905,4 +2908,104 @@ pub fn icmp_zero_cond_not_eq(cond: IntCC) ?IntCC {
         .ne => .ne,
         else => null,
     };
+}
+
+// ============================================================================
+// Helpers for lower_select
+// ============================================================================
+
+/// ty_scalar_float: Extractor for scalar float types
+pub fn ty_scalar_float(ty: Type) ?Type {
+    if (ty.isFloat() and !ty.isVector()) {
+        return ty;
+    }
+    return null;
+}
+
+/// fpu_csel: FPU conditional select for F32/F64
+pub fn fpu_csel(
+    ty: Type,
+    cond: IntCC,
+    rn: lower_mod.Value,
+    rm: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ConsumesFlags {
+    const rn_reg = try ctx.getValueReg(rn, .float);
+    const rm_reg = try ctx.getValueReg(rm, .float);
+    const dst = lower_mod.WritableVReg.allocVReg(.float, ctx);
+
+    const aarch_cond = intCCToAarch64Cond(cond);
+
+    const size: Inst.ScalarSize = if (ty.eql(Type.f32()))
+        .Size32
+    else
+        .Size64;
+
+    return lower_mod.ConsumesFlags.consumesFlagsReturnsReg(
+        Inst.FpuCSel{ .size = size, .rd = dst, .cond = aarch_cond, .rn = rn_reg, .rm = rm_reg },
+        dst.toReg(),
+    );
+}
+
+/// vec_csel: Vector conditional select for 128-bit vectors
+pub fn vec_csel(
+    cond: IntCC,
+    rn: lower_mod.Value,
+    rm: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ConsumesFlags {
+    const rn_reg = try ctx.getValueReg(rn, .vector);
+    const rm_reg = try ctx.getValueReg(rm, .vector);
+    const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+
+    const aarch_cond = intCCToAarch64Cond(cond);
+
+    return lower_mod.ConsumesFlags.consumesFlagsReturnsReg(
+        Inst.VecCSel{ .rd = dst, .cond = aarch_cond, .rn = rn_reg, .rm = rm_reg },
+        dst.toReg(),
+    );
+}
+
+/// put_in_regs: Convert Value to ValueRegs
+pub fn put_in_regs(
+    val: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const ty = ctx.getValueType(val);
+
+    if (ty.eql(Type.i128())) {
+        // For I128, split into two I64 registers
+        const regs = try ctx.getValueRegs(val);
+        return regs;
+    } else {
+        // For other types, single register
+        const reg = try ctx.getValueReg(val, .int);
+        return lower_mod.ValueRegs.one(reg);
+    }
+}
+
+/// value_regs_get: Extract register from ValueRegs at index
+pub fn value_regs_get(regs: lower_mod.ValueRegs, idx: u8) Reg {
+    return regs.get(idx);
+}
+
+/// consumes_flags_two_csel: Consume flags with two CSELs for I128
+pub fn consumes_flags_two_csel(
+    cond: IntCC,
+    rn_lo: Reg,
+    rn_hi: Reg,
+    rm_lo: Reg,
+    rm_hi: Reg,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ConsumesFlags {
+    const dst_lo = lower_mod.WritableReg.allocReg(.int, ctx);
+    const dst_hi = lower_mod.WritableReg.allocReg(.int, ctx);
+
+    const aarch_cond = intCCToAarch64Cond(cond);
+
+    return lower_mod.ConsumesFlags.consumesFlagsTwiceReturnsValueRegs(
+        Inst.CSel{ .rd = dst_lo, .cond = aarch_cond, .rn = rn_lo, .rm = rm_lo },
+        Inst.CSel{ .rd = dst_hi, .cond = aarch_cond, .rn = rn_hi, .rm = rm_hi },
+        lower_mod.ValueRegs.two(dst_lo.toReg(), dst_hi.toReg()),
+    );
 }
