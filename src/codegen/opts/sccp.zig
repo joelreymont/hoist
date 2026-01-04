@@ -224,9 +224,39 @@ pub const SCCP = struct {
     }
 
     /// Evaluate branch instructions for constant conditions.
-    fn evaluateBranch(_: *SCCP, _: *Function, _: Inst, _: InstructionData) !void {
-        // TODO: Implement branch evaluation
-        // For now, conservatively assume all branches can go either way
+    fn evaluateBranch(self: *SCCP, _: *Function, _: Inst, inst_data: InstructionData) !void {
+        switch (inst_data) {
+            .branch => |d| {
+                // Get lattice value of branch condition
+                const cond_lat = self.lattice.get(d.condition) orelse .bottom;
+
+                switch (cond_lat) {
+                    .bottom => return, // Not yet reached
+                    .top => {
+                        // Condition is not constant - both branches possible
+                        if (d.then_dest) |then_block| try self.cfg_worklist.append(then_block);
+                        if (d.else_dest) |else_block| try self.cfg_worklist.append(else_block);
+                    },
+                    .constant => |k| {
+                        // Condition is constant - take only one branch
+                        if (k != 0) {
+                            // Non-zero: take then branch
+                            if (d.then_dest) |then_block| try self.cfg_worklist.append(then_block);
+                        } else {
+                            // Zero: take else branch
+                            if (d.else_dest) |else_block| try self.cfg_worklist.append(else_block);
+                        }
+                    },
+                }
+            },
+            .jump => |d| {
+                // Unconditional jump - always take destination
+                try self.cfg_worklist.append(d.destination);
+            },
+            else => {
+                // Not a control flow instruction, ignore
+            },
+        }
     }
 
     /// Add all uses of a value to the SSA worklist.
@@ -370,4 +400,55 @@ test "SCCP: init and deinit" {
     defer sccp.deinit();
 
     try testing.expectEqual(@as(usize, 0), sccp.lattice.count());
+}
+
+test "SCCP: constant branch folding" {
+    const sig = root.signature.Signature.init(testing.allocator, .fast);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    var fbuilder = root.builder.FunctionBuilder.init(&func);
+
+    // Build: if (iconst 0) then block1 else block2
+    const entry = try fbuilder.createBlock();
+    const block1 = try fbuilder.createBlock();
+    const block2 = try fbuilder.createBlock();
+
+    try fbuilder.appendBlock(entry);
+    try fbuilder.appendBlock(block1);
+    try fbuilder.appendBlock(block2);
+
+    fbuilder.switchToBlock(entry);
+    const zero = try fbuilder.iconst(Type.I32, 0);
+
+    // Create branch manually since builder doesn't have branch helper
+    const branch_data = InstructionData{
+        .branch = InstructionData.BranchData.init(.brif, zero, block1, block2),
+    };
+    const branch_inst = try func.dfg.makeInst(branch_data);
+    try func.layout.appendInst(branch_inst, entry);
+
+    fbuilder.switchToBlock(block1);
+    try fbuilder.ret();
+
+    fbuilder.switchToBlock(block2);
+    try fbuilder.ret();
+
+    // Run SCCP
+    var sccp = SCCP.init(testing.allocator);
+    defer sccp.deinit();
+
+    const changed = try sccp.run(&func);
+    _ = changed;
+
+    // Verify: entry block and block2 should be executable (condition is 0, so else branch)
+    // block1 should NOT be executable
+    try testing.expect(sccp.executable_blocks.contains(entry));
+    try testing.expect(sccp.executable_blocks.contains(block2));
+    try testing.expect(!sccp.executable_blocks.contains(block1));
+
+    // Verify constant propagation: zero should be constant(0)
+    const zero_lat = sccp.lattice.get(zero) orelse .bottom;
+    try testing.expect(zero_lat.isConstant());
+    try testing.expectEqual(@as(i64, 0), zero_lat.getConstant());
 }
