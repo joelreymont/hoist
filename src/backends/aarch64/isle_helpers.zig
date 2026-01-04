@@ -1862,3 +1862,34 @@ pub fn aarch64_fmov_to_gpr(x: lower_mod.Value, out_ty: types.Type, ctx: *lower_m
     const size: emit.ScalarSize = if (out_ty.bits() == 32) .size32 else .size64;
     return Inst{ .fmov_to_gpr = .{ .dst = gpr, .src = fpr, .size = size } };
 }
+
+/// ABI register accessors (ISLE constructors)
+pub fn stack_reg(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    _ = ctx;
+    // Return SP register (x31 when used as stack pointer)
+    return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(31)), .src = Reg.gpr(31) } };
+}
+
+pub fn fp_reg(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    _ = ctx;
+    // Return FP register (x29 - frame pointer)
+    return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(29)), .src = Reg.gpr(29) } };
+}
+
+pub fn link_reg(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    _ = ctx;
+    // Return LR register (x30 - link register)
+    return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(30)), .src = Reg.gpr(30) } };
+}
+
+pub fn pinned_reg(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    _ = ctx;
+    // Return pinned register (x28 - typically used for VM context)
+    return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(28)), .src = Reg.gpr(28) } };
+}
+
+pub fn aarch64_set_pinned_reg(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const src = try ctx.getValueReg(val, .int);
+    // Move value to pinned register (x28)
+    return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(28)), .src = src } };
+}

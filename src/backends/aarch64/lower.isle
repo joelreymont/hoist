@@ -1829,3 +1829,24 @@
 ;; I128 <-> I128: no-op
 (rule 3 (lower (has_type $I128 (bitcast _ x @ (value_type $I128))))
       (aarch64_bitcast_noop x))
+
+;; ABI register accessors
+(decl stack_reg () Aarch64Inst)
+(rule (lower (get_stack_pointer))
+      (stack_reg))
+
+(decl fp_reg () Aarch64Inst)
+(rule (lower (get_frame_pointer))
+      (fp_reg))
+
+(decl link_reg () Aarch64Inst)
+(rule (lower (get_return_address))
+      (link_reg))
+
+(decl pinned_reg () Aarch64Inst)
+(rule (lower (get_pinned_reg))
+      (pinned_reg))
+
+(decl aarch64_set_pinned_reg (Value) Aarch64Inst)
+(rule (lower (set_pinned_reg val))
+      (aarch64_set_pinned_reg val))
