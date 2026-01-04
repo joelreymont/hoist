@@ -135,6 +135,21 @@
 (decl zero_reg () Reg)
 (rule (zero_reg) (iconst_to_reg $I64 0))
 
+;; Type extractors for select condition handling
+(decl fits_in_32 (Type) Type)
+(extern extractor fits_in_32 fits_in_32)
+
+;; Zero-extension helpers for select conditions
+(decl put_in_reg_zext32 (Value) Reg)
+(extern constructor put_in_reg_zext32 put_in_reg_zext32)
+
+(decl put_in_reg_zext64 (Value) Reg)
+(extern constructor put_in_reg_zext64 put_in_reg_zext64)
+
+;; Comparison helper (produces flags)
+(decl cmp (Type Reg Reg) ProducesFlags)
+(extern constructor cmp cmp)
+
 ;; Register-form shift helpers that wrap ISLE instructions
 (decl lsl (Type Reg Reg) Reg)
 (rule (lsl ty x amt) (aarch64_lsl_rr ty x amt))
@@ -1107,6 +1122,53 @@
 
 ;; select: Conditional select based on comparison result
 ;; select(cond, true_val, false_val) -> true_val if cond != 0, else false_val
+
+;; Type-specific select rules for boolean conditions (non-icmp)
+;; These handle select with a boolean value as condition
+
+;; I8 condition: Test with immediate mask (check if non-zero)
+(rule -1 (lower (has_type ty (select rcond @ (value_type $I8) rn rm)))
+      (lower_select
+        (tst_imm $I32 rcond 255)
+        (IntCC.Ne)
+        ty
+        rn
+        rm))
+
+;; I32 condition: Zero-extend to 32-bit and compare
+(rule -2 (lower (has_type ty (select rcond @ (value_type (fits_in_32 _)) rn rm)))
+      (let ((rcond_reg Reg (put_in_reg_zext32 rcond)))
+       (lower_select
+        (cmp $I32 rcond_reg (zero_reg))
+        (IntCC.Ne)
+        ty
+        rn
+        rm)))
+
+;; I64 condition: Zero-extend to 64-bit and compare
+(rule -3 (lower (has_type ty (select rcond @ (value_type (fits_in_64 _)) rn rm)))
+      (let ((rcond_reg Reg (put_in_reg_zext64 rcond)))
+       (lower_select
+        (cmp $I64 rcond_reg (zero_reg))
+        (IntCC.Ne)
+        ty
+        rn
+        rm)))
+
+;; I128 condition: OR lo and hi parts, then compare
+(rule -4 (lower (has_type ty (select rcond @ (value_type $I128) rn rm)))
+      (let ((c ValueRegs (put_in_regs rcond))
+            (c_lo Reg (value_regs_get c 0))
+            (c_hi Reg (value_regs_get c 1))
+            (rt Reg (orr $I64 c_lo c_hi)))
+       (lower_select
+        (cmp $I64 rt (zero_reg))
+        (IntCC.Ne)
+        ty
+        rn
+        rm)))
+
+;; Optimized: select with icmp condition (inline comparison)
 (rule (lower (select ty (icmp cc cmp_ty x y) true_val false_val))
       (let ((cmp_inst Aarch64Inst (aarch64_cmp_rr cmp_ty x y cc)))
             (aarch64_csel ty true_val false_val cmp_inst cc)))

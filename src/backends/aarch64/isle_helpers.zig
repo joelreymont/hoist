@@ -2934,7 +2934,7 @@ pub fn fpu_csel(
     const rm_reg = try ctx.getValueReg(rm, .float);
     const dst = lower_mod.WritableVReg.allocVReg(.float, ctx);
 
-    const aarch_cond = intCCToAarch64Cond(cond);
+    const aarch_cond = intccToCondCode(cond);
 
     const size: Inst.ScalarSize = if (ty.eql(Type.f32()))
         .Size32
@@ -2958,7 +2958,7 @@ pub fn vec_csel(
     const rm_reg = try ctx.getValueReg(rm, .vector);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
 
-    const aarch_cond = intCCToAarch64Cond(cond);
+    const aarch_cond = intccToCondCode(cond);
 
     return lower_mod.ConsumesFlags.consumesFlagsReturnsReg(
         Inst.VecCSel{ .rd = dst, .cond = aarch_cond, .rn = rn_reg, .rm = rm_reg },
@@ -3001,11 +3001,98 @@ pub fn consumes_flags_two_csel(
     const dst_lo = lower_mod.WritableReg.allocReg(.int, ctx);
     const dst_hi = lower_mod.WritableReg.allocReg(.int, ctx);
 
-    const aarch_cond = intCCToAarch64Cond(cond);
+    const aarch_cond = intccToCondCode(cond);
 
     return lower_mod.ConsumesFlags.consumesFlagsTwiceReturnsValueRegs(
         Inst.CSel{ .rd = dst_lo, .cond = aarch_cond, .rn = rn_lo, .rm = rm_lo },
         Inst.CSel{ .rd = dst_hi, .cond = aarch_cond, .rn = rn_hi, .rm = rm_hi },
         lower_mod.ValueRegs.two(dst_lo.toReg(), dst_hi.toReg()),
+    );
+}
+
+// ============================================================================
+// Helpers for type-specific select lowering
+// ============================================================================
+
+/// fits_in_32: Extractor for types that fit in 32 bits
+pub fn fits_in_32(ty: Type) ?Type {
+    if (ty.bits() <= 32) {
+        return ty;
+    }
+    return null;
+}
+
+/// put_in_reg_zext32: Put value in register with 32-bit zero extension
+pub fn put_in_reg_zext32(
+    val: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Reg {
+    const ty = ctx.getValueType(val);
+    const reg = try ctx.getValueReg(val, .int);
+
+    // If already 32-bit, return as-is
+    if (ty.bits() == 32) {
+        return reg;
+    }
+
+    // For smaller types, zero-extend to 32 bits
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst.Extend{
+        .rd = dst,
+        .rn = reg,
+        .from_bits = @intCast(ty.bits()),
+        .to_bits = 32,
+        .signed = false,
+    });
+
+    return dst.toReg();
+}
+
+/// put_in_reg_zext64: Put value in register with 64-bit zero extension
+pub fn put_in_reg_zext64(
+    val: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Reg {
+    const ty = ctx.getValueType(val);
+    const reg = try ctx.getValueReg(val, .int);
+
+    // If already 64-bit, return as-is
+    if (ty.bits() == 64) {
+        return reg;
+    }
+
+    // For smaller types, zero-extend to 64 bits
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst.Extend{
+        .rd = dst,
+        .rn = reg,
+        .from_bits = @intCast(ty.bits()),
+        .to_bits = 64,
+        .signed = false,
+    });
+
+    return dst.toReg();
+}
+
+/// cmp: Compare two registers and produce flags
+pub fn cmp(
+    ty: Type,
+    rn: Reg,
+    rm: Reg,
+    _: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ProducesFlags {
+    const size: Inst.OperandSize = if (ty.bits() == 32)
+        .Size32
+    else
+        .Size64;
+
+    return lower_mod.ProducesFlags.producesFlagsSideEffect(
+        Inst.AluRRR{
+            .alu_op = .Sub,
+            .size = size,
+            .rd = lower_mod.WritableReg.zero(),
+            .rn = rn,
+            .rm = rm,
+        },
     );
 }
