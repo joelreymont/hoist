@@ -3877,3 +3877,10 @@ pub fn aarch64_vec_shift_imm(
         },
     };
 }
+
+/// Mask shift immediate to lane width
+/// For vector shifts, the shift amount must be masked to lane_bits - 1
+pub fn shift_masked_imm(ty: types.Type, imm: u64) u8 {
+    const lane_bits = ty.laneBits();
+    return @intCast((imm & (lane_bits - 1)));
+}

@@ -51,6 +51,9 @@
 (decl pure ty_bits (Type) u8)
 (extern constructor ty_bits ty_bits)
 
+(decl pure shift_masked_imm (Type u64) u8)
+(extern constructor shift_masked_imm shift_masked_imm)
+
 ;; Vector size helper - maps multi_lane patterns to VectorSize enum
 (decl vector_size (Type) VectorSize)
 (rule 1 (vector_size (multi_lane 8 8)) (VectorSize.V8B))
