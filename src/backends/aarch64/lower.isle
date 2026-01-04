@@ -1863,3 +1863,13 @@
 (decl aarch64_stack_addr (StackSlot Offset32) Aarch64Inst)
 (rule (lower (stack_addr stack_slot offset))
       (aarch64_stack_addr stack_slot offset))
+
+;; symbol_value: Load address of external symbol
+(decl aarch64_symbol_value (ExternalName i64) Aarch64Inst)
+(rule (lower (symbol_value (symbol_value_data extname dist offset)))
+      (aarch64_symbol_value extname offset))
+
+;; func_addr: Load address of function
+(decl aarch64_func_addr (ExternalName) Aarch64Inst)
+(rule (lower (func_addr (func_ref_data _ extname dist _)))
+      (aarch64_func_addr extname))

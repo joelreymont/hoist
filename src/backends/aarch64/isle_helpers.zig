@@ -1933,3 +1933,27 @@ pub fn aarch64_stack_addr(stack_slot: ir.StackSlot, offset: i32, ctx: *lower_mod
         } };
     }
 }
+
+/// Symbol address loading (ISLE constructors)
+pub fn aarch64_symbol_value(extname: ir.ExternalName, offset: i64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    
+    // PC-relative addressing: ADRP + ADD
+    // ADRP loads page address, ADD adds page offset
+    try ctx.emit(Inst{ .adrp = .{
+        .dst = dst,
+        .symbol = extname,
+    } });
+    
+    return Inst{ .add_imm = .{
+        .dst = dst,
+        .rn = dst.toReg(),
+        .imm = @intCast(@mod(offset, 4096)),
+        .is_64 = true,
+    } };
+}
+
+pub fn aarch64_func_addr(extname: ir.ExternalName, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Function address is just symbol_value with offset 0
+    return aarch64_symbol_value(extname, 0, ctx);
+}
