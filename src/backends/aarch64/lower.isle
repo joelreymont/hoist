@@ -84,6 +84,9 @@
 (decl bic_vec (Value Value VectorSize) Aarch64Inst)
 (rule (bic_vec x y size) (aarch64_vec_bic size x y))
 
+(decl neg_vec (Value VectorSize) Aarch64Inst)
+(rule (neg_vec x size) (aarch64_vec_neg size x))
+
 ;; Vector reduction helpers (wrappers for type-parameterized rules)
 (decl reduce_add_vec (Value VectorSize) Aarch64Inst)
 (rule (reduce_add_vec x size) (aarch64_addv size x))
@@ -1131,7 +1134,12 @@
 (rule (lower (has_type $I64 (popcnt x)))
       (aarch64_popcnt_64 x))
 
-;; ineg: Integer negation (implemented as NEG)
+;; ineg: Integer negation
+
+;; Vector negation (128-bit vectors)
+(rule -1 (lower (has_type ty @ (ty_vec128 _) (ineg x)))
+      (neg_vec x (vector_size ty)))
+
 ;; ineg: I128 negation using subtraction from zero (0 - x)
 ;; Priority 2 to match before generic ineg
 (rule 2 (lower (has_type $I128 (ineg x)))
@@ -1146,6 +1154,7 @@
           (sub_with_flags_paired $I64 zero_lo x_lo)
           (sbc_paired $I64 zero_hi x_hi))))
 
+;; Scalar negation
 (rule (lower (ineg ty x))
       (aarch64_neg ty x))
 
