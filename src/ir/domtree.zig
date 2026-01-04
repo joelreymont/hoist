@@ -930,7 +930,7 @@ test "DominatorTree: dominance frontier - loop" {
     try tree.compute(testing.allocator, b0, &cfg);
 
     var df_b2 = try tree.dominanceFrontier(testing.allocator, b2, &cfg);
-    defer df_b2.deinit();
+    defer df_b2.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 1), df_b2.items.len);
     try testing.expect(std.meta.eql(df_b2.items[0], b1));
 

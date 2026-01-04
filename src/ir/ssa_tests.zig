@@ -152,7 +152,7 @@ test "SSA: block parameters represent phi nodes" {
     try func.layout.appendInst(jump_b3_from_b2_inst, b2);
 
     // Block b3 with parameter v4 (phi node)
-    var b3_data = try func.dfg.blocks.getOrDefault(b3);
+    var b3_data = func.dfg.blocks.getMut(b3) orelse unreachable;
     const v4_index = func.dfg.values.elems.items.len;
     const v4 = Value.new(v4_index);
     const v4_data = try func.dfg.values.getOrDefault(v4);
@@ -219,7 +219,7 @@ test "SSA: dominance frontier for diamond CFG" {
     // DF(b3) = {}
 
     const df_b0 = try domtree.dominanceFrontier(testing.allocator, b0, &cfg);
-    defer df_b0.deinit();
+    defer df_b0.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 0), df_b0.items.len);
 
     const df_b1 = try domtree.dominanceFrontier(testing.allocator, b1, &cfg);
@@ -385,7 +385,7 @@ test "SSA: constant phi removal optimization" {
     try func.layout.appendInst(jump_b3_from_b2_inst, b2);
 
     // b3 with parameter v1
-    var b3_data = try func.dfg.blocks.getOrDefault(b3);
+    var b3_data = func.dfg.blocks.getMut(b3) orelse unreachable;
     const v1_index = func.dfg.values.elems.items.len;
     const v1 = Value.new(v1_index);
     const v1_data = try func.dfg.values.getOrDefault(v1);
@@ -464,7 +464,7 @@ test "SSA: multiple block parameters in same block" {
     try func.layout.appendInst(jump_b2_from_b1_inst, b1);
 
     // b2 with two parameters
-    var b2_data = try func.dfg.blocks.getOrDefault(b2);
+    var b2_data = func.dfg.blocks.getMut(b2) orelse unreachable;
 
     const v4_index = func.dfg.values.elems.items.len;
     const v4 = Value.new(v4_index);

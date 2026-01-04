@@ -88,7 +88,7 @@ test "JumpTableData new" {
     const Block = @import("entities.zig").Block;
 
     var pool = ValueListPool.init(testing.allocator);
-    defer pool.deinit(testing.allocator);
+    defer pool.deinit();
 
     const default = try BlockCall.new(Block.new(0), &.{}, &pool);
     const entries = [_]BlockCall{
@@ -112,7 +112,7 @@ test "JumpTableData allBranches" {
     const Block = @import("entities.zig").Block;
 
     var pool = ValueListPool.init(testing.allocator);
-    defer pool.deinit(testing.allocator);
+    defer pool.deinit();
 
     const default = try BlockCall.new(Block.new(0), &.{}, &pool);
     const entries = [_]BlockCall{
@@ -133,7 +133,7 @@ test "JumpTableData mutability" {
     const Block = @import("entities.zig").Block;
 
     var pool = ValueListPool.init(testing.allocator);
-    defer pool.deinit(testing.allocator);
+    defer pool.deinit();
 
     const default = try BlockCall.new(Block.new(0), &.{}, &pool);
     var jt = try JumpTableData.new(testing.allocator, default, &.{});

@@ -132,7 +132,7 @@ pub const LoopInfo = struct {
         var worklist = std.ArrayList(Block){};
         defer worklist.deinit(self.allocator);
 
-        try worklist.append(back_edge_src);
+        try worklist.append(self.allocator, back_edge_src);
         try loop.addBlock(back_edge_src);
 
         while (worklist.items.len > 0) {
