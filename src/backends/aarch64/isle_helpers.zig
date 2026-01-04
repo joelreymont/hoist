@@ -3051,6 +3051,32 @@ pub fn put_in_reg_zext32(
 }
 
 /// put_in_reg_zext64: Put value in register with 64-bit zero extension
+
+/// put_in_reg_sext32: Put value in register with 32-bit sign extension
+pub fn put_in_reg_sext32(
+    val: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Reg {
+    const ty = ctx.getValueType(val);
+    const reg = try ctx.getValueReg(val, .int);
+
+    // If already 32-bit, return as-is
+    if (ty.bits() == 32) {
+        return reg;
+    }
+
+    // For smaller types, sign-extend to 32 bits
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst.Extend{
+        .rd = dst,
+        .rn = reg,
+        .from_bits = @intCast(ty.bits()),
+        .to_bits = 32,
+        .signed = true,
+    });
+
+    return dst.toReg();
+}
 pub fn put_in_reg_zext64(
     val: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
@@ -3217,4 +3243,351 @@ pub fn aarch64_sload32(
             .offset = 0,
         },
     };
+}
+
+// Multiply overflow helpers
+
+/// Unsigned multiply overflow for I16
+/// Strategy: Zero-extend to 32-bit, multiply, compare result with itself extended
+pub fn aarch64_umul_overflow_i16(
+    ty: Type,
+    a: lower_mod.Value,
+    b: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    // Zero-extend both operands to 32-bit
+    const a_ext = try put_in_reg_zext32(a, ctx);
+    const b_ext = try put_in_reg_zext32(b, ctx);
+    
+    // Multiply: out = a_ext * b_ext
+    const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .mul = .{
+            .dst = out_dst,
+            .src1 = a_ext,
+            .src2 = b_ext,
+            .size = .Size32,
+        },
+    });
+    const out = out_dst.toReg();
+    
+    // Compare result with zero-extended version to detect overflow
+    // If the high 16 bits are non-zero, we overflowed
+    const cmp_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .Extend = .{
+            .rd = cmp_dst,
+            .rn = out,
+            .from_bits = @intCast(ty.bits()),
+            .to_bits = 32,
+            .signed = false,
+        },
+    });
+    
+    // Compare out vs cmp_dst, set overflow flag if != 
+    try ctx.emit(Inst{
+        .AluRRR = .{
+            .alu_op = .Sub,
+            .size = .Size32,
+            .rd = lower_mod.WritableReg.zero(),
+            .rn = out,
+            .rm = cmp_dst.toReg(),
+        },
+    });
+    
+    // Set overflow bit based on comparison
+    const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .cset = .{
+            .rd = of_dst,
+            .cond = intccToCondCode(.ne),
+        },
+    });
+    
+    return lower_mod.ValueRegs.two(out_dst.toReg(), of_dst.toReg());
+}
+
+/// Unsigned multiply overflow for I32
+/// Strategy: UMULL (multiply to 64-bit), compare with UXTW extension
+pub fn aarch64_umul_overflow_i32(
+    a: lower_mod.Value,
+    b: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    
+    // UMULL: 64-bit result from 32-bit operands
+    const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .umull = .{
+            .dst = out_dst,
+            .src1 = a_reg,
+            .src2 = b_reg,
+        },
+    });
+    const out = out_dst.toReg();
+    
+    // Extend result back to see if high bits are set
+    const ext_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .Extend = .{
+            .rd = ext_dst,
+            .rn = out,
+            .from_bits = 32,
+            .to_bits = 64,
+            .signed = false,
+        },
+    });
+    
+    // Compare: if out != extended version, we overflowed
+    try ctx.emit(Inst{
+        .AluRRR = .{
+            .alu_op = .Sub,
+            .size = .Size64,
+            .rd = lower_mod.WritableReg.zero(),
+            .rn = out,
+            .rm = ext_dst.toReg(),
+        },
+    });
+    
+    const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .cset = .{
+            .rd = of_dst,
+            .cond = intccToCondCode(.ne),
+        },
+    });
+    
+    return lower_mod.ValueRegs.two(out, of_dst.toReg());
+}
+
+/// Unsigned multiply overflow for I64
+/// Strategy: MUL + UMULH, check if high bits are non-zero
+pub fn aarch64_umul_overflow_i64(
+    a: lower_mod.Value,
+    b: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    
+    // MUL: low 64 bits
+    const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .mul = .{
+            .dst = out_dst,
+            .src1 = a_reg,
+            .src2 = b_reg,
+            .size = .Size64,
+        },
+    });
+    
+    // UMULH: high 64 bits
+    const high_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .umulh = .{
+            .dst = high_dst,
+            .src1 = a_reg,
+            .src2 = b_reg,
+        },
+    });
+    
+    // Compare high bits with 0 - if non-zero, we overflowed
+    try ctx.emit(Inst{
+        .cmp_imm = .{
+            .size = .Size64,
+            .rn = high_dst.toReg(),
+            .imm = 0,
+        },
+    });
+    
+    const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .cset = .{
+            .rd = of_dst,
+            .cond = intccToCondCode(.ne),
+        },
+    });
+    
+    return lower_mod.ValueRegs.two(out_dst.toReg(), of_dst.toReg());
+}
+
+/// Signed multiply overflow for I16
+/// Strategy: Sign-extend to 32-bit, multiply, compare result with itself extended
+pub fn aarch64_smul_overflow_i16(
+    ty: Type,
+    a: lower_mod.Value,
+    b: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    // Sign-extend both operands to 32-bit
+    const a_ext = try put_in_reg_sext32(a, ctx);
+    const b_ext = try put_in_reg_sext32(b, ctx);
+    
+    // Multiply
+    const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .mul = .{
+            .dst = out_dst,
+            .src1 = a_ext,
+            .src2 = b_ext,
+            .size = .Size32,
+        },
+    });
+    const out = out_dst.toReg();
+    
+    // Sign-extend result back to check for overflow
+    const cmp_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .Extend = .{
+            .rd = cmp_dst,
+            .rn = out,
+            .from_bits = @intCast(ty.bits()),
+            .to_bits = 32,
+            .signed = true,
+        },
+    });
+    
+    // Compare
+    try ctx.emit(Inst{
+        .AluRRR = .{
+            .alu_op = .Sub,
+            .size = .Size32,
+            .rd = lower_mod.WritableReg.zero(),
+            .rn = out,
+            .rm = cmp_dst.toReg(),
+        },
+    });
+    
+    const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .cset = .{
+            .rd = of_dst,
+            .cond = intccToCondCode(.ne),
+        },
+    });
+    
+    return lower_mod.ValueRegs.two(out_dst.toReg(), of_dst.toReg());
+}
+
+/// Signed multiply overflow for I32
+/// Strategy: SMULL (multiply to 64-bit), compare with SXTW extension
+pub fn aarch64_smul_overflow_i32(
+    a: lower_mod.Value,
+    b: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    
+    // SMULL: 64-bit result from signed 32-bit operands
+    const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .smull = .{
+            .dst = out_dst,
+            .src1 = a_reg,
+            .src2 = b_reg,
+        },
+    });
+    const out = out_dst.toReg();
+    
+    // Sign-extend result back
+    const ext_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .Extend = .{
+            .rd = ext_dst,
+            .rn = out,
+            .from_bits = 32,
+            .to_bits = 64,
+            .signed = true,
+        },
+    });
+    
+    // Compare
+    try ctx.emit(Inst{
+        .AluRRR = .{
+            .alu_op = .Sub,
+            .size = .Size64,
+            .rd = lower_mod.WritableReg.zero(),
+            .rn = out,
+            .rm = ext_dst.toReg(),
+        },
+    });
+    
+    const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .cset = .{
+            .rd = of_dst,
+            .cond = intccToCondCode(.ne),
+        },
+    });
+    
+    return lower_mod.ValueRegs.two(out, of_dst.toReg());
+}
+
+/// Signed multiply overflow for I64
+/// Strategy: MUL + SMULH, compare high bits with sign-extended result
+pub fn aarch64_smul_overflow_i64(
+    a: lower_mod.Value,
+    b: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    
+    // MUL: low 64 bits
+    const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .mul = .{
+            .dst = out_dst,
+            .src1 = a_reg,
+            .src2 = b_reg,
+            .size = .Size64,
+        },
+    });
+    const out = out_dst.toReg();
+    
+    // SMULH: high 64 bits (signed)
+    const high_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .smulh = .{
+            .dst = high_dst,
+            .src1 = a_reg,
+            .src2 = b_reg,
+        },
+    });
+    
+    // Get sign extension of low bits (arithmetic shift right by 63)
+    const sign_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .asr_imm = .{
+            .dst = sign_dst,
+            .src = out,
+            .shift = 63,
+            .size = .Size64,
+        },
+    });
+    
+    // Compare high bits with sign extension
+    // If they differ, we overflowed
+    try ctx.emit(Inst{
+        .AluRRR = .{
+            .alu_op = .Sub,
+            .size = .Size64,
+            .rd = lower_mod.WritableReg.zero(),
+            .rn = high_dst.toReg(),
+            .rm = sign_dst.toReg(),
+        },
+    });
+    
+    const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .cset = .{
+            .rd = of_dst,
+            .cond = intccToCondCode(.ne),
+        },
+    });
+    
+    return lower_mod.ValueRegs.two(out_dst.toReg(), of_dst.toReg());
 }

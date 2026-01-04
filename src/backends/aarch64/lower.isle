@@ -2602,6 +2602,34 @@
 (rule (lower (has_type (ty_32_or_64 ty) (ssub_overflow a b)))
       (aarch64_ssub_overflow ty a b))
 
+;; umul_overflow: Unsigned multiply with overflow detection
+(decl aarch64_umul_overflow_i16 (Type Value Value) ValueRegs)
+(decl aarch64_umul_overflow_i32 (Value Value) ValueRegs)
+(decl aarch64_umul_overflow_i64 (Value Value) ValueRegs)
+
+(rule 1 (lower (has_type $I16 (umul_overflow a b)))
+      (aarch64_umul_overflow_i16 $I16 a b))
+
+(rule 2 (lower (has_type $I32 (umul_overflow a b)))
+      (aarch64_umul_overflow_i32 a b))
+
+(rule 2 (lower (has_type $I64 (umul_overflow a b)))
+      (aarch64_umul_overflow_i64 a b))
+
+;; smul_overflow: Signed multiply with overflow detection
+(decl aarch64_smul_overflow_i16 (Type Value Value) ValueRegs)
+(decl aarch64_smul_overflow_i32 (Value Value) ValueRegs)
+(decl aarch64_smul_overflow_i64 (Value Value) ValueRegs)
+
+(rule 1 (lower (has_type $I16 (smul_overflow a b)))
+      (aarch64_smul_overflow_i16 $I16 a b))
+
+(rule 2 (lower (has_type $I32 (smul_overflow a b)))
+      (aarch64_smul_overflow_i32 a b))
+
+(rule 2 (lower (has_type $I64 (smul_overflow a b)))
+      (aarch64_smul_overflow_i64 a b))
+
 ;; Tail call operations
 ;; return_call: Direct tail call (deallocate frame, then branch)
 (decl aarch64_return_call (SigRef ExternalName ValueSlice) Aarch64Inst)
