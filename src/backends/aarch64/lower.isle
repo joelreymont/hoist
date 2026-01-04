@@ -1081,6 +1081,14 @@
           (sub_with_flags_paired $I64 eor_lo asr_reg)
           (sbc_paired $I64 eor_hi asr_reg))))
 
+;; iabs: Vector integer absolute value
+(rule -1 (lower (has_type ty @ (multi_lane _ _) (iabs x)))
+      (vec_misc (VecMisc2.Abs) x (vector_size ty)))
+
+;; sqmul_round_sat: Signed saturating rounding doubling multiply high
+(rule (lower (has_type ty @ (multi_lane _ _) (sqmul_round_sat x y)))
+      (vec_rrr (VecALUOp.Sqrdmulh) x y (vector_size ty)))
+
 ;; iabs: Integer absolute value
 ;; Implemented as (x XOR sign) - sign, where sign = x >> (bits-1)
 (rule (lower (has_type $I8 (iabs x)))
