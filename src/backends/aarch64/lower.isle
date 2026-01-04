@@ -403,7 +403,29 @@
       (aarch64_fsqrt ty x))
 
 ;; splat: Duplicate scalar to all vector lanes (DUP)
-(rule (lower (splat ty x))
+;; splat: Optimized patterns for specific cases
+
+;; splat: Float constant - use immediate splat
+(rule (lower (has_type ty (splat (f32const k)))))
+      (aarch64_splat_const ty k))
+
+(rule (lower (has_type ty (splat (f64const k)))))
+      (aarch64_splat_const ty k))
+
+;; splat: Integer constant - use immediate splat
+(rule (lower (has_type ty (splat (iconst k)))))
+      (aarch64_splat_const ty k))
+
+;; splat: Integer constant with ireduce - use immediate splat
+(rule (lower (has_type ty (splat (ireduce (iconst k))))))
+      (aarch64_splat_const ty k))
+
+;; splat: Scalar float - use vec_dup_from_fpu
+(rule -2 (lower (has_type ty (splat x @ (value_type (ty_scalar_float _))))))
+      (vec_dup_from_fpu x (vector_size ty) 0))
+
+;; splat: Generic fallback (lowest priority)
+(rule 0 (lower (splat ty x))
       (aarch64_splat ty x))
 
 ;; extractlane: Extract vector lane to scalar (UMOV)
