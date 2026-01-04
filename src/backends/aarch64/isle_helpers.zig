@@ -1893,3 +1893,10 @@ pub fn aarch64_set_pinned_reg(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Ins
     // Move value to pinned register (x28)
     return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(28)), .src = src } };
 }
+
+/// Debug operations (ISLE constructors)
+pub fn aarch64_debugtrap(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    _ = ctx;
+    // BRK #0 - debugger breakpoint
+    return Inst{ .brk = .{ .imm = 0 } };
+}
