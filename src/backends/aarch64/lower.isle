@@ -206,6 +206,22 @@
 (rule 1 (lower (has_type ty @ (multi_lane _ _) (iadd x y)))
       (add_vec x y (vector_size ty)))
 
+;; isub: I128 subtraction using register pairs (SUBS + SBC)
+;; Priority -3 to match before vector and scalar rules
+(rule -3 (lower (has_type $I128 (isub x y)))
+      (let (;; Get the high/low registers for x
+            (x_regs ValueRegs x)
+            (x_lo Reg (value_regs_get x_regs 0))
+            (x_hi Reg (value_regs_get x_regs 1))
+            ;; Get the high/low registers for y
+            (y_regs ValueRegs y)
+            (y_lo Reg (value_regs_get y_regs 0))
+            (y_hi Reg (value_regs_get y_regs 1)))
+        ;; SUBS (low 64 bits, sets borrow) + SBC (high 64 bits, uses borrow)
+        (with_flags
+          (sub_with_flags_paired $I64 x_lo y_lo)
+          (sbc_paired $I64 x_hi y_hi))))
+
 ;; isub: Subtract integers (scalar)
 (rule (lower (isub ty x y))
       (aarch64_sub_rr ty x y))
