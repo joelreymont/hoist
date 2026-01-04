@@ -26,7 +26,48 @@
 (decl pure ty_bits (Type) u8)
 (extern constructor ty_bits ty_bits)
 
-;; Integer arithmetic lowering
+;; Vector size helper - maps multi_lane patterns to VectorSize enum
+(decl vector_size (Type) VectorSize)
+(rule 1 (vector_size (multi_lane 8 8)) (VectorSize.V8B))
+(rule 1 (vector_size (multi_lane 8 16)) (VectorSize.V16B))
+(rule 1 (vector_size (multi_lane 16 4)) (VectorSize.V4H))
+(rule 1 (vector_size (multi_lane 16 8)) (VectorSize.V8H))
+(rule 1 (vector_size (multi_lane 32 2)) (VectorSize.V2S))
+(rule 1 (vector_size (multi_lane 32 4)) (VectorSize.V4S))
+(rule 1 (vector_size (multi_lane 64 2)) (VectorSize.V2D))
+
+;; Vector arithmetic helpers (wrappers for type-parameterized rules)
+(decl add_vec (Value Value VectorSize) Aarch64Inst)
+(rule (add_vec x y size) (aarch64_vec_add size x y))
+
+(decl sub_vec (Value Value VectorSize) Aarch64Inst)
+(rule (sub_vec x y size) (aarch64_vec_sub size x y))
+
+(decl mul_vec (Value Value VectorSize) Aarch64Inst)
+(rule (mul_vec x y size) (aarch64_vec_mul size x y))
+
+(decl min_vec (Value Value VectorSize) Aarch64Inst)
+(rule (min_vec x y size) (aarch64_vec_smin size x y))
+
+(decl max_vec (Value Value VectorSize) Aarch64Inst)
+(rule (max_vec x y size) (aarch64_vec_smax size x y))
+
+;; Vector reduction helpers (wrappers for type-parameterized rules)
+(decl reduce_add_vec (Value VectorSize) Aarch64Inst)
+(rule (reduce_add_vec x size) (aarch64_addv size x))
+
+(decl reduce_smin_vec (Value VectorSize) Aarch64Inst)
+(rule (reduce_smin_vec x size) (aarch64_sminv size x))
+
+(decl reduce_smax_vec (Value VectorSize) Aarch64Inst)
+(rule (reduce_smax_vec x size) (aarch64_smaxv size x))
+
+(decl reduce_umin_vec (Value VectorSize) Aarch64Inst)
+(rule (reduce_umin_vec x size) (aarch64_uminv size x))
+
+(decl reduce_umax_vec (Value VectorSize) Aarch64Inst)
+(rule (reduce_umax_vec x size) (aarch64_umaxv size x))
+
 ;; Integer arithmetic lowering
 
 ;; iadd: Add two integers (default, lowest priority)
@@ -88,13 +129,55 @@
       (if-let $I64 ty)
       (aarch64_add_extended ty x y ExtendOp.uxth))
 
-;; isub: Subtract integers
+;; iadd: Vector integer addition (type-parameterized via multi_lane)
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (iadd x y)))
+      (add_vec x y (vector_size ty)))
+
+;; isub: Subtract integers (scalar)
 (rule (lower (isub ty x y))
       (aarch64_sub_rr ty x y))
 
-;; imul: Multiply integers
+;; isub: Vector integer subtraction (type-parameterized via multi_lane)
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (isub x y)))
+      (sub_vec x y (vector_size ty)))
+
+;; imul: Multiply integers (scalar)
 (rule (lower (imul ty x y))
       (aarch64_mul_rr ty x y))
+
+;; imul: Vector integer multiplication (type-parameterized via multi_lane)
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (imul x y)))
+      (mul_vec x y (vector_size ty)))
+
+;; imin: Vector signed integer minimum (type-parameterized via multi_lane)
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (imin x y)))
+      (min_vec x y (vector_size ty)))
+
+;; imax: Vector signed integer maximum (type-parameterized via multi_lane)
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (imax x y)))
+      (max_vec x y (vector_size ty)))
+
+;; Vector reduction operations (type-parameterized via multi_lane)
+
+;; reduce_add: Horizontal vector addition (sum all elements)
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (reduce_add x)))
+      (reduce_add_vec x (vector_size ty)))
+
+;; reduce_smin: Horizontal signed minimum
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (reduce_smin x)))
+      (reduce_smin_vec x (vector_size ty)))
+
+;; reduce_smax: Horizontal signed maximum
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (reduce_smax x)))
+      (reduce_smax_vec x (vector_size ty)))
+
+;; reduce_umin: Horizontal unsigned minimum
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (reduce_umin x)))
+      (reduce_umin_vec x (vector_size ty)))
+
+;; reduce_umax: Horizontal unsigned maximum
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (reduce_umax x)))
+      (reduce_umax_vec x (vector_size ty)))
 
 ;; Multiply-add fusion patterns (highest priority - fuse before generic ops)
 ;; iadd(a, imul(x, y)) => madd(x, y, a)
@@ -478,6 +561,16 @@
 (rule (lower (band ty x y))
       (aarch64_and_rr ty x y))
 
+;; band: Fusion with bnot -> BIC instruction
+;; band(x, bnot(y)) -> band_not(x, y) -> BIC
+(rule 1 (lower (has_type ty @ (fits_in_64 _) (band x (bnot _ y))))
+      (aarch64_bic_rr ty x y))
+
+;; band: Fusion with bnot (commuted) -> BIC instruction
+;; band(bnot(x), y) -> band_not(y, x) -> BIC
+(rule 2 (lower (has_type ty @ (fits_in_64 _) (band (bnot _ x) y)))
+      (aarch64_bic_rr ty y x))
+
 ;; bor: Bitwise OR (register form)
 (rule (lower (bor ty x y))
       (aarch64_orr_rr ty x y))
@@ -487,6 +580,16 @@
       (if-let imm (imm_logic_from_u64 ty k))
       (aarch64_orr_imm ty x imm))
 
+;; bor: Fusion with bnot -> ORN instruction
+;; bor(x, bnot(y)) -> bor_not(x, y) -> ORN
+(rule 2 (lower (has_type ty @ (fits_in_64 _) (bor x (bnot _ y))))
+      (aarch64_orn_rr ty x y))
+
+;; bor: Fusion with bnot (commuted) -> ORN instruction
+;; bor(bnot(x), y) -> bor_not(y, x) -> ORN
+(rule 3 (lower (has_type ty @ (fits_in_64 _) (bor (bnot _ x) y)))
+      (aarch64_orn_rr ty y x))
+
 ;; bxor: Bitwise XOR (register form)
 (rule (lower (bxor ty x y))
       (aarch64_eor_rr ty x y))
@@ -495,6 +598,16 @@
 (rule 1 (lower (bxor ty x (iconst k)))
       (if-let imm (imm_logic_from_u64 ty k))
       (aarch64_eor_imm ty x imm))
+
+;; bxor: Fusion with bnot -> EON instruction
+;; bxor(x, bnot(y)) -> bxor_not(x, y) -> EON
+(rule 2 (lower (has_type ty @ (fits_in_64 _) (bxor x (bnot _ y))))
+      (aarch64_eon_rr ty x y))
+
+;; bxor: Fusion with bnot (commuted) -> EON instruction
+;; bxor(bnot(x), y) -> bxor_not(y, x) -> EON
+(rule 3 (lower (has_type ty @ (fits_in_64 _) (bxor (bnot _ x) y)))
+      (aarch64_eon_rr ty y x))
 
 ;; bnot: Bitwise NOT (implemented as MVN)
 (rule (lower (bnot ty x))
@@ -1326,192 +1439,9 @@
 ))
 
 ;; SIMD/Vector lowering rules
-
-;; viadd: Vector integer addition
-(rule (lower (viadd (vector_type V8B) x y))
-      (aarch64_vec_add V8B x y))
-
-(rule (lower (viadd (vector_type V16B) x y))
-      (aarch64_vec_add V16B x y))
-
-(rule (lower (viadd (vector_type V4H) x y))
-      (aarch64_vec_add V4H x y))
-
-(rule (lower (viadd (vector_type V8H) x y))
-      (aarch64_vec_add V8H x y))
-
-(rule (lower (viadd (vector_type V2S) x y))
-      (aarch64_vec_add V2S x y))
-
-(rule (lower (viadd (vector_type V4S) x y))
-      (aarch64_vec_add V4S x y))
-
-(rule (lower (viadd (vector_type V2D) x y))
-      (aarch64_vec_add V2D x y))
-
-;; visub: Vector integer subtraction
-(rule (lower (visub (vector_type V8B) x y))
-      (aarch64_vec_sub V8B x y))
-
-(rule (lower (visub (vector_type V16B) x y))
-      (aarch64_vec_sub V16B x y))
-
-(rule (lower (visub (vector_type V4H) x y))
-      (aarch64_vec_sub V4H x y))
-
-(rule (lower (visub (vector_type V8H) x y))
-      (aarch64_vec_sub V8H x y))
-
-(rule (lower (visub (vector_type V2S) x y))
-      (aarch64_vec_sub V2S x y))
-
-(rule (lower (visub (vector_type V4S) x y))
-      (aarch64_vec_sub V4S x y))
-
-(rule (lower (visub (vector_type V2D) x y))
-      (aarch64_vec_sub V2D x y))
-
-;; vimul: Vector integer multiplication
-(rule (lower (vimul (vector_type V8B) x y))
-      (aarch64_vec_mul V8B x y))
-
-(rule (lower (vimul (vector_type V16B) x y))
-      (aarch64_vec_mul V16B x y))
-
-(rule (lower (vimul (vector_type V4H) x y))
-      (aarch64_vec_mul V4H x y))
-
-(rule (lower (vimul (vector_type V8H) x y))
-      (aarch64_vec_mul V8H x y))
-
-(rule (lower (vimul (vector_type V2S) x y))
-      (aarch64_vec_mul V2S x y))
-
-(rule (lower (vimul (vector_type V4S) x y))
-      (aarch64_vec_mul V4S x y))
-
-;; vimin: Vector signed minimum
-(rule (lower (vimin (vector_type V8B) x y))
-      (aarch64_vec_smin V8B x y))
-
-(rule (lower (vimin (vector_type V16B) x y))
-      (aarch64_vec_smin V16B x y))
-
-(rule (lower (vimin (vector_type V4H) x y))
-      (aarch64_vec_smin V4H x y))
-
-(rule (lower (vimin (vector_type V8H) x y))
-      (aarch64_vec_smin V8H x y))
-
-(rule (lower (vimin (vector_type V2S) x y))
-      (aarch64_vec_smin V2S x y))
-
-(rule (lower (vimin (vector_type V4S) x y))
-      (aarch64_vec_smin V4S x y))
-
-;; vimax: Vector signed maximum
-(rule (lower (vimax (vector_type V8B) x y))
-      (aarch64_vec_smax V8B x y))
-
-(rule (lower (vimax (vector_type V16B) x y))
-      (aarch64_vec_smax V16B x y))
-
-(rule (lower (vimax (vector_type V4H) x y))
-      (aarch64_vec_smax V4H x y))
-
-(rule (lower (vimax (vector_type V8H) x y))
-      (aarch64_vec_smax V8H x y))
-
-(rule (lower (vimax (vector_type V2S) x y))
-      (aarch64_vec_smax V2S x y))
-
-(rule (lower (vimax (vector_type V4S) x y))
-      (aarch64_vec_smax V4S x y))
-
-;; Vector reduction lowering rules
-
-;; vreduce_add: Horizontal vector addition (sum all elements)
-(rule (lower (vreduce_add (vector_type V8B) x))
-      (aarch64_addv V8B x))
-
-(rule (lower (vreduce_add (vector_type V16B) x))
-      (aarch64_addv V16B x))
-
-(rule (lower (vreduce_add (vector_type V4H) x))
-      (aarch64_addv V4H x))
-
-(rule (lower (vreduce_add (vector_type V8H) x))
-      (aarch64_addv V8H x))
-
-(rule (lower (vreduce_add (vector_type V2S) x))
-      (aarch64_addv V2S x))
-
-(rule (lower (vreduce_add (vector_type V4S) x))
-      (aarch64_addv V4S x))
-
-;; vreduce_smin: Horizontal signed minimum
-(rule (lower (vreduce_smin (vector_type V8B) x))
-      (aarch64_sminv V8B x))
-
-(rule (lower (vreduce_smin (vector_type V16B) x))
-      (aarch64_sminv V16B x))
-
-(rule (lower (vreduce_smin (vector_type V4H) x))
-      (aarch64_sminv V4H x))
-
-(rule (lower (vreduce_smin (vector_type V8H) x))
-      (aarch64_sminv V8H x))
-
-(rule (lower (vreduce_smin (vector_type V4S) x))
-      (aarch64_sminv V4S x))
-
-;; vreduce_smax: Horizontal signed maximum
-(rule (lower (vreduce_smax (vector_type V8B) x))
-      (aarch64_smaxv V8B x))
-
-(rule (lower (vreduce_smax (vector_type V16B) x))
-      (aarch64_smaxv V16B x))
-
-(rule (lower (vreduce_smax (vector_type V4H) x))
-      (aarch64_smaxv V4H x))
-
-(rule (lower (vreduce_smax (vector_type V8H) x))
-      (aarch64_smaxv V8H x))
-
-(rule (lower (vreduce_smax (vector_type V4S) x))
-      (aarch64_smaxv V4S x))
-
-;; vreduce_umin: Horizontal unsigned minimum
-(rule (lower (vreduce_umin (vector_type V8B) x))
-      (aarch64_uminv V8B x))
-
-(rule (lower (vreduce_umin (vector_type V16B) x))
-      (aarch64_uminv V16B x))
-
-(rule (lower (vreduce_umin (vector_type V4H) x))
-      (aarch64_uminv V4H x))
-
-(rule (lower (vreduce_umin (vector_type V8H) x))
-      (aarch64_uminv V8H x))
-
-(rule (lower (vreduce_umin (vector_type V4S) x))
-      (aarch64_uminv V4S x))
-
-;; vreduce_umax: Horizontal unsigned maximum
-(rule (lower (vreduce_umax (vector_type V8B) x))
-      (aarch64_umaxv V8B x))
-
-(rule (lower (vreduce_umax (vector_type V16B) x))
-      (aarch64_umaxv V16B x))
-
-(rule (lower (vreduce_umax (vector_type V4H) x))
-      (aarch64_umaxv V4H x))
-
-(rule (lower (vreduce_umax (vector_type V8H) x))
-      (aarch64_umaxv V8H x))
-
-(rule (lower (vreduce_umax (vector_type V4S) x))
-      (aarch64_umaxv V4S x))
+;; NOTE: Vector arithmetic (add/sub/mul/min/max) now uses type-parameterized iadd/isub/imul/imin/imax
+;; NOTE: Vector reductions now use type-parameterized reduce_add/reduce_smin/reduce_smax/reduce_umin/reduce_umax
+;; All use multi_lane extractor instead of explicit viadd/visub/vimul/vimin/vimax/vreduce_* opcodes
 
 ;; SIMD lane manipulation lowering
 
