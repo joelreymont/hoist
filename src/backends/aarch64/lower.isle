@@ -7,6 +7,19 @@
 (type Value (primitive Value))
 (type Inst (primitive Inst))
 
+;; Type extractors (foundation for type-parameterized patterns)
+(decl multi_lane (Type) (u32 u32))
+(extern extractor multi_lane multi_lane)
+
+(decl fits_in_64 (Type) Type)
+(extern extractor fits_in_64 fits_in_64)
+
+(decl lane_fits_in_32 (Type) Type)
+(extern extractor lane_fits_in_32 lane_fits_in_32)
+
+(decl pure ty_bits (Type) u8)
+(extern constructor ty_bits ty_bits)
+
 ;; Integer arithmetic lowering
 ;; Integer arithmetic lowering
 
@@ -1768,3 +1781,19 @@
 ;; F64X2 + F64X2 -> F32X4: demote two vectors
 (rule (lower (has_type $F32X4 (fvdemote x y)))
       (aarch64_fcvtn_combined x y))
+
+;; Trap operations
+;; trap: Unconditional trap with trap code
+(decl aarch64_trap (TrapCode) Aarch64Inst)
+(rule (lower (trap trap_code))
+      (aarch64_trap trap_code))
+
+;; trapz: Trap if value is zero
+(decl aarch64_trapz (Value TrapCode) Aarch64Inst)
+(rule (lower (trapz val trap_code))
+      (aarch64_trapz val trap_code))
+
+;; trapnz: Trap if value is non-zero
+(decl aarch64_trapnz (Value TrapCode) Aarch64Inst)
+(rule (lower (trapnz val trap_code))
+      (aarch64_trapnz val trap_code))

@@ -1561,8 +1561,8 @@ pub fn min_fp_value(signed: bool, in_bits: u8, out_bits: u8, ctx: *lower_mod.Low
     }
 }
 
-/// Get type bit width
-fn ty_bits(ty: types.Type) u8 {
+/// Get type bit width (ISLE extractor)
+pub fn ty_bits(ty: types.Type) u8 {
     return switch (ty) {
         .I8 => 8,
         .I16 => 16,
@@ -1570,6 +1570,72 @@ fn ty_bits(ty: types.Type) u8 {
         .I64, .F64 => 64,
         else => 64, // Default
     };
+}
+
+/// Extractor: Match vector type, return (lane_bits, lane_count)
+/// Returns null for scalar types
+pub fn multi_lane(ty: types.Type) ?struct { u32, u32 } {
+    if (!ty.isVector()) return null;
+    return .{ ty.laneBits(), ty.laneCount() };
+}
+
+/// Extractor: Check if type fits in 64-bit register
+/// Returns the type if it fits, null otherwise
+pub fn fits_in_64(ty: types.Type) ?types.Type {
+    if (ty.bits() <= 64) return ty;
+    return null;
+}
+
+/// Extractor: Check if vector lanes fit in 32 bits
+/// For vectors: check lane size <= 32 bits
+/// For scalars: check type size <= 32 bits
+pub fn lane_fits_in_32(ty: types.Type) ?types.Type {
+    if (ty.isVector()) {
+        if (ty.laneBits() <= 32) return ty;
+    } else {
+        if (ty.bits() <= 32) return ty;
+    }
+    return null;
+}
+
+/// Trap operations (ISLE constructors)
+pub fn aarch64_trap(trap_code: ir.TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    _ = ctx;
+    return Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } };
+}
+
+pub fn aarch64_trapz(val: lower_mod.Value, trap_code: ir.TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Compare value with zero
+    const val_reg = try ctx.getValueReg(val, .int);
+    try ctx.emit(Inst{ .cmp_imm = .{ .rn = val_reg, .imm = 0, .is_64 = true } });
+
+    // Branch if non-zero (skip trap)
+    const skip_label = ctx.allocLabel();
+    try ctx.emit(Inst{ .b_cond = .{ .cond = .ne, .label = skip_label } });
+
+    // Trap if zero
+    try ctx.emit(Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } });
+
+    // Skip label
+    try ctx.bindLabel(skip_label);
+    return Inst{ .invalid = {} };
+}
+
+pub fn aarch64_trapnz(val: lower_mod.Value, trap_code: ir.TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Compare value with zero
+    const val_reg = try ctx.getValueReg(val, .int);
+    try ctx.emit(Inst{ .cmp_imm = .{ .rn = val_reg, .imm = 0, .is_64 = true } });
+
+    // Branch if zero (skip trap)
+    const skip_label = ctx.allocLabel();
+    try ctx.emit(Inst{ .b_cond = .{ .cond = .eq, .label = skip_label } });
+
+    // Trap if non-zero
+    try ctx.emit(Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } });
+
+    // Skip label
+    try ctx.bindLabel(skip_label);
+    return Inst{ .invalid = {} };
 }
 
 /// Calculate the maximum floating-point bound for conversion from float to integer.
@@ -1746,4 +1812,32 @@ pub fn aarch64_isplit(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower
     // I128 is stored as two I64 registers: [0] = low, [1] = high
     // Just return the existing register pair
     return x_regs;
+}
+
+/// Trap operations (ISLE constructors)
+pub fn aarch64_trap(trap_code: ir.TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    _ = ctx;
+    return Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } };
+}
+
+pub fn aarch64_trapz(val: lower_mod.Value, trap_code: ir.TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const val_reg = try ctx.getValueReg(val, .int);
+    try ctx.emit(Inst{ .cmp_imm = .{ .rn = val_reg, .imm = 0, .is_64 = true } });
+    
+    const skip_label = ctx.allocLabel();
+    try ctx.emit(Inst{ .b_cond = .{ .cond = .ne, .label = skip_label } });
+    try ctx.emit(Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } });
+    try ctx.bindLabel(skip_label);
+    return Inst{ .invalid = {} };
+}
+
+pub fn aarch64_trapnz(val: lower_mod.Value, trap_code: ir.TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const val_reg = try ctx.getValueReg(val, .int);
+    try ctx.emit(Inst{ .cmp_imm = .{ .rn = val_reg, .imm = 0, .is_64 = true } });
+    
+    const skip_label = ctx.allocLabel();
+    try ctx.emit(Inst{ .b_cond = .{ .cond = .eq, .label = skip_label } });
+    try ctx.emit(Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } });
+    try ctx.bindLabel(skip_label);
+    return Inst{ .invalid = {} };
 }
