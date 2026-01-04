@@ -7,6 +7,9 @@
 (type Value (primitive Value))
 (type Inst (primitive Inst))
 
+;; Relocation distance for calls/symbols
+(type RelocDistance extern (enum (Near) (Far)))
+
 ;; Type extractors (foundation for type-parameterized patterns)
 (decl multi_lane (Type) (u32 u32))
 (extern extractor multi_lane multi_lane)
@@ -1912,6 +1915,12 @@
 ;; Tail call operations
 ;; return_call: Direct tail call (deallocate frame, then branch)
 (decl aarch64_return_call (SigRef ExternalName ValueSlice) Aarch64Inst)
+
+;; Near return call optimization (priority 1 - prefer when distance is known near)
+(rule 1 (lower (return_call (func_ref_data sig_ref name (RelocDistance.Near) _) args))
+      (aarch64_return_call sig_ref name args))
+
+;; Fallback return call (priority 0 - any distance)
 (rule (lower (return_call (func_ref_data sig_ref name dist _) args))
       (aarch64_return_call sig_ref name args))
 
@@ -1939,6 +1948,12 @@
 ;; Call operations
 ;; call: Direct function call
 (decl aarch64_call (SigRef ExternalName ValueSlice) ValueRegs)
+
+;; Near call optimization (priority 1 - prefer when distance is known near)
+(rule 1 (lower (call (func_ref_data sig_ref name (RelocDistance.Near) _) args))
+      (aarch64_call sig_ref name args))
+
+;; Fallback call (priority 0 - any distance)
 (rule (lower (call (func_ref_data sig_ref name dist _) args))
       (aarch64_call sig_ref name args))
 
