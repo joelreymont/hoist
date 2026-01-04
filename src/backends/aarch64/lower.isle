@@ -1932,3 +1932,24 @@
 (decl aarch64_call_indirect (SigRef Value ValueSlice) ValueRegs)
 (rule (lower (call_indirect sig_ref ptr args))
       (aarch64_call_indirect sig_ref ptr args))
+
+;; Shuffle pattern extractors
+;; Extract lane index if shuffle duplicates a single 8-bit lane
+(decl shuffle_dup8_from_imm (Immediate) u8)
+(extern extractor shuffle_dup8_from_imm shuffle_dup8_from_imm)
+
+;; Extract lane index if shuffle duplicates a single 16-bit lane
+(decl shuffle_dup16_from_imm (Immediate) u8)
+(extern extractor shuffle_dup16_from_imm shuffle_dup16_from_imm)
+
+;; Extract lane index if shuffle duplicates a single 32-bit lane
+(decl shuffle_dup32_from_imm (Immediate) u8)
+(extern extractor shuffle_dup32_from_imm shuffle_dup32_from_imm)
+
+;; Extract lane index if shuffle duplicates a single 64-bit lane
+(decl shuffle_dup64_from_imm (Immediate) u8)
+(extern extractor shuffle_dup64_from_imm shuffle_dup64_from_imm)
+
+;; Extract byte offset for EXT (concatenate + shift) pattern
+(decl vec_extract_imm4_from_immediate (Immediate) u8)
+(extern extractor vec_extract_imm4_from_immediate vec_extract_imm4_from_immediate)

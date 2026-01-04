@@ -2242,3 +2242,78 @@ pub fn aarch64_call_indirect(sig_ref: ir.SigRef, ptr: lower_mod.Value, args: low
     // Return value in x0 (simplified - should handle multi-return)
     return lower_mod.ValueRegs.one(Reg.gpr(0));
 }
+
+/// Shuffle pattern extractors (ISLE extern extractors)
+/// Check if 128-bit immediate represents duplication of a single 8-bit lane
+pub fn shuffle_dup8_from_imm(imm: u128) ?u8 {
+    // Extract first byte
+    const lane: u8 = @truncate(imm);
+    
+    // Check if all 16 bytes are the same
+    var i: u8 = 0;
+    while (i < 16) : (i += 1) {
+        const byte: u8 = @truncate(imm >> (@as(u7, i) * 8));
+        if (byte != lane) return null;
+    }
+    
+    // Return lane index (0-15)
+    return lane;
+}
+
+pub fn shuffle_dup16_from_imm(imm: u128) ?u8 {
+    // Extract first 16-bit value (bytes 0-1)
+    const lane16: u16 = @truncate(imm);
+    
+    // Check if all 8 halfwords are the same
+    var i: u8 = 0;
+    while (i < 8) : (i += 1) {
+        const hword: u16 = @truncate(imm >> (@as(u7, i) * 16));
+        if (hword != lane16) return null;
+    }
+    
+    // Return lane index (lane16 should be 0-7 repeated as 0x0100, 0x0302, etc.)
+    return @truncate(lane16);
+}
+
+pub fn shuffle_dup32_from_imm(imm: u128) ?u8 {
+    // Extract first 32-bit value (bytes 0-3)
+    const lane32: u32 = @truncate(imm);
+    
+    // Check if all 4 words are the same
+    var i: u8 = 0;
+    while (i < 4) : (i += 1) {
+        const word: u32 = @truncate(imm >> (@as(u7, i) * 32));
+        if (word != lane32) return null;
+    }
+    
+    // Return lane index (0-3)
+    return @truncate(lane32);
+}
+
+pub fn shuffle_dup64_from_imm(imm: u128) ?u8 {
+    // Extract low and high 64-bit values
+    const low: u64 = @truncate(imm);
+    const high: u64 = @truncate(imm >> 64);
+    
+    // Check if both are the same
+    if (low != high) return null;
+    
+    // Return lane index (0-1)
+    return @truncate(low);
+}
+
+pub fn vec_extract_imm4_from_immediate(imm: u128) ?u8 {
+    // Check if pattern is: n, n+1, n+2, ..., n+15 (consecutive bytes)
+    const first_byte: u8 = @truncate(imm);
+    
+    var i: u8 = 0;
+    while (i < 16) : (i += 1) {
+        const expected: u8 = @truncate(@as(u16, first_byte) + i);
+        const actual: u8 = @truncate(imm >> (@as(u7, i) * 8));
+        if (actual != expected) return null;
+    }
+    
+    // Return starting byte offset (must be < 16 for valid EXT)
+    if (first_byte < 16) return first_byte;
+    return null;
+}
