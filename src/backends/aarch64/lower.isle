@@ -849,6 +849,14 @@
 (rule (lower (fneg ty x))
       (aarch64_fneg ty x))
 
+;; fcopysign: Copy sign from y to magnitude of x
+;; Implemented as: abs_x = fabs(x), result = y < 0 ? -abs_x : abs_x
+(rule (lower (has_type $F32 (fcopysign x y)))
+      (aarch64_fcopysign_32 x y))
+
+(rule (lower (has_type $F64 (fcopysign x y)))
+      (aarch64_fcopysign_64 x y))
+
 ;; Constant materialization
 
 ;; iconst: Integer constant (16-bit immediate via MOVZ)
@@ -1143,6 +1151,8 @@
 (decl aarch64_fcmp (Value Value) Aarch64Inst)
 (decl aarch64_fabs (Type Value) Aarch64Inst)
 (decl aarch64_fneg (Type Value) Aarch64Inst)
+(decl aarch64_fcopysign_32 (Value Value) Aarch64Inst)
+(decl aarch64_fcopysign_64 (Value Value) Aarch64Inst)
 
 ;; SIMD/Vector operations
 (decl aarch64_vec_add (VectorSize Value Value) Aarch64Inst)
