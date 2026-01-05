@@ -391,8 +391,6 @@ pub const DataFlowGraph = struct {
     }
 
     pub fn resolveAllAliases(self: *Self) void {
-        const block_call = @import("block_call.zig");
-
         for (self.insts.elems.items) |*inst_data| {
             switch (inst_data.*) {
                 .unary => |*data| {
@@ -411,19 +409,7 @@ pub const DataFlowGraph = struct {
                     data.args[1] = self.resolveAliases(data.args[1]);
                 },
                 .branch => |*data| {
-                    const slice = self.value_lists.asMutSlice(data.destination.values);
-                    if (slice.len > 1) {
-                        var i: usize = 1;
-                        while (i < slice.len) : (i += 1) {
-                            var v: Value = undefined;
-                            var index: u32 = undefined;
-                            const tag = block_call.BlockArg.decodeFromValue(slice[i], &v, &index);
-                            if (tag == .value) {
-                                const resolved = self.resolveAliases(v);
-                                slice[i] = block_call.BlockArg.fromValue(resolved).encodeAsValue(resolved, 0);
-                            }
-                        }
-                    }
+                    data.condition = self.resolveAliases(data.condition);
                 },
                 .branch_table => |*data| {
                     data.arg = self.resolveAliases(data.arg);
@@ -447,7 +433,42 @@ pub const DataFlowGraph = struct {
                     data.args[0] = self.resolveAliases(data.args[0]);
                     data.args[1] = self.resolveAliases(data.args[1]);
                 },
-                .jump, .nullary => {},
+                .ternary => |*data| {
+                    data.args[0] = self.resolveAliases(data.args[0]);
+                    data.args[1] = self.resolveAliases(data.args[1]);
+                    data.args[2] = self.resolveAliases(data.args[2]);
+                },
+                .ternary_imm8 => |*data| {
+                    data.args[0] = self.resolveAliases(data.args[0]);
+                    data.args[1] = self.resolveAliases(data.args[1]);
+                },
+                .shuffle => |*data| {
+                    data.args[0] = self.resolveAliases(data.args[0]);
+                    data.args[1] = self.resolveAliases(data.args[1]);
+                },
+                .unary_with_trap => |*data| {
+                    data.arg = self.resolveAliases(data.arg);
+                },
+                .extract_lane => |*data| {
+                    data.arg = self.resolveAliases(data.arg);
+                },
+                .atomic_load => |*data| {
+                    data.addr = self.resolveAliases(data.addr);
+                },
+                .atomic_store => |*data| {
+                    data.addr = self.resolveAliases(data.addr);
+                    data.src = self.resolveAliases(data.src);
+                },
+                .atomic_rmw => |*data| {
+                    data.addr = self.resolveAliases(data.addr);
+                    data.src = self.resolveAliases(data.src);
+                },
+                .atomic_cas => |*data| {
+                    data.addr = self.resolveAliases(data.addr);
+                    data.expected = self.resolveAliases(data.expected);
+                    data.replacement = self.resolveAliases(data.replacement);
+                },
+                .jump, .nullary, .unary_imm, .fence => {},
             }
         }
     }
