@@ -1215,6 +1215,49 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     },
                     else => return error.LoweringFailed,
                 }
+            } else if (data.opcode == .clz or data.opcode == .ctz or data.opcode == .popcnt) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                if (data.opcode == .clz) {
+                    // Count leading zeros - direct instruction
+                    try builder.emit(Inst{
+                        .clz = .{ .dst = dst, .src = src, .size = size },
+                    });
+                } else if (data.opcode == .ctz) {
+                    // Count trailing zeros: RBIT + CLZ
+                    // Allocate temporary vreg for reversed bits
+                    const temp_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS + 1), RegClass.int);
+                    const temp = Reg.fromVReg(temp_vreg);
+                    const temp_writable = WritableReg.fromVReg(temp_vreg);
+
+                    // Reverse bits
+                    try builder.emit(Inst{
+                        .rbit = .{ .dst = temp_writable, .src = src, .size = size },
+                    });
+
+                    // Count leading zeros of reversed value
+                    try builder.emit(Inst{
+                        .clz = .{ .dst = dst, .src = temp, .size = size },
+                    });
+                } else {
+                    // popcnt - count set bits
+                    try builder.emit(Inst{
+                        .popcnt = .{ .dst = dst, .src = src, .size = size },
+                    });
+                }
             } else {
                 // Other unary ops not yet implemented
                 try builder.emit(Inst.nop);
