@@ -8,6 +8,7 @@ const entities = @import("entities.zig");
 const value_list = @import("value_list.zig");
 const instruction_data = @import("instruction_data.zig");
 const opcodes = @import("opcodes.zig");
+const immediates = @import("immediates.zig");
 const maps = @import("../foundation/maps.zig");
 
 const Type = types.Type;
@@ -18,6 +19,7 @@ const ValueList = value_list.ValueList;
 const ValueListPool = value_list.ValueListPool;
 const InstructionData = instruction_data.InstructionData;
 const Opcode = opcodes.Opcode;
+const Imm64 = immediates.Imm64;
 const PrimaryMap = maps.PrimaryMap;
 const SecondaryMap = maps.SecondaryMap;
 
@@ -278,7 +280,7 @@ pub const DataFlowGraph = struct {
     /// Type is inferred as i64.
     /// Returns the constant value.
     pub fn makeConst(self: *Self, imm: i64) !Value {
-        const inst_data = instruction_data.UnaryImmData.init(.iconst, .{ .imm64 = imm });
+        const inst_data = instruction_data.UnaryImmData.init(.iconst, Imm64.new(imm));
         const inst = try self.makeInst(.{ .unary_imm = inst_data });
         return try self.appendInstResult(inst, Type.I64);
     }
