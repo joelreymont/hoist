@@ -77,8 +77,12 @@ pub const Context = struct {
             .verify = self.verify,
         };
 
+        // Create a codegen Context for compilation
+        var codegen_ctx = try compile_mod.Context.init(self.allocator);
+        defer codegen_ctx.deinit();
+
         // Call the main compilation pipeline
-        return compile_mod.compile(self, func, &target);
+        return compile_mod.compile(&codegen_ctx, func, &target);
     }
 
     /// Get target ISA name string.

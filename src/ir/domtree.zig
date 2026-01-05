@@ -185,9 +185,14 @@ pub const DominatorTree = struct {
     fn blockDepth(self: *const DominatorTree, block: Block) u32 {
         var depth: u32 = 0;
         var current = block;
+        const max_depth = 10000; // Prevent infinite loops from malformed dominator trees
         while (self.idom.get(current)) |ptr| {
             const idom_block = ptr.* orelse return depth;
             depth += 1;
+            if (depth > max_depth) {
+                // Cycle detected in dominator tree - this is a bug
+                std.debug.panic("Cycle detected in dominator tree at block {}", .{block.index()});
+            }
             current = idom_block;
         }
         return depth;

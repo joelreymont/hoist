@@ -11,7 +11,7 @@
 //! 8. Code emission
 
 const std = @import("std");
-const Context = @import("context.zig").Context;
+pub const Context = @import("context.zig").Context;
 pub const CompiledCode = @import("context.zig").CompiledCode;
 const Relocation = @import("context.zig").Relocation;
 const RelocKind = @import("context.zig").RelocKind;
@@ -91,21 +91,22 @@ pub fn compile(
     try verifyIf(ctx, func, target);
 
     // 2. Optimize IR
-    try optimize(ctx, func, target);
+    try optimize(ctx, target);
 
     // 3. Lower to VCode via ISLE
-    try lower(ctx, func, target);
+    try lower(ctx, target);
 
     // 4. Register allocation
-    try allocateRegisters(ctx, func, target);
+    try allocateRegisters(ctx, target);
 
     // 5. Prologue/epilogue insertion
-    try insertPrologueEpilogue(ctx, func, target);
+    try insertPrologueEpilogue(ctx, target);
 
     // 6. Emit machine code
-    try emit(ctx, func, target);
+    try emit(ctx, target);
 
-    return ctx.getCompiledCode() orelse return error.EmissionFailed;
+    const code_ptr = ctx.getCompiledCode() orelse return error.EmissionFailed;
+    return code_ptr.*;
 }
 
 /// Verify function if verification is enabled.
