@@ -532,11 +532,11 @@ pub const PostDominatorTree = struct {
                 if (std.meta.eql(block, exit)) continue;
 
                 // Compute ipdom as intersection of successors' ipdoms
-                const succs = cfg.successors(block);
-                if (succs.len == 0) continue;
+                if (cfg.successorCount(block) == 0) continue;
 
                 var new_ipdom: ?Block = null;
-                for (succs) |succ| {
+                var succs = cfg.successors(block);
+                while (succs.next()) |succ| {
                     if (self.ipdom.get(succ)) |ptr| {
                         if (ptr.*) |s_ipdom| {
                             new_ipdom = if (new_ipdom) |n| intersect(self, n, s_ipdom) else s_ipdom;

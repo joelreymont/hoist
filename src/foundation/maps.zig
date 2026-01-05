@@ -87,6 +87,11 @@ pub fn PrimaryMap(comptime K: type, comptime V: type) type {
         pub fn reserve(self: *Self, additional: usize) !void {
             try self.elems.ensureTotalCapacity(self.elems.items.len + additional);
         }
+
+        /// Iterator over keys only.
+        pub fn keys(self: *const Self) @import("entity.zig").Keys(K) {
+            return @import("entity.zig").Keys(K).init(self.elems.items.len);
+        }
     };
 }
 

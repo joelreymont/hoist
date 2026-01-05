@@ -95,13 +95,12 @@ pub const LoopInfo = struct {
         var back_edges = std.ArrayList(struct { from: Block, to: Block }){};
         defer back_edges.deinit(self.allocator);
 
-        // Iterate through CFG edges
-        var iter = cfg.succs.iterator();
-        while (iter.next()) |entry| {
-            const from = entry.key_ptr.*;
-            const succs = entry.value_ptr.*;
-
-            for (succs.items) |to| {
+        // Iterate through all blocks
+        var block_keys = domtree.idom.keys();
+        while (block_keys.next()) |from| {
+            // Iterate through successors of this block
+            var succs = cfg.successors(from);
+            while (succs.next()) |to| {
                 // If 'to' dominates 'from', this is a back edge
                 if (domtree.dominates(to, from)) {
                     try back_edges.append(self.allocator, .{ .from = from, .to = to });
@@ -140,11 +139,11 @@ pub const LoopInfo = struct {
             const block = worklist.pop().?;
 
             // Add all predecessors that are dominated by the header
-            const preds = cfg.predecessors(block);
-            for (preds) |pred| {
-                if (domtree.dominates(header, pred) and !loop.contains(pred)) {
-                    try loop.addBlock(pred);
-                    try worklist.append(self.allocator, pred);
+            var preds = cfg.predecessors(block);
+            while (preds.next()) |pred_info| {
+                if (domtree.dominates(header, pred_info.block) and !loop.contains(pred_info.block)) {
+                    try loop.addBlock(pred_info.block);
+                    try worklist.append(self.allocator, pred_info.block);
                 }
             }
         }
