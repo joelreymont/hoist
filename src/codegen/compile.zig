@@ -1494,6 +1494,123 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 try builder.emit(Inst.nop);
             }
         },
+        .load => |data| {
+            // Handle load instructions
+            const VReg = @import("../machinst/reg.zig").VReg;
+            const WritableReg = @import("../machinst/reg.zig").WritableReg;
+            const RegClass = @import("../machinst/reg.zig").RegClass;
+            const Reg = @import("../machinst/reg.zig").Reg;
+
+            // Get base address register
+            const base_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+            const base = Reg.fromVReg(base_vreg);
+
+            // Get result register
+            const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+            const result_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+
+            // Determine register class based on result type
+            const reg_class: RegClass = if (result_type.isFloat()) .float else .int;
+            const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), reg_class);
+            const dst = WritableReg.fromVReg(result_vreg);
+
+            // Emit load instruction based on size
+            const offset_i16: i16 = @intCast(data.offset);
+            if (result_type.bits() == 64) {
+                try builder.emit(Inst{
+                    .ldr = .{
+                        .dst = dst,
+                        .base = base,
+                        .offset = offset_i16,
+                        .size = .size64,
+                    },
+                });
+            } else if (result_type.bits() == 32) {
+                try builder.emit(Inst{
+                    .ldr = .{
+                        .dst = dst,
+                        .base = base,
+                        .offset = offset_i16,
+                        .size = .size32,
+                    },
+                });
+            } else if (result_type.bits() == 16) {
+                try builder.emit(Inst{
+                    .ldrh = .{
+                        .dst = dst,
+                        .base = base,
+                        .offset = offset_i16,
+                        .size = .size32, // zero-extend to 32-bit
+                    },
+                });
+            } else {
+                // 8-bit load
+                try builder.emit(Inst{
+                    .ldrb = .{
+                        .dst = dst,
+                        .base = base,
+                        .offset = offset_i16,
+                        .size = .size32, // zero-extend to 32-bit
+                    },
+                });
+            }
+        },
+        .store => |data| {
+            // Handle store instructions
+            const VReg = @import("../machinst/reg.zig").VReg;
+            const RegClass = @import("../machinst/reg.zig").RegClass;
+            const Reg = @import("../machinst/reg.zig").Reg;
+
+            // args[0] = address, args[1] = value to store
+            const base_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+            const base = Reg.fromVReg(base_vreg);
+
+            // Get value type to determine register class
+            const value_type = ctx.func.dfg.valueType(data.args[1]) orelse return error.LoweringFailed;
+            const reg_class: RegClass = if (value_type.isFloat()) .float else .int;
+
+            const src_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), reg_class);
+            const src = Reg.fromVReg(src_vreg);
+
+            // Emit store instruction based on size
+            const offset_i16: i16 = @intCast(data.offset);
+            if (value_type.bits() == 64) {
+                try builder.emit(Inst{
+                    .str = .{
+                        .src = src,
+                        .base = base,
+                        .offset = offset_i16,
+                        .size = .size64,
+                    },
+                });
+            } else if (value_type.bits() == 32) {
+                try builder.emit(Inst{
+                    .str = .{
+                        .src = src,
+                        .base = base,
+                        .offset = offset_i16,
+                        .size = .size32,
+                    },
+                });
+            } else if (value_type.bits() == 16) {
+                try builder.emit(Inst{
+                    .strh = .{
+                        .src = src,
+                        .base = base,
+                        .offset = offset_i16,
+                    },
+                });
+            } else {
+                // 8-bit store
+                try builder.emit(Inst{
+                    .strb = .{
+                        .src = src,
+                        .base = base,
+                        .offset = offset_i16,
+                    },
+                });
+            }
+        },
         else => {
             // Unimplemented instruction - emit NOP placeholder
             try builder.emit(Inst.nop);
