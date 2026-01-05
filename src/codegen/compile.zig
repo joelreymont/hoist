@@ -390,14 +390,14 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
             const RegClass = @import("../machinst/reg.zig").RegClass;
             const OperandSize = @import("../backends/aarch64/inst.zig").OperandSize;
 
-            const block_data = ctx.func.dfg.blocks.get(block) orelse return error.MissingBlock;
+            const block_data = ctx.func.dfg.blocks.get(block) orelse return error.LoweringFailed;
             const params = block_data.getParams(&ctx.func.dfg.value_lists);
 
             // Emit MOV from x0-x7 to parameter vregs
             for (params, 0..) |param, i| {
                 if (i < 8) {
                     // Source: physical register x0-x7
-                    const preg = PReg.fromIndex(@intCast(i));
+                    const preg = PReg.new(RegClass.int, @intCast(i));
                     const src = Reg.fromPReg(preg);
 
                     // Destination: virtual register for this parameter
@@ -405,7 +405,7 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
                     const dst = WritableReg.fromVReg(param_vreg);
 
                     // Get parameter type to determine size
-                    const param_type = ctx.func.dfg.valueType(param) orelse return error.MissingType;
+                    const param_type = ctx.func.dfg.valueType(param) orelse return error.LoweringFailed;
                     const size: OperandSize = if (param_type.bits() == 64)
                         .size64
                     else
@@ -420,7 +420,7 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
                         },
                     });
                 } else {
-                    return error.TooManyParameters;
+                    return error.LoweringFailed;
                 }
             }
 
@@ -528,10 +528,12 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
             },
         }
 
-        // MVP: Only emit the 3 instructions we support
+        // MVP: Emit supported instructions
         switch (rewritten_inst) {
             .mov_imm => |i| try emit_mod.emitMovImm(i.dst.toReg(), i.imm, i.size, &buffer),
+            .mov_rr => |i| try emit_mod.emitMovRR(i.dst.toReg(), i.src, i.size, &buffer),
             .add_rr => |i| try emit_mod.emitAddRR(i.dst.toReg(), i.src1, i.src2, i.size, &buffer),
+            .mul_rr => |i| try emit_mod.emitMulRR(i.dst.toReg(), i.src1, i.src2, i.size, &buffer),
             .ret => try emit_mod.emitRet(null, &buffer),
             .nop => {}, // Skip NOPs
             else => return CodegenError.EmissionFailed, // Unsupported instruction for MVP
@@ -707,8 +709,8 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const return_val_vreg = VReg.new(@intCast(data.arg.index), RegClass.int);
                 const src = Reg.fromVReg(return_val_vreg);
 
-                const x0 = PReg.fromIndex(0); // x0 is the return register
-                const dst = WritableReg.fromPReg(x0);
+                const x0 = PReg.new(RegClass.int, 0); // x0 is the return register
+                const dst = WritableReg.fromReg(Reg.fromPReg(x0));
 
                 // Get size from return value type
                 const value_type = ctx.func.dfg.valueType(data.arg) orelse {

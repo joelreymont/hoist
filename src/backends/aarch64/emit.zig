@@ -344,7 +344,7 @@ fn sf(size: OperandSize) u1 {
 }
 
 /// MOV Xd, Xn (implemented as ORR Xd, XZR, Xn)
-fn emitMovRR(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+pub fn emitMovRR(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
     const rd = hwEnc(dst);
     const rm = hwEnc(src);
@@ -618,7 +618,7 @@ fn emitSubsImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_
 }
 
 /// MUL Xd, Xn, Xm (alias for MADD Xd, Xn, Xm, XZR)
-fn emitMulRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+pub fn emitMulRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
