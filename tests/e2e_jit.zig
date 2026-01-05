@@ -125,7 +125,7 @@ test "JIT: CRITICAL - verify ABI calling convention" {
     // movz w0, #123, lsl #0  (load 123 into w0)
     // ret                     (return)
     const code_bytes = [_]u8{
-        0x6f, 0x0f, 0x80, 0x52, // movz w0, #123
+        0x60, 0x0f, 0x80, 0x52, // movz w0, #123 (NOTE: 0x60 not 0x6f - targets w0 not w15)
         0xc0, 0x03, 0x5f, 0xd6, // ret
     };
 
