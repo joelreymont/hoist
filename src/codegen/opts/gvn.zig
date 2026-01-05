@@ -150,7 +150,7 @@ pub const GVN = struct {
             .icmp, .icmp_imm => true,
 
             // Pure floating-point operations
-            .fadd, .fsub, .fmul, .fdiv, .fsqrt => true,
+            .fadd, .fsub, .fmul, .fdiv, .sqrt => true,
             .fabs, .fneg, .fmin, .fmax => true,
             .fcmp => true,
 

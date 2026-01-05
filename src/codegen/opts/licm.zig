@@ -230,7 +230,7 @@ pub const LICM = struct {
             .icmp, .select => false,
 
             // Pure floating-point operations
-            .fadd, .fsub, .fmul, .fdiv, .fsqrt => false,
+            .fadd, .fsub, .fmul, .fdiv, .sqrt => false,
             .fabs, .fneg, .fmin, .fmax => false,
             .fcmp => false,
 

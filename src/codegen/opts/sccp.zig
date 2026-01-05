@@ -35,6 +35,8 @@ const Value = ir.Value;
 const Type = ir.Type;
 const Opcode = @import("../../ir/opcodes.zig").Opcode;
 const InstructionData = ir.InstructionData;
+const instruction_data = @import("../../ir/instruction_data.zig");
+const BranchData = instruction_data.BranchData;
 const ValueData = @import("../../ir/dfg.zig").ValueData;
 const condcodes = @import("../../ir/condcodes.zig");
 const FloatCC = condcodes.FloatCC;
@@ -198,8 +200,8 @@ pub const SCCP = struct {
             },
             .nullary => .top,
             .binary => |d| {
-                const lhs_lat = self.lattice.get(d.lhs) orelse .bottom;
-                const rhs_lat = self.lattice.get(d.rhs) orelse .bottom;
+                const lhs_lat = self.lattice.get(d.args[0]) orelse .bottom;
+                const rhs_lat = self.lattice.get(d.args[1]) orelse .bottom;
 
                 // If either operand is bottom, result is bottom
                 if (lhs_lat == .bottom or rhs_lat == .bottom) return .bottom;
@@ -214,8 +216,8 @@ pub const SCCP = struct {
                 return .{ .constant = try evalBinaryOp(d.opcode, lhs, rhs) };
             },
             .int_compare => |d| {
-                const lhs_lat = self.lattice.get(d.lhs) orelse .bottom;
-                const rhs_lat = self.lattice.get(d.rhs) orelse .bottom;
+                const lhs_lat = self.lattice.get(d.args[0]) orelse .bottom;
+                const rhs_lat = self.lattice.get(d.args[1]) orelse .bottom;
 
                 if (lhs_lat == .bottom or rhs_lat == .bottom) return .bottom;
                 if (lhs_lat == .top or rhs_lat == .top) return .top;
@@ -341,9 +343,9 @@ pub const SCCP = struct {
     fn instUsesValue(func: *const Function, inst_data: InstructionData, value: Value) bool {
         return switch (inst_data) {
             .unary => |d| std.meta.eql(d.arg, value),
-            .binary => |d| std.meta.eql(d.lhs, value) or std.meta.eql(d.rhs, value),
-            .int_compare => |d| std.meta.eql(d.lhs, value) or std.meta.eql(d.rhs, value),
-            .float_compare => |d| std.meta.eql(d.lhs, value) or std.meta.eql(d.rhs, value),
+            .binary => |d| std.meta.eql(d.args[0], value) or std.meta.eql(d.args[1], value),
+            .int_compare => |d| std.meta.eql(d.args[0], value) or std.meta.eql(d.args[1], value),
+            .float_compare => |d| std.meta.eql(d.args[0], value) or std.meta.eql(d.args[1], value),
             .branch => |d| std.meta.eql(d.condition, value),
             .load => |d| std.meta.eql(d.addr, value),
             .store => |d| std.meta.eql(d.addr, value) or std.meta.eql(d.value, value),
@@ -704,7 +706,7 @@ test "SCCP: constant branch folding" {
 
     // Create branch manually since builder doesn't have branch helper
     const branch_data = InstructionData{
-        .branch = InstructionData.BranchData.init(.brif, zero, block1, block2),
+        .branch = BranchData.init(.brif, zero, block1, block2),
     };
     const branch_inst = try func.dfg.makeInst(branch_data);
     try func.layout.appendInst(branch_inst, entry);
