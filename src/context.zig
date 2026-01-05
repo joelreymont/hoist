@@ -63,25 +63,22 @@ pub const Context = struct {
         self: *Context,
         func: *Function,
     ) !compile_mod.CompiledCode {
-        // Run verification if enabled
-        if (self.verify) {
-            var verifier = Verifier.init(self.allocator, func);
-            defer verifier.deinit();
-            try verifier.verify();
-        }
+        // Convert Context settings to compile.Target
+        const target = compile_mod.Target{
+            .arch = switch (self.target.arch) {
+                .x86_64 => .x86_64,
+                .aarch64 => .aarch64,
+            },
+            .opt_level = switch (self.opt_level) {
+                .none => .none,
+                .basic, .moderate => .speed,
+                .aggressive => .speed_and_size,
+            },
+            .verify = self.verify,
+        };
 
-        // Run optimization passes if enabled
-        // TODO: Re-enable when passes module is implemented
-        // if (self.optimize) {
-        //     var opt_pass = root.passes.optimize.OptimizationPass.init(self.allocator, func);
-        //     _ = try opt_pass.run();
-        // }
-        _ = self.optimize; // Suppress unused field warning
-
-        // TODO: Re-enable compilation when CompileCtx API is fixed
-        // The compile module was refactored but ISA backends weren't updated
-        // Need to update x64/aarch64 ISA.compileFunction signatures to match new compile() API
-        return error.CompilationNotImplemented;
+        // Call the main compilation pipeline
+        return compile_mod.compile(self, func, &target);
     }
 
     /// Get target ISA name string.

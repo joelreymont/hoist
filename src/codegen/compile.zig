@@ -84,34 +84,35 @@ pub const CompileResult = CodegenError!*const CompiledCode;
 /// Returns compiled machine code with relocations.
 pub fn compile(
     ctx: *Context,
+    func: *Function,
     target: *const Target,
 ) CompileResult {
     // 1. Verify IR (if enabled)
-    try verifyIf(ctx, target);
+    try verifyIf(ctx, func, target);
 
     // 2. Optimize IR
-    try optimize(ctx, target);
+    try optimize(ctx, func, target);
 
     // 3. Lower to VCode via ISLE
-    try lower(ctx, target);
+    try lower(ctx, func, target);
 
     // 4. Register allocation
-    try allocateRegisters(ctx, target);
+    try allocateRegisters(ctx, func, target);
 
     // 5. Prologue/epilogue insertion
-    try insertPrologueEpilogue(ctx, target);
+    try insertPrologueEpilogue(ctx, func, target);
 
     // 6. Emit machine code
-    try emit(ctx, target);
+    try emit(ctx, func, target);
 
     return ctx.getCompiledCode() orelse return error.EmissionFailed;
 }
 
 /// Verify function if verification is enabled.
-fn verifyIf(ctx: *Context, target: *const Target) CodegenError!void {
+fn verifyIf(ctx: *Context, func: *Function, target: *const Target) CodegenError!void {
     if (!target.verify) return;
 
-    var verifier = ir.Verifier.init(ctx.allocator, &ctx.func);
+    var verifier = ir.Verifier.init(ctx.allocator, func);
     defer verifier.deinit();
 
     verifier.verify() catch {
