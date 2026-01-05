@@ -216,11 +216,9 @@ pub const OptimizationPass = struct {
         const def = self.func.dfg.valueDef(value);
         if (def.inst) |inst| {
             const inst_data = self.func.dfg.insts.get(inst) orelse return null;
-            if (inst_data.* == .nullary) {
-                if (inst_data.nullary.opcode == .iconst) {
-                    // TODO: Extract actual constant value from instruction
-                    // For now, return null (requires immediate operand support)
-                    return null;
+            if (inst_data.* == .unary_imm) {
+                if (inst_data.unary_imm.opcode == .iconst) {
+                    return inst_data.unary_imm.imm.value;
                 }
             }
         }
