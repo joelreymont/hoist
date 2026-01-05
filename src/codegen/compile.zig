@@ -1395,6 +1395,27 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .popcnt = .{ .dst = dst, .src = src, .size = size },
                     });
                 }
+            } else if (data.opcode == .bnot) {
+                // Bitwise NOT
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                // MVN - bitwise NOT
+                try builder.emit(Inst{
+                    .mvn_rr = .{ .dst = dst, .src = src, .size = size },
+                });
             } else if (data.opcode == .sqrt) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
