@@ -708,6 +708,72 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .size = size,
                     },
                 });
+            } else if (data.opcode == .isub) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+
+                const src1 = Reg.fromVReg(arg0_vreg);
+                const src2 = Reg.fromVReg(arg1_vreg);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse {
+                    try builder.emit(Inst.nop);
+                    return;
+                };
+
+                const size: OperandSize = if (value_type.bits() == 64)
+                    .size64
+                else
+                    .size32;
+
+                try builder.emit(Inst{
+                    .sub_rr = .{
+                        .dst = dst,
+                        .src1 = src1,
+                        .src2 = src2,
+                        .size = size,
+                    },
+                });
+            } else if (data.opcode == .isub) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+
+                const src1 = Reg.fromVReg(arg0_vreg);
+                const src2 = Reg.fromVReg(arg1_vreg);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse {
+                    try builder.emit(Inst.nop);
+                    return;
+                };
+
+                const size: OperandSize = if (value_type.bits() == 64)
+                    .size64
+                else
+                    .size32;
+
+                try builder.emit(Inst{
+                    .sub_rr = .{
+                        .dst = dst,
+                        .src1 = src1,
+                        .src2 = src2,
+                        .size = size,
+                    },
+                });
             } else if (data.opcode == .imul) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
