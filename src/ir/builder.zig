@@ -19,7 +19,9 @@ const Opcode = opcodes.Opcode;
 const InstructionData = instruction_data.InstructionData;
 const BinaryData = instruction_data.BinaryData;
 const UnaryData = instruction_data.UnaryData;
+const UnaryImmData = instruction_data.UnaryImmData;
 const NullaryData = instruction_data.NullaryData;
+const Imm64 = @import("immediates.zig").Imm64;
 
 /// Function builder - ergonomic IR construction.
 pub const FunctionBuilder = struct {
@@ -59,11 +61,11 @@ pub const FunctionBuilder = struct {
         try self.func.layout.appendBlock(block);
     }
 
-    pub fn iconst(self: *Self, ty: Type, _: i64) !Value {
+    pub fn iconst(self: *Self, ty: Type, imm: i64) !Value {
         const block = self.current_block orelse return error.NoCurrentBlock;
 
-        // Create nullary iconst instruction (simplified - should use imm64)
-        const inst_data = InstructionData{ .nullary = NullaryData.init(.iconst) };
+        // Create unary_imm iconst instruction with immediate value
+        const inst_data = InstructionData{ .unary_imm = UnaryImmData.init(.iconst, Imm64.new(imm)) };
         const inst = try self.func.dfg.makeInst(inst_data);
 
         try self.func.layout.appendInst(inst, block);
@@ -209,4 +211,17 @@ test "FunctionBuilder iconst and iadd" {
 
     try testing.expectEqual(@as(usize, 3), func.dfg.insts.elems.items.len);
     try testing.expectEqual(@as(usize, 4), func.layout.insts.elems.items.len);
+
+    // Verify iconst immediate values are stored correctly
+    const v1_def = func.dfg.valueDef(v1).?;
+    const v1_inst = v1_def.unwrapInst();
+    const v1_data = func.dfg.insts.get(v1_inst).?;
+    try testing.expectEqual(InstructionData.unary_imm, @as(std.meta.Tag(InstructionData), v1_data.*));
+    try testing.expectEqual(@as(i64, 10), v1_data.unary_imm.imm.value);
+
+    const v2_def = func.dfg.valueDef(v2).?;
+    const v2_inst = v2_def.unwrapInst();
+    const v2_data = func.dfg.insts.get(v2_inst).?;
+    try testing.expectEqual(InstructionData.unary_imm, @as(std.meta.Tag(InstructionData), v2_data.*));
+    try testing.expectEqual(@as(i64, 20), v2_data.unary_imm.imm.value);
 }

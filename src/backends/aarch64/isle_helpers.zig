@@ -57,18 +57,14 @@ pub fn imm12_from_negated_value(value: lower_mod.Value, ctx: *const lower_mod.Lo
 /// Helper: Extract integer constant value from an iconst instruction.
 /// Returns null if the value is not defined by iconst or if immediate data is not available.
 fn intValue(value: lower_mod.Value, ctx: *const lower_mod.LowerCtx(Inst)) ?i64 {
-    // TODO: LowerCtx needs access to IR DFG to query instruction data
-    // Once LowerCtx.func provides DFG access, implement as:
-    //   const def = ctx.func.dfg.valueDef(value);
-    //   if (def.inst) |inst| {
-    //       const inst_data = ctx.func.dfg.insts.get(inst) orelse return null;
-    //       if (inst_data.* == .nullary and inst_data.nullary.opcode == .iconst) {
-    //           return ctx.func.dfg.iconst_pool.get(inst); // requires immediate pool
-    //       }
-    //   }
-    _ = value;
-    _ = ctx;
-    return null;
+    const def = ctx.func.dfg.valueDef(value);
+    const inst = def.inst orelse return null;
+
+    const inst_data = ctx.func.dfg.insts.get(inst) orelse return null;
+    if (inst_data.* != .unary_imm) return null;
+    if (inst_data.unary_imm.opcode != .iconst) return null;
+
+    return inst_data.unary_imm.imm.value;
 }
 
 /// Constructor: Convert Imm12 back to u64.
@@ -3078,7 +3074,6 @@ pub fn put_in_reg_zext32(
 }
 
 /// put_in_reg_zext64: Put value in register with 64-bit zero extension
-
 /// put_in_reg_sext32: Put value in register with 32-bit sign extension
 pub fn put_in_reg_sext32(
     val: lower_mod.Value,
@@ -3285,7 +3280,7 @@ pub fn aarch64_umul_overflow_i16(
     // Zero-extend both operands to 32-bit
     const a_ext = try put_in_reg_zext32(a, ctx);
     const b_ext = try put_in_reg_zext32(b, ctx);
-    
+
     // Multiply: out = a_ext * b_ext
     const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3297,7 +3292,7 @@ pub fn aarch64_umul_overflow_i16(
         },
     });
     const out = out_dst.toReg();
-    
+
     // Compare result with zero-extended version to detect overflow
     // If the high 16 bits are non-zero, we overflowed
     const cmp_dst = lower_mod.WritableReg.allocReg(.int, ctx);
@@ -3310,8 +3305,8 @@ pub fn aarch64_umul_overflow_i16(
             .signed = false,
         },
     });
-    
-    // Compare out vs cmp_dst, set overflow flag if != 
+
+    // Compare out vs cmp_dst, set overflow flag if !=
     try ctx.emit(Inst{
         .AluRRR = .{
             .alu_op = .Sub,
@@ -3321,7 +3316,7 @@ pub fn aarch64_umul_overflow_i16(
             .rm = cmp_dst.toReg(),
         },
     });
-    
+
     // Set overflow bit based on comparison
     const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3330,7 +3325,7 @@ pub fn aarch64_umul_overflow_i16(
             .cond = intccToCondCode(.ne),
         },
     });
-    
+
     return lower_mod.ValueRegs.two(out_dst.toReg(), of_dst.toReg());
 }
 
@@ -3343,7 +3338,7 @@ pub fn aarch64_umul_overflow_i32(
 ) !lower_mod.ValueRegs {
     const a_reg = try ctx.getValueReg(a, .int);
     const b_reg = try ctx.getValueReg(b, .int);
-    
+
     // UMULL: 64-bit result from 32-bit operands
     const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3354,7 +3349,7 @@ pub fn aarch64_umul_overflow_i32(
         },
     });
     const out = out_dst.toReg();
-    
+
     // Extend result back to see if high bits are set
     const ext_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3366,7 +3361,7 @@ pub fn aarch64_umul_overflow_i32(
             .signed = false,
         },
     });
-    
+
     // Compare: if out != extended version, we overflowed
     try ctx.emit(Inst{
         .AluRRR = .{
@@ -3377,7 +3372,7 @@ pub fn aarch64_umul_overflow_i32(
             .rm = ext_dst.toReg(),
         },
     });
-    
+
     const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
         .cset = .{
@@ -3385,7 +3380,7 @@ pub fn aarch64_umul_overflow_i32(
             .cond = intccToCondCode(.ne),
         },
     });
-    
+
     return lower_mod.ValueRegs.two(out, of_dst.toReg());
 }
 
@@ -3398,7 +3393,7 @@ pub fn aarch64_umul_overflow_i64(
 ) !lower_mod.ValueRegs {
     const a_reg = try ctx.getValueReg(a, .int);
     const b_reg = try ctx.getValueReg(b, .int);
-    
+
     // MUL: low 64 bits
     const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3409,7 +3404,7 @@ pub fn aarch64_umul_overflow_i64(
             .size = .Size64,
         },
     });
-    
+
     // UMULH: high 64 bits
     const high_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3419,7 +3414,7 @@ pub fn aarch64_umul_overflow_i64(
             .src2 = b_reg,
         },
     });
-    
+
     // Compare high bits with 0 - if non-zero, we overflowed
     try ctx.emit(Inst{
         .cmp_imm = .{
@@ -3428,7 +3423,7 @@ pub fn aarch64_umul_overflow_i64(
             .imm = 0,
         },
     });
-    
+
     const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
         .cset = .{
@@ -3436,7 +3431,7 @@ pub fn aarch64_umul_overflow_i64(
             .cond = intccToCondCode(.ne),
         },
     });
-    
+
     return lower_mod.ValueRegs.two(out_dst.toReg(), of_dst.toReg());
 }
 
@@ -3451,7 +3446,7 @@ pub fn aarch64_smul_overflow_i16(
     // Sign-extend both operands to 32-bit
     const a_ext = try put_in_reg_sext32(a, ctx);
     const b_ext = try put_in_reg_sext32(b, ctx);
-    
+
     // Multiply
     const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3463,7 +3458,7 @@ pub fn aarch64_smul_overflow_i16(
         },
     });
     const out = out_dst.toReg();
-    
+
     // Sign-extend result back to check for overflow
     const cmp_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3475,7 +3470,7 @@ pub fn aarch64_smul_overflow_i16(
             .signed = true,
         },
     });
-    
+
     // Compare
     try ctx.emit(Inst{
         .AluRRR = .{
@@ -3486,7 +3481,7 @@ pub fn aarch64_smul_overflow_i16(
             .rm = cmp_dst.toReg(),
         },
     });
-    
+
     const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
         .cset = .{
@@ -3494,7 +3489,7 @@ pub fn aarch64_smul_overflow_i16(
             .cond = intccToCondCode(.ne),
         },
     });
-    
+
     return lower_mod.ValueRegs.two(out_dst.toReg(), of_dst.toReg());
 }
 
@@ -3507,7 +3502,7 @@ pub fn aarch64_smul_overflow_i32(
 ) !lower_mod.ValueRegs {
     const a_reg = try ctx.getValueReg(a, .int);
     const b_reg = try ctx.getValueReg(b, .int);
-    
+
     // SMULL: 64-bit result from signed 32-bit operands
     const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3518,7 +3513,7 @@ pub fn aarch64_smul_overflow_i32(
         },
     });
     const out = out_dst.toReg();
-    
+
     // Sign-extend result back
     const ext_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3530,7 +3525,7 @@ pub fn aarch64_smul_overflow_i32(
             .signed = true,
         },
     });
-    
+
     // Compare
     try ctx.emit(Inst{
         .AluRRR = .{
@@ -3541,7 +3536,7 @@ pub fn aarch64_smul_overflow_i32(
             .rm = ext_dst.toReg(),
         },
     });
-    
+
     const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
         .cset = .{
@@ -3549,7 +3544,7 @@ pub fn aarch64_smul_overflow_i32(
             .cond = intccToCondCode(.ne),
         },
     });
-    
+
     return lower_mod.ValueRegs.two(out, of_dst.toReg());
 }
 
@@ -3562,7 +3557,7 @@ pub fn aarch64_smul_overflow_i64(
 ) !lower_mod.ValueRegs {
     const a_reg = try ctx.getValueReg(a, .int);
     const b_reg = try ctx.getValueReg(b, .int);
-    
+
     // MUL: low 64 bits
     const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3574,7 +3569,7 @@ pub fn aarch64_smul_overflow_i64(
         },
     });
     const out = out_dst.toReg();
-    
+
     // SMULH: high 64 bits (signed)
     const high_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3584,7 +3579,7 @@ pub fn aarch64_smul_overflow_i64(
             .src2 = b_reg,
         },
     });
-    
+
     // Get sign extension of low bits (arithmetic shift right by 63)
     const sign_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3595,7 +3590,7 @@ pub fn aarch64_smul_overflow_i64(
             .size = .Size64,
         },
     });
-    
+
     // Compare high bits with sign extension
     // If they differ, we overflowed
     try ctx.emit(Inst{
@@ -3607,7 +3602,7 @@ pub fn aarch64_smul_overflow_i64(
             .rm = sign_dst.toReg(),
         },
     });
-    
+
     const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
         .cset = .{
@@ -3615,7 +3610,7 @@ pub fn aarch64_smul_overflow_i64(
             .cond = intccToCondCode(.ne),
         },
     });
-    
+
     return lower_mod.ValueRegs.two(out_dst.toReg(), of_dst.toReg());
 }
 
@@ -3624,7 +3619,7 @@ pub fn aarch64_smul_overflow_i64(
 /// Count leading zeros for I128
 /// Algorithm from Cranelift:
 /// clz hi_clz, hi
-/// clz lo_clz, lo  
+/// clz lo_clz, lo
 /// lsr tmp, hi_clz, #6
 /// madd dst_lo, lo_clz, tmp, hi_clz
 /// mov dst_hi, 0
@@ -3634,7 +3629,7 @@ pub fn lower_clz128(
 ) !lower_mod.ValueRegs {
     const hi = lower_mod.ValueRegs.getReg(val, 1);
     const lo = lower_mod.ValueRegs.getReg(val, 0);
-    
+
     // CLZ on both halves
     const hi_clz_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3645,7 +3640,7 @@ pub fn lower_clz128(
         },
     });
     const hi_clz = hi_clz_dst.toReg();
-    
+
     const lo_clz_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
         .clz = .{
@@ -3655,7 +3650,7 @@ pub fn lower_clz128(
         },
     });
     const lo_clz = lo_clz_dst.toReg();
-    
+
     // LSR tmp, hi_clz, #6 (shift right by 6 to get 0 or 1)
     const tmp_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3667,7 +3662,7 @@ pub fn lower_clz128(
         },
     });
     const tmp = tmp_dst.toReg();
-    
+
     // MADD result, lo_clz, tmp, hi_clz
     // result = lo_clz * tmp + hi_clz
     const result_dst = lower_mod.WritableReg.allocReg(.int, ctx);
@@ -3680,12 +3675,12 @@ pub fn lower_clz128(
             .size = .Size64,
         },
     });
-    
+
     const zero = lower_mod.WritableReg.zero().toReg();
     return lower_mod.ValueRegs.two(result_dst.toReg(), zero);
 }
 
-/// Count leading sign bits for I128  
+/// Count leading sign bits for I128
 /// Complex algorithm from Cranelift - counts consecutive sign bits
 pub fn lower_cls128(
     val: lower_mod.ValueRegs,
@@ -3693,7 +3688,7 @@ pub fn lower_cls128(
 ) !lower_mod.ValueRegs {
     const lo = lower_mod.ValueRegs.getReg(val, 0);
     const hi = lower_mod.ValueRegs.getReg(val, 1);
-    
+
     // CLS on both halves
     const lo_cls_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3704,7 +3699,7 @@ pub fn lower_cls128(
         },
     });
     const lo_cls = lo_cls_dst.toReg();
-    
+
     const hi_cls_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
         .cls = .{
@@ -3714,7 +3709,7 @@ pub fn lower_cls128(
         },
     });
     const hi_cls = hi_cls_dst.toReg();
-    
+
     // EON sign_eq_eon, hi, lo (XOR with NOT)
     const sign_eq_eon_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3726,7 +3721,7 @@ pub fn lower_cls128(
         },
     });
     const sign_eq_eon = sign_eq_eon_dst.toReg();
-    
+
     // LSR sign_eq, sign_eq_eon, #63
     const sign_eq_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3738,7 +3733,7 @@ pub fn lower_cls128(
         },
     });
     const sign_eq = sign_eq_dst.toReg();
-    
+
     // MADD lo_sign_bits, lo_cls, sign_eq, sign_eq
     const lo_sign_bits_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3751,7 +3746,7 @@ pub fn lower_cls128(
         },
     });
     const lo_sign_bits = lo_sign_bits_dst.toReg();
-    
+
     // CMP hi_cls, #63
     try ctx.emit(Inst{
         .cmp_imm = .{
@@ -3760,7 +3755,7 @@ pub fn lower_cls128(
             .imm = 63,
         },
     });
-    
+
     // CSEL maybe_lo, lo_sign_bits, xzr, eq
     const maybe_lo_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3772,7 +3767,7 @@ pub fn lower_cls128(
         },
     });
     const maybe_lo = maybe_lo_dst.toReg();
-    
+
     // ADD result, maybe_lo, hi_cls
     const result_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3783,7 +3778,7 @@ pub fn lower_cls128(
             .size = .Size64,
         },
     });
-    
+
     const zero = lower_mod.WritableReg.zero().toReg();
     return lower_mod.ValueRegs.two(result_dst.toReg(), zero);
 }
@@ -3796,7 +3791,7 @@ pub fn lower_popcnt128(
 ) !lower_mod.ValueRegs {
     const lo = lower_mod.ValueRegs.getReg(val, 0);
     const hi = lower_mod.ValueRegs.getReg(val, 1);
-    
+
     // Move lo to FPU (D register, lower half of Q)
     const tmp_half_dst = lower_mod.WritableReg.allocReg(.fpu, ctx);
     try ctx.emit(Inst{
@@ -3807,7 +3802,7 @@ pub fn lower_popcnt128(
         },
     });
     const tmp_half = tmp_half_dst.toReg();
-    
+
     // Insert hi into upper half to make full 128-bit vector
     const tmp_dst = lower_mod.WritableReg.allocReg(.fpu, ctx);
     try ctx.emit(Inst{
@@ -3820,7 +3815,7 @@ pub fn lower_popcnt128(
         },
     });
     const tmp = tmp_dst.toReg();
-    
+
     // CNT (count bits in each byte)
     const nbits_dst = lower_mod.WritableReg.allocReg(.fpu, ctx);
     try ctx.emit(Inst{
@@ -3831,7 +3826,7 @@ pub fn lower_popcnt128(
         },
     });
     const nbits = nbits_dst.toReg();
-    
+
     // ADDV (sum all bytes across vector)
     const added_dst = lower_mod.WritableReg.allocReg(.fpu, ctx);
     try ctx.emit(Inst{
@@ -3842,7 +3837,7 @@ pub fn lower_popcnt128(
         },
     });
     const added = added_dst.toReg();
-    
+
     // Move result back to GPR
     const result_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
@@ -3852,7 +3847,7 @@ pub fn lower_popcnt128(
             .size = .Size8,
         },
     });
-    
+
     const zero = lower_mod.WritableReg.zero().toReg();
     return lower_mod.ValueRegs.two(result_dst.toReg(), zero);
 }
