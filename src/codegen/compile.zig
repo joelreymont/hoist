@@ -1521,6 +1521,33 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .frintn = .{ .dst = dst, .src = src, .size = size },
                     });
                 }
+            } else if (data.opcode == .fneg or data.opcode == .fabs) {
+                // FP sign manipulation (unary)
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.float);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.float);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: FpuOperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                if (data.opcode == .fneg) {
+                    try builder.emit(Inst{
+                        .fneg = .{ .dst = dst, .src = src, .size = size },
+                    });
+                } else {
+                    try builder.emit(Inst{
+                        .fabs = .{ .dst = dst, .src = src, .size = size },
+                    });
+                }
             } else {
                 // Other unary ops not yet implemented
                 try builder.emit(Inst.nop);
