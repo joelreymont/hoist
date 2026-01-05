@@ -91,7 +91,9 @@ pub const DominatorTree = struct {
                 var pred_iter = cfg.predecessors(block);
                 while (pred_iter.next()) |pred_info| {
                     const pred = pred_info.block;
+                    // Check if predecessor has been processed (has entry in idom map)
                     if (self.idom.get(pred)) |_| {
+                        // Found a processed predecessor - use it as starting point
                         new_idom = pred;
                         break;
                     }
@@ -102,6 +104,7 @@ pub const DominatorTree = struct {
                 while (pred_iter.next()) |pred_info| {
                     const pred = pred_info.block;
                     if (new_idom) |idom| {
+                        // Check if this pred is processed and is different from current idom
                         if (!std.meta.eql(pred, idom) and self.idom.get(pred) != null) {
                             new_idom = self.intersect(pred, idom);
                         }
@@ -171,18 +174,72 @@ pub const DominatorTree = struct {
         var finger1 = b1;
         var finger2 = b2;
 
+        const max_iters = 1000; // Prevent infinite loops
+        var iters: usize = 0;
+
         while (!std.meta.eql(finger1, finger2)) {
-            while (self.blockDepth(finger1) > self.blockDepth(finger2)) {
-                finger1 = if (self.idom.get(finger1)) |ptr| ptr.* orelse break else break;
+            iters += 1;
+            if (iters > max_iters) {
+                std.debug.panic("intersect: infinite loop detected", .{});
             }
+
+            // Walk finger1 up until it's at same depth or shallower than finger2
+            while (self.blockDepth(finger1) > self.blockDepth(finger2)) {
+                const idom_opt = self.idom.get(finger1);
+                if (idom_opt) |ptr| {
+                    if (ptr.*) |idom_block| {
+                        finger1 = idom_block;
+                    } else {
+                        // Reached entry (null idom), finger1 is now at root
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            // Walk finger2 up until it's at same depth or shallower than finger1
             while (self.blockDepth(finger2) > self.blockDepth(finger1)) {
-                finger2 = if (self.idom.get(finger2)) |ptr| ptr.* orelse break else break;
+                const idom_opt = self.idom.get(finger2);
+                if (idom_opt) |ptr| {
+                    if (ptr.*) |idom_block| {
+                        finger2 = idom_block;
+                    } else {
+                        // Reached entry (null idom), finger2 is now at root
+                        break;
+                    }
+                } else {
+                    break;
+                }
             }
 
             if (std.meta.eql(finger1, finger2)) break;
 
-            finger1 = if (self.idom.get(finger1)) |ptr| ptr.* orelse break else break;
-            finger2 = if (self.idom.get(finger2)) |ptr| ptr.* orelse break else break;
+            // Walk both up one level
+            const idom1_opt = self.idom.get(finger1);
+            const idom2_opt = self.idom.get(finger2);
+
+            if (idom1_opt) |ptr1| {
+                if (ptr1.*) |idom1| {
+                    finger1 = idom1;
+                } else {
+                    // finger1 is at entry, return it
+                    return finger1;
+                }
+            } else {
+                return finger1;
+            }
+
+            if (idom2_opt) |ptr2| {
+                if (ptr2.*) |idom2| {
+                    finger2 = idom2;
+                } else {
+                    // finger2 is at entry, return it
+                    return finger2;
+                }
+            } else {
+                return finger2;
+            }
         }
 
         return finger1;

@@ -201,9 +201,9 @@ test "SSA: dominance frontier for diamond CFG" {
     }
 
     try cfg.addEdge(b0, Inst.new(0), b1);
-    try cfg.addEdge(b0, Inst.new(0), b2);
-    try cfg.addEdge(b1, Inst.new(0), b3);
-    try cfg.addEdge(b2, Inst.new(0), b3);
+    try cfg.addEdge(b0, Inst.new(1), b2);
+    try cfg.addEdge(b1, Inst.new(2), b3);
+    try cfg.addEdge(b2, Inst.new(3), b3);
     cfg.valid = true; // Mark CFG as valid after manual construction
 
     // Build dominator tree
@@ -261,9 +261,16 @@ test "SSA: dominance frontier for loop" {
     const b1 = Block.new(1);
     const b2 = Block.new(2);
 
+    // Initialize CFG with 3 blocks
+    try cfg.data.resize(testing.allocator, 3);
+    for (0..3) |i| {
+        cfg.data.items[i] = CFGNode.init(testing.allocator);
+    }
+
     try cfg.addEdge(b0, Inst.new(0), b1);
-    try cfg.addEdge(b1, Inst.new(0), b2);
-    try cfg.addEdge(b2, Inst.new(0), b1); // Back edge
+    try cfg.addEdge(b1, Inst.new(1), b2);
+    try cfg.addEdge(b2, Inst.new(2), b1); // Back edge
+    cfg.valid = true;
 
     var domtree = DominatorTree.init(testing.allocator);
     defer domtree.deinit();
@@ -511,8 +518,15 @@ test "SSA: dominator tree verification" {
     const b1 = Block.new(1);
     const b2 = Block.new(2);
 
+    // Initialize CFG with 3 blocks
+    try cfg.data.resize(testing.allocator, 3);
+    for (0..3) |i| {
+        cfg.data.items[i] = CFGNode.init(testing.allocator);
+    }
+
     try cfg.addEdge(b0, Inst.new(0), b1);
-    try cfg.addEdge(b1, Inst.new(0), b2);
+    try cfg.addEdge(b1, Inst.new(1), b2);
+    cfg.valid = true;
 
     var domtree = DominatorTree.init(testing.allocator);
     defer domtree.deinit();
@@ -561,12 +575,19 @@ test "SSA: complex CFG with nested diamonds" {
     const b4 = Block.new(4);
     const b5 = Block.new(5);
 
+    // Initialize CFG with 6 blocks
+    try cfg.data.resize(testing.allocator, 6);
+    for (0..6) |i| {
+        cfg.data.items[i] = CFGNode.init(testing.allocator);
+    }
+
     try cfg.addEdge(b0, Inst.new(0), b1);
-    try cfg.addEdge(b0, Inst.new(0), b2);
-    try cfg.addEdge(b1, Inst.new(0), b3);
-    try cfg.addEdge(b2, Inst.new(0), b4);
-    try cfg.addEdge(b3, Inst.new(0), b5);
-    try cfg.addEdge(b4, Inst.new(0), b5);
+    try cfg.addEdge(b0, Inst.new(1), b2);
+    try cfg.addEdge(b1, Inst.new(2), b3);
+    try cfg.addEdge(b2, Inst.new(3), b4);
+    try cfg.addEdge(b3, Inst.new(4), b5);
+    try cfg.addEdge(b4, Inst.new(5), b5);
+    cfg.valid = true;
 
     var domtree = DominatorTree.init(testing.allocator);
     defer domtree.deinit();
