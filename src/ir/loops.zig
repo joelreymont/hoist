@@ -201,7 +201,7 @@ test "LoopInfo basic" {
 
     // Create simple CFG with loop: b0 -> b1 -> b2 -> b1
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     const b0 = Block.new(0);
     const b1 = Block.new(1);
