@@ -381,6 +381,49 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
         const vcode_block = try builder.startBlock(&.{});
         if (first_block) {
             builder.setEntry(vcode_block);
+
+            // For entry block, emit moves from ABI registers to parameter vregs
+            const VReg = @import("../machinst/reg.zig").VReg;
+            const PReg = @import("../machinst/reg.zig").PReg;
+            const Reg = @import("../machinst/reg.zig").Reg;
+            const WritableReg = @import("../machinst/reg.zig").WritableReg;
+            const RegClass = @import("../machinst/reg.zig").RegClass;
+            const OperandSize = @import("../backends/aarch64/inst.zig").OperandSize;
+
+            const block_data = ctx.func.dfg.blocks.get(block) orelse return error.MissingBlock;
+            const params = block_data.getParams(&ctx.func.dfg.value_lists);
+
+            // Emit MOV from x0-x7 to parameter vregs
+            for (params, 0..) |param, i| {
+                if (i < 8) {
+                    // Source: physical register x0-x7
+                    const preg = PReg.fromIndex(@intCast(i));
+                    const src = Reg.fromPReg(preg);
+
+                    // Destination: virtual register for this parameter
+                    const param_vreg = VReg.new(@intCast(param.index), RegClass.int);
+                    const dst = WritableReg.fromVReg(param_vreg);
+
+                    // Get parameter type to determine size
+                    const param_type = ctx.func.dfg.valueType(param) orelse return error.MissingType;
+                    const size: OperandSize = if (param_type.bits() == 64)
+                        .size64
+                    else
+                        .size32;
+
+                    // Emit: MOV dst, src
+                    try builder.emit(Inst{
+                        .mov_rr = .{
+                            .dst = dst,
+                            .src = src,
+                            .size = size,
+                        },
+                    });
+                } else {
+                    return error.TooManyParameters;
+                }
+            }
+
             first_block = false;
         }
 
@@ -611,6 +654,41 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .size = size,
                     },
                 });
+            } else if (data.opcode == .imul) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                // Map IR values to virtual registers
+                const arg0_vreg = VReg.new(@intCast(data.args[0].index), RegClass.int);
+                const arg1_vreg = VReg.new(@intCast(data.args[1].index), RegClass.int);
+                const result_vreg = VReg.new(@intCast(inst.index), RegClass.int);
+
+                const src1 = Reg.fromVReg(arg0_vreg);
+                const src2 = Reg.fromVReg(arg1_vreg);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                // Get size from result type
+                const value_type = ctx.func.dfg.valueType(ctx.func.dfg.firstResult(inst).?) orelse {
+                    try builder.emit(Inst.nop);
+                    return;
+                };
+
+                const size: OperandSize = if (value_type.bits() == 64)
+                    .size64
+                else
+                    .size32;
+
+                // Emit MUL instruction
+                try builder.emit(Inst{
+                    .mul_rr = .{
+                        .dst = dst,
+                        .src1 = src1,
+                        .src2 = src2,
+                        .size = size,
+                    },
+                });
             } else {
                 // Other binary ops not yet implemented
                 try builder.emit(Inst.nop);
@@ -619,6 +697,39 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
         .unary => |data| {
             // Handle unary instructions (return, etc.)
             if (data.opcode == .@"return") {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const PReg = @import("../machinst/reg.zig").PReg;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+
+                // Move return value to x0 (ABI return register)
+                const return_val_vreg = VReg.new(@intCast(data.arg.index), RegClass.int);
+                const src = Reg.fromVReg(return_val_vreg);
+
+                const x0 = PReg.fromIndex(0); // x0 is the return register
+                const dst = WritableReg.fromPReg(x0);
+
+                // Get size from return value type
+                const value_type = ctx.func.dfg.valueType(data.arg) orelse {
+                    try builder.emit(Inst.nop);
+                    return;
+                };
+
+                const size: OperandSize = if (value_type.bits() == 64)
+                    .size64
+                else
+                    .size32;
+
+                // Emit: MOV x0, return_val
+                try builder.emit(Inst{
+                    .mov_rr = .{
+                        .dst = dst,
+                        .src = src,
+                        .size = size,
+                    },
+                });
+
                 // Emit RET instruction
                 try builder.emit(Inst.ret);
             } else {
