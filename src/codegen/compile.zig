@@ -183,7 +183,7 @@ fn removeConstantPhis(ctx: *Context) CodegenError!bool {
         if (params.len == 0) continue;
 
         // For each block parameter
-        for (params, 0..) |param, param_idx| {
+        for (params, 0..) |_, param_idx| {
             var common_value: ?Value = null;
             var all_same = true;
 
@@ -197,27 +197,10 @@ fn removeConstantPhis(ctx: *Context) CodegenError!bool {
                 };
 
                 // Extract argument at param_idx from branch instruction
-                const arg_value = switch (inst_data.*) {
-                    .branch => |br| blk: {
-                        if (br.destination.len(&ctx.func.dfg.value_lists) <= param_idx) {
-                            all_same = false;
-                            break;
-                        }
-                        break :blk br.destination.getArg(&ctx.func.dfg.value_lists, param_idx);
-                    },
-                    .jump => {
-                        // Jump instructions don't carry arguments in this IR
-                        all_same = false;
-                        break;
-                    },
-                    else => {
-                        all_same = false;
-                        break;
-                    },
-                } orelse {
-                    all_same = false;
-                    break;
-                };
+                // TODO: Block parameters not yet implemented in IR
+                // Block parameters not supported yet, so we always break
+                all_same = false;
+                break;
 
                 // Resolve aliases
                 const resolved_value = ctx.func.dfg.resolveAliases(arg_value);
@@ -263,8 +246,8 @@ fn eliminateUnreachableCode(ctx: *Context) CodegenError!bool {
     defer reachable.deinit();
 
     // Mark all reachable blocks using worklist algorithm
-    var worklist = std.ArrayList(Block).init(ctx.allocator);
-    defer worklist.deinit();
+    var worklist = std.ArrayList(Block){};
+    defer worklist.deinit(ctx.allocator);
 
     try worklist.append(entry);
     try reachable.put(entry, {});
