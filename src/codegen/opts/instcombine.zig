@@ -925,13 +925,13 @@ pub const InstCombine = struct {
             .rotl => blk: {
                 const val_u = @as(u64, @bitCast(lhs));
                 const shift_amt = @as(u6, @truncate(@as(u64, @bitCast(rhs)) & 63));
-                const rotated = (val_u << shift_amt) | (val_u >> @as(u6, @truncate@as(u6, @truncate(64 - shift_amt))));
+                const rotated = (val_u << shift_amt) | (val_u >> @as(u6, @intCast(64 - @as(u7, shift_amt))));
                 break :blk @as(i64, @bitCast(rotated));
             },
             .rotr => blk: {
                 const val_u = @as(u64, @bitCast(lhs));
                 const shift_amt = @as(u6, @truncate(@as(u64, @bitCast(rhs)) & 63));
-                const rotated = (val_u >> shift_amt) | (val_u << @as(u6, @truncate(64 - shift_amt)));
+                const rotated = (val_u >> shift_amt) | (val_u << @as(u6, @intCast(64 - @as(u7, shift_amt))));
                 break :blk @as(i64, @bitCast(rotated));
             },
             .udiv => blk: {
@@ -1003,24 +1003,22 @@ pub const InstCombine = struct {
                 try self.replaceWithValue(func, inst, lhs);
                 return true;
             },
-            // x * 2 = x + x
+            // x * 2 = x + x, x * pow2 = x << log2(pow2), x * -1 = -x
             .imul => if (rhs == 2) {
                 const result_ty = func.dfg.instResultType(inst) orelse return false;
                 const add_inst = try func.dfg.makeInst(.iadd, result_ty, &.{ lhs, lhs });
                 try self.replaceWithValue(func, inst, add_inst);
                 return true;
-            },
-            // x * pow2 = x << log2(pow2) (for positive powers of 2)
-            .imul => if (rhs > 0 and @popCount(@as(u64, @bitCast(rhs))) == 1) {
+            } else if (rhs > 0 and @popCount(@as(u64, @bitCast(rhs))) == 1) {
+                // x * pow2 = x << log2(pow2) (for positive powers of 2)
                 const result_ty = func.dfg.instResultType(inst) orelse return false;
                 const shift_amt = @ctz(@as(u64, @bitCast(rhs)));
                 const shift_const = try func.dfg.makeConst(@as(i64, @intCast(shift_amt)));
                 const shl_inst = try func.dfg.makeInst(.ishl, result_ty, &.{ lhs, shift_const });
                 try self.replaceWithValue(func, inst, shl_inst);
                 return true;
-            },
-            // x * -1 = -x
-            .imul => if (rhs == -1) {
+            } else if (rhs == -1) {
+                // x * -1 = -x
                 const result_ty = func.dfg.instResultType(inst) orelse return false;
                 const neg_inst = try func.dfg.makeInst(.ineg, result_ty, &.{lhs});
                 try self.replaceWithValue(func, inst, neg_inst);
