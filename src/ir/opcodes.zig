@@ -198,6 +198,117 @@ pub const Opcode = enum(u16) {
     floor,
     trunc,
     nearest,
+
+    /// Returns true if this is a call instruction.
+    pub fn is_call(self: Opcode) bool {
+        return switch (self) {
+            .call, .call_indirect, .return_call, .return_call_indirect, .try_call, .try_call_indirect => true,
+            else => false,
+        };
+    }
+
+    /// Returns true if this is a branch instruction.
+    pub fn is_branch(self: Opcode) bool {
+        return switch (self) {
+            .brif, .br_table => true,
+            else => false,
+        };
+    }
+
+    /// Returns true if this is a terminator instruction (ends a basic block).
+    pub fn is_terminator(self: Opcode) bool {
+        return switch (self) {
+            .jump,
+            .brif,
+            .br_table,
+            .@"return",
+            .return_call,
+            .return_call_indirect,
+            .trap,
+            .trapz,
+            .trapnz,
+            => true,
+            else => false,
+        };
+    }
+
+    /// Returns true if this is a return instruction.
+    pub fn is_return(self: Opcode) bool {
+        return switch (self) {
+            .@"return", .return_call, .return_call_indirect => true,
+            else => false,
+        };
+    }
+
+    /// Returns true if this instruction can trap.
+    pub fn can_trap(self: Opcode) bool {
+        return switch (self) {
+            .trap,
+            .trapz,
+            .trapnz,
+            .debugtrap,
+            .udiv,
+            .sdiv,
+            .urem,
+            .srem,
+            .load,
+            .uload8,
+            .sload8,
+            .uload16,
+            .sload16,
+            .uload32,
+            .sload32,
+            => true,
+            else => false,
+        };
+    }
+
+    /// Returns true if this instruction can store to memory.
+    pub fn can_store(self: Opcode) bool {
+        return switch (self) {
+            .store,
+            .istore8,
+            .istore16,
+            .istore32,
+            .stack_store,
+            .dynamic_stack_store,
+            => true,
+            else => false,
+        };
+    }
+
+    /// Returns true if this instruction can load from memory.
+    pub fn can_load(self: Opcode) bool {
+        return switch (self) {
+            .load,
+            .uload8,
+            .sload8,
+            .uload16,
+            .sload16,
+            .uload32,
+            .sload32,
+            .uload8x8,
+            .sload8x8,
+            .uload16x4,
+            .sload16x4,
+            .uload32x2,
+            .sload32x2,
+            .stack_load,
+            .dynamic_stack_load,
+            => true,
+            else => false,
+        };
+    }
+
+    /// Returns true if this instruction has other side effects (besides trap/call/branch/load/store).
+    pub fn other_side_effects(self: Opcode) bool {
+        return switch (self) {
+            .set_pinned_reg,
+            .stack_switch,
+            => true,
+            else => false,
+        };
+    }
 };
 
 // Tests
