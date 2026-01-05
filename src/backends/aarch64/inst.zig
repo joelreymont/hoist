@@ -2949,7 +2949,7 @@ test "Inst formatting" {
     } };
 
     var buf: [64]u8 = undefined;
-    const str = try std.fmt.bufPrint(&buf, "{}", .{inst});
+    const str = try std.fmt.bufPrint(&buf, "{any}", .{inst});
     try testing.expect(std.mem.indexOf(u8, str, "add") != null);
 }
 
@@ -3044,7 +3044,7 @@ test "Multiply instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    const mul_str = try std.fmt.bufPrint(&buf, "{}", .{mul_inst});
+    const mul_str = try std.fmt.bufPrint(&buf, "{any}", .{mul_inst});
     try testing.expect(std.mem.indexOf(u8, mul_str, "mul") != null);
 
     // MADD
@@ -3055,7 +3055,7 @@ test "Multiply instruction formatting" {
         .addend = r3,
         .size = .size64,
     } };
-    const madd_str = try std.fmt.bufPrint(&buf, "{}", .{madd_inst});
+    const madd_str = try std.fmt.bufPrint(&buf, "{any}", .{madd_inst});
     try testing.expect(std.mem.indexOf(u8, madd_str, "madd") != null);
 
     // MSUB
@@ -3066,7 +3066,7 @@ test "Multiply instruction formatting" {
         .minuend = r3,
         .size = .size64,
     } };
-    const msub_str = try std.fmt.bufPrint(&buf, "{}", .{msub_inst});
+    const msub_str = try std.fmt.bufPrint(&buf, "{any}", .{msub_inst});
     try testing.expect(std.mem.indexOf(u8, msub_str, "msub") != null);
 
     // SMULH
@@ -3075,7 +3075,7 @@ test "Multiply instruction formatting" {
         .src1 = r1,
         .src2 = r2,
     } };
-    const smulh_str = try std.fmt.bufPrint(&buf, "{}", .{smulh_inst});
+    const smulh_str = try std.fmt.bufPrint(&buf, "{any}", .{smulh_inst});
     try testing.expect(std.mem.indexOf(u8, smulh_str, "smulh") != null);
 
     // UMULH
@@ -3084,7 +3084,7 @@ test "Multiply instruction formatting" {
         .src1 = r1,
         .src2 = r2,
     } };
-    const umulh_str = try std.fmt.bufPrint(&buf, "{}", .{umulh_inst});
+    const umulh_str = try std.fmt.bufPrint(&buf, "{any}", .{umulh_inst});
     try testing.expect(std.mem.indexOf(u8, umulh_str, "umulh") != null);
 
     // SMULL
@@ -3093,7 +3093,7 @@ test "Multiply instruction formatting" {
         .src1 = r1,
         .src2 = r2,
     } };
-    const smull_str = try std.fmt.bufPrint(&buf, "{}", .{smull_inst});
+    const smull_str = try std.fmt.bufPrint(&buf, "{any}", .{smull_inst});
     try testing.expect(std.mem.indexOf(u8, smull_str, "smull") != null);
 
     // UMULL
@@ -3102,7 +3102,7 @@ test "Multiply instruction formatting" {
         .src1 = r1,
         .src2 = r2,
     } };
-    const umull_str = try std.fmt.bufPrint(&buf, "{}", .{umull_inst});
+    const umull_str = try std.fmt.bufPrint(&buf, "{any}", .{umull_inst});
     try testing.expect(std.mem.indexOf(u8, umull_str, "umull") != null);
 }
 
@@ -3124,7 +3124,7 @@ test "Bitwise instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    const and_str = try std.fmt.bufPrint(&buf, "{}", .{and_rr});
+    const and_str = try std.fmt.bufPrint(&buf, "{any}", .{and_rr});
     try testing.expect(std.mem.indexOf(u8, and_str, "and") != null);
 
     // ORR register-register
@@ -3134,7 +3134,7 @@ test "Bitwise instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    const orr_str = try std.fmt.bufPrint(&buf, "{}", .{orr_rr});
+    const orr_str = try std.fmt.bufPrint(&buf, "{any}", .{orr_rr});
     try testing.expect(std.mem.indexOf(u8, orr_str, "orr") != null);
 
     // EOR register-register
@@ -3144,7 +3144,7 @@ test "Bitwise instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    const eor_str = try std.fmt.bufPrint(&buf, "{}", .{eor_rr});
+    const eor_str = try std.fmt.bufPrint(&buf, "{any}", .{eor_rr});
     try testing.expect(std.mem.indexOf(u8, eor_str, "eor") != null);
 
     // BIC register-register
@@ -3154,7 +3154,7 @@ test "Bitwise instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    const bic_str = try std.fmt.bufPrint(&buf, "{}", .{bic_rr});
+    const bic_str = try std.fmt.bufPrint(&buf, "{any}", .{bic_rr});
     try testing.expect(std.mem.indexOf(u8, bic_str, "bic") != null);
 
     // MVN
@@ -3163,7 +3163,7 @@ test "Bitwise instruction formatting" {
         .src = r1,
         .size = .size64,
     } };
-    const mvn_str = try std.fmt.bufPrint(&buf, "{}", .{mvn});
+    const mvn_str = try std.fmt.bufPrint(&buf, "{any}", .{mvn});
     try testing.expect(std.mem.indexOf(u8, mvn_str, "mvn") != null);
 }
 
@@ -3208,7 +3208,7 @@ test "Shift instruction formatting" {
         .imm = 5,
         .size = .size32,
     } };
-    str = try std.fmt.bufPrint(&buf, "{}", .{lsl_imm_32});
+    str = try std.fmt.bufPrint(&buf, "{any}", .{lsl_imm_32});
     try testing.expect(std.mem.indexOf(u8, str, "lsl") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#5") != null);
 
@@ -3219,7 +3219,7 @@ test "Shift instruction formatting" {
         .imm = 42,
         .size = .size64,
     } };
-    str = try std.fmt.bufPrint(&buf, "{}", .{lsl_imm_64});
+    str = try std.fmt.bufPrint(&buf, "{any}", .{lsl_imm_64});
     try testing.expect(std.mem.indexOf(u8, str, "lsl") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#42") != null);
 
@@ -3230,7 +3230,7 @@ test "Shift instruction formatting" {
         .src2 = r2,
         .size = .size32,
     } };
-    str = try std.fmt.bufPrint(&buf, "{}", .{lsr_rr_32});
+    str = try std.fmt.bufPrint(&buf, "{any}", .{lsr_rr_32});
     try testing.expect(std.mem.indexOf(u8, str, "lsr") != null);
     try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
 
@@ -3241,7 +3241,7 @@ test "Shift instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    str = try std.fmt.bufPrint(&buf, "{}", .{lsr_rr_64});
+    str = try std.fmt.bufPrint(&buf, "{any}", .{lsr_rr_64});
     try testing.expect(std.mem.indexOf(u8, str, "lsr") != null);
     try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
 
@@ -3252,7 +3252,7 @@ test "Shift instruction formatting" {
         .imm = 13,
         .size = .size32,
     } };
-    str = try std.fmt.bufPrint(&buf, "{}", .{lsr_imm_32});
+    str = try std.fmt.bufPrint(&buf, "{any}", .{lsr_imm_32});
     try testing.expect(std.mem.indexOf(u8, str, "lsr") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#13") != null);
 
@@ -3263,7 +3263,7 @@ test "Shift instruction formatting" {
         .imm = 57,
         .size = .size64,
     } };
-    str = try std.fmt.bufPrint(&buf, "{}", .{lsr_imm_64});
+    str = try std.fmt.bufPrint(&buf, "{any}", .{lsr_imm_64});
     try testing.expect(std.mem.indexOf(u8, str, "lsr") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#57") != null);
 
@@ -3274,7 +3274,7 @@ test "Shift instruction formatting" {
         .src2 = r2,
         .size = .size32,
     } };
-    str = try std.fmt.bufPrint(&buf, "{}", .{asr_rr_32});
+    str = try std.fmt.bufPrint(&buf, "{any}", .{asr_rr_32});
     try testing.expect(std.mem.indexOf(u8, str, "asr") != null);
     try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
 
@@ -3285,7 +3285,7 @@ test "Shift instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    str = try std.fmt.bufPrint(&buf, "{}", .{asr_rr_64});
+    str = try std.fmt.bufPrint(&buf, "{any}", .{asr_rr_64});
     try testing.expect(std.mem.indexOf(u8, str, "asr") != null);
     try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
 
@@ -3296,7 +3296,7 @@ test "Shift instruction formatting" {
         .imm = 7,
         .size = .size32,
     } };
-    str = try std.fmt.bufPrint(&buf, "{}", .{asr_imm_32});
+    str = try std.fmt.bufPrint(&buf, "{any}", .{asr_imm_32});
     try testing.expect(std.mem.indexOf(u8, str, "asr") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#7") != null);
 
@@ -3307,7 +3307,7 @@ test "Shift instruction formatting" {
         .imm = 61,
         .size = .size64,
     } };
-    str = try std.fmt.bufPrint(&buf, "{}", .{asr_imm_64});
+    str = try std.fmt.bufPrint(&buf, "{any}", .{asr_imm_64});
     try testing.expect(std.mem.indexOf(u8, str, "asr") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#61") != null);
 
@@ -3318,7 +3318,7 @@ test "Shift instruction formatting" {
         .src2 = r2,
         .size = .size32,
     } };
-    str = try std.fmt.bufPrint(&buf, "{}", .{ror_rr_32});
+    str = try std.fmt.bufPrint(&buf, "{any}", .{ror_rr_32});
     try testing.expect(std.mem.indexOf(u8, str, "ror") != null);
     try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
 
@@ -3329,7 +3329,7 @@ test "Shift instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    str = try std.fmt.bufPrint(&buf, "{}", .{ror_rr_64});
+    str = try std.fmt.bufPrint(&buf, "{any}", .{ror_rr_64});
     try testing.expect(std.mem.indexOf(u8, str, "ror") != null);
     try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
 
@@ -3340,7 +3340,7 @@ test "Shift instruction formatting" {
         .imm = 11,
         .size = .size32,
     } };
-    str = try std.fmt.bufPrint(&buf, "{}", .{ror_imm_32});
+    str = try std.fmt.bufPrint(&buf, "{any}", .{ror_imm_32});
     try testing.expect(std.mem.indexOf(u8, str, "ror") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#11") != null);
 
@@ -3351,7 +3351,7 @@ test "Shift instruction formatting" {
         .imm = 59,
         .size = .size64,
     } };
-    str = try std.fmt.bufPrint(&buf, "{}", .{ror_imm_64});
+    str = try std.fmt.bufPrint(&buf, "{any}", .{ror_imm_64});
     try testing.expect(std.mem.indexOf(u8, str, "ror") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#59") != null);
 }
