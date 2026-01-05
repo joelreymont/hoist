@@ -9,6 +9,7 @@ pub const Reg = reg_mod.Reg;
 pub const VReg = reg_mod.VReg;
 pub const RegClass = reg_mod.RegClass;
 pub const MachLabel = machinst_mod.MachLabel;
+pub const VCodeBuilder = @import("vcode_builder.zig").VCodeBuilder;
 
 /// Index to a basic block in VCode.
 pub const BlockIndex = u32;

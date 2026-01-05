@@ -353,9 +353,55 @@ fn legalize(ctx: *Context) CodegenError!void {
 
 /// Lower IR to VCode via ISLE.
 fn lower(ctx: *Context, target: *const Target) CodegenError!void {
-    // TODO: VCodeBuilder and ISLE lowering not yet implemented
+    // Determine instruction type based on target architecture
+    switch (target.arch) {
+        .aarch64 => try lowerAArch64(ctx),
+        .x86_64 => try lowerX86_64(ctx),
+    }
+}
+
+/// Lower IR to AArch64 VCode.
+fn lowerAArch64(ctx: *Context) CodegenError!void {
+    const Inst = @import("../backends/aarch64/inst.zig").Inst;
+    const VCodeBuilder = @import("../machinst/vcode_builder.zig").VCodeBuilder;
+
+    // Create VCode builder
+    var builder = VCodeBuilder(Inst).init(ctx.allocator, .forward);
+    defer builder.deinit();
+
+    // Lower each block
+    var block_iter = ctx.func.layout.blockIter();
+    var first_block = true;
+    while (block_iter.next()) |block| {
+        // Start VCode block
+        const vcode_block = try builder.startBlock(&.{});
+        if (first_block) {
+            builder.setEntry(vcode_block);
+            first_block = false;
+        }
+
+        // Lower each instruction in block (stubbed for now)
+        var inst_iter = ctx.func.layout.blockInsts(block);
+        while (inst_iter.next()) |inst| {
+            _ = inst;
+            // TODO: Call ISLE lowering rules or backend-specific lowering
+            // For now, emit a NOP placeholder
+            try builder.emit(Inst.nop);
+        }
+
+        // Finish block (no successors tracked yet)
+        try builder.finishBlock(&.{});
+    }
+
+    // Store completed VCode in context
+    ctx.vcode = try builder.finish();
+}
+
+/// Lower IR to x86-64 VCode.
+fn lowerX86_64(ctx: *Context) CodegenError!void {
+    // TODO: x86-64 lowering not yet implemented
     _ = ctx;
-    _ = target;
+    return error.LoweringFailed;
 }
 
 /// Lower a single instruction.
