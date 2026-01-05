@@ -779,10 +779,7 @@ pub const InstCombine = struct {
                             .ugt => .ule,
                             .uge => .ult,
                         };
-                        const result_ty = func.dfg.instResultType(inst) orelse return;
-                        const new_icmp = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-                            .int_compare = IntCompareData.init(.icmp, complement_cc, inner_icmp.args[0], inner_icmp.args[1]),
-                        });
+                        const new_icmp = try func.dfg.makeIntCompare(complement_cc, inner_icmp.args[0], inner_icmp.args[1]);
                         try self.replaceWithValue(func, inst, new_icmp);
                         return;
                     }
@@ -792,7 +789,6 @@ pub const InstCombine = struct {
 
         // Comparisons with constants
         if (rhs_const) |c| {
-            const result_ty = func.dfg.instResultType(inst) orelse return;
 
             // ult(x, 0) = 0 (always false)
             if (data.cond == .ult and c == 0) {
@@ -809,9 +805,7 @@ pub const InstCombine = struct {
             // ugt(x, 0) = ne(x, 0)
             if (data.cond == .ugt and c == 0) {
                 const zero = try func.dfg.makeConst(0);
-                const new_ne = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-                    .int_compare = IntCompareData.init(.icmp, .ne, lhs, zero),
-                });
+                const new_ne = try func.dfg.makeIntCompare(.ne, lhs, zero);
                 try self.replaceWithValue(func, inst, new_ne);
                 return;
             }
@@ -819,9 +813,7 @@ pub const InstCombine = struct {
             // ult(x, 1) = eq(x, 0)
             if (data.cond == .ult and c == 1) {
                 const zero = try func.dfg.makeConst(0);
-                const new_eq = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-                    .int_compare = IntCompareData.init(.icmp, .eq, lhs, zero),
-                });
+                const new_eq = try func.dfg.makeIntCompare(.eq, lhs, zero);
                 try self.replaceWithValue(func, inst, new_eq);
                 return;
             }
@@ -829,9 +821,7 @@ pub const InstCombine = struct {
             // uge(x, 1) = ne(x, 0)
             if (data.cond == .uge and c == 1) {
                 const zero = try func.dfg.makeConst(0);
-                const new_ne = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-                    .int_compare = IntCompareData.init(.icmp, .ne, lhs, zero),
-                });
+                const new_ne = try func.dfg.makeIntCompare(.ne, lhs, zero);
                 try self.replaceWithValue(func, inst, new_ne);
                 return;
             }
@@ -839,9 +829,7 @@ pub const InstCombine = struct {
             // slt(x, 1) = sle(x, 0)
             if (data.cond == .slt and c == 1) {
                 const zero = try func.dfg.makeConst(0);
-                const sle_inst = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-                    .int_compare = IntCompareData.init(.icmp, .sle, lhs, zero),
-                });
+                const sle_inst = try func.dfg.makeIntCompare(.sle, lhs, zero);
                 try self.replaceWithValue(func, inst, sle_inst);
                 return;
             }
@@ -849,9 +837,7 @@ pub const InstCombine = struct {
             // sle(x, -1) = slt(x, 0)
             if (data.cond == .sle and c == -1) {
                 const zero = try func.dfg.makeConst(0);
-                const slt_inst = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-                    .int_compare = IntCompareData.init(.icmp, .slt, lhs, zero),
-                });
+                const slt_inst = try func.dfg.makeIntCompare(.slt, lhs, zero);
                 try self.replaceWithValue(func, inst, slt_inst);
                 return;
             }
@@ -859,9 +845,7 @@ pub const InstCombine = struct {
             // ule(x, 0) = eq(x, 0)
             if (data.cond == .ule and c == 0) {
                 const zero = try func.dfg.makeConst(0);
-                const eq_inst = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-                    .int_compare = IntCompareData.init(.icmp, .eq, lhs, zero),
-                });
+                const eq_inst = try func.dfg.makeIntCompare(.eq, lhs, zero);
                 try self.replaceWithValue(func, inst, eq_inst);
                 return;
             }
@@ -869,9 +853,7 @@ pub const InstCombine = struct {
             // sge(x, 1) = sgt(x, 0)
             if (data.cond == .sge and c == 1) {
                 const zero = try func.dfg.makeConst(0);
-                const sgt_inst = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-                    .int_compare = IntCompareData.init(.icmp, .sgt, lhs, zero),
-                });
+                const sgt_inst = try func.dfg.makeIntCompare(.sgt, lhs, zero);
                 try self.replaceWithValue(func, inst, sgt_inst);
                 return;
             }
@@ -879,9 +861,7 @@ pub const InstCombine = struct {
             // sgt(x, -1) = sge(x, 0)
             if (data.cond == .sgt and c == -1) {
                 const zero = try func.dfg.makeConst(0);
-                const sge_inst = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-                    .int_compare = IntCompareData.init(.icmp, .sge, lhs, zero),
-                });
+                const sge_inst = try func.dfg.makeIntCompare(.sge, lhs, zero);
                 try self.replaceWithValue(func, inst, sge_inst);
                 return;
             }
@@ -1687,7 +1667,6 @@ pub const InstCombine = struct {
 
     /// Simplify eq(x, x ^ y) = eq(y, 0) and ne(x, x ^ y) = ne(y, 0).
     fn simplifyCompareWithXor(self: *InstCombine, func: *Function, inst: Inst, data: IntCompareData, lhs: Value, rhs: Value) !bool {
-        const result_ty = func.dfg.instResultType(inst) orelse return false;
 
         // Check if rhs is (x ^ y)
         const rhs_def = func.dfg.valueDef(rhs) orelse return false;
@@ -1707,18 +1686,14 @@ pub const InstCombine = struct {
                 if (lhs.index == x.index) {
                     // eq(x, x ^ y) = eq(y, 0)
                     const zero = try func.dfg.makeConst(0);
-                    const new_cmp = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-                        .int_compare = IntCompareData.init(.icmp, data.cond, y, zero),
-                    });
+                    const new_cmp = try func.dfg.makeIntCompare(data.cond, y, zero);
                     try self.replaceWithValue(func, inst, new_cmp);
                     return true;
                 }
                 if (lhs.index == y.index) {
                     // eq(y, x ^ y) = eq(x, 0)
                     const zero = try func.dfg.makeConst(0);
-                    const new_cmp = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-                        .int_compare = IntCompareData.init(.icmp, data.cond, x, zero),
-                    });
+                    const new_cmp = try func.dfg.makeIntCompare(data.cond, x, zero);
                     try self.replaceWithValue(func, inst, new_cmp);
                     return true;
                 }
@@ -1743,18 +1718,14 @@ pub const InstCombine = struct {
                 if (rhs.index == x.index) {
                     // eq(x ^ y, x) = eq(y, 0)
                     const zero = try func.dfg.makeConst(0);
-                    const new_cmp = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-                        .int_compare = IntCompareData.init(.icmp, data.cond, y, zero),
-                    });
+                    const new_cmp = try func.dfg.makeIntCompare(data.cond, y, zero);
                     try self.replaceWithValue(func, inst, new_cmp);
                     return true;
                 }
                 if (rhs.index == y.index) {
                     // eq(x ^ y, y) = eq(x, 0)
                     const zero = try func.dfg.makeConst(0);
-                    const new_cmp = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-                        .int_compare = IntCompareData.init(.icmp, data.cond, x, zero),
-                    });
+                    const new_cmp = try func.dfg.makeIntCompare(data.cond, x, zero);
                     try self.replaceWithValue(func, inst, new_cmp);
                     return true;
                 }
@@ -1766,17 +1737,14 @@ pub const InstCombine = struct {
 
     /// Simplify ult(~x, ~y) = ugt(x, y).
     fn simplifyCompareNotOperands(self: *InstCombine, func: *Function, inst: Inst, _: IntCompareData, lhs: Value, rhs: Value) !bool {
-        const result_ty = func.dfg.instResultType(inst) orelse return false;
 
         // Check if lhs is ~x
-        const x = self.getBnotOperand(func, lhs) catch return false orelse return false;
+        const x = (try self.getBnotOperand(func, lhs)) orelse return false;
         // Check if rhs is ~y
-        const y = self.getBnotOperand(func, rhs) catch return false orelse return false;
+        const y = (try self.getBnotOperand(func, rhs)) orelse return false;
 
         // ult(~x, ~y) = ugt(x, y)
-        const new_cmp = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-            .int_compare = IntCompareData.init(.icmp, .ugt, x, y),
-        });
+        const new_cmp = try func.dfg.makeIntCompare(.ugt, x, y);
         try self.replaceWithValue(func, inst, new_cmp);
         return true;
     }
