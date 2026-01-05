@@ -993,13 +993,11 @@ pub const InstCombine = struct {
                 try self.replaceWithValue(func, inst, lhs);
                 return true;
             },
-            // x * 0 = 0
+            // x * 0 = 0, x * 1 = x
             .imul, .fmul => if (rhs == 0) {
                 try self.replaceWithConst(func, inst, 0);
                 return true;
-            },
-            // x * 1 = x
-            .imul, .fmul => if (rhs == 1) {
+            } else if (rhs == 1) {
                 try self.replaceWithValue(func, inst, lhs);
                 return true;
             },
@@ -1057,33 +1055,27 @@ pub const InstCombine = struct {
                 try self.replaceWithConst(func, inst, 0);
                 return true;
             },
-            // x & 0 = 0
+            // x & 0 = 0, x & -1 = x
             .band => if (rhs == 0) {
                 try self.replaceWithConst(func, inst, 0);
                 return true;
-            },
-            // x & -1 = x
-            .band => if (rhs == -1) {
+            } else if (rhs == -1) {
                 try self.replaceWithValue(func, inst, lhs);
                 return true;
             },
-            // x | 0 = x
+            // x | 0 = x, x | -1 = -1
             .bor => if (rhs == 0) {
                 try self.replaceWithValue(func, inst, lhs);
                 return true;
-            },
-            // x | -1 = -1
-            .bor => if (rhs == -1) {
+            } else if (rhs == -1) {
                 try self.replaceWithConst(func, inst, -1);
                 return true;
             },
-            // x ^ 0 = x
+            // x ^ 0 = x, x ^ -1 = ~x
             .bxor => if (rhs == 0) {
                 try self.replaceWithValue(func, inst, lhs);
                 return true;
-            },
-            // x ^ -1 = ~x
-            .bxor => if (rhs == -1) {
+            } else if (rhs == -1) {
                 const result_ty = func.dfg.instResultType(inst) orelse return false;
                 const not_inst = try func.dfg.makeInst(.bnot, result_ty, &.{lhs});
                 try self.replaceWithValue(func, inst, not_inst);
@@ -1112,13 +1104,11 @@ pub const InstCombine = struct {
                 try self.replaceWithValue(func, inst, rhs);
                 return true;
             },
-            // 0 * x = 0 (commutative)
+            // 0 * x = 0, 1 * x = x (commutative)
             .imul, .fmul => if (lhs == 0) {
                 try self.replaceWithConst(func, inst, 0);
                 return true;
-            },
-            // 1 * x = x (commutative)
-            .imul, .fmul => if (lhs == 1) {
+            } else if (lhs == 1) {
                 try self.replaceWithValue(func, inst, rhs);
                 return true;
             },
