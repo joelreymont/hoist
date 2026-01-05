@@ -487,7 +487,7 @@ pub const InstCombine = struct {
                 const inner = arg_inst_data.binary;
                 if (inner.opcode == .isub) {
                     const result_ty = func.dfg.instResultType(inst) orelse return;
-                    const sub_inst = try func.dfg.makeBinary(.isub, result_ty, inner.args[1], inner.args[0] );
+                    const sub_inst = try func.dfg.makeBinary(.isub, result_ty, inner.args[1], inner.args[0]);
                     try self.replaceWithValue(func, inst, sub_inst);
                     return;
                 }
@@ -512,14 +512,14 @@ pub const InstCombine = struct {
                     // ~(x & y) = ~x | ~y
                     const not_lhs = try func.dfg.makeUnary(.bnot, result_ty, inner.args[0]);
                     const not_rhs = try func.dfg.makeUnary(.bnot, result_ty, inner.args[1]);
-                    const or_inst = try func.dfg.makeBinary(.bor, result_ty, not_lhs, not_rhs );
+                    const or_inst = try func.dfg.makeBinary(.bor, result_ty, not_lhs, not_rhs);
                     try self.replaceWithValue(func, inst, or_inst);
                     return;
                 } else if (inner.opcode == .bor) {
                     // ~(x | y) = ~x & ~y
                     const not_lhs = try func.dfg.makeUnary(.bnot, result_ty, inner.args[0]);
                     const not_rhs = try func.dfg.makeUnary(.bnot, result_ty, inner.args[1]);
-                    const and_inst = try func.dfg.makeBinary(.band, result_ty, not_lhs, not_rhs );
+                    const and_inst = try func.dfg.makeBinary(.band, result_ty, not_lhs, not_rhs);
                     try self.replaceWithValue(func, inst, and_inst);
                     return;
                 } else if (inner.opcode == .isub) {
@@ -1010,7 +1010,7 @@ pub const InstCombine = struct {
                 return true;
             } else if (rhs == 2) {
                 const result_ty = func.dfg.instResultType(inst) orelse return false;
-                const add_inst = try func.dfg.makeBinary(.iadd, result_ty, lhs, lhs );
+                const add_inst = try func.dfg.makeBinary(.iadd, result_ty, lhs, lhs);
                 try self.replaceWithValue(func, inst, add_inst);
                 return true;
             } else if (rhs > 0 and @popCount(@as(u64, @bitCast(rhs))) == 1) {
@@ -1018,7 +1018,7 @@ pub const InstCombine = struct {
                 const result_ty = func.dfg.instResultType(inst) orelse return false;
                 const shift_amt = @ctz(@as(u64, @bitCast(rhs)));
                 const shift_const = try func.dfg.makeConst(@as(i64, @intCast(shift_amt)));
-                const shl_inst = try func.dfg.makeBinary(.ishl, result_ty, lhs, shift_const );
+                const shl_inst = try func.dfg.makeBinary(.ishl, result_ty, lhs, shift_const);
                 try self.replaceWithValue(func, inst, shl_inst);
                 return true;
             } else if (rhs == -1) {
@@ -1041,7 +1041,7 @@ pub const InstCombine = struct {
                 const result_ty = func.dfg.instResultType(inst) orelse return false;
                 const shift_amt = @ctz(@as(u64, @bitCast(rhs)));
                 const shift_const = try func.dfg.makeConst(@as(i64, @intCast(shift_amt)));
-                const shr_inst = try func.dfg.makeBinary(.ushr, result_ty, lhs, shift_const );
+                const shr_inst = try func.dfg.makeBinary(.ushr, result_ty, lhs, shift_const);
                 try self.replaceWithValue(func, inst, shr_inst);
                 return true;
             },
@@ -1053,7 +1053,7 @@ pub const InstCombine = struct {
                 const result_ty = func.dfg.instResultType(inst) orelse return false;
                 const mask = rhs - 1;
                 const mask_const = try func.dfg.makeConst(mask);
-                const and_inst = try func.dfg.makeBinary(.band, result_ty, lhs, mask_const );
+                const and_inst = try func.dfg.makeBinary(.band, result_ty, lhs, mask_const);
                 try self.replaceWithValue(func, inst, and_inst);
                 return true;
             },
@@ -1139,7 +1139,7 @@ pub const InstCombine = struct {
             // 0.0 - x = -x
             .fsub => if (lhs == 0) {
                 const result_ty = func.dfg.instResultType(inst) orelse return false;
-                const neg_inst = try func.dfg.makeInst(.fneg, result_ty, &.{rhs});
+                const neg_inst = try func.dfg.makeUnary(.fneg, result_ty, rhs);
                 try self.replaceWithValue(func, inst, neg_inst);
                 return true;
             },
@@ -1187,20 +1187,20 @@ pub const InstCombine = struct {
         if (data.opcode == .iadd) {
             // x + (-y) = x - y
             if (try self.getNegOperand(func, rhs)) |y| {
-                const sub_inst = try func.dfg.makeBinary(.isub, result_ty, lhs, y );
+                const sub_inst = try func.dfg.makeBinary(.isub, result_ty, lhs, y);
                 try self.replaceWithValue(func, inst, sub_inst);
                 return true;
             }
             // (-x) + y = y - x
             if (try self.getNegOperand(func, lhs)) |x| {
-                const sub_inst = try func.dfg.makeBinary(.isub, result_ty, rhs, x );
+                const sub_inst = try func.dfg.makeBinary(.isub, result_ty, rhs, x);
                 try self.replaceWithValue(func, inst, sub_inst);
                 return true;
             }
         } else if (data.opcode == .isub) {
             // x - (-y) = x + y
             if (try self.getNegOperand(func, rhs)) |y| {
-                const add_inst = try func.dfg.makeBinary(.iadd, result_ty, lhs, y );
+                const add_inst = try func.dfg.makeBinary(.iadd, result_ty, lhs, y);
                 try self.replaceWithValue(func, inst, add_inst);
                 return true;
             }
@@ -1215,7 +1215,7 @@ pub const InstCombine = struct {
 
         if (try self.getNegOperand(func, lhs)) |x| {
             if (try self.getNegOperand(func, rhs)) |y| {
-                const mul_inst = try func.dfg.makeBinary(.imul, result_ty, x, y );
+                const mul_inst = try func.dfg.makeBinary(.imul, result_ty, x, y);
                 try self.replaceWithValue(func, inst, mul_inst);
                 return true;
             }
@@ -1230,14 +1230,14 @@ pub const InstCombine = struct {
 
         // Check if rhs is ishl(1, y)
         if (try self.getShiftBy1(func, rhs)) |y| {
-            const shl_inst = try func.dfg.makeBinary(.ishl, result_ty, lhs, y );
+            const shl_inst = try func.dfg.makeBinary(.ishl, result_ty, lhs, y);
             try self.replaceWithValue(func, inst, shl_inst);
             return true;
         }
 
         // Check if lhs is ishl(1, y)
         if (try self.getShiftBy1(func, lhs)) |y| {
-            const shl_inst = try func.dfg.makeBinary(.ishl, result_ty, rhs, y );
+            const shl_inst = try func.dfg.makeBinary(.ishl, result_ty, rhs, y);
             try self.replaceWithValue(func, inst, shl_inst);
             return true;
         }
@@ -1342,7 +1342,7 @@ pub const InstCombine = struct {
                             const same_operands = (inner.args[0].index == rhs_inner.args[0].index and inner.args[1].index == rhs_inner.args[1].index) or (inner.args[0].index == rhs_inner.args[1].index and inner.args[1].index == rhs_inner.args[0].index);
                             if (same_operands) {
                                 const result_ty = func.dfg.instResultType(inst) orelse return false;
-                                const and_inst = try func.dfg.makeBinary(.band, result_ty, inner.args[0], inner.args[1] );
+                                const and_inst = try func.dfg.makeBinary(.band, result_ty, inner.args[0], inner.args[1]);
                                 try self.replaceWithValue(func, inst, and_inst);
                                 return true;
                             }
@@ -1519,7 +1519,7 @@ pub const InstCombine = struct {
                     (x1.index == y2.index and y1.index == x2.index))
                 {
                     const result_ty = func.dfg.instResultType(inst) orelse return false;
-                    const or_inst = try func.dfg.makeBinary(.bor, result_ty, x1, y1 );
+                    const or_inst = try func.dfg.makeBinary(.bor, result_ty, x1, y1);
                     try self.replaceWithValue(func, inst, or_inst);
                     return true;
                 }
@@ -1537,7 +1537,7 @@ pub const InstCombine = struct {
                     (x1.index == y2.index and y1.index == x2.index))
                 {
                     const result_ty = func.dfg.instResultType(inst) orelse return false;
-                    const or_inst = try func.dfg.makeBinary(.bor, result_ty, x1, y1 );
+                    const or_inst = try func.dfg.makeBinary(.bor, result_ty, x1, y1);
                     try self.replaceWithValue(func, inst, or_inst);
                     return true;
                 }
@@ -1568,14 +1568,14 @@ pub const InstCombine = struct {
                     if (bnot_arg.index == y.index) {
                         // (x & y) | ~y = x | ~y
                         const result_ty = func.dfg.instResultType(inst) orelse return false;
-                        const or_inst = try func.dfg.makeBinary(.bor, result_ty, x, rhs );
+                        const or_inst = try func.dfg.makeBinary(.bor, result_ty, x, rhs);
                         try self.replaceWithValue(func, inst, or_inst);
                         return true;
                     }
                     if (bnot_arg.index == x.index) {
                         // (x & y) | ~x = y | ~x
                         const result_ty = func.dfg.instResultType(inst) orelse return false;
-                        const or_inst = try func.dfg.makeBinary(.bor, result_ty, y, rhs );
+                        const or_inst = try func.dfg.makeBinary(.bor, result_ty, y, rhs);
                         try self.replaceWithValue(func, inst, or_inst);
                         return true;
                     }
@@ -1602,14 +1602,14 @@ pub const InstCombine = struct {
                     if (bnot_arg.index == y.index) {
                         // ~y | (x & y) = ~y | x
                         const result_ty = func.dfg.instResultType(inst) orelse return false;
-                        const or_inst = try func.dfg.makeBinary(.bor, result_ty, lhs, x );
+                        const or_inst = try func.dfg.makeBinary(.bor, result_ty, lhs, x);
                         try self.replaceWithValue(func, inst, or_inst);
                         return true;
                     }
                     if (bnot_arg.index == x.index) {
                         // ~x | (x & y) = ~x | y
                         const result_ty = func.dfg.instResultType(inst) orelse return false;
-                        const or_inst = try func.dfg.makeBinary(.bor, result_ty, lhs, y );
+                        const or_inst = try func.dfg.makeBinary(.bor, result_ty, lhs, y);
                         try self.replaceWithValue(func, inst, or_inst);
                         return true;
                     }
@@ -1673,7 +1673,7 @@ pub const InstCombine = struct {
                 const z = rhs;
 
                 // Create y + z
-                const sum = try func.dfg.makeBinary(.iadd, result_ty, y, z );
+                const sum = try func.dfg.makeBinary(.iadd, result_ty, y, z);
                 // Create rotl(x, y+z) or rotr(x, y+z)
                 const new_rot = try func.dfg.makeInst(data.opcode, result_ty, &.{ x, sum });
                 try self.replaceWithValue(func, inst, new_rot);
@@ -1802,7 +1802,7 @@ pub const InstCombine = struct {
                 if (x.index == rhs.index) {
                     if (try self.getBnotOperand(func, other)) |y| {
                         // (x ^ ~y) & x = x & y
-                        const and_inst = try func.dfg.makeBinary(.band, result_ty, rhs, y );
+                        const and_inst = try func.dfg.makeBinary(.band, result_ty, rhs, y);
                         try self.replaceWithValue(func, inst, and_inst);
                         return true;
                     }
@@ -1810,7 +1810,7 @@ pub const InstCombine = struct {
                 if (other.index == rhs.index) {
                     if (try self.getBnotOperand(func, x)) |y| {
                         // (~y ^ x) & x = x & y
-                        const and_inst = try func.dfg.makeBinary(.band, result_ty, rhs, y );
+                        const and_inst = try func.dfg.makeBinary(.band, result_ty, rhs, y);
                         try self.replaceWithValue(func, inst, and_inst);
                         return true;
                     }
@@ -1836,7 +1836,7 @@ pub const InstCombine = struct {
                 if (x.index == lhs.index) {
                     if (try self.getBnotOperand(func, other)) |y| {
                         // x & (x ^ ~y) = x & y
-                        const and_inst = try func.dfg.makeBinary(.band, result_ty, lhs, y );
+                        const and_inst = try func.dfg.makeBinary(.band, result_ty, lhs, y);
                         try self.replaceWithValue(func, inst, and_inst);
                         return true;
                     }
@@ -1844,7 +1844,7 @@ pub const InstCombine = struct {
                 if (other.index == lhs.index) {
                     if (try self.getBnotOperand(func, x)) |y| {
                         // x & (~y ^ x) = x & y
-                        const and_inst = try func.dfg.makeBinary(.band, result_ty, lhs, y );
+                        const and_inst = try func.dfg.makeBinary(.band, result_ty, lhs, y);
                         try self.replaceWithValue(func, inst, and_inst);
                         return true;
                     }
@@ -1947,7 +1947,7 @@ pub const InstCombine = struct {
                 if ((x1.index == x2.index and y1.index == y2.index) or
                     (x1.index == y2.index and y1.index == x2.index))
                 {
-                    const or_inst = try func.dfg.makeBinary(.bor, result_ty, x1, y1 );
+                    const or_inst = try func.dfg.makeBinary(.bor, result_ty, x1, y1);
                     try self.replaceWithValue(func, inst, or_inst);
                     return true;
                 }
@@ -1964,7 +1964,7 @@ pub const InstCombine = struct {
                 if ((x1.index == x2.index and y1.index == y2.index) or
                     (x1.index == y2.index and y1.index == x2.index))
                 {
-                    const or_inst = try func.dfg.makeBinary(.bor, result_ty, x1, y1 );
+                    const or_inst = try func.dfg.makeBinary(.bor, result_ty, x1, y1);
                     try self.replaceWithValue(func, inst, or_inst);
                     return true;
                 }
@@ -2008,7 +2008,7 @@ pub const InstCombine = struct {
                 if ((x1.index == x2.index and y1.index == y2.index) or
                     (x1.index == y2.index and y1.index == x2.index))
                 {
-                    const add_inst = try func.dfg.makeBinary(.iadd, result_ty, x1, y1 );
+                    const add_inst = try func.dfg.makeBinary(.iadd, result_ty, x1, y1);
                     try self.replaceWithValue(func, inst, add_inst);
                     return true;
                 }
@@ -2025,7 +2025,7 @@ pub const InstCombine = struct {
                 if ((x1.index == x2.index and y1.index == y2.index) or
                     (x1.index == y2.index and y1.index == x2.index))
                 {
-                    const add_inst = try func.dfg.makeBinary(.iadd, result_ty, x1, y1 );
+                    const add_inst = try func.dfg.makeBinary(.iadd, result_ty, x1, y1);
                     try self.replaceWithValue(func, inst, add_inst);
                     return true;
                 }
@@ -2069,7 +2069,7 @@ pub const InstCombine = struct {
                 if ((x1.index == x2.index and y1.index == y2.index) or
                     (x1.index == y2.index and y1.index == x2.index))
                 {
-                    const xor_inst = try func.dfg.makeBinary(.bxor, result_ty, x1, y1 );
+                    const xor_inst = try func.dfg.makeBinary(.bxor, result_ty, x1, y1);
                     try self.replaceWithValue(func, inst, xor_inst);
                     return true;
                 }
@@ -2086,7 +2086,7 @@ pub const InstCombine = struct {
                 if ((x1.index == x2.index and y1.index == y2.index) or
                     (x1.index == y2.index and y1.index == x2.index))
                 {
-                    const xor_inst = try func.dfg.makeBinary(.bxor, result_ty, x1, y1 );
+                    const xor_inst = try func.dfg.makeBinary(.bxor, result_ty, x1, y1);
                     try self.replaceWithValue(func, inst, xor_inst);
                     return true;
                 }
@@ -2127,32 +2127,32 @@ pub const InstCombine = struct {
 
                 // Check if first operands match: (z & x) ^ (z & y)
                 if (z1.index == z2.index) {
-                    const xor_inst = try func.dfg.makeBinary(.bxor, result_ty, x, y );
-                    const and_inst = try func.dfg.makeBinary(.band, result_ty, z1, xor_inst );
+                    const xor_inst = try func.dfg.makeBinary(.bxor, result_ty, x, y);
+                    const and_inst = try func.dfg.makeBinary(.band, result_ty, z1, xor_inst);
                     try self.replaceWithValue(func, inst, and_inst);
                     return true;
                 }
 
                 // Check if second operands match: (x & z) ^ (y & z)
                 if (x.index == y.index) {
-                    const xor_inst = try func.dfg.makeBinary(.bxor, result_ty, z1, z2 );
-                    const and_inst = try func.dfg.makeBinary(.band, result_ty, x, xor_inst );
+                    const xor_inst = try func.dfg.makeBinary(.bxor, result_ty, z1, z2);
+                    const and_inst = try func.dfg.makeBinary(.band, result_ty, x, xor_inst);
                     try self.replaceWithValue(func, inst, and_inst);
                     return true;
                 }
 
                 // Check cross patterns: (z & x) ^ (y & z)
                 if (z1.index == y.index) {
-                    const xor_inst = try func.dfg.makeBinary(.bxor, result_ty, x, z2 );
-                    const and_inst = try func.dfg.makeBinary(.band, result_ty, z1, xor_inst );
+                    const xor_inst = try func.dfg.makeBinary(.bxor, result_ty, x, z2);
+                    const and_inst = try func.dfg.makeBinary(.band, result_ty, z1, xor_inst);
                     try self.replaceWithValue(func, inst, and_inst);
                     return true;
                 }
 
                 // Check cross patterns: (x & z) ^ (z & y)
                 if (x.index == z2.index) {
-                    const xor_inst = try func.dfg.makeBinary(.bxor, result_ty, z1, y );
-                    const and_inst = try func.dfg.makeBinary(.band, result_ty, x, xor_inst );
+                    const xor_inst = try func.dfg.makeBinary(.bxor, result_ty, z1, y);
+                    const and_inst = try func.dfg.makeBinary(.band, result_ty, x, xor_inst);
                     try self.replaceWithValue(func, inst, and_inst);
                     return true;
                 }
@@ -2416,9 +2416,9 @@ pub const InstCombine = struct {
                 // Check if y == rhs (the shift amounts match)
                 if (y.index == rhs.index) {
                     // Create (z >> y)
-                    const z_shr = try func.dfg.makeBinary(.ushr, result_ty, z, y );
+                    const z_shr = try func.dfg.makeBinary(.ushr, result_ty, z, y);
                     // Create x & (z >> y)
-                    const result = try func.dfg.makeBinary(.band, result_ty, x, z_shr );
+                    const result = try func.dfg.makeBinary(.band, result_ty, x, z_shr);
                     try self.replaceWithValue(func, inst, result);
                     return true;
                 }
