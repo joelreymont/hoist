@@ -816,6 +816,49 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 try builder.emit(Inst.nop);
             }
         },
+        .ternary => |data| {
+            if (data.opcode == .select) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const PReg = @import("../machinst/reg.zig").PReg;
+                const CondCode = @import("../backends/aarch64/inst.zig").CondCode;
+
+                const cond_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const true_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
+                const false_vreg = VReg.new(@intCast(data.args[2].index + Reg.PINNED_VREGS), RegClass.int);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                const zero = Reg.fromPReg(PReg.new(RegClass.int, 31));
+
+                try builder.emit(Inst{
+                    .cmp_rr = .{
+                        .src1 = Reg.fromVReg(cond_vreg),
+                        .src2 = zero,
+                        .size = .size32,
+                    },
+                });
+
+                try builder.emit(Inst{
+                    .csel = .{
+                        .dst = dst,
+                        .src1 = Reg.fromVReg(true_vreg),
+                        .src2 = Reg.fromVReg(false_vreg),
+                        .cond = CondCode.ne,
+                        .size = size,
+                    },
+                });
+            } else {
+                try builder.emit(Inst.nop);
+            }
+        },
         .unary => |data| {
             // Handle unary instructions (return, etc.)
             if (data.opcode == .@"return") {
