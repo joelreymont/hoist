@@ -1203,6 +1203,34 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .size = size,
                     },
                 });
+            } else if (data.opcode == .fma) {
+                // Fused multiply-add: result = args[0] * args[1] + args[2]
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+
+                const src1_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.float);
+                const src2_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.float);
+                const addend_vreg = VReg.new(@intCast(data.args[2].index + Reg.PINNED_VREGS), RegClass.float);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.float);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: FpuOperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                try builder.emit(Inst{
+                    .fmadd = .{
+                        .dst = dst,
+                        .src1 = Reg.fromVReg(src1_vreg),
+                        .src2 = Reg.fromVReg(src2_vreg),
+                        .addend = Reg.fromVReg(addend_vreg),
+                        .size = size,
+                    },
+                });
             } else {
                 try builder.emit(Inst.nop);
             }
