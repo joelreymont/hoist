@@ -5,6 +5,7 @@ const Allocator = std.mem.Allocator;
 const ir_mod = @import("../ir.zig");
 const Block = ir_mod.Block;
 const PrimaryMap = @import("../foundation/maps.zig").PrimaryMap;
+const ControlFlowGraph = @import("cfg.zig").ControlFlowGraph;
 
 /// Dominator tree for control flow analysis.
 /// Computes dominance relationships between basic blocks.
@@ -389,72 +390,8 @@ pub const DominatorTree = struct {
     }
 };
 
-/// Control flow graph representation (stub for domtree computation).
-pub const CFG = struct {
-    /// Predecessors for each block.
-    preds: std.AutoHashMap(Block, std.ArrayList(Block)),
-
-    /// Successors for each block.
-    succs: std.AutoHashMap(Block, std.ArrayList(Block)),
-
-    /// Allocator.
-    allocator: Allocator,
-
-    pub fn init(allocator: Allocator) CFG {
-        return .{
-            .preds = std.AutoHashMap(Block, std.ArrayList(Block)).init(allocator),
-            .succs = std.AutoHashMap(Block, std.ArrayList(Block)).init(allocator),
-            .allocator = allocator,
-        };
-    }
-
-    pub fn deinit(self: *CFG) void {
-        var pred_iter = self.preds.valueIterator();
-        while (pred_iter.next()) |list| {
-            list.deinit(self.allocator);
-        }
-        self.preds.deinit();
-
-        var succ_iter = self.succs.valueIterator();
-        while (succ_iter.next()) |list| {
-            list.deinit(self.allocator);
-        }
-        self.succs.deinit();
-    }
-
-    /// Add an edge from `from` to `to`.
-    pub fn addEdge(self: *CFG, from: Block, to: Block) !void {
-        // Add to successors of `from`
-        const succ_entry = try self.succs.getOrPut(from);
-        if (!succ_entry.found_existing) {
-            succ_entry.value_ptr.* = std.ArrayList(Block){};
-        }
-        try succ_entry.value_ptr.append(self.allocator, to);
-
-        // Add to predecessors of `to`
-        const pred_entry = try self.preds.getOrPut(to);
-        if (!pred_entry.found_existing) {
-            pred_entry.value_ptr.* = std.ArrayList(Block){};
-        }
-        try pred_entry.value_ptr.append(self.allocator, from);
-    }
-
-    /// Get predecessors of a block.
-    pub fn predecessors(self: *const CFG, block: Block) []const Block {
-        if (self.preds.get(block)) |list| {
-            return list.items;
-        }
-        return &.{};
-    }
-
-    /// Get successors of a block.
-    pub fn successors(self: *const CFG, block: Block) []const Block {
-        if (self.succs.get(block)) |list| {
-            return list.items;
-        }
-        return &.{};
-    }
-};
+/// Control flow graph type alias.
+pub const CFG = ControlFlowGraph;
 
 test "DominatorTree basic" {
     var tree = DominatorTree.init(testing.allocator);
