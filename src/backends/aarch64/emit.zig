@@ -326,9 +326,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
 /// Get hardware register encoding.
 fn hwEnc(reg: Reg) u5 {
     if (reg.isVirtual()) {
-        // For testing - map virtual regs to physical
-        const vreg = reg.toVReg() orelse unreachable;
-        return @intCast(vreg.index() % 31);
+        @panic("FATAL: Virtual register reached emit stage! Register rewriting incomplete.");
     } else {
         const preg = reg.toRealReg() orelse unreachable;
         return @intCast(preg.hwEnc() & 0x1F);
