@@ -888,6 +888,51 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .size = size,
                     },
                 });
+            } else if (data.opcode == .sextend or data.opcode == .uextend) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const src_type = ctx.func.dfg.valueType(data.arg) orelse return error.LoweringFailed;
+                const dst_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+
+                const dst_size: OperandSize = if (dst_type.bits() == 64) .size64 else .size32;
+
+                // Select instruction based on source type size
+                const is_signed = data.opcode == .sextend;
+                switch (src_type.bits()) {
+                    8 => {
+                        if (is_signed) {
+                            try builder.emit(Inst{ .sxtb = .{ .dst = dst, .src = src, .dst_size = dst_size } });
+                        } else {
+                            try builder.emit(Inst{ .uxtb = .{ .dst = dst, .src = src, .dst_size = dst_size } });
+                        }
+                    },
+                    16 => {
+                        if (is_signed) {
+                            try builder.emit(Inst{ .sxth = .{ .dst = dst, .src = src, .dst_size = dst_size } });
+                        } else {
+                            try builder.emit(Inst{ .uxth = .{ .dst = dst, .src = src, .dst_size = dst_size } });
+                        }
+                    },
+                    32 => {
+                        if (is_signed) {
+                            try builder.emit(Inst{ .sxtw = .{ .dst = dst, .src = src } });
+                        } else {
+                            // For uextend i32→i64, just use 32-bit MOV (auto zero-extends)
+                            try builder.emit(Inst{ .mov_rr = .{ .dst = dst, .src = src, .size = .size32 } });
+                        }
+                    },
+                    else => return error.LoweringFailed,
+                }
             } else {
                 // Other unary ops not yet implemented
                 try builder.emit(Inst.nop);
