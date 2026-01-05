@@ -1981,7 +1981,16 @@ pub const Inst = union(enum) {
             .mov_imm => |*i| {
                 try collector.regDef(i.dst);
             },
+            .mov_rr => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
             .add_rr => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .mul_rr => |*i| {
                 try collector.regUse(i.src1);
                 try collector.regUse(i.src2);
                 try collector.regDef(i.dst);
