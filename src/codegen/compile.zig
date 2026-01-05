@@ -1902,6 +1902,20 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 },
             });
         },
+        .call => |data| {
+            // Handle direct function call
+            const CallTarget = @import("../backends/aarch64/inst.zig").CallTarget;
+
+            // For now, use the func_ref index as label
+            // In a real implementation, we'd resolve the function name or address
+            const target = CallTarget{ .label = data.func_ref.index };
+
+            try builder.emit(Inst{
+                .call = .{
+                    .target = target,
+                },
+            });
+        },
         else => {
             // Unimplemented instruction - emit NOP placeholder
             try builder.emit(Inst.nop);
