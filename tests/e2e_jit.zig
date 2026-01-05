@@ -106,6 +106,68 @@ fn freeExecutableMemory(memory: []align(std.heap.page_size_min) u8) void {
     }
 }
 
+test "JIT: CRITICAL - verify ABI calling convention" {
+    // This is a critical test to verify that Zig can correctly call
+    // JIT-compiled ARM64 code and read the w0 register as the return value.
+    // If this fails, the calling convention is fundamentally broken.
+
+    // Skip on unsupported platforms
+    if (builtin.os.tag != .linux and builtin.os.tag != .macos and builtin.os.tag != .windows) {
+        return error.SkipZigTest;
+    }
+
+    // Skip on non-ARM64 platforms
+    if (builtin.cpu.arch != .aarch64 and builtin.cpu.arch != .aarch64_be) {
+        return error.SkipZigTest;
+    }
+
+    // Hand-written ARM64 machine code:
+    // movz w0, #123, lsl #0  (load 123 into w0)
+    // ret                     (return)
+    const code_bytes = [_]u8{
+        0x6f, 0x0f, 0x80, 0x52, // movz w0, #123
+        0xc0, 0x03, 0x5f, 0xd6, // ret
+    };
+
+    std.debug.print("\n=== ABI VERIFICATION TEST ===\n", .{});
+    std.debug.print("Hand-written machine code: ", .{});
+    for (code_bytes) |byte| {
+        std.debug.print("{x:0>2} ", .{byte});
+    }
+    std.debug.print("\n", .{});
+
+    // Allocate executable memory
+    const exec_mem = try allocExecutableMemory(testing.allocator, code_bytes.len);
+    defer freeExecutableMemory(exec_mem);
+
+    // Copy machine code
+    @memcpy(exec_mem[0..code_bytes.len], &code_bytes);
+
+    // Make executable
+    try makeExecutable(exec_mem);
+
+    std.debug.print("Calling JIT function at {*}...\n", .{exec_mem.ptr});
+
+    // Call the JIT function
+    const FnType = *const fn () callconv(.c) i32;
+    const jit_fn: FnType = @ptrCast(exec_mem.ptr);
+    const result = jit_fn();
+
+    std.debug.print("Result: {}\n", .{result});
+
+    // This is the critical test - if this fails, our calling convention is wrong
+    if (result != 123) {
+        std.debug.print("CRITICAL FAILURE: Expected 123, got {}\n", .{result});
+        std.debug.print("This means the ABI/calling convention is broken!\n", .{});
+        std.debug.print("Possible causes:\n", .{});
+        std.debug.print("- Zig is not reading w0 as the return value\n", .{});
+        std.debug.print("- Register preservation issue\n", .{});
+        std.debug.print("- Calling convention mismatch\n", .{});
+    }
+
+    try testing.expectEqual(@as(i32, 123), result);
+}
+
 test "JIT: compile and execute return constant i32" {
     // Skip on unsupported platforms
     if (builtin.os.tag != .linux and builtin.os.tag != .macos and builtin.os.tag != .windows) {
