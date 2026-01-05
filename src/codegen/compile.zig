@@ -405,14 +405,14 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
     const OperandSize = @import("../backends/aarch64/inst.zig").OperandSize;
 
     // Get instruction data from DFG
-    const inst_data = ctx.func.dfg.insts.get(inst) orelse {
+    const inst_data_ptr = ctx.func.dfg.insts.get(inst) orelse {
         // No instruction data - emit NOP
         try builder.emit(Inst.nop);
         return;
     };
 
     // Match instruction opcode and lower accordingly
-    switch (inst_data) {
+    switch (inst_data_ptr.*) {
         .nullary => |data| {
             // Handle nullary instructions (iconst, etc.)
             if (data.opcode != .iconst) {
@@ -426,11 +426,11 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
             const RegClass = @import("../machinst/reg.zig").RegClass;
 
             // Allocate virtual register for result
-            const vreg = VReg.new(@intCast(inst.index()), RegClass.int);
+            const vreg = VReg.new(@intCast(inst.index), RegClass.int);
             const writable = WritableReg.fromVReg(vreg);
 
             // Get immediate value and size from instruction type
-            const value_type = ctx.func.dfg.valueType(ctx.func.dfg.instResult(inst).?) orelse {
+            const value_type = ctx.func.dfg.valueType(ctx.func.dfg.firstResult(inst).?) orelse {
                 try builder.emit(Inst.nop);
                 return;
             };
@@ -460,16 +460,16 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
 
                 // Map IR values to virtual registers
                 // TODO: Proper value-to-vreg mapping
-                const arg0_vreg = VReg.new(@intCast(data.args[0].index()), RegClass.int);
-                const arg1_vreg = VReg.new(@intCast(data.args[1].index()), RegClass.int);
-                const result_vreg = VReg.new(@intCast(inst.index()), RegClass.int);
+                const arg0_vreg = VReg.new(@intCast(data.args[0].index), RegClass.int);
+                const arg1_vreg = VReg.new(@intCast(data.args[1].index), RegClass.int);
+                const result_vreg = VReg.new(@intCast(inst.index), RegClass.int);
 
                 const src1 = Reg.fromVReg(arg0_vreg);
                 const src2 = Reg.fromVReg(arg1_vreg);
                 const dst = WritableReg.fromVReg(result_vreg);
 
                 // Get size from result type
-                const value_type = ctx.func.dfg.valueType(ctx.func.dfg.instResult(inst).?) orelse {
+                const value_type = ctx.func.dfg.valueType(ctx.func.dfg.firstResult(inst).?) orelse {
                     try builder.emit(Inst.nop);
                     return;
                 };

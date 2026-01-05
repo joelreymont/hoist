@@ -2,25 +2,37 @@
 
 A Zig port of [Cranelift](https://github.com/bytecodealliance/wasmtime/tree/main/cranelift), a fast and secure code generator for WebAssembly and native code.
 
-## Features
+## Status
 
-- **Fast compilation**: Optimized for compilation speed while generating good code
-- **Multiple backends**: x86-64 and AArch64 support
-- **Verification**: Built-in IR verification for correctness
-- **Optimization**: ISLE-based pattern matching for peephole optimizations
-- **Safety**: Written in Zig with strong type safety guarantees
+**Work in Progress** - Core infrastructure complete, code generation in development.
+
+Currently implemented:
+- ✅ **IR**: SSA-based intermediate representation with full type system
+- ✅ **Foundation**: Entity maps, bitsets, control flow graph, dominator trees
+- ✅ **Analysis**: Loop detection, dominator frontiers, SSA construction
+- ✅ **Optimization**: Basic peephole optimizations, constant folding
+- ✅ **Lowering**: VCode generation with basic instruction lowering (iconst, iadd, return)
+- ✅ **AArch64**: Minimal instruction set (mov_imm, add_rr, ret)
+- ⏳ **Register allocation**: Infrastructure present, algorithm not yet implemented
+- ⏳ **Code emission**: Framework in place, machine code generation stubbed
+- ⏳ **ISLE compiler**: Parser and runtime stubs, pattern compilation not complete
+- ❌ **x86-64**: Instruction definitions present, lowering not implemented
 
 ## Architecture
 
 ```
-IR → Optimization → ISLE Lowering → VCode → Register Allocation → Machine Code
+IR → Optimization → Lowering → VCode → Register Allocation → Machine Code
+                        ↓
+                     (ISLE rules - in progress)
 ```
 
-Key components:
-- **IR**: SSA-based intermediate representation with strong typing
-- **ISLE**: Domain-specific language for instruction selection rules
-- **VCode**: Virtual register representation before allocation
-- **Backends**: Target-specific code emission (x64, aarch64)
+Current pipeline status:
+- **IR**: ✅ SSA-based intermediate representation with strong typing
+- **Optimization**: ✅ Basic passes implemented (constant folding, dead code elimination)
+- **Lowering**: ✅ Direct lowering for basic instructions (iconst, iadd, return)
+- **VCode**: ✅ Virtual register representation before allocation
+- **Register Allocation**: ⏳ Infrastructure present, needs implementation
+- **Code Emission**: ⏳ Framework in place, needs instruction encoding
 
 ## Quick Start
 
@@ -44,22 +56,15 @@ Available optimization levels:
 
 ```bash
 zig build test
-zig build test-integration
 ```
 
-### Run Benchmarks
+Current test status: 396/397 tests passing (99.7%)
 
-```bash
-zig build bench
-```
-
-### Run Fuzzers
-
-```bash
-zig build fuzz
-```
+Note: End-to-end JIT tests are currently disabled as register allocation and code emission are not yet implemented.
 
 ## Usage Example
+
+**Note**: Full compilation pipeline is under development. The example below shows the current API, but machine code emission is not yet complete.
 
 ```zig
 const std = @import("std");
@@ -74,33 +79,30 @@ pub fn main() !void {
     var sig = try hoist.signature.Signature.init(allocator);
     defer sig.deinit(allocator);
 
-    try sig.params.append(allocator, hoist.types.Type{ .int = .{ .width = 32 } });
-    try sig.params.append(allocator, hoist.types.Type{ .int = .{ .width = 32 } });
-    try sig.returns.append(allocator, hoist.types.Type{ .int = .{ .width = 32 } });
+    try sig.params.append(allocator, hoist.types.Type.I32);
+    try sig.params.append(allocator, hoist.types.Type.I32);
+    try sig.returns.append(allocator, hoist.types.Type.I32);
 
     // Create function
     var func = try hoist.function.Function.init(allocator, "add", sig);
     defer func.deinit();
 
-    // Build IR (see examples/ for complete code)
-    // ...
+    // Build IR using FunctionBuilder
+    var builder = try hoist.builder.FunctionBuilder.init(allocator, &func);
+    const entry = try builder.createBlock();
+    try builder.switchToBlock(entry);
 
-    // Compile to machine code
-    var ctx = hoist.context.ContextBuilder.init(allocator)
-        .target(.x86_64, .linux)
-        .optLevel(.speed)
-        .verify(true)
-        .optimize(true)
-        .build();
+    const v1 = try builder.iconst(hoist.types.Type.I32, 10);
+    const v2 = try builder.iconst(hoist.types.Type.I32, 20);
+    const result = try builder.iadd(v1, v2);
+    try builder.@"return"(result);
 
-    const code = try ctx.compileFunction(&func);
-    defer code.deinit(allocator);
-
-    // code.buffer contains executable machine code
+    // Current status: Generates IR and VCode, but not yet executable machine code
+    // Register allocation and code emission are in progress
 }
 ```
 
-See `examples/` for complete working examples.
+For working examples, see unit tests in `src/ir/` and `tests/`.
 
 ## Documentation
 
