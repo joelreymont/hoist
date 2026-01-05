@@ -994,15 +994,21 @@ pub const InstCombine = struct {
                 return true;
             },
             // x * 0 = 0, x * 1 = x
-            .imul, .fmul => if (rhs == 0) {
+            .fmul => if (rhs == 0) {
                 try self.replaceWithConst(func, inst, 0);
                 return true;
             } else if (rhs == 1) {
                 try self.replaceWithValue(func, inst, lhs);
                 return true;
             },
-            // x * 2 = x + x, x * pow2 = x << log2(pow2), x * -1 = -x
-            .imul => if (rhs == 2) {
+            // x * 0 = 0, x * 1 = x, x * 2 = x + x, x * pow2 = x << log2(pow2), x * -1 = -x
+            .imul => if (rhs == 0) {
+                try self.replaceWithConst(func, inst, 0);
+                return true;
+            } else if (rhs == 1) {
+                try self.replaceWithValue(func, inst, lhs);
+                return true;
+            } else if (rhs == 2) {
                 const result_ty = func.dfg.instResultType(inst) orelse return false;
                 const add_inst = try func.dfg.makeInst(.iadd, result_ty, &.{ lhs, lhs });
                 try self.replaceWithValue(func, inst, add_inst);
