@@ -1057,10 +1057,10 @@ test "DominatorTree: complex CFG" {
     try cfg.addEdge(b1, Inst.new(0), b4);
     try cfg.addEdge(b2, Inst.new(0), b3);
     try cfg.addEdge(b2, Inst.new(0), b5);
-    try cfg.addEdge(b3, b4);
-    try cfg.addEdge(b3, b5);
-    try cfg.addEdge(b4, b6);
-    try cfg.addEdge(b5, b6);
+    try cfg.addEdge(b3, Inst.new(0), b4);
+    try cfg.addEdge(b3, Inst.new(0), b5);
+    try cfg.addEdge(b4, Inst.new(0), b6);
+    try cfg.addEdge(b5, Inst.new(0), b6);
 
     try tree.compute(testing.allocator, b0, &cfg);
 

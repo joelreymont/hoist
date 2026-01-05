@@ -178,7 +178,7 @@ test "SSA: block parameters represent phi nodes" {
 
 test "SSA: dominance frontier for diamond CFG" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     // Diamond CFG:
     //     b0
@@ -192,10 +192,10 @@ test "SSA: dominance frontier for diamond CFG" {
     const b2 = Block.new(2);
     const b3 = Block.new(3);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
-    try cfg.addEdge(b2, b3);
+    try cfg.addEdge(b0, Inst.new(0), b1);
+    try cfg.addEdge(b0, Inst.new(0), b2);
+    try cfg.addEdge(b1, Inst.new(0), b3);
+    try cfg.addEdge(b2, Inst.new(0), b3);
 
     // Build dominator tree
     var domtree = DominatorTree.init(testing.allocator);
@@ -241,7 +241,7 @@ test "SSA: dominance frontier for diamond CFG" {
 
 test "SSA: dominance frontier for loop" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     // Loop CFG:
     //   b0 -> b1 -> b2
@@ -252,9 +252,9 @@ test "SSA: dominance frontier for loop" {
     const b1 = Block.new(1);
     const b2 = Block.new(2);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b1, b2);
-    try cfg.addEdge(b2, b1); // Back edge
+    try cfg.addEdge(b0, Inst.new(0), b1);
+    try cfg.addEdge(b1, Inst.new(0), b2);
+    try cfg.addEdge(b2, Inst.new(0), b1); // Back edge
 
     var domtree = DominatorTree.init(testing.allocator);
     defer domtree.deinit();
@@ -495,15 +495,15 @@ test "SSA: multiple block parameters in same block" {
 
 test "SSA: dominator tree verification" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     // Simple linear CFG: b0 -> b1 -> b2
     const b0 = Block.new(0);
     const b1 = Block.new(1);
     const b2 = Block.new(2);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b1, b2);
+    try cfg.addEdge(b0, Inst.new(0), b1);
+    try cfg.addEdge(b1, Inst.new(0), b2);
 
     var domtree = DominatorTree.init(testing.allocator);
     defer domtree.deinit();
@@ -534,7 +534,7 @@ test "SSA: dominator tree verification" {
 
 test "SSA: complex CFG with nested diamonds" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     // Nested diamonds:
     //       b0
@@ -552,12 +552,12 @@ test "SSA: complex CFG with nested diamonds" {
     const b4 = Block.new(4);
     const b5 = Block.new(5);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
-    try cfg.addEdge(b2, b4);
-    try cfg.addEdge(b3, b5);
-    try cfg.addEdge(b4, b5);
+    try cfg.addEdge(b0, Inst.new(0), b1);
+    try cfg.addEdge(b0, Inst.new(0), b2);
+    try cfg.addEdge(b1, Inst.new(0), b3);
+    try cfg.addEdge(b2, Inst.new(0), b4);
+    try cfg.addEdge(b3, Inst.new(0), b5);
+    try cfg.addEdge(b4, Inst.new(0), b5);
 
     var domtree = DominatorTree.init(testing.allocator);
     defer domtree.deinit();
