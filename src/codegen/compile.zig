@@ -592,7 +592,21 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
         // MVP: Emit supported instructions
         switch (rewritten_inst) {
             .mov_imm => |i| try emit_mod.emitMovImm(i.dst.toReg(), i.imm, i.size, &buffer),
-            .mov_rr => |i| try emit_mod.emitMovRR(i.dst.toReg(), i.src, i.size, &buffer),
+            .mov_rr => |i| {
+                // Skip redundant mov when src == dst (both are physical registers after rewriting)
+                const dst_reg = i.dst.toReg();
+                const src_reg = i.src;
+                if (dst_reg.toRealReg()) |dst_real| {
+                    if (src_reg.toRealReg()) |src_real| {
+                        if (dst_real.hwEnc() == src_real.hwEnc()) {
+                            // Redundant mov - skip it
+                            std.debug.print("Skipping redundant mov: {any} -> {any}\n", .{ src_reg, dst_reg });
+                            continue;
+                        }
+                    }
+                }
+                try emit_mod.emitMovRR(dst_reg, src_reg, i.size, &buffer);
+            },
             .add_rr => |i| try emit_mod.emitAddRR(i.dst.toReg(), i.src1, i.src2, i.size, &buffer),
             .mul_rr => |i| try emit_mod.emitMulRR(i.dst.toReg(), i.src1, i.src2, i.size, &buffer),
             .ret => try emit_mod.emitRet(null, &buffer),
