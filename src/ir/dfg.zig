@@ -342,6 +342,12 @@ pub const DataFlowGraph = struct {
         return data.getType();
     }
 
+    /// Get the type of an instruction's first result value.
+    pub fn instResultType(self: *const Self, inst: Inst) ?Type {
+        const result_val = self.firstResult(inst) orelse return null;
+        return self.valueType(result_val);
+    }
+
     pub fn valueDef(self: *const Self, val: Value) ?ValueDef {
         const canonical = self.resolveAliases(val);
         const data = self.values.get(canonical) orelse return null;
