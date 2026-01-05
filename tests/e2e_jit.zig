@@ -170,8 +170,8 @@ test "JIT: compile and execute i32 add" {
     try func.layout.appendBlock(entry);
 
     // Add block parameters for function arguments
-    const param0 = try func.dfg.appendBlockParam(entry, Type.I32);
-    const param1 = try func.dfg.appendBlockParam(entry, Type.I32);
+    const param0 = try func.dfg.appendBlockParam(entry, Type.I64);
+    const param1 = try func.dfg.appendBlockParam(entry, Type.I64);
 
     const add_data = InstructionData{
         .binary = .{
@@ -244,8 +244,8 @@ test "JIT: compile and execute i64 multiply" {
     try func.layout.appendBlock(entry);
 
     // Add block parameters for function arguments
-    const param0 = try func.dfg.appendBlockParam(entry, Type.I32);
-    const param1 = try func.dfg.appendBlockParam(entry, Type.I32);
+    const param0 = try func.dfg.appendBlockParam(entry, Type.I64);
+    const param1 = try func.dfg.appendBlockParam(entry, Type.I64);
 
     const mul_data = InstructionData{
         .binary = .{

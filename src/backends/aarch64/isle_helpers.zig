@@ -314,6 +314,20 @@ pub fn aarch64_tst_imm(ty: root.types.Type, x: lower_mod.Value, imm: u64, ctx: *
     } };
 }
 
+/// Constructor: Create MUL instruction (register, register).
+pub fn aarch64_mul_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const size = typeToOperandSize(ty);
+    const reg_x = try getValueReg(ctx, x);
+    const reg_y = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableVReg.allocVReg(.int, ctx);
+    return Inst{ .mul_rr = .{
+        .dst = dst,
+        .src1 = reg_x,
+        .src2 = reg_y,
+        .size = size,
+    } };
+}
+
 /// Constructor: Sign-extend byte (SXTB).
 pub fn aarch64_sxtb(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const dst_size = typeToOperandSize(dst_ty);
