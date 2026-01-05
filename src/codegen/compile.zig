@@ -928,6 +928,72 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         },
                     });
                 }
+            } else if (data.opcode == .srem or data.opcode == .urem) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+
+                const dividend = Reg.fromVReg(arg0_vreg);
+                const divisor = Reg.fromVReg(arg1_vreg);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse {
+                    try builder.emit(Inst.nop);
+                    return;
+                };
+
+                const size: OperandSize = if (value_type.bits() == 64)
+                    .size64
+                else
+                    .size32;
+
+                // Remainder requires two instructions:
+                // quotient = SDIV/UDIV dividend, divisor
+                // remainder = MSUB quotient, divisor, dividend  (dividend - quotient * divisor)
+
+                // Allocate temporary vreg for quotient
+                // Use a high vreg number to avoid collision (result + 1)
+                const temp_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS + 1), RegClass.int);
+                const quotient = Reg.fromVReg(temp_vreg);
+                const quotient_writable = WritableReg.fromVReg(temp_vreg);
+
+                // Emit division to get quotient
+                if (data.opcode == .srem) {
+                    try builder.emit(Inst{
+                        .sdiv = .{
+                            .dst = quotient_writable,
+                            .src1 = dividend,
+                            .src2 = divisor,
+                            .size = size,
+                        },
+                    });
+                } else {
+                    try builder.emit(Inst{
+                        .udiv = .{
+                            .dst = quotient_writable,
+                            .src1 = dividend,
+                            .src2 = divisor,
+                            .size = size,
+                        },
+                    });
+                }
+
+                // Emit MSUB to get remainder: dividend - quotient * divisor
+                try builder.emit(Inst{
+                    .msub = .{
+                        .dst = dst,
+                        .src1 = quotient,
+                        .src2 = divisor,
+                        .minuend = dividend,
+                        .size = size,
+                    },
+                });
             } else if (data.opcode == .band or data.opcode == .bor or data.opcode == .bxor) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
