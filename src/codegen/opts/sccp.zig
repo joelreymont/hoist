@@ -417,9 +417,9 @@ fn evalBinaryOp(opcode: Opcode, lhs: i64, rhs: i64) !i64 {
             break :blk @truncate(result >> 64);
         },
         .sdiv => if (rhs == 0) error.DivisionByZero else @divTrunc(lhs, rhs),
-        .udiv => if (rhs == 0) error.DivisionByZero else @divTrunc(@as(u64, @bitCast(lhs)), @as(u64, @bitCast(rhs))),
+        .udiv => if (rhs == 0) error.DivisionByZero else @bitCast(@divTrunc(@as(u64, @bitCast(lhs)), @as(u64, @bitCast(rhs)))),
         .srem => if (rhs == 0) error.DivisionByZero else @rem(lhs, rhs),
-        .urem => if (rhs == 0) error.DivisionByZero else @rem(@as(u64, @bitCast(lhs)), @as(u64, @bitCast(rhs))),
+        .urem => if (rhs == 0) error.DivisionByZero else @bitCast(@rem(@as(u64, @bitCast(lhs)), @as(u64, @bitCast(rhs)))),
         .band => lhs & rhs,
         .bor => lhs | rhs,
         .bxor => lhs ^ rhs,
@@ -583,7 +583,7 @@ fn evalUnaryOp(opcode: Opcode, arg: i64) !i64 {
         .fcvt_to_uint_sat => blk: {
             const f = @as(f64, @bitCast(arg));
             if (std.math.isNan(f) or f <= 0.0) break :blk 0;
-            if (f >= @as(f64, @floatFromInt(std.math.maxInt(u64)))) break :blk @bitCast(std.math.maxInt(u64));
+            if (f >= @as(f64, @floatFromInt(std.math.maxInt(u64)))) break :blk @bitCast(@as(u64, std.math.maxInt(u64)));
             break :blk @bitCast(@as(u64, @intFromFloat(f)));
         },
         else => error.UnsupportedOp,
