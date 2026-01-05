@@ -347,12 +347,13 @@ pub fn emitMovRR(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.Mach
     const rd = hwEnc(dst);
     const rm = hwEnc(src);
 
-    // ORR Xd, XZR, Xn: sf|01010100|shift|0|Rm|imm6|11111|Rd
-    // Using logical shift left by 0
+    // ORR Xd, XZR, Xm: sf|opc|01010|shift|N|Rm|imm6|Rn|Rd
+    // sf[31] opc[30:29]=01 fixed[28:24]=01010 shift[23:22]=00 N[21]=0 Rm[20:16] imm6[15:10]=0 Rn[9:5]=31 Rd[4:0]
     const insn: u32 = (sf_bit << 31) |
-        (0b01010100 << 21) |
+        (0b01 << 29) | // OPC field for ORR
+        (0b01010 << 24) | // Fixed bits for logical shifted register
         (@as(u32, rm) << 16) |
-        (0b11111 << 5) |
+        (0b11111 << 5) | // Rn = 31 (XZR/WZR)
         rd;
 
     try buffer.put4(insn);
