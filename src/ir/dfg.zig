@@ -256,6 +256,22 @@ pub const DataFlowGraph = struct {
         return try self.insts.push(data);
     }
 
+    /// Create a binary instruction with the given opcode, result type, and arguments.
+    /// Returns the result value.
+    pub fn makeBinary(self: *Self, opcode: Opcode, ty: Type, arg0: Value, arg1: Value) !Value {
+        const inst_data = instruction_data.BinaryData.init(opcode, arg0, arg1);
+        const inst = try self.makeInst(.{ .binary = inst_data });
+        return try self.appendInstResult(inst, ty);
+    }
+
+    /// Create a unary instruction with the given opcode, result type, and argument.
+    /// Returns the result value.
+    pub fn makeUnary(self: *Self, opcode: Opcode, ty: Type, arg: Value) !Value {
+        const inst_data = instruction_data.UnaryData.init(opcode, arg);
+        const inst = try self.makeInst(.{ .unary = inst_data });
+        return try self.appendInstResult(inst, ty);
+    }
+
     pub fn appendInstResult(self: *Self, inst: Inst, ty: Type) !Value {
         const results_list = try self.results.getOrDefault(inst);
         const num: u16 = @intCast(self.value_lists.len(results_list.*));
