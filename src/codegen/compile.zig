@@ -665,9 +665,25 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 },
             });
         },
-        .nullary => {
-            // Handle nullary instructions (nop, etc.)
-            try builder.emit(Inst.nop);
+        .nullary => |data| {
+            // Handle nullary instructions (trap, debugtrap, nop, etc.)
+            if (data.opcode == .trap) {
+                // Unconditional trap - BRK with trap code as immediate
+                const trap_code = if (@hasField(@TypeOf(data), "trap_code"))
+                    data.trap_code.toRaw()
+                else
+                    0; // Default trap code
+                try builder.emit(Inst{
+                    .brk = .{ .imm = trap_code },
+                });
+            } else if (data.opcode == .debugtrap) {
+                // Debug trap - BRK #0xF000 (debugger-specific)
+                try builder.emit(Inst{
+                    .brk = .{ .imm = 0xF000 },
+                });
+            } else {
+                try builder.emit(Inst.nop);
+            }
         },
         .binary => |data| {
             // Handle binary instructions (iadd, isub, etc.)
@@ -978,6 +994,58 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 }
             } else {
                 // Other unary ops not yet implemented
+                try builder.emit(Inst.nop);
+            }
+        },
+        .unary_with_trap => |data| {
+            // Handle unary instructions with trap codes (trapz, trapnz)
+            const VReg = @import("../machinst/reg.zig").VReg;
+            const Reg = @import("../machinst/reg.zig").Reg;
+            const RegClass = @import("../machinst/reg.zig").RegClass;
+            const inst_module = @import("../backends/aarch64/inst.zig");
+            const BranchTarget = inst_module.BranchTarget;
+
+            // Map argument to vreg
+            const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+            const arg_reg = Reg.fromVReg(arg_vreg);
+
+            // Get value type for size
+            const value_type = ctx.func.dfg.valueType(data.arg) orelse {
+                try builder.emit(Inst.nop);
+                return;
+            };
+
+            const size: OperandSize = if (value_type.bits() == 64)
+                .size64
+            else
+                .size32;
+
+            if (data.opcode == .trapz) {
+                // Trap if zero: CBZ arg, +8; BRK #code
+                // Skip forward 1 instruction (4 bytes) if not zero
+                try builder.emit(Inst{
+                    .cbz = .{
+                        .reg = arg_reg,
+                        .target = BranchTarget{ .offset = 8 }, // Skip BRK if not zero
+                        .size = size,
+                    },
+                });
+                try builder.emit(Inst{
+                    .brk = .{ .imm = data.trap_code.toRaw() },
+                });
+            } else if (data.opcode == .trapnz) {
+                // Trap if not zero: CBNZ arg, +8; BRK #code
+                try builder.emit(Inst{
+                    .cbnz = .{
+                        .reg = arg_reg,
+                        .target = BranchTarget{ .offset = 8 }, // Skip BRK if zero
+                        .size = size,
+                    },
+                });
+                try builder.emit(Inst{
+                    .brk = .{ .imm = data.trap_code.toRaw() },
+                });
+            } else {
                 try builder.emit(Inst.nop);
             }
         },
