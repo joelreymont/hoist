@@ -395,8 +395,34 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
     var vcode = try builder.finish();
     defer vcode.deinit();
 
-    // TODO: Store VCode in context or pass to register allocation
-    // For now, VCode is just discarded since rest of pipeline is stubbed
+    // Allocate registers using trivial allocator
+    const TrivialAllocator = @import("../regalloc/trivial.zig").TrivialAllocator;
+    const OperandCollector = Inst.OperandCollector;
+
+    var allocator = TrivialAllocator.init(ctx.allocator);
+    defer allocator.deinit();
+
+    // Walk instructions and allocate registers for all vregs
+    for (vcode.insns.items) |*inst| {
+        var collector = OperandCollector.init(ctx.allocator);
+        defer collector.deinit();
+
+        try inst.getOperands(&collector);
+
+        // Allocate registers for all def operands
+        for (collector.defs.items) |def_reg| {
+            const vreg = def_reg.toReg().toVReg() orelse continue;
+            _ = try allocator.allocate(vreg);
+        }
+
+        // Allocate registers for all use operands (should already be allocated)
+        for (collector.uses.items) |use_reg| {
+            const vreg = use_reg.toVReg() orelse continue;
+            _ = try allocator.allocate(vreg);
+        }
+    }
+
+    // TODO: Emit machine code using allocator
 }
 
 /// Lower a single AArch64 instruction.
