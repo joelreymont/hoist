@@ -1916,6 +1916,23 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 },
             });
         },
+        .call_indirect => |data| {
+            // Handle indirect function call through register
+            const VReg = @import("../machinst/reg.zig").VReg;
+            const RegClass = @import("../machinst/reg.zig").RegClass;
+            const Reg = @import("../machinst/reg.zig").Reg;
+
+            // First argument is the function pointer (callee)
+            const callee_value = ctx.func.dfg.value_lists.get(data.args, 0) orelse return error.LoweringFailed;
+            const callee_vreg = VReg.new(@intCast(callee_value.index + Reg.PINNED_VREGS), RegClass.int);
+            const target = Reg.fromVReg(callee_vreg);
+
+            try builder.emit(Inst{
+                .call_indirect = .{
+                    .target = target,
+                },
+            });
+        },
         else => {
             // Unimplemented instruction - emit NOP placeholder
             try builder.emit(Inst.nop);
