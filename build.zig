@@ -143,6 +143,19 @@ pub fn build(b: *std.Build) void {
     const integration_step = b.step("test-integration", "Run integration tests");
     integration_step.dependOn(&run_tests.step);
 
+    // Standalone E2E test (bypasses test framework)
+    const standalone_e2e = b.addExecutable(.{
+        .name = "standalone_e2e",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("standalone_e2e.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    standalone_e2e.root_module.addImport("hoist", lib.root_module);
+    applyFlags(standalone_e2e, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    b.installArtifact(standalone_e2e);
+
     // Benchmarks
     const bench_fib = b.addExecutable(.{
         .name = "bench_fib",
