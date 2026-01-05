@@ -1955,6 +1955,53 @@ pub const Inst = union(enum) {
             .epilogue_placeholder => try writer.print("epilogue_placeholder", .{}),
         }
     }
+
+    /// Collect operands for register allocation.
+    /// Called by regalloc to understand register use/def constraints.
+    pub fn getOperands(self: *Inst, collector: *OperandCollector) !void {
+        switch (self.*) {
+            .mov_imm => |*i| {
+                try collector.regDef(i.dst);
+            },
+            .add_rr => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .ret => {
+                // No operands to collect (implicit use of X30/LR handled by ABI)
+            },
+            else => {
+                // TODO: Implement for all instruction variants
+                // For now, emit no operands for unimplemented instructions
+            },
+        }
+    }
+
+    /// Is this instruction a register-to-register move?
+    pub fn isMove(self: Inst) bool {
+        return switch (self) {
+            .mov_rr => true,
+            else => false,
+        };
+    }
+
+    /// Is this instruction a terminator?
+    pub fn isTerm(self: Inst) bool {
+        return switch (self) {
+            .ret, .br, .br_cond, .br_table => true,
+            else => false,
+        };
+    }
+
+    /// Generate a register-to-register move instruction.
+    pub fn genMove(dst: WritableReg, src: Reg, ty: @import("../../ir/types.zig").Type) Inst {
+        return .{ .mov_rr = .{
+            .dst = dst,
+            .src = src,
+            .size = if (ty.bits() == 64) .size64 else .size32,
+        } };
+    }
 };
 
 /// Operand size for integer operations.
@@ -2933,6 +2980,43 @@ pub fn aarch64_msr(sysreg: SystemReg, src: Reg) Inst {
         .src = src,
     } };
 }
+
+
+/// Operand collector for register allocation.
+/// Mimics Cranelift's OperandVisitor pattern for collecting instruction operands.
+pub const OperandCollector = struct {
+    uses: std.ArrayList(Reg),
+    defs: std.ArrayList(WritableReg),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) OperandCollector {
+        return .{
+            .uses = std.ArrayList(Reg).init(allocator),
+            .defs = std.ArrayList(WritableReg).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *OperandCollector) void {
+        self.uses.deinit();
+        self.defs.deinit();
+    }
+
+    /// Register use (input operand).
+    pub fn regUse(self: *OperandCollector, reg: Reg) !void {
+        try self.uses.append(self.allocator, reg);
+    }
+
+    /// Register def (output operand).
+    pub fn regDef(self: *OperandCollector, reg: WritableReg) !void {
+        try self.defs.append(self.allocator, reg);
+    }
+
+    /// Late def (written after uses are read).
+    pub fn regLateDef(self: *OperandCollector, reg: WritableReg) !void {
+        try self.defs.append(self.allocator, reg);
+    }
+};
 
 test "Inst formatting" {
     const v0 = VReg.new(0, .int);
