@@ -1437,6 +1437,45 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 try builder.emit(Inst{
                     .fcvt_f64_to_f32 = .{ .dst = dst, .src = src },
                 });
+            } else if (data.opcode == .ceil or data.opcode == .floor or data.opcode == .trunc or data.opcode == .nearest) {
+                // FP rounding operations
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.float);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.float);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: FpuOperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                if (data.opcode == .ceil) {
+                    // Round towards +infinity
+                    try builder.emit(Inst{
+                        .frintp = .{ .dst = dst, .src = src, .size = size },
+                    });
+                } else if (data.opcode == .floor) {
+                    // Round towards -infinity
+                    try builder.emit(Inst{
+                        .frintm = .{ .dst = dst, .src = src, .size = size },
+                    });
+                } else if (data.opcode == .trunc) {
+                    // Round towards zero
+                    try builder.emit(Inst{
+                        .frintz = .{ .dst = dst, .src = src, .size = size },
+                    });
+                } else {
+                    // nearest - round to nearest, ties to even
+                    try builder.emit(Inst{
+                        .frintn = .{ .dst = dst, .src = src, .size = size },
+                    });
+                }
             } else {
                 // Other unary ops not yet implemented
                 try builder.emit(Inst.nop);
