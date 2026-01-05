@@ -1114,6 +1114,51 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         },
                     });
                 }
+            } else if (data.opcode == .fmin or data.opcode == .fmax) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+
+                const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.float);
+                const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.float);
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.float);
+
+                const src1 = Reg.fromVReg(arg0_vreg);
+                const src2 = Reg.fromVReg(arg1_vreg);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse {
+                    try builder.emit(Inst.nop);
+                    return;
+                };
+
+                const size: FpuOperandSize = if (value_type.bits() == 64)
+                    .size64
+                else
+                    .size32;
+
+                if (data.opcode == .fmin) {
+                    try builder.emit(Inst{
+                        .fmin = .{
+                            .dst = dst,
+                            .src1 = src1,
+                            .src2 = src2,
+                            .size = size,
+                        },
+                    });
+                } else {
+                    try builder.emit(Inst{
+                        .fmax = .{
+                            .dst = dst,
+                            .src1 = src1,
+                            .src2 = src2,
+                            .size = size,
+                        },
+                    });
+                }
             } else {
                 // Other binary ops not yet implemented
                 try builder.emit(Inst.nop);
