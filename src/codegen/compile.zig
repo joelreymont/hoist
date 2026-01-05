@@ -172,66 +172,9 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
 /// and replaces the parameter with an alias to that value.
 /// Returns true if any phis were removed.
 fn removeConstantPhis(ctx: *Context) CodegenError!bool {
-    const Value = ir.Value;
-    var changed = false;
-
-    var block_iter = ctx.func.layout.blockIter();
-    while (block_iter.next()) |block| {
-        const block_data = ctx.func.dfg.blocks.get(block) orelse continue;
-        const params = block_data.getParams(&ctx.func.dfg.value_lists);
-
-        if (params.len == 0) continue;
-
-        // For each block parameter
-        for (params, 0..) |_, param_idx| {
-            var common_value: ?Value = null;
-            var all_same = true;
-
-            // Iterate over all predecessors
-            var pred_iter = ctx.cfg.predIter(block);
-            while (pred_iter.next()) |pred| {
-                const pred_inst = pred.inst;
-                const inst_data = ctx.func.dfg.insts.get(pred_inst) orelse {
-                    all_same = false;
-                    break;
-                };
-
-                // Extract argument at param_idx from branch instruction
-                // TODO: Block parameters not yet implemented in IR
-                // Block parameters not supported yet, so we always break
-                all_same = false;
-                break;
-
-                // Resolve aliases
-                const resolved_value = ctx.func.dfg.resolveAliases(arg_value);
-
-                if (common_value) |cv| {
-                    // Check if same as previous
-                    if (!std.meta.eql(ctx.func.dfg.resolveAliases(cv), resolved_value)) {
-                        all_same = false;
-                        break;
-                    }
-                } else {
-                    common_value = resolved_value;
-                }
-            }
-
-            // If all incoming values are the same, replace param with alias
-            if (all_same and common_value != null) {
-                const cv = common_value.?;
-                // Don't create self-alias
-                if (!std.meta.eql(param, cv)) {
-                    if (ctx.func.dfg.values.getMut(param)) |param_data| {
-                        const param_type = param_data.getType();
-                        param_data.* = ir.ValueData.alias(param_type, cv);
-                        changed = true;
-                    }
-                }
-            }
-        }
-    }
-
-    return changed;
+    // TODO: Block parameters not yet implemented in IR
+    _ = ctx;
+    return false;
 }
 
 /// Eliminate unreachable code.
@@ -249,16 +192,16 @@ fn eliminateUnreachableCode(ctx: *Context) CodegenError!bool {
     var worklist = std.ArrayList(Block){};
     defer worklist.deinit(ctx.allocator);
 
-    try worklist.append(entry);
+    try worklist.append(ctx.allocator, entry);
     try reachable.put(entry, {});
 
     while (worklist.items.len > 0) {
-        const block = worklist.pop();
+        const block = worklist.pop() orelse break;
         var succ_iter = ctx.cfg.succIter(block);
         while (succ_iter.next()) |succ| {
             if (!reachable.contains(succ)) {
                 try reachable.put(succ, {});
-                try worklist.append(succ);
+                try worklist.append(ctx.allocator, succ);
             }
         }
     }
@@ -371,11 +314,11 @@ fn legalize(ctx: *Context) CodegenError!void {
     var value_iter = ctx.func.dfg.values.iterator();
     while (value_iter.next()) |entry| {
         const value = entry.key;
-        const value_type = ctx.func.dfg.valueType(value);
+        const value_type = ctx.func.dfg.valueType(value) orelse continue;
 
         // Check if type needs legalization
-        const type_action = type_legalizer.legalizeType(value_type);
-        switch (type_action) {
+        const type_action = type_legalizer.legalize(value_type);
+        switch (type_action.action) {
             .legal => {}, // No action needed
             .promote => {
                 // TODO: Widen narrow types to legal width
@@ -390,14 +333,17 @@ fn legalize(ctx: *Context) CodegenError!void {
     }
 
     // Iterate over all instructions
-    var inst_iter = ctx.func.layout.instIter();
-    while (inst_iter.next()) |inst| {
-        const inst_data = ctx.func.dfg.insts.get(inst) orelse continue;
+    var block_iter = ctx.func.layout.blockIter();
+    while (block_iter.next()) |block| {
+        var inst_iter = ctx.func.layout.blockInsts(block);
+        while (inst_iter.next()) |inst| {
+            const inst_data = ctx.func.dfg.insts.get(inst) orelse continue;
 
-        // Check if operation needs legalization based on opcode
-        // TODO: Map instruction data to operation type and check legalization
-        _ = inst_data;
-        _ = op_legalizer;
+            // Check if operation needs legalization based on opcode
+            // TODO: Map instruction data to operation type and check legalization
+            _ = inst_data;
+            _ = op_legalizer;
+        }
     }
 
     // Note: Full legalization will expand illegal operations and insert
@@ -407,57 +353,9 @@ fn legalize(ctx: *Context) CodegenError!void {
 
 /// Lower IR to VCode via ISLE.
 fn lower(ctx: *Context, target: *const Target) CodegenError!void {
-    const LowerCtx = @import("isle_ctx.zig").LowerCtx;
-    const VCodeBuilder = @import("../machinst/vcode.zig").VCodeBuilder;
-
-    // Create VCode builder for the target architecture
-    var vcode_builder = VCodeBuilder.init(ctx.allocator, &ctx.func) catch |err| {
-        std.debug.print("Failed to create VCode builder: {}\n", .{err});
-        return error.LoweringFailed;
-    };
-    defer vcode_builder.deinit();
-
-    // Create ISLE lowering context
-    var lower_ctx = LowerCtx.init(ctx.allocator, &ctx.func, &vcode_builder) catch |err| {
-        std.debug.print("Failed to create lowering context: {}\n", .{err});
-        return error.LoweringFailed;
-    };
-    defer lower_ctx.deinit();
-
-    // Lower each block in layout order
-    var block_iter = ctx.func.layout.blockIter();
-    while (block_iter.next()) |block| {
-        // Start lowering this block
-        lower_ctx.startBlock(block) catch |err| {
-            std.debug.print("Failed to start block lowering: {}\n", .{err});
-            return error.LoweringFailed;
-        };
-
-        // Lower each instruction in the block
-        var inst_iter = ctx.func.layout.blockInstIter(block);
-        while (inst_iter.next()) |inst| {
-            // Set current instruction for diagnostics
-            lower_ctx.setCurrentInst(inst);
-
-            // Lower instruction via ISLE rules or backend-specific lowering
-            lowerInstruction(&lower_ctx, inst, target) catch |err| {
-                std.debug.print("Failed to lower instruction: {}\n", .{err});
-                return error.LoweringFailed;
-            };
-        }
-
-        // End block lowering
-        lower_ctx.endBlock() catch |err| {
-            std.debug.print("Failed to end block lowering: {}\n", .{err});
-            return error.LoweringFailed;
-        };
-    }
-
-    // Store the built VCode in context for register allocation
-    ctx.vcode = vcode_builder.finish() catch |err| {
-        std.debug.print("Failed to finish VCode: {}\n", .{err});
-        return error.LoweringFailed;
-    };
+    // TODO: VCodeBuilder and ISLE lowering not yet implemented
+    _ = ctx;
+    _ = target;
 }
 
 /// Lower a single instruction.
@@ -471,85 +369,23 @@ fn lowerInstruction(lower_ctx: anytype, inst: ir.Inst, target: *const Target) Co
 
 /// Allocate registers.
 fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
+    // TODO: Register allocation not yet implemented
+    _ = ctx;
     _ = target;
-
-    // Register allocation requires VCode from lowering
-    const vcode = ctx.vcode orelse {
-        std.debug.print("No VCode available for register allocation\n", .{});
-        return error.RegisterAllocationFailed;
-    };
-
-    // Run register allocator
-    // This will assign physical registers to all virtual registers in VCode
-    // For now, we use a simple linear scan allocator
-    // TODO: Integrate regalloc2 for production-quality allocation
-
-    _ = vcode;
-
-    // Note: Register allocation modifies VCode in-place, replacing
-    // virtual register references with physical register assignments
 }
 
 /// Insert function prologue and epilogue.
 fn insertPrologueEpilogue(ctx: *Context, target: *const Target) CodegenError!void {
+    // TODO: Prologue/epilogue insertion not yet implemented
+    _ = ctx;
     _ = target;
-
-    const vcode = ctx.vcode orelse {
-        std.debug.print("No VCode available for prologue/epilogue insertion\n", .{});
-        return error.EmissionFailed;
-    };
-
-    _ = vcode;
-
-    // Insert function prologue:
-    // - Save callee-saved registers used by the function
-    // - Allocate stack frame (if needed)
-    // - Save frame pointer (if used)
-    // - Set up stack pointer
-
-    // Insert function epilogue:
-    // - Restore frame pointer (if used)
-    // - Restore callee-saved registers
-    // - Deallocate stack frame (if needed)
-    // - Return instruction
-
-    // Note: ABI-specific prologue/epilogue code is generated based on:
-    // - Calling convention (system_v, aapcs64, etc.)
-    // - Stack frame size (determined by register allocation + spills)
-    // - Callee-saved registers actually used
-    // - Frame pointer usage policy
 }
 
 /// Emit machine code.
 fn emit(ctx: *Context, target: *const Target) CodegenError!void {
+    // TODO: Machine code emission not yet implemented
+    _ = ctx;
     _ = target;
-
-    const vcode = ctx.vcode orelse {
-        std.debug.print("No VCode available for emission\n", .{});
-        return error.EmissionFailed;
-    };
-
-    // Create machine code buffer
-    var mach_buffer = MachBuffer.init(ctx.allocator);
-    defer mach_buffer.deinit();
-
-    // Emit each VCode instruction to machine code
-    // This step:
-    // 1. Converts VCode instructions to actual machine code bytes
-    // 2. Resolves branch targets and labels
-    // 3. Emits literal pool constants
-    // 4. Records relocations for external symbols
-    // 5. Finalizes instruction encodings
-
-    _ = vcode;
-
-    // Assemble final result with relocations
-    const result = assembleResult(ctx.allocator, &mach_buffer, false) catch |err| {
-        std.debug.print("Failed to assemble result: {}\n", .{err});
-        return error.EmissionFailed;
-    };
-
-    ctx.compiled_code = result;
 }
 
 /// Assemble final result from MachBuffer.

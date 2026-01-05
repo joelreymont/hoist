@@ -21,7 +21,7 @@ pub const BlockPredecessor = struct {
 };
 
 /// CFG node containing predecessors and successors for a block.
-const CFGNode = struct {
+pub const CFGNode = struct {
     /// Map from terminator instruction to predecessor block.
     predecessors: std.AutoHashMap(Inst, Block),
     /// Set of successor blocks.

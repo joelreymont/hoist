@@ -7,6 +7,8 @@ const Function = ir.Function;
 const Signature = root.signature.Signature;
 const Block = root.entities.Block;
 const Inst = root.entities.Inst;
+const cfg_mod = @import("cfg.zig");
+const CFGNode = cfg_mod.CFGNode;
 const Value = root.entities.Value;
 const Type = root.types.Type;
 const InstructionData = ir.InstructionData;
@@ -191,6 +193,12 @@ test "SSA: dominance frontier for diamond CFG" {
     const b1 = Block.new(1);
     const b2 = Block.new(2);
     const b3 = Block.new(3);
+
+    // Initialize CFG with 4 blocks
+    try cfg.data.resize(testing.allocator, 4);
+    for (0..4) |i| {
+        cfg.data.items[i] = CFGNode.init(testing.allocator);
+    }
 
     try cfg.addEdge(b0, Inst.new(0), b1);
     try cfg.addEdge(b0, Inst.new(0), b2);
