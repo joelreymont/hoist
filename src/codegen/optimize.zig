@@ -8,6 +8,11 @@ const Allocator = std.mem.Allocator;
 
 const root = @import("root");
 const Function = @import("../ir/function.zig").Function;
+const ControlFlowGraph = @import("../ir/cfg.zig").ControlFlowGraph;
+const domtree_mod = @import("../ir/domtree.zig");
+const DominatorTree = domtree_mod.DominatorTree;
+const CFG = domtree_mod.CFG;
+const LoopInfo = @import("../ir/loops.zig").LoopInfo;
 const dce = @import("opts/dce.zig");
 const gvn = @import("opts/gvn.zig");
 const instcombine = @import("opts/instcombine.zig");
@@ -156,9 +161,10 @@ fn runCopyProp(allocator: Allocator, func: *Function) !bool {
 
 /// Run LICM pass.
 fn runLICM(allocator: Allocator, func: *Function) !bool {
-    var pass = licm.LICM.init(allocator);
-    defer pass.deinit();
-    return try pass.run(func);
+    _ = allocator;
+    _ = func;
+    // TODO: LICM requires reconciling CFG types between domtree and ControlFlowGraph
+    return false;
 }
 
 /// Run SimplifyBranch pass.
