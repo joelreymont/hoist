@@ -9,6 +9,7 @@ const value_list = @import("value_list.zig");
 const instruction_data = @import("instruction_data.zig");
 const opcodes = @import("opcodes.zig");
 const immediates = @import("immediates.zig");
+const condcodes = @import("condcodes.zig");
 const maps = @import("../foundation/maps.zig");
 
 const Type = types.Type;
@@ -20,6 +21,7 @@ const ValueListPool = value_list.ValueListPool;
 const InstructionData = instruction_data.InstructionData;
 const Opcode = opcodes.Opcode;
 const Imm64 = immediates.Imm64;
+const IntCC = condcodes.IntCC;
 const PrimaryMap = maps.PrimaryMap;
 const SecondaryMap = maps.SecondaryMap;
 
