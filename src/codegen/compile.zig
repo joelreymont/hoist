@@ -381,13 +381,10 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
             first_block = false;
         }
 
-        // Lower each instruction in block (stubbed for now)
+        // Lower each instruction in block
         var inst_iter = ctx.func.layout.blockInsts(block);
         while (inst_iter.next()) |inst| {
-            _ = inst;
-            // TODO: Call ISLE lowering rules or backend-specific lowering
-            // For now, emit a NOP placeholder
-            try builder.emit(Inst.nop);
+            try lowerInstructionAArch64(ctx, &builder, inst);
         }
 
         // Finish block (no successors tracked yet)
@@ -400,6 +397,56 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
 
     // TODO: Store VCode in context or pass to register allocation
     // For now, VCode is just discarded since rest of pipeline is stubbed
+}
+
+/// Lower a single AArch64 instruction.
+fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) CodegenError!void {
+    const Inst = @import("../backends/aarch64/inst.zig").Inst;
+    const OperandSize = @import("../backends/aarch64/inst.zig").OperandSize;
+
+    // Get instruction data from DFG
+    const inst_data = ctx.func.dfg.insts.get(inst) orelse {
+        // No instruction data - emit NOP
+        try builder.emit(Inst.nop);
+        return;
+    };
+
+    // Match instruction opcode and lower accordingly
+    switch (inst_data) {
+        .iconst => |data| {
+            // Load immediate constant into a virtual register
+            // For now, allocate a new vreg and emit mov_imm
+            const VReg = @import("../machinst/reg.zig").VReg;
+            const WritableReg = @import("../machinst/reg.zig").WritableReg;
+            const RegClass = @import("../machinst/reg.zig").RegClass;
+
+            // Allocate virtual register for result
+            const vreg = VReg.new(@intCast(inst.index()), RegClass.int);
+            const writable = WritableReg.fromVReg(vreg);
+
+            // Get immediate value and size from instruction type
+            const value_type = ctx.func.dfg.valueType(ctx.func.dfg.instResult(inst).?) orelse {
+                try builder.emit(Inst.nop);
+                return;
+            };
+
+            const size: OperandSize = if (value_type.bits() == 64)
+                .size64
+            else
+                .size32;
+
+            // Emit MOV immediate instruction
+            try builder.emit(Inst{ .mov_imm = .{
+                .dst = writable,
+                .imm = @bitCast(data.imm),
+                .size = size,
+            } });
+        },
+        else => {
+            // Unimplemented instruction - emit NOP placeholder
+            try builder.emit(Inst.nop);
+        },
+    }
 }
 
 /// Lower IR to x86-64 VCode.
