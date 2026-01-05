@@ -285,6 +285,14 @@ pub const DataFlowGraph = struct {
         return try self.appendInstResult(inst, Type.I64);
     }
 
+    /// Create an integer comparison instruction.
+    /// Returns the comparison result value (i1).
+    pub fn makeIntCompare(self: *Self, cond: instruction_data.IntCC, arg0: Value, arg1: Value) !Value {
+        const inst_data = instruction_data.IntCompareData.init(.icmp, cond, arg0, arg1);
+        const inst = try self.makeInst(.{ .int_compare = inst_data });
+        return try self.appendInstResult(inst, Type.I1);
+    }
+
     pub fn appendInstResult(self: *Self, inst: Inst, ty: Type) !Value {
         const results_list = try self.results.getOrDefault(inst);
         const num: u16 = @intCast(self.value_lists.len(results_list.*));

@@ -342,7 +342,7 @@ pub const InstCombine = struct {
                 const inner = arg_inst_data.binary;
                 // !(x - 1) = -x
                 if (inner.opcode == .isub) {
-                    if (try self.getConstant(func, inner.args[1])) |c| {
+                    if (self.getConstant(func, inner.args[1])) |c| {
                         if (c == 1) {
                             const result_ty = func.dfg.instResultType(inst) orelse return;
                             const neg_inst = try func.dfg.makeUnary(.ineg, result_ty, inner.args[0]);
@@ -353,7 +353,7 @@ pub const InstCombine = struct {
                 }
                 // !(x + (-1)) = -x
                 if (inner.opcode == .iadd) {
-                    if (try self.getSignedConstant(func, inner.args[1])) |c| {
+                    if (self.getSignedConstant(func, inner.args[1])) |c| {
                         if (c == -1) {
                             const result_ty = func.dfg.instResultType(inst) orelse return;
                             const neg_inst = try func.dfg.makeUnary(.ineg, result_ty, inner.args[0]);
@@ -388,7 +388,7 @@ pub const InstCombine = struct {
                 if (inner.opcode == data.opcode) {
                     // Found chained extend - create single extend from innermost value
                     const result_ty = func.dfg.instResultType(inst) orelse return;
-                    const new_extend = try func.dfg.makeInst(data.opcode, result_ty, &.{inner.arg});
+                    const new_extend = try func.dfg.makeUnary(data.opcode, result_ty, inner.arg);
                     try self.replaceWithValue(func, inst, new_extend);
                     return;
                 }
@@ -407,7 +407,7 @@ pub const InstCombine = struct {
 
             if (arg_inst_data.* == .int_compare) {
                 const result_ty = func.dfg.instResultType(inst) orelse return;
-                const uextend_inst = try func.dfg.makeInst(.uextend, result_ty, &.{data.arg});
+                const uextend_inst = try func.dfg.makeUnary(.uextend, result_ty, data.arg);
                 try self.replaceWithValue(func, inst, uextend_inst);
                 return;
             }
@@ -416,7 +416,7 @@ pub const InstCombine = struct {
                 // Once zero-extended, sign-extending is same as zero-extending
                 const result_ty = func.dfg.instResultType(inst) orelse return;
                 const inner_val = arg_inst_data.unary.arg;
-                const uextend_inst = try func.dfg.makeInst(.uextend, result_ty, &.{inner_val});
+                const uextend_inst = try func.dfg.makeUnary(.uextend, result_ty, inner_val);
                 try self.replaceWithValue(func, inst, uextend_inst);
                 return;
             }
@@ -436,7 +436,7 @@ pub const InstCombine = struct {
                 // iabs(ineg(x)) = iabs(x)
                 if (inner.opcode == .ineg) {
                     const result_ty = func.dfg.instResultType(inst) orelse return;
-                    const abs_inst = try func.dfg.makeInst(.iabs, result_ty, &.{inner.arg});
+                    const abs_inst = try func.dfg.makeUnary(.iabs, result_ty, inner.arg);
                     try self.replaceWithValue(func, inst, abs_inst);
                     return;
                 }
@@ -559,7 +559,7 @@ pub const InstCombine = struct {
 
                 // abs(-x) = abs(x)
                 if (inner.opcode == .ineg) {
-                    const abs_inst = try func.dfg.makeInst(.iabs, result_ty, &.{inner.arg});
+                    const abs_inst = try func.dfg.makeUnary(.iabs, result_ty, inner.arg);
                     try self.replaceWithValue(func, inst, abs_inst);
                     return;
                 }
@@ -1250,7 +1250,7 @@ pub const InstCombine = struct {
         const result_ty = func.dfg.instResultType(inst) orelse return false;
 
         // Check for (!x) + 1
-        if (try self.getConstant(func, rhs)) |c| {
+        if (self.getConstant(func, rhs)) |c| {
             if (c == 1) {
                 const lhs_def = func.dfg.valueDef(lhs) orelse return false;
                 const lhs_inst = switch (lhs_def) {
@@ -1269,7 +1269,7 @@ pub const InstCombine = struct {
         }
 
         // Check for 1 + (!x) (commutative)
-        if (try self.getConstant(func, lhs)) |c| {
+        if (self.getConstant(func, lhs)) |c| {
             if (c == 1) {
                 const rhs_def = func.dfg.valueDef(rhs) orelse return false;
                 const rhs_inst = switch (rhs_def) {
@@ -1675,7 +1675,7 @@ pub const InstCombine = struct {
                 // Create y + z
                 const sum = try func.dfg.makeBinary(.iadd, result_ty, y, z);
                 // Create rotl(x, y+z) or rotr(x, y+z)
-                const new_rot = try func.dfg.makeInst(data.opcode, result_ty, &.{ x, sum });
+                const new_rot = try func.dfg.makeBinary(data.opcode, result_ty, x, sum );
                 try self.replaceWithValue(func, inst, new_rot);
                 return true;
             }
@@ -1901,9 +1901,9 @@ pub const InstCombine = struct {
                 // Types must match
                 if (x_ty.index == y_ty.index) {
                     // Create (x op y)
-                    const inner_op = try func.dfg.makeInst(data.opcode, x_ty, &.{ x, y });
+                    const inner_op = try func.dfg.makeBinary(data.opcode, x_ty, x, y );
                     // Create uextend(x op y)
-                    const extend = try func.dfg.makeInst(.uextend, result_ty, &.{inner_op});
+                    const extend = try func.dfg.makeUnary(.uextend, result_ty, inner_op);
                     try self.replaceWithValue(func, inst, extend);
                     return true;
                 }
@@ -2256,9 +2256,7 @@ pub const InstCombine = struct {
                     (lhs_cmp.cond == .sgt and rhs_cmp.cond == .slt) or
                     (lhs_cmp.cond == .slt and rhs_cmp.cond == .sgt))
                 {
-                    const ne_inst = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-                        .int_compare = IntCompareData.init(.icmp, .ne, lhs_cmp.args[0], lhs_cmp.args[1]),
-                    });
+                    const ne_inst = try func.dfg.makeIntCompare(.ne, lhs_cmp.args[0], lhs_cmp.args[1]);
                     try self.replaceWithValue(func, inst, ne_inst);
                     return true;
                 }
@@ -2321,9 +2319,9 @@ pub const InstCombine = struct {
                 // Shift amounts must match
                 if (z1.index == z2.index) {
                     // Create (x op y) where op is add, sub, or and
-                    const inner_inst = try func.dfg.makeInst(data.opcode, result_ty, &.{ x, y });
+                    const inner_inst = try func.dfg.makeBinary(data.opcode, result_ty, x, y);
                     // Create (x op y) shift z
-                    const shift_inst = try func.dfg.makeInst(lhs_binary.opcode, result_ty, &.{ inner_inst, z1 });
+                    const shift_inst = try func.dfg.makeBinary(lhs_binary.opcode, result_ty, inner_inst, z1);
                     try self.replaceWithValue(func, inst, shift_inst);
                     return true;
                 }
@@ -2336,7 +2334,7 @@ pub const InstCombine = struct {
     /// Simplify (x << k1) << k2 = x << (k1 + k2), (x >> k1) >> k2 = x >> (k1 + k2).
     fn simplifyShiftChain(self: *InstCombine, func: *Function, inst: Inst, data: BinaryData, lhs: Value, rhs: Value) !bool {
         const result_ty = func.dfg.instResultType(inst) orelse return false;
-        const ty_bits = result_ty.bitSize();
+        const ty_bits = result_ty.bits();
 
         // Get shift amount k2 (must be constant)
         const k2 = self.getConstant(func, rhs) orelse return false;
@@ -2376,7 +2374,7 @@ pub const InstCombine = struct {
 
                 // Create x << (k1 + k2)
                 const new_shift_amt = try func.dfg.makeConst(k_sum);
-                const new_shift = try func.dfg.makeInst(data.opcode, result_ty, &.{ x, new_shift_amt });
+                const new_shift = try func.dfg.makeBinary(data.opcode, result_ty, x, new_shift_amt );
                 try self.replaceWithValue(func, inst, new_shift);
                 return true;
             }
