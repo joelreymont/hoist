@@ -38,6 +38,7 @@ const InstructionData = ir.InstructionData;
 const instruction_data = @import("../../ir/instruction_data.zig");
 const BranchData = instruction_data.BranchData;
 const ValueData = @import("../../ir/dfg.zig").ValueData;
+const ValueList = @import("../../ir/instructions.zig").ValueList;
 const condcodes = @import("../../ir/condcodes.zig");
 const IntCC = condcodes.IntCC;
 const FloatCC = condcodes.FloatCC;
@@ -361,7 +362,7 @@ pub const SCCP = struct {
     }
 
     /// Check if a ValueList contains a specific value.
-    fn valueListContains(func: *const Function, list: InstructionData.ValueList, value: Value) bool {
+    fn valueListContains(func: *const Function, list: ValueList, value: Value) bool {
         const values = func.dfg.value_lists.asSlice(list);
         for (values) |v| {
             if (std.meta.eql(v, value)) return true;
