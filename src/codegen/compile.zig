@@ -1650,6 +1650,20 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 });
             }
         },
+        .jump => |data| {
+            // Handle unconditional jump
+            const inst_module = @import("../backends/aarch64/inst.zig");
+            const BranchTarget = inst_module.BranchTarget;
+
+            // Emit B instruction with block label
+            // For now, use the block index as the label
+            // TODO: Proper label resolution when block layout is implemented
+            try builder.emit(Inst{
+                .b = .{
+                    .target = BranchTarget{ .label = data.destination.index },
+                },
+            });
+        },
         else => {
             // Unimplemented instruction - emit NOP placeholder
             try builder.emit(Inst.nop);
