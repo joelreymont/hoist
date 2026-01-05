@@ -149,7 +149,7 @@ pub const LoopInfo = struct {
         }
 
         // Add loop to forest
-        try self.loops.append(loop);
+        try self.loops.append(self.allocator, loop);
 
         // Map blocks to their innermost loop
         for (loop.blocks.items) |block| {
