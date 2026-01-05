@@ -127,7 +127,6 @@ pub fn SecondaryMap(comptime K: type, comptime V: type) type {
             return null;
         }
 
-
         pub fn getOrDefault(self: *Self, k: K) !*V {
             try self.resize(k.index + 1);
             if (self.elems.items[k.index] == null) {
@@ -146,6 +145,27 @@ pub fn SecondaryMap(comptime K: type, comptime V: type) type {
             const old_len = self.elems.items.len;
             try self.elems.resize(self.allocator, new_len);
             @memset(self.elems.items[old_len..new_len], null);
+        }
+
+        /// Iterator over all non-null entries.
+        pub const Iterator = struct {
+            map: *const Self,
+            pos: usize,
+
+            pub fn next(self: *Iterator) ?struct { key: K, value: *const V } {
+                while (self.pos < self.map.elems.items.len) {
+                    const idx = self.pos;
+                    self.pos += 1;
+                    if (self.map.elems.items[idx]) |*v| {
+                        return .{ .key = K.fromIndex(idx), .value = v };
+                    }
+                }
+                return null;
+            }
+        };
+
+        pub fn iterator(self: *const Self) Iterator {
+            return .{ .map = self, .pos = 0 };
         }
     };
 }
