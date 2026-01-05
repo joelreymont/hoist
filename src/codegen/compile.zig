@@ -482,7 +482,14 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
             },
         }
 
-        try emit_mod.emit(rewritten_inst, &buffer);
+        // MVP: Only emit the 3 instructions we support
+        switch (rewritten_inst) {
+            .mov_imm => |i| try emit_mod.emitMovImm(i.dst.toReg(), i.imm, i.size, &buffer),
+            .add_rr => |i| try emit_mod.emitAddRR(i.dst.toReg(), i.src1, i.src2, i.size, &buffer),
+            .ret => try emit_mod.emitRet(null, &buffer),
+            .nop => {}, // Skip NOPs
+            else => return CodegenError.EmissionFailed, // Unsupported instruction for MVP
+        }
     }
 
     // Store compiled code in context

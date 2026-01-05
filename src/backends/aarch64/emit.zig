@@ -327,9 +327,11 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
 fn hwEnc(reg: Reg) u5 {
     if (reg.isVirtual()) {
         // For testing - map virtual regs to physical
-        return @intCast(reg.toVReg().index() % 31);
+        const vreg = reg.toVReg() orelse unreachable;
+        return @intCast(vreg.index() % 31);
     } else {
-        return @intCast(reg.toPReg().hwEnc() & 0x1F);
+        const preg = reg.toRealReg() orelse unreachable;
+        return @intCast(preg.hwEnc() & 0x1F);
     }
 }
 
@@ -355,12 +357,11 @@ fn emitMovRR(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuff
         (0b11111 << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// MOV Xd, #imm (using MOVZ for low 16 bits)
-fn emitMovImm(dst: Reg, imm: u64, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+pub fn emitMovImm(dst: Reg, imm: u64, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
     const rd = hwEnc(dst);
     const imm16: u16 = @truncate(imm);
@@ -371,8 +372,7 @@ fn emitMovImm(dst: Reg, imm: u64, size: OperandSize, buffer: *buffer_mod.MachBuf
         (@as(u32, imm16) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// MOVZ - Move wide with zero
@@ -390,8 +390,7 @@ fn emitMovz(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mo
         (@as(u32, imm) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// MOVK - Move wide with keep
@@ -409,8 +408,7 @@ fn emitMovk(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mo
         (@as(u32, imm) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// MOVN - Move wide with NOT
@@ -428,12 +426,11 @@ fn emitMovn(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mo
         (@as(u32, imm) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ADD Xd, Xn, Xm
-fn emitAddRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+pub fn emitAddRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
@@ -446,8 +443,7 @@ fn emitAddRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ADD Xd, Xn, #imm
@@ -464,8 +460,7 @@ fn emitAddImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_m
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ADD Xd, Xn, Xm, shift_op #shift_amt
@@ -487,8 +482,7 @@ fn emitAddShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: inst_mod.ShiftOp, sh
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ADD Xd, Xn, Wm, extend_op
@@ -512,8 +506,7 @@ fn emitAddExtended(dst: Reg, src1: Reg, src2: Reg, extend_op: inst_mod.ExtendOp,
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SUB Xd, Xn, Xm
@@ -531,8 +524,7 @@ fn emitSubRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SUB Xd, Xn, #imm
@@ -550,8 +542,7 @@ fn emitSubImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_m
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ADDS Xd, Xn, Xm (add and set flags)
@@ -569,8 +560,7 @@ fn emitAddsRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ADDS Xd, Xn, #imm (add immediate and set flags)
@@ -588,8 +578,7 @@ fn emitAddsImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SUBS Xd, Xn, Xm (subtract and set flags)
@@ -607,8 +596,7 @@ fn emitSubsRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SUBS Xd, Xn, #imm (subtract immediate and set flags)
@@ -626,8 +614,7 @@ fn emitSubsImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// MUL Xd, Xn, Xm (alias for MADD Xd, Xn, Xm, XZR)
@@ -646,8 +633,7 @@ fn emitMulRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// MADD Xd, Xn, Xm, Xa
@@ -666,8 +652,7 @@ fn emitMadd(dst: Reg, src1: Reg, src2: Reg, addend: Reg, size: OperandSize, buff
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// MSUB Xd, Xn, Xm, Xa
@@ -687,8 +672,7 @@ fn emitMsub(dst: Reg, src1: Reg, src2: Reg, subtrahend: Reg, size: OperandSize, 
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SMULH Xd, Xn, Xm (signed multiply high)
@@ -706,8 +690,7 @@ fn emitSmulh(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// UMULH Xd, Xn, Xm (unsigned multiply high)
@@ -725,8 +708,7 @@ fn emitUmulh(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SMULL Xd, Wn, Wm (signed multiply long 32x32→64)
@@ -744,8 +726,7 @@ fn emitSmull(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// UMULL Xd, Wn, Wm (unsigned multiply long 32x32→64)
@@ -763,8 +744,7 @@ fn emitUmull(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SDIV Xd, Xn, Xm (signed divide)
@@ -785,8 +765,7 @@ fn emitSdiv(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_m
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// UDIV Xd, Xn, Xm (unsigned divide)
@@ -807,8 +786,7 @@ fn emitUdiv(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_m
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LSL Xd, Xn, Xm (logical shift left, variable)
@@ -826,8 +804,7 @@ fn emitLslRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LSL Xd, Xn, #imm (logical shift left, immediate)
@@ -852,8 +829,7 @@ fn emitLslImm(dst: Reg, src: Reg, imm: u8, size: OperandSize, buffer: *buffer_mo
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LSR Xd, Xn, Xm (logical shift right, variable)
@@ -871,8 +847,7 @@ fn emitLsrRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LSR Xd, Xn, #imm (logical shift right, immediate)
@@ -896,8 +871,7 @@ fn emitLsrImm(dst: Reg, src: Reg, imm: u8, size: OperandSize, buffer: *buffer_mo
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ASR Xd, Xn, Xm (arithmetic shift right, variable)
@@ -915,8 +889,7 @@ fn emitAsrRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ASR Xd, Xn, #imm (arithmetic shift right, immediate)
@@ -940,8 +913,7 @@ fn emitAsrImm(dst: Reg, src: Reg, imm: u8, size: OperandSize, buffer: *buffer_mo
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ROR Xd, Xn, Xm (rotate right, variable)
@@ -959,8 +931,7 @@ fn emitRorRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ROR Xd, Xn, #imm (rotate right, immediate)
@@ -982,8 +953,7 @@ fn emitRorImm(dst: Reg, src: Reg, imm: u8, size: OperandSize, buffer: *buffer_mo
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// AND Xd, Xn, Xm (bitwise AND register)
@@ -1001,8 +971,7 @@ fn emitAndRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// AND Xd, Xn, #imm (bitwise AND immediate)
@@ -1022,8 +991,7 @@ fn emitAndImm(dst: Reg, src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ORR Xd, Xn, Xm (bitwise OR register)
@@ -1041,8 +1009,7 @@ fn emitOrrRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ORR Xd, Xn, #imm (bitwise OR immediate)
@@ -1062,8 +1029,7 @@ fn emitOrrImm(dst: Reg, src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// EOR Xd, Xn, Xm (bitwise XOR register)
@@ -1081,8 +1047,7 @@ fn emitEorRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// EOR Xd, Xn, #imm (bitwise XOR immediate)
@@ -1102,8 +1067,7 @@ fn emitEorImm(dst: Reg, src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// MVN Xd, Xm (bitwise NOT - implemented as ORN Xd, XZR, Xm)
@@ -1122,8 +1086,7 @@ fn emitMvnRR(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuff
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// NEG Xd, Xm (negate - implemented as SUB Xd, XZR, Xm)
@@ -1149,8 +1112,7 @@ fn emitNgc(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// CMP Xn, Xm (compare register with register)
@@ -1205,8 +1167,7 @@ fn emitTstRR(src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBu
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// TST Xn, #imm (test bits with immediate)
@@ -1227,8 +1188,7 @@ fn emitTstImm(src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_mod.MachBu
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// CLZ Xd, Xn (count leading zeros)
@@ -1247,8 +1207,7 @@ fn emitClz(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// CLS Xd, Xn (count leading sign bits)
@@ -1267,8 +1226,7 @@ fn emitCls(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// RBIT Xd, Xn (reverse bits)
@@ -1287,8 +1245,7 @@ fn emitRbit(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffe
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// REV16 - Reverse bytes in 16-bit halfwords
@@ -1306,8 +1263,7 @@ fn emitRev16(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuff
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// REV32 - Reverse bytes in 32-bit words
@@ -1326,8 +1282,7 @@ fn emitRev32(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuff
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// REV64 - Reverse bytes in 64-bit (REV Xd, Xn)
@@ -1344,8 +1299,7 @@ fn emitRev64(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// CSEL Xd, Xn, Xm, cond (conditional select)
@@ -1366,8 +1320,7 @@ fn emitCsel(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize, b
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// CSINC Xd, Xn, Xm, cond (conditional select increment)
@@ -1388,8 +1341,7 @@ fn emitCsinc(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize, 
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// CSINV Xd, Xn, Xm, cond (conditional select invert)
@@ -1411,8 +1363,7 @@ fn emitCsinv(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize, 
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// CSNEG Xd, Xn, Xm, cond (conditional select negate)
@@ -1434,8 +1385,7 @@ fn emitCsneg(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize, 
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SXTB Wd/Xd, Wn (sign extend byte)
@@ -1460,8 +1410,7 @@ fn emitSxtb(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffe
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SXTH Wd/Xd, Wn (sign extend halfword)
@@ -1486,8 +1435,7 @@ fn emitSxth(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffe
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SXTW Xd, Wn (sign extend word)
@@ -1513,8 +1461,7 @@ fn emitSxtw(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// UXTB Wd/Xd, Wn (zero extend byte)
@@ -1539,8 +1486,7 @@ fn emitUxtb(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffe
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// UXTH Wd/Xd, Wn (zero extend halfword)
@@ -1565,8 +1511,7 @@ fn emitUxth(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffe
         (@as(u32, rn) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 /// LDR Xt, [Xn, #offset]
 fn emitLdr(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
@@ -1582,8 +1527,7 @@ fn emitLdr(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STR Xt, [Xn, #offset]
@@ -1600,8 +1544,7 @@ fn emitStr(src: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDR Xt, [Xn, Xm] (register offset, no shift)
@@ -1620,8 +1563,7 @@ fn emitLdrReg(dst: Reg, base: Reg, offset: Reg, size: OperandSize, buffer: *buff
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDR Xt, [Xn, Wm, extend] (extended register offset)
@@ -1642,8 +1584,7 @@ fn emitLdrExt(dst: Reg, base: Reg, offset: Reg, extend: Inst.ExtendOp, size: Ope
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDR Xt, [Xn, Xm, shift_op #shift_amt] (shifted register offset)
@@ -1689,8 +1630,7 @@ fn emitLdrShifted(dst: Reg, base: Reg, offset: Reg, shift_op: Inst.ShiftOp, shif
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STR Xt, [Xn, Xm] (register offset, no shift)
@@ -1709,8 +1649,7 @@ fn emitStrReg(src: Reg, base: Reg, offset: Reg, size: OperandSize, buffer: *buff
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STR Xt, [Xn, Wm, extend] (extended register offset)
@@ -1731,8 +1670,7 @@ fn emitStrExt(src: Reg, base: Reg, offset: Reg, extend: Inst.ExtendOp, size: Ope
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STR Xt, [Xn, Xm, shift_op #shift_amt] (shifted register offset)
@@ -1778,8 +1716,7 @@ fn emitStrShifted(src: Reg, base: Reg, offset: Reg, shift_op: Inst.ShiftOp, shif
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDRB Wt, [Xn, #offset] - Load byte (unsigned, zero-extend)
@@ -1800,8 +1737,7 @@ fn emitLdrb(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDRH Wt, [Xn, #offset] - Load halfword (unsigned, zero-extend)
@@ -1823,8 +1759,7 @@ fn emitLdrh(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDRSB Wt/Xt, [Xn, #offset] - Load signed byte
@@ -1845,8 +1780,7 @@ fn emitLdrsb(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffe
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDRSH Wt/Xt, [Xn, #offset] - Load signed halfword
@@ -1865,8 +1799,7 @@ fn emitLdrsh(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffe
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDRSW Xt, [Xn, #offset] - Load signed word (32→64 bit)
@@ -1884,8 +1817,7 @@ fn emitLdrsw(dst: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STRB Wt, [Xn, #offset] - Store byte
@@ -1902,8 +1834,7 @@ fn emitStrb(src: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !v
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STRH Wt, [Xn, #offset] - Store halfword
@@ -1921,8 +1852,7 @@ fn emitStrh(src: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !v
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STP Xt1, Xt2, [Xn, #offset]
@@ -1943,8 +1873,7 @@ fn emitStp(src1: Reg, src2: Reg, base: Reg, offset: i16, size: OperandSize, buff
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDP Xt1, Xt2, [Xn, #offset]
@@ -1965,8 +1894,7 @@ fn emitLdp(dst1: Reg, dst2: Reg, base: Reg, offset: i16, size: OperandSize, buff
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDR Xt, [Xn, #offset]! (pre-index)
@@ -1991,8 +1919,7 @@ fn emitLdrPre(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buff
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDR Xt, [Xn], #offset (post-index)
@@ -2017,8 +1944,7 @@ fn emitLdrPost(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buf
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STR Xt, [Xn, #offset]! (pre-index)
@@ -2043,8 +1969,7 @@ fn emitStrPre(src: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buff
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STR Xt, [Xn], #offset (post-index)
@@ -2069,8 +1994,7 @@ fn emitStrPost(src: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buf
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDARB Wt, [Xn] - Load-Acquire Register Byte
@@ -2091,8 +2015,7 @@ fn emitLdarb(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDARH Wt, [Xn] - Load-Acquire Register Halfword
@@ -2112,8 +2035,7 @@ fn emitLdarh(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDAR Wt, [Xn] - Load-Acquire Register Word
@@ -2133,8 +2055,7 @@ fn emitLdarW(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDAR Xt, [Xn] - Load-Acquire Register Doubleword
@@ -2154,8 +2075,7 @@ fn emitLdarX(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STLRB Wt, [Xn] - Store-Release Register Byte
@@ -2175,8 +2095,7 @@ fn emitStlrb(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STLRH Wt, [Xn] - Store-Release Register Halfword
@@ -2196,8 +2115,7 @@ fn emitStlrh(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STLR Wt, [Xn] - Store-Release Register Word
@@ -2217,8 +2135,7 @@ fn emitStlrW(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STLR Xt, [Xn] - Store-Release Register Doubleword
@@ -2238,8 +2155,7 @@ fn emitStlrX(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 // === Exclusive Access Instructions ===
@@ -2261,8 +2177,7 @@ fn emitLdxrW(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDXR - Load Exclusive Register (64-bit)
@@ -2281,8 +2196,7 @@ fn emitLdxrX(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDXRB - Load Exclusive Register Byte
@@ -2301,8 +2215,7 @@ fn emitLdxrb(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDXRH - Load Exclusive Register Halfword
@@ -2321,8 +2234,7 @@ fn emitLdxrh(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STXR - Store Exclusive Register (32-bit)
@@ -2343,8 +2255,7 @@ fn emitStxrW(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STXR - Store Exclusive Register (64-bit)
@@ -2364,8 +2275,7 @@ fn emitStxrX(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STXRB - Store Exclusive Register Byte
@@ -2385,8 +2295,7 @@ fn emitStxrb(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STXRH - Store Exclusive Register Halfword
@@ -2406,8 +2315,7 @@ fn emitStxrh(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDAXR - Load-Acquire Exclusive Register (32-bit)
@@ -2427,8 +2335,7 @@ fn emitLdaxrW(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDAXR - Load-Acquire Exclusive Register (64-bit)
@@ -2447,8 +2354,7 @@ fn emitLdaxrX(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDAXRB - Load-Acquire Exclusive Register Byte
@@ -2467,8 +2373,7 @@ fn emitLdaxrb(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDAXRH - Load-Acquire Exclusive Register Halfword
@@ -2487,8 +2392,7 @@ fn emitLdaxrh(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STLXR - Store-Release Exclusive Register (32-bit)
@@ -2509,8 +2413,7 @@ fn emitStlxrW(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) 
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STLXR - Store-Release Exclusive Register (64-bit)
@@ -2530,8 +2433,7 @@ fn emitStlxrX(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) 
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STLXRB - Store-Release Exclusive Register Byte
@@ -2551,8 +2453,7 @@ fn emitStlxrb(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) 
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STLXRH - Store-Release Exclusive Register Halfword
@@ -2572,8 +2473,7 @@ fn emitStlxrh(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) 
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 // === Atomic Operations (ARMv8.1-A LSE) ===
@@ -2598,8 +2498,7 @@ fn emitAtomicOp(dst: Reg, src: Reg, base: Reg, size: OperandSize, opc: u3, ar_bi
         (@as(u32, rn) << 5) | // base address
         rt; // destination register
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDADD - Atomic add (no ordering)
@@ -2779,8 +2678,7 @@ fn emitCasOp(compare: Reg, src: Reg, base: Reg, size: OperandSize, ar_bits: u2, 
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// CAS - Compare and Swap (no ordering)
@@ -2799,8 +2697,7 @@ fn emitCas(compare: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// CASA - Compare and Swap with acquire
@@ -2820,8 +2717,7 @@ fn emitCasa(compare: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffe
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// CASAL - Compare and Swap with acquire-release
@@ -2842,8 +2738,7 @@ fn emitCasal(compare: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buff
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// CASL - Compare and Swap with release
@@ -2863,8 +2758,7 @@ fn emitCasl(compare: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffe
         (@as(u32, rn) << 5) |
         rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 // === Memory Barriers ===
@@ -2878,8 +2772,7 @@ fn emitDmb(option: inst_mod.BarrierOption, buffer: *buffer_mod.MachBuffer) !void
         (crm << 8) |
         0b10111111;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// DSB - Data Synchronization Barrier
@@ -2891,8 +2784,7 @@ fn emitDsb(option: inst_mod.BarrierOption, buffer: *buffer_mod.MachBuffer) !void
         (crm << 8) |
         0b10011111;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ISB - Instruction Synchronization Barrier
@@ -2902,8 +2794,7 @@ fn emitIsb(buffer: *buffer_mod.MachBuffer) !void {
         (0b1111 << 8) |
         0b11111111;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// B label (unconditional branch)
@@ -2911,8 +2802,7 @@ fn emitB(label: u32, buffer: *buffer_mod.MachBuffer) !void {
     // B: 0|00101|imm26
     const insn: u32 = (0b00101 << 26);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 
     // Add label use for fixup
     try buffer.useLabel(
@@ -2926,8 +2816,7 @@ fn emitBCond(cond: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void {
     // B.cond: 01010100|imm19|0|cond
     const insn: u32 = (0b01010100 << 24) | @as(u32, cond);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 
     // Add label use for fixup
     try buffer.useLabel(
@@ -2941,8 +2830,7 @@ fn emitBL(label: u32, buffer: *buffer_mod.MachBuffer) !void {
     // BL: 1|00101|imm26
     const insn: u32 = (0b100101 << 26);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 
     // Add label use for fixup
     try buffer.useLabel(
@@ -2959,8 +2847,7 @@ fn emitBR(target: Reg, buffer: *buffer_mod.MachBuffer) !void {
     const insn: u32 = (0b1101011000011111000000 << 10) |
         (@as(u32, rn) << 5);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// BLR Xn (branch and link to register)
@@ -2971,28 +2858,25 @@ fn emitBLR(target: Reg, buffer: *buffer_mod.MachBuffer) !void {
     const insn: u32 = (0b1101011000111111000000 << 10) |
         (@as(u32, rn) << 5);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// RET [Xn] (return from subroutine)
-fn emitRet(reg: ?Reg, buffer: *buffer_mod.MachBuffer) !void {
+pub fn emitRet(reg: ?Reg, buffer: *buffer_mod.MachBuffer) !void {
     const rn = if (reg) |r| hwEnc(r) else 30; // Default to X30 (LR)
 
     // RET: 1101011|0010|11111|000000|Rn|00000
     const insn: u32 = (0b1101011001011111000000 << 10) |
         (@as(u32, rn) << 5);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// NOP
 fn emitNop(buffer: *buffer_mod.MachBuffer) !void {
     // NOP: 11010101000000110010000011111111
     const insn: u32 = 0xD503201F;
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 // === Floating-Point Instructions ===
@@ -3013,8 +2897,7 @@ fn emitFaddS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FADD Dd, Dn, Dm (scalar double-precision)
@@ -3033,8 +2916,7 @@ fn emitFaddD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FSUB Sd, Sn, Sm (scalar single-precision)
@@ -3053,8 +2935,7 @@ fn emitFsubS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FSUB Dd, Dn, Dm (scalar double-precision)
@@ -3073,8 +2954,7 @@ fn emitFsubD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FMUL Sd, Sn, Sm (scalar single-precision)
@@ -3093,8 +2973,7 @@ fn emitFmulS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FMUL Dd, Dn, Dm (scalar double-precision)
@@ -3113,8 +2992,7 @@ fn emitFmulD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FDIV Sd, Sn, Sm (scalar single-precision)
@@ -3133,8 +3011,7 @@ fn emitFdivS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FDIV Dd, Dn, Dm (scalar double-precision)
@@ -3153,8 +3030,7 @@ fn emitFdivD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FMOV Sd, Sn (scalar single-precision register)
@@ -3172,8 +3048,7 @@ fn emitFmovRRS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FMOV Dd, Dn (scalar double-precision register)
@@ -3191,8 +3066,7 @@ fn emitFmovRRD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FMOV Sd, #imm (scalar single-precision immediate)
@@ -3215,8 +3089,7 @@ fn emitFmovImmS(dst: Reg, imm: f32, buffer: *buffer_mod.MachBuffer) !void {
         (0b100 << 10) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FMOV Dd, #imm (scalar double-precision immediate)
@@ -3238,8 +3111,7 @@ fn emitFmovImmD(dst: Reg, imm: f64, buffer: *buffer_mod.MachBuffer) !void {
         (0b100 << 10) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FCMP Sn, Sm (compare single-precision)
@@ -3258,8 +3130,7 @@ fn emitFcmpS(src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         0b00000; // opcode2=00000 for register compare
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FCMP Dn, Dm (compare double-precision)
@@ -3278,8 +3149,7 @@ fn emitFcmpD(src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         0b00000;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FCVT Dd, Sn (convert single to double-precision)
@@ -3300,8 +3170,7 @@ fn emitFcvtSToD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FCVT Sd, Dn (convert double to single-precision)
@@ -3322,8 +3191,7 @@ fn emitFcvtDToS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SCVTF Sd, Wn (convert signed 32-bit int to single-precision)
@@ -3342,8 +3210,7 @@ fn emitScvtfWToS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SCVTF Sd, Xn (convert signed 64-bit int to single-precision)
@@ -3362,8 +3229,7 @@ fn emitScvtfXToS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SCVTF Dd, Wn (convert signed 32-bit int to double-precision)
@@ -3382,8 +3248,7 @@ fn emitScvtfWToD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SCVTF Dd, Xn (convert signed 64-bit int to double-precision)
@@ -3402,8 +3267,7 @@ fn emitScvtfXToD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FCVTZS Wd, Sn (convert single-precision to signed 32-bit int, toward zero)
@@ -3422,8 +3286,7 @@ fn emitFcvtzsSTow(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FCVTZS Xd, Sn (convert single-precision to signed 64-bit int, toward zero)
@@ -3442,8 +3305,7 @@ fn emitFcvtzsSToX(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FCVTZS Wd, Dn (convert double-precision to signed 32-bit int, toward zero)
@@ -3462,8 +3324,7 @@ fn emitFcvtzsDToW(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FCVTZS Xd, Dn (convert double-precision to signed 64-bit int, toward zero)
@@ -3482,8 +3343,7 @@ fn emitFcvtzsDToX(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FNEG Sd, Sn (negate single-precision)
@@ -3501,8 +3361,7 @@ fn emitFnegS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FNEG Dd, Dn (negate double-precision)
@@ -3520,8 +3379,7 @@ fn emitFnegD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FABS Sd, Sn (absolute value single-precision)
@@ -3539,8 +3397,7 @@ fn emitFabsS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FABS Dd, Dn (absolute value double-precision)
@@ -3558,8 +3415,7 @@ fn emitFabsD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FSQRT - Floating-point square root
@@ -3579,8 +3435,7 @@ fn emitFsqrt(dst: Reg, src: Reg, size: FpuOperandSize, buffer: *buffer_mod.MachB
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FMAX Sd, Sn, Sm (maximum single-precision)
@@ -3599,8 +3454,7 @@ fn emitFmaxS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FMAX Dd, Dn, Dm (maximum double-precision)
@@ -3619,8 +3473,7 @@ fn emitFmaxD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FMIN Sd, Sn, Sm (minimum single-precision)
@@ -3639,8 +3492,7 @@ fn emitFminS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FMIN Dd, Dn, Dm (minimum double-precision)
@@ -3659,8 +3511,7 @@ fn emitFminD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FRINTZ Sd, Sn (round toward zero, single-precision)
@@ -3679,8 +3530,7 @@ fn emitFrintzS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FRINTZ Dd, Dn (round toward zero, double-precision)
@@ -3699,8 +3549,7 @@ fn emitFrintzD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FRINTP Sd, Sn (round toward +infinity, single-precision)
@@ -3719,8 +3568,7 @@ fn emitFrintpS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FRINTP Dd, Dn (round toward +infinity, double-precision)
@@ -3739,8 +3587,7 @@ fn emitFrintpD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FRINTM Sd, Sn (round toward -infinity, single-precision)
@@ -3759,8 +3606,7 @@ fn emitFrintmS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FRINTM Dd, Dn (round toward -infinity, double-precision)
@@ -3779,8 +3625,7 @@ fn emitFrintmD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FRINTA Sd, Sn (round to nearest, ties to away, single-precision)
@@ -3799,8 +3644,7 @@ fn emitFrintaS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FRINTA Dd, Dn (round to nearest, ties to away, double-precision)
@@ -3819,8 +3663,7 @@ fn emitFrintaD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FMADD Sd, Sn, Sm, Sa (fused multiply-add, single-precision)
@@ -3842,8 +3685,7 @@ fn emitFmaddS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FMADD Dd, Dn, Dm, Da (fused multiply-add, double-precision)
@@ -3865,8 +3707,7 @@ fn emitFmaddD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FMSUB Sd, Sn, Sm, Sa (fused multiply-subtract, single-precision)
@@ -3888,8 +3729,7 @@ fn emitFmsubS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FMSUB Dd, Dn, Dm, Da (fused multiply-subtract, double-precision)
@@ -3911,8 +3751,7 @@ fn emitFmsubD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FNMADD Sd, Sn, Sm, Sa (fused negate multiply-add, single-precision)
@@ -3934,8 +3773,7 @@ fn emitFnmaddS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FNMADD Dd, Dn, Dm, Da (fused negate multiply-add, double-precision)
@@ -3957,8 +3795,7 @@ fn emitFnmaddD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FNMSUB Sd, Sn, Sm, Sa (fused negate multiply-subtract, single-precision)
@@ -3980,8 +3817,7 @@ fn emitFnmsubS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// FNMSUB Dd, Dn, Dm, Da (fused negate multiply-subtract, double-precision)
@@ -4003,8 +3839,7 @@ fn emitFnmsubD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ADR Xd, #offset
@@ -4031,8 +3866,7 @@ fn emitAdr(dst: Reg, offset: i32, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, immhi) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ADRP Xd, #offset
@@ -4060,8 +3894,7 @@ fn emitAdrp(dst: Reg, offset: i32, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, immhi) << 5) |
         rd;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 test "emit nop" {
@@ -10419,8 +10252,7 @@ fn emitVecAdd(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buf
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector SUB (NEON): SUB Vd.T, Vn.T, Vm.T
@@ -10443,8 +10275,7 @@ fn emitVecSub(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buf
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector ADDP (NEON): ADDP Vd.T, Vn.T, Vm.T (pairwise add)
@@ -10467,8 +10298,7 @@ fn emitVecAddp(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector EXT (NEON): EXT Vd.T, Vn.T, Vm.T, #index
@@ -10490,8 +10320,7 @@ fn emitVecExt(dst: Reg, src1: Reg, src2: Reg, index: u8, vec_size: VectorSize, b
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector MUL (NEON): MUL Vd.T, Vn.T, Vm.T
@@ -10514,8 +10343,7 @@ fn emitVecMul(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buf
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector CMEQ (compare equal): CMEQ Vd.T, Vn.T, Vm.T
@@ -10538,8 +10366,7 @@ fn emitVecCmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector CMGT (compare greater than, signed): CMGT Vd.T, Vn.T, Vm.T
@@ -10562,8 +10389,7 @@ fn emitVecCmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector CMGE (compare greater or equal, signed): CMGE Vd.T, Vn.T, Vm.T
@@ -10586,8 +10412,7 @@ fn emitVecCmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector AND (bitwise): AND Vd.16B, Vn.16B, Vm.16B
@@ -10607,8 +10432,7 @@ fn emitVecAnd(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !v
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector ORR (bitwise OR): ORR Vd.16B, Vn.16B, Vm.16B
@@ -10628,8 +10452,7 @@ fn emitVecOrr(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !v
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector EOR (bitwise XOR): EOR Vd.16B, Vn.16B, Vm.16B
@@ -10649,8 +10472,7 @@ fn emitVecEor(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !v
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector FADD (FP add): FADD Vd.T, Vn.T, Vm.T
@@ -10680,8 +10502,7 @@ fn emitVecFadd(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector FSUB (FP subtract): FSUB Vd.T, Vn.T, Vm.T
@@ -10709,8 +10530,7 @@ fn emitVecFsub(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector FMUL (FP multiply): FMUL Vd.T, Vn.T, Vm.T
@@ -10738,8 +10558,7 @@ fn emitVecFmul(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector FDIV (FP divide): FDIV Vd.T, Vn.T, Vm.T
@@ -10767,8 +10586,7 @@ fn emitVecFdiv(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ADDV (add across vector): ADDV Vd, Vn.T
@@ -10789,8 +10607,7 @@ fn emitAddv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBu
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SMINV (signed minimum across vector): SMINV Vd, Vn.T
@@ -10811,8 +10628,7 @@ fn emitSminv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachB
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SMAXV (signed maximum across vector): SMAXV Vd, Vn.T
@@ -10833,8 +10649,7 @@ fn emitSmaxv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachB
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// UMINV (unsigned minimum across vector): UMINV Vd, Vn.T
@@ -10855,8 +10670,7 @@ fn emitUminv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachB
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// UMAXV (unsigned maximum across vector): UMAXV Vd, Vn.T
@@ -10877,8 +10691,7 @@ fn emitUmaxv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachB
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ZIP1 (zip vectors, primary): ZIP1 Vd.T, Vn.T, Vm.T
@@ -10901,8 +10714,7 @@ fn emitZip1(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffe
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ZIP2 (zip vectors, secondary): ZIP2 Vd.T, Vn.T, Vm.T
@@ -10925,8 +10737,7 @@ fn emitZip2(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffe
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// UZP1 (unzip vectors, primary): UZP1 Vd.T, Vn.T, Vm.T
@@ -10949,8 +10760,7 @@ fn emitUzp1(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffe
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// UZP2 (unzip vectors, secondary): UZP2 Vd.T, Vn.T, Vm.T
@@ -10973,8 +10783,7 @@ fn emitUzp2(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffe
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// TRN1 (transpose vectors, primary): TRN1 Vd.T, Vn.T, Vm.T
@@ -10997,8 +10806,7 @@ fn emitTrn1(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffe
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// TRN2 (transpose vectors, secondary): TRN2 Vd.T, Vn.T, Vm.T
@@ -11021,8 +10829,7 @@ fn emitTrn2(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffe
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// REV16 - Reverse bytes within 16-bit halfwords (vector)
@@ -11156,8 +10963,7 @@ fn emitLd1(dst: Reg, addr: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBu
         (@as(u32, rn) << 5) |
         @as(u32, rt);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ST1 (store single structure, one register): ST1 {Vt.T}, [Xn]
@@ -11180,8 +10986,7 @@ fn emitSt1(src: Reg, addr: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBu
         (@as(u32, rn) << 5) |
         @as(u32, rt);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// INS (insert element from register): INS Vd.T[index], Vn.T[0]
@@ -11211,8 +11016,7 @@ fn emitIns(dst: Reg, src: Reg, index: u4, vec_size: VectorSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// EXT (extract): EXT Vd.16B, Vn.16B, Vm.16B, #imm
@@ -11235,8 +11039,7 @@ fn emitExt(dst: Reg, src1: Reg, src2: Reg, imm: u4, buffer: *buffer_mod.MachBuff
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// DUP (duplicate element): DUP Vd.T, Vn.T[index]
@@ -11266,8 +11069,7 @@ fn emitDupElem(dst: Reg, src: Reg, index: u4, vec_size: VectorSize, buffer: *buf
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SXTL (signed extend long): SXTL Vd.T, Vn.Tb
@@ -11295,8 +11097,7 @@ fn emitSxtl(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBu
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// UXTL (unsigned extend long): UXTL Vd.T, Vn.Tb
@@ -11322,8 +11123,7 @@ fn emitUxtl(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBu
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SADDL (signed add long): SADDL Vd.T, Vn.Tb, Vm.Tb
@@ -11353,8 +11153,7 @@ fn emitSaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buff
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// UADDL (unsigned add long): UADDL Vd.T, Vn.Tb, Vm.Tb
@@ -11382,8 +11181,7 @@ fn emitUaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buff
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// XTN (extract narrow): XTN Vd.Tb, Vn.T
@@ -11410,8 +11208,7 @@ fn emitXtn(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuf
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// SQXTN (signed saturating extract narrow): SQXTN Vd.Tb, Vn.T
@@ -11437,8 +11234,7 @@ fn emitSqxtn(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachB
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// UQXTN (unsigned saturating extract narrow): UQXTN Vd.Tb, Vn.T
@@ -11464,8 +11260,7 @@ fn emitUqxtn(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachB
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// TBL (table lookup, 1 register): TBL Vd.16B, {Vn.16B}, Vm.16B
@@ -11486,8 +11281,7 @@ fn emitTbl(dst: Reg, table: Reg, index: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// TBL2 (table lookup, 2 registers): TBL Vd.16B, {Vn.16B, Vn+1.16B}, Vm.16B
@@ -11508,8 +11302,7 @@ fn emitTbl2(dst: Reg, table: Reg, index: Reg, buffer: *buffer_mod.MachBuffer) !v
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// TBX (table extension): TBX Vd.16B, {Vn.16B}, Vm.16B
@@ -11530,8 +11323,7 @@ fn emitTbx(dst: Reg, table: Reg, index: Reg, buffer: *buffer_mod.MachBuffer) !vo
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// LDAXR (load-acquire exclusive register): LDAXR Xt, [Xn]
@@ -11553,8 +11345,7 @@ fn emitLdaxr(dst: Reg, addr: Reg, size: OperandSize, buffer: *buffer_mod.MachBuf
         (@as(u32, rn) << 5) |
         @as(u32, rt);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// STLXR (store-release exclusive register): STLXR Ws, Xt, [Xn]
@@ -11577,8 +11368,7 @@ fn emitStlxr(status: Reg, src: Reg, addr: Reg, size: OperandSize, buffer: *buffe
         (@as(u32, rn) << 5) |
         @as(u32, rt);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// CLREX (clear exclusive): CLREX
@@ -11589,8 +11379,7 @@ fn emitClrex(buffer: *buffer_mod.MachBuffer) !void {
         (0b1111 << 8) | // CRm=1111
         (0b01011111);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Inline assembly - emit raw pre-encoded bytes
@@ -11619,8 +11408,7 @@ fn emitBicRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ORN (OR NOT): ORN Xd, Xn, Xm
@@ -11643,8 +11431,7 @@ fn emitOrnRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// EON (XOR NOT): EON Xd, Xn, Xm
@@ -11667,8 +11454,7 @@ fn emitEonRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// REV (reverse bytes): REV Xd, Xn
@@ -11692,8 +11478,7 @@ fn emitRev(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// DUP (duplicate general-purpose register to vector): DUP Vd.T, Xn
@@ -11723,8 +11508,7 @@ fn emitDupScalar(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.M
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// MOVI (move immediate to vector): MOVI Vd.T, #imm
@@ -11749,8 +11533,7 @@ fn emitMovi(dst: Reg, imm: u8, vec_size: VectorSize, buffer: *buffer_mod.MachBuf
         (@as(u32, defgh) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector SMIN (signed minimum element-wise): SMIN Vd.T, Vn.T, Vm.T
@@ -11773,8 +11556,7 @@ fn emitVecSmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector SMAX (signed maximum element-wise): SMAX Vd.T, Vn.T, Vm.T
@@ -11797,8 +11579,7 @@ fn emitVecSmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector UMIN (unsigned minimum element-wise): UMIN Vd.T, Vn.T, Vm.T
@@ -11821,8 +11602,7 @@ fn emitVecUmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector UMAX (unsigned maximum element-wise): UMAX Vd.T, Vn.T, Vm.T
@@ -11845,8 +11625,7 @@ fn emitVecUmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// ABS (absolute value): ABS Xd, Xn
@@ -11870,8 +11649,7 @@ fn emitAbs(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector ABS (absolute value): ABS Vd.T, Vn.T
@@ -11892,8 +11670,7 @@ fn emitVecAbs(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.Mach
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector NEG (negate): NEG Vd.T, Vn.T
@@ -11914,8 +11691,7 @@ fn emitVecNeg(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.Mach
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Vector FP FCMEQ (compare equal): FCMEQ Vd.T, Vn.T, Vm.T
@@ -11943,8 +11719,7 @@ fn emitVecFcmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *b
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 fn emitVecFcmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
@@ -11957,8 +11732,7 @@ fn emitVecFcmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *b
         else => unreachable,
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111001 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 fn emitVecFcmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
@@ -11971,8 +11745,7 @@ fn emitVecFcmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *b
         else => unreachable,
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b0 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111001 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 fn emitVecFmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
@@ -11985,8 +11758,7 @@ fn emitVecFmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         else => unreachable,
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111101 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 fn emitVecFmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
@@ -11999,8 +11771,7 @@ fn emitVecFmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
         else => unreachable,
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b0 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111101 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 fn emitVecFabs(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
@@ -12012,8 +11783,7 @@ fn emitVecFabs(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.Mac
         else => unreachable,
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b10000 << 17) | (0b011110 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 fn emitVecFneg(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
@@ -12025,8 +11795,7 @@ fn emitVecFneg(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.Mac
         else => unreachable,
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b10000 << 17) | (0b011110 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 }
 
 /// Emit LDR (literal) instruction to load from constant pool.
@@ -12041,8 +11810,7 @@ pub fn emitLdrLiteral(dst: Reg, label: buffer_mod.MachLabel, size: OperandSize, 
     const opc: u32 = if (size == .size_64) 0b01 else 0b00;
     const insn: u32 = (opc << 30) | (0b011 << 27) | (0b00 << 24) | rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 
     // Add fixup for literal offset (will be patched during finalization)
     try buffer.useLabel(label, .ldr_literal19);
@@ -12056,8 +11824,7 @@ pub fn emitLdrLiteralFp(dst: Reg, label: buffer_mod.MachLabel, fp_size: enum { s
     const opc: u32 = if (fp_size == .d) 0b01 else 0b00;
     const insn: u32 = (opc << 30) | (0b011 << 27) | (0b1 << 26) | (0b00 << 24) | rt;
 
-    const bytes = std.mem.toBytes(insn);
-    try buffer.put(&bytes);
+    try buffer.put4(insn);
 
     try buffer.useLabel(label, .ldr_literal19);
 }
@@ -12069,8 +11836,7 @@ pub fn emitCallExternal(func_name: []const u8, buffer: *buffer_mod.MachBuffer) !
 
     // Emit BL with placeholder offset
     const bl_insn: u32 = (0b100101 << 26); // BL opcode
-    const bytes = std.mem.toBytes(bl_insn);
-    try buffer.put(&bytes);
+    try buffer.put4(bl_insn);
 
     // Record relocation for linker to patch
     try buffer.addReloc(
