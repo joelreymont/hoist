@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 
 const ir_mod = @import("../ir.zig");
 const Block = ir_mod.Block;
+const Inst = ir_mod.Inst;
 const PrimaryMap = @import("../foundation/maps.zig").PrimaryMap;
 const ControlFlowGraph = @import("cfg.zig").ControlFlowGraph;
 
@@ -423,16 +424,16 @@ test "DominatorTree basic" {
 
 test "CFG basic" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     const b0 = Block.new(0);
     const b1 = Block.new(1);
     const b2 = Block.new(2);
 
     // Add edges: b0 -> b1, b0 -> b2, b1 -> b2
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b2);
+    try cfg.addEdge(b0, Inst.new(0), b1);
+    try cfg.addEdge(b0, Inst.new(0), b2);
+    try cfg.addEdge(b1, Inst.new(0), b2);
 
     // Check successors of b0
     const b0_succs = cfg.successors(b0);
@@ -656,13 +657,13 @@ test "PostDominatorTree basic" {
 // Helper to build linear CFG for testing
 fn buildLinearCFG(cfg: *CFG, blocks: []const Block) !void {
     for (0..blocks.len - 1) |i| {
-        try cfg.addEdge(blocks[i], blocks[i + 1]);
+        try cfg.addEdge(blocks[i], Inst.new(0), blocks[i + 1]);
     }
 }
 
 test "DominatorTree: linear CFG dominators" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -687,7 +688,7 @@ test "DominatorTree: linear CFG dominators" {
 
 test "DominatorTree: diamond CFG dominators" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -697,10 +698,10 @@ test "DominatorTree: diamond CFG dominators" {
     const b2 = Block.new(2);
     const b3 = Block.new(3);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
-    try cfg.addEdge(b2, b3);
+    try cfg.addEdge(b0, Inst.new(0), b1);
+    try cfg.addEdge(b0, Inst.new(0), b2);
+    try cfg.addEdge(b1, Inst.new(0), b3);
+    try cfg.addEdge(b2, Inst.new(0), b3);
 
     try tree.compute(testing.allocator, b0, &cfg);
 
@@ -718,7 +719,7 @@ test "DominatorTree: diamond CFG dominators" {
 
 test "DominatorTree: loop CFG dominators" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -727,9 +728,9 @@ test "DominatorTree: loop CFG dominators" {
     const b1 = Block.new(1);
     const b2 = Block.new(2);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b1, b2);
-    try cfg.addEdge(b2, b1);
+    try cfg.addEdge(b0, Inst.new(0), b1);
+    try cfg.addEdge(b1, Inst.new(0), b2);
+    try cfg.addEdge(b2, Inst.new(0), b1);
 
     try tree.compute(testing.allocator, b0, &cfg);
 
@@ -744,7 +745,7 @@ test "DominatorTree: loop CFG dominators" {
 
 test "DominatorTree: dominates - transitive" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -771,7 +772,7 @@ test "DominatorTree: dominates - transitive" {
 
 test "DominatorTree: getChildren - linear" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -799,7 +800,7 @@ test "DominatorTree: getChildren - linear" {
 
 test "DominatorTree: getChildren - diamond" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -809,10 +810,10 @@ test "DominatorTree: getChildren - diamond" {
     const b2 = Block.new(2);
     const b3 = Block.new(3);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
-    try cfg.addEdge(b2, b3);
+    try cfg.addEdge(b0, Inst.new(0), b1);
+    try cfg.addEdge(b0, Inst.new(0), b2);
+    try cfg.addEdge(b1, Inst.new(0), b3);
+    try cfg.addEdge(b2, Inst.new(0), b3);
 
     try tree.compute(testing.allocator, b0, &cfg);
 
@@ -826,7 +827,7 @@ test "DominatorTree: getChildren - diamond" {
 
 test "DominatorTree: dominance frontier - diamond" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -836,10 +837,10 @@ test "DominatorTree: dominance frontier - diamond" {
     const b2 = Block.new(2);
     const b3 = Block.new(3);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
-    try cfg.addEdge(b2, b3);
+    try cfg.addEdge(b0, Inst.new(0), b1);
+    try cfg.addEdge(b0, Inst.new(0), b2);
+    try cfg.addEdge(b1, Inst.new(0), b3);
+    try cfg.addEdge(b2, Inst.new(0), b3);
 
     try tree.compute(testing.allocator, b0, &cfg);
 
@@ -860,7 +861,7 @@ test "DominatorTree: dominance frontier - diamond" {
 
 test "DominatorTree: dominance frontier - loop" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -869,9 +870,9 @@ test "DominatorTree: dominance frontier - loop" {
     const b1 = Block.new(1);
     const b2 = Block.new(2);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b1, b2);
-    try cfg.addEdge(b2, b1);
+    try cfg.addEdge(b0, Inst.new(0), b1);
+    try cfg.addEdge(b1, Inst.new(0), b2);
+    try cfg.addEdge(b2, Inst.new(0), b1);
 
     try tree.compute(testing.allocator, b0, &cfg);
 
@@ -888,7 +889,7 @@ test "DominatorTree: dominance frontier - loop" {
 
 test "DominatorTree: verify - valid tree" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -907,7 +908,7 @@ test "DominatorTree: verify - valid tree" {
 
 test "DominatorTree: verify - entry has idom fails" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -923,7 +924,7 @@ test "DominatorTree: verify - entry has idom fails" {
 
 test "DominatorTree: isReachable" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -932,7 +933,7 @@ test "DominatorTree: isReachable" {
     const b1 = Block.new(1);
     const b2 = Block.new(2);
 
-    try cfg.addEdge(b0, b1);
+    try cfg.addEdge(b0, Inst.new(0), b1);
 
     try tree.compute(testing.allocator, b0, &cfg);
 
@@ -943,7 +944,7 @@ test "DominatorTree: isReachable" {
 
 test "PostDominatorTree: linear CFG" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = PostDominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -968,7 +969,7 @@ test "PostDominatorTree: linear CFG" {
 
 test "PostDominatorTree: diamond" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = PostDominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -978,10 +979,10 @@ test "PostDominatorTree: diamond" {
     const b2 = Block.new(2);
     const b3 = Block.new(3);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
-    try cfg.addEdge(b2, b3);
+    try cfg.addEdge(b0, Inst.new(0), b1);
+    try cfg.addEdge(b0, Inst.new(0), b2);
+    try cfg.addEdge(b1, Inst.new(0), b3);
+    try cfg.addEdge(b2, Inst.new(0), b3);
 
     try tree.compute(testing.allocator, b3, &cfg);
 
@@ -999,7 +1000,7 @@ test "PostDominatorTree: diamond" {
 
 test "PostDominatorTree: postDominates" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = PostDominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -1023,7 +1024,7 @@ test "PostDominatorTree: postDominates" {
 
 test "DominatorTree: single block CFG" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -1040,7 +1041,7 @@ test "DominatorTree: single block CFG" {
 
 test "DominatorTree: complex CFG" {
     var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
@@ -1053,11 +1054,11 @@ test "DominatorTree: complex CFG" {
     const b5 = Block.new(5);
     const b6 = Block.new(6);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
+    try cfg.addEdge(b0, Inst.new(0), b1);
+    try cfg.addEdge(b0, Inst.new(0), b2);
+    try cfg.addEdge(b1, Inst.new(0), b3);
     try cfg.addEdge(b1, b4);
-    try cfg.addEdge(b2, b3);
+    try cfg.addEdge(b2, Inst.new(0), b3);
     try cfg.addEdge(b2, b5);
     try cfg.addEdge(b3, b4);
     try cfg.addEdge(b3, b5);

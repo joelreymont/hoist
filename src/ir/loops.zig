@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 
 const ir_mod = @import("../ir.zig");
 const Block = ir_mod.Block;
+const Inst = ir_mod.Inst;
 const DominatorTree = @import("domtree.zig").DominatorTree;
 const CFG = @import("domtree.zig").CFG;
 
@@ -206,9 +207,9 @@ test "LoopInfo basic" {
     const b1 = Block.new(1);
     const b2 = Block.new(2);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b1, b2);
-    try cfg.addEdge(b2, b1); // Back edge
+    try cfg.addEdge(b0, Inst.new(0), b1);
+    try cfg.addEdge(b1, Inst.new(0), b2);
+    try cfg.addEdge(b2, Inst.new(0), b1); // Back edge
 
     // Create dominator tree
     var domtree = DominatorTree.init(testing.allocator);
