@@ -254,8 +254,8 @@ pub const DominatorTree = struct {
         defer dominated.deinit(allocator);
 
         for (dominated.items) |dom_block| {
-            const succs = cfg.successors(dom_block);
-            for (succs) |succ| {
+            var succs = cfg.successors(dom_block);
+            while (succs.next()) |succ| {
                 // If block dominates dom_block but doesn't strictly dominate succ,
                 // then succ is in the dominance frontier
                 if (!self.strictlyDominates(block, succ)) {
@@ -335,8 +335,8 @@ pub const DominatorTree = struct {
 
         while (worklist.items.len > 0) {
             const block = worklist.pop() orelse break;
-            const succs = cfg.successors(block);
-            for (succs) |succ| {
+            var succs = cfg.successors(block);
+            while (succs.next()) |succ| {
                 if (!reachable.contains(succ)) {
                     try reachable.put(succ, {});
                     try worklist.append(allocator, succ);
@@ -366,9 +366,9 @@ pub const DominatorTree = struct {
             if (self.idom.get(block.*)) |ptr| {
                 const idom = ptr.* orelse continue;
 
-                const preds = cfg.predecessors(block.*);
-                for (preds) |pred| {
-                    if (!self.dominates(idom, pred)) {
+                var preds = cfg.predecessors(block.*);
+                while (preds.next()) |pred_info| {
+                    if (!self.dominates(idom, pred_info.block)) {
                         return error.IdomDoesNotDominatePredecessor;
                     }
                 }
@@ -436,16 +436,13 @@ test "CFG basic" {
     try cfg.addEdge(b1, Inst.new(0), b2);
 
     // Check successors of b0
-    const b0_succs = cfg.successors(b0);
-    try testing.expectEqual(@as(usize, 2), b0_succs.len);
+    try testing.expectEqual(@as(usize, 2), cfg.successorCount(b0));
 
     // Check predecessors of b2
-    const b2_preds = cfg.predecessors(b2);
-    try testing.expectEqual(@as(usize, 2), b2_preds.len);
+    try testing.expectEqual(@as(usize, 2), cfg.predecessorCount(b2));
 
     // b1 has one predecessor
-    const b1_preds = cfg.predecessors(b1);
-    try testing.expectEqual(@as(usize, 1), b1_preds.len);
+    try testing.expectEqual(@as(usize, 1), cfg.predecessorCount(b1));
 }
 
 test "DominatorTree idominator" {
@@ -601,9 +598,9 @@ fn collectReachableReverse(
     try visited.put(block, {});
 
     // Visit predecessors (reverse direction)
-    const preds = cfg.predecessors(block);
-    for (preds) |pred| {
-        try collectReachableReverse(cfg, pred, visited, postorder, allocator);
+    var preds = cfg.predecessors(block);
+    while (preds.next()) |pred_info| {
+        try collectReachableReverse(cfg, pred_info.block, visited, postorder, allocator);
     }
 
     try postorder.append(allocator, block);

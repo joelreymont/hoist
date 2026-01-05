@@ -197,6 +197,13 @@ pub const ControlFlowGraph = struct {
         return self.succIter(block);
     }
 
+    /// Get count of successors for a block.
+    pub fn successorCount(self: *const ControlFlowGraph, block: Block) usize {
+        std.debug.assert(self.valid);
+        const block_idx = block.toIndex();
+        return self.data.items[block_idx].successors.count();
+    }
+
     pub fn isValid(self: *const ControlFlowGraph) bool {
         return self.valid;
     }
