@@ -73,7 +73,7 @@ pub const DCE = struct {
     }
 
     /// Mark an instruction and its operands as live.
-    fn markInstLive(self: *DCE, func: *Function, inst: Inst) !void {
+    fn markInstLive(self: *DCE, func: *Function, inst: Inst) Allocator.Error!void {
         // Already marked?
         if (self.live_insts.contains(inst)) return;
 
@@ -90,12 +90,10 @@ pub const DCE = struct {
                 try self.markValueLive(func, d.args[1]);
             },
             .branch => |d| {
-                if (d.condition) |cond| {
-                    try self.markValueLive(func, cond);
-                }
+                try self.markValueLive(func, d.condition);
             },
             .call => |d| {
-                for (d.args.asSlice(&func.dfg.value_lists)) |arg| {
+                for (func.dfg.value_lists.asSlice(d.args)) |arg| {
                     try self.markValueLive(func, arg);
                 }
             },
@@ -104,7 +102,7 @@ pub const DCE = struct {
     }
 
     /// Mark a value and the instruction that defines it as live.
-    fn markValueLive(self: *DCE, func: *Function, value: Value) !void {
+    fn markValueLive(self: *DCE, func: *Function, value: Value) Allocator.Error!void {
         // Already marked?
         if (self.live_values.contains(value)) return;
 
@@ -159,8 +157,8 @@ pub const DCE = struct {
     /// Remove dead instructions from the function.
     fn removeDeadInsts(self: *DCE, func: *Function) !bool {
         var removed = false;
-        var dead_insts = std.ArrayList(Inst).init(self.allocator);
-        defer dead_insts.deinit();
+        var dead_insts = std.ArrayList(Inst){};
+        defer dead_insts.deinit(self.allocator);
 
         // Collect dead instructions
         var block_iter = func.layout.blockIter();
@@ -168,7 +166,7 @@ pub const DCE = struct {
             var inst_iter = func.layout.blockInsts(block);
             while (inst_iter.next()) |inst| {
                 if (!self.live_insts.contains(inst)) {
-                    try dead_insts.append(inst);
+                    try dead_insts.append(self.allocator, inst);
                 }
             }
         }
