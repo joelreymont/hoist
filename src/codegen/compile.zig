@@ -1050,6 +1050,70 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         },
                     });
                 }
+            } else if (data.opcode == .fadd or data.opcode == .fsub or data.opcode == .fmul or data.opcode == .fdiv) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+
+                const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.float);
+                const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.float);
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.float);
+
+                const src1 = Reg.fromVReg(arg0_vreg);
+                const src2 = Reg.fromVReg(arg1_vreg);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse {
+                    try builder.emit(Inst.nop);
+                    return;
+                };
+
+                const size: FpuOperandSize = if (value_type.bits() == 64)
+                    .size64
+                else
+                    .size32;
+
+                if (data.opcode == .fadd) {
+                    try builder.emit(Inst{
+                        .fadd = .{
+                            .dst = dst,
+                            .src1 = src1,
+                            .src2 = src2,
+                            .size = size,
+                        },
+                    });
+                } else if (data.opcode == .fsub) {
+                    try builder.emit(Inst{
+                        .fsub = .{
+                            .dst = dst,
+                            .src1 = src1,
+                            .src2 = src2,
+                            .size = size,
+                        },
+                    });
+                } else if (data.opcode == .fmul) {
+                    try builder.emit(Inst{
+                        .fmul = .{
+                            .dst = dst,
+                            .src1 = src1,
+                            .src2 = src2,
+                            .size = size,
+                        },
+                    });
+                } else {
+                    // fdiv
+                    try builder.emit(Inst{
+                        .fdiv = .{
+                            .dst = dst,
+                            .src1 = src1,
+                            .src2 = src2,
+                            .size = size,
+                        },
+                    });
+                }
             } else {
                 // Other binary ops not yet implemented
                 try builder.emit(Inst.nop);
@@ -1258,6 +1322,26 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .popcnt = .{ .dst = dst, .src = src, .size = size },
                     });
                 }
+            } else if (data.opcode == .sqrt) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.float);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.float);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: FpuOperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                try builder.emit(Inst{
+                    .fsqrt = .{ .dst = dst, .src = src, .size = size },
+                });
             } else {
                 // Other unary ops not yet implemented
                 try builder.emit(Inst.nop);
