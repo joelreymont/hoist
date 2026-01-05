@@ -1664,6 +1664,49 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 },
             });
         },
+        .branch => |data| {
+            // Handle conditional branch (brif)
+            const VReg = @import("../machinst/reg.zig").VReg;
+            const RegClass = @import("../machinst/reg.zig").RegClass;
+            const Reg = @import("../machinst/reg.zig").Reg;
+            const PReg = @import("../machinst/reg.zig").PReg;
+            const inst_module = @import("../backends/aarch64/inst.zig");
+            const BranchTarget = inst_module.BranchTarget;
+            const CondCode = inst_module.CondCode;
+
+            // Get condition value (i1)
+            const cond_vreg = VReg.new(@intCast(data.condition.index + Reg.PINNED_VREGS), RegClass.int);
+            const cond_reg = Reg.fromVReg(cond_vreg);
+
+            // Compare condition with zero
+            const zero = Reg.fromPReg(PReg.new(RegClass.int, 31)); // XZR/WZR
+            try builder.emit(Inst{
+                .cmp_rr = .{
+                    .src1 = cond_reg,
+                    .src2 = zero,
+                    .size = .size32,
+                },
+            });
+
+            // Emit conditional branch to then_dest if condition != 0
+            if (data.then_dest) |then_block| {
+                try builder.emit(Inst{
+                    .b_cond = .{
+                        .cond = CondCode.ne, // branch if not equal to zero
+                        .target = BranchTarget{ .label = then_block.index },
+                    },
+                });
+            }
+
+            // Fall through or jump to else_dest
+            if (data.else_dest) |else_block| {
+                try builder.emit(Inst{
+                    .b = .{
+                        .target = BranchTarget{ .label = else_block.index },
+                    },
+                });
+            }
+        },
         else => {
             // Unimplemented instruction - emit NOP placeholder
             try builder.emit(Inst.nop);
