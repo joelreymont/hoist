@@ -77,7 +77,7 @@ test "compile function with call" {
 
     // Compile for x64
     var ctx = ContextBuilder.init(testing.allocator)
-        .target(.x86_64, .linux)
+        .targetNative()
         .optLevel(.none)
         .callConv(.system_v)
         .verify(true)
@@ -156,7 +156,7 @@ test "compile function with multiple calls" {
     try func.layout.appendInst(ret_inst, entry);
 
     var ctx = ContextBuilder.init(testing.allocator)
-        .target(.x86_64, .linux)
+        .targetNative()
         .verify(true)
         .build();
 
@@ -207,7 +207,7 @@ test "compile function with nullary call" {
     try func.layout.appendInst(ret_inst, entry);
 
     var ctx = ContextBuilder.init(testing.allocator)
-        .target(.x86_64, .linux)
+        .targetNative()
         .verify(true)
         .build();
 

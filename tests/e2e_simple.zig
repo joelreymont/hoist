@@ -43,7 +43,7 @@ test "E2E: return constant i32" {
     try func.layout.appendInst(ret_inst, entry);
 
     var ctx = ContextBuilder.init(testing.allocator)
-        .target(.x86_64, .linux)
+        .targetNative()
         .optLevel(.none)
         .build();
 
@@ -95,7 +95,7 @@ test "E2E: simple arithmetic i32 add" {
     try func.layout.appendInst(ret_inst, entry);
 
     var ctx = ContextBuilder.init(testing.allocator)
-        .target(.x86_64, .linux)
+        .targetNative()
         .optLevel(.none)
         .build();
 
@@ -147,7 +147,7 @@ test "E2E: arithmetic i64 multiply" {
     try func.layout.appendInst(ret_inst, entry);
 
     var ctx = ContextBuilder.init(testing.allocator)
-        .target(.x86_64, .linux)
+        .targetNative()
         .optLevel(.none)
         .build();
 
@@ -214,7 +214,7 @@ test "E2E: constant computation with optimization" {
     try func.layout.appendInst(ret_inst, entry);
 
     var ctx = ContextBuilder.init(testing.allocator)
-        .target(.x86_64, .linux)
+        .targetNative()
         .optLevel(.speed)
         .optimize(true)
         .build();
@@ -315,7 +315,7 @@ test "E2E: verify compilation stages" {
     try verifier.verify();
 
     var ctx = ContextBuilder.init(testing.allocator)
-        .target(.x86_64, .linux)
+        .targetNative()
         .optLevel(.none)
         .verification(true)
         .build();

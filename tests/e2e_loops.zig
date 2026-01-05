@@ -142,7 +142,7 @@ test "E2E: while loop with phi node" {
 
     // Compile and verify code generation
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder.target(.x86_64, .linux)
+    var ctx = builder.targetNative()
         .optLevel(.none)
         .build();
 
@@ -326,7 +326,7 @@ test "E2E: nested loops with phi nodes" {
 
     // Compile
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder.target(.x86_64, .linux)
+    var ctx = builder.targetNative()
         .optLevel(.none)
         .build();
 
@@ -480,7 +480,7 @@ test "E2E: loop with accumulator phi" {
 
     // Compile
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder.target(.x86_64, .linux)
+    var ctx = builder.targetNative()
         .optLevel(.none)
         .build();
 

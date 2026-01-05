@@ -156,6 +156,22 @@ pub const ContextBuilder = struct {
         return self;
     }
 
+    pub fn targetNative(self: *ContextBuilder) *ContextBuilder {
+        const builtin = @import("builtin");
+        const arch: Arch = switch (builtin.cpu.arch) {
+            .aarch64 => .aarch64,
+            .x86_64 => .x86_64,
+            else => @panic("Unsupported architecture"),
+        };
+        const os: OS = switch (builtin.os.tag) {
+            .linux => .linux,
+            .macos => .macos,
+            .windows => .windows,
+            else => @panic("Unsupported OS"),
+        };
+        return self.target(arch, os);
+    }
+
     pub fn optLevel(self: *ContextBuilder, level: OptLevel) *ContextBuilder {
         self.ctx.setOptLevel(level);
         return self;

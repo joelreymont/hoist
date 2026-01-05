@@ -122,7 +122,7 @@ test "JIT: compile and execute return constant i32" {
     // Compile function
     var builder = ContextBuilder.init(testing.allocator);
     var ctx = builder
-        .target(.x86_64, .linux)
+        .targetNative()
         .optLevel(.none)
         .build();
 
@@ -169,8 +169,9 @@ test "JIT: compile and execute i32 add" {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
-    const param0 = func.dfg.blockParams(entry)[0];
-    const param1 = func.dfg.blockParams(entry)[1];
+    // Add block parameters for function arguments
+    const param0 = try func.dfg.appendBlockParam(entry, Type.I32);
+    const param1 = try func.dfg.appendBlockParam(entry, Type.I32);
 
     const add_data = InstructionData{
         .binary = .{
@@ -194,7 +195,7 @@ test "JIT: compile and execute i32 add" {
     // Compile function
     var builder = ContextBuilder.init(testing.allocator);
     var ctx = builder
-        .target(.x86_64, .linux)
+        .targetNative()
         .optLevel(.none)
         .build();
 
@@ -242,8 +243,9 @@ test "JIT: compile and execute i64 multiply" {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
-    const param0 = func.dfg.blockParams(entry)[0];
-    const param1 = func.dfg.blockParams(entry)[1];
+    // Add block parameters for function arguments
+    const param0 = try func.dfg.appendBlockParam(entry, Type.I32);
+    const param1 = try func.dfg.appendBlockParam(entry, Type.I32);
 
     const mul_data = InstructionData{
         .binary = .{
@@ -267,7 +269,7 @@ test "JIT: compile and execute i64 multiply" {
     // Compile function
     var builder = ContextBuilder.init(testing.allocator);
     var ctx = builder
-        .target(.x86_64, .linux)
+        .targetNative()
         .optLevel(.none)
         .build();
 
