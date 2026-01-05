@@ -39,6 +39,7 @@ const instruction_data = @import("../../ir/instruction_data.zig");
 const BranchData = instruction_data.BranchData;
 const ValueData = @import("../../ir/dfg.zig").ValueData;
 const condcodes = @import("../../ir/condcodes.zig");
+const IntCC = condcodes.IntCC;
 const FloatCC = condcodes.FloatCC;
 const Signature = ir.Signature;
 
@@ -592,7 +593,7 @@ fn evalUnaryOp(opcode: Opcode, arg: i64) !i64 {
 
 /// Evaluate an integer comparison on constant operands.
 /// Returns 1 if true, 0 if false.
-fn evalIntCompare(cond: InstructionData.IntCC, lhs: i64, rhs: i64) !i64 {
+fn evalIntCompare(cond: IntCC, lhs: i64, rhs: i64) !i64 {
     const result = switch (cond) {
         .eq => lhs == rhs,
         .ne => lhs != rhs,

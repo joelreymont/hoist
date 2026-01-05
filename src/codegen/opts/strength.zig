@@ -115,7 +115,7 @@ pub const StrengthReduction = struct {
 
         // Get type info to determine bit width
         const ty = func.dfg.valueType(data.args[0]) orelse return;
-        const bits: u6 = if (ty.eql(Type.I8))
+        const bits: u7 = if (ty.eql(Type.I8))
             8
         else if (ty.eql(Type.I16))
             16
@@ -196,7 +196,7 @@ pub const StrengthReduction = struct {
 
         // Get type info to determine bit width
         const ty = func.dfg.valueType(data.args[0]) orelse return;
-        const bits: u6 = if (ty.eql(Type.I8))
+        const bits: u7 = if (ty.eql(Type.I8))
             8
         else if (ty.eql(Type.I16))
             16
