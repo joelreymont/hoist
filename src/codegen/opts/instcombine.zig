@@ -925,13 +925,13 @@ pub const InstCombine = struct {
             .rotl => blk: {
                 const val_u = @as(u64, @bitCast(lhs));
                 const shift_amt = @as(u6, @truncate(@as(u64, @bitCast(rhs)) & 63));
-                const rotated = (val_u << shift_amt) | (val_u >> (64 - shift_amt));
+                const rotated = (val_u << shift_amt) | (val_u >> @as(u6, @truncate@as(u6, @truncate(64 - shift_amt))));
                 break :blk @as(i64, @bitCast(rotated));
             },
             .rotr => blk: {
                 const val_u = @as(u64, @bitCast(lhs));
                 const shift_amt = @as(u6, @truncate(@as(u64, @bitCast(rhs)) & 63));
-                const rotated = (val_u >> shift_amt) | (val_u << (64 - shift_amt));
+                const rotated = (val_u >> shift_amt) | (val_u << @as(u6, @truncate(64 - shift_amt)));
                 break :blk @as(i64, @bitCast(rotated));
             },
             .udiv => blk: {
@@ -2778,8 +2778,8 @@ pub const InstCombine = struct {
             .unary => |d| {
                 if (d.opcode == .iconst) {
                     // Extract constant from immediate value
-                    const imm_bits: i64 = @bitCast(d.arg.index);
-                    return imm_bits;
+                    const imm_bits: i32 = @bitCast(d.arg.index);
+                    return @as(i64, imm_bits);
                 }
             },
             else => {},

@@ -285,7 +285,7 @@ pub const Peephole = struct {
 
             const result = func.dfg.firstResult(inst) orelse return;
             const result_mut = func.dfg.values.getMut(result) orelse return;
-            result_mut.* = ValueData.inst(ty, -1, inst);
+            result_mut.* = ValueData.inst(ty, @bitCast(@as(i16, -1)), inst);
 
             self.changed = true;
         } else if (data.args[0].index == data.args[1].index) {
@@ -297,7 +297,7 @@ pub const Peephole = struct {
 
             const result = func.dfg.firstResult(inst) orelse return;
             const result_mut = func.dfg.values.getMut(result) orelse return;
-            result_mut.* = ValueData.inst(ty, -1, inst);
+            result_mut.* = ValueData.inst(ty, @bitCast(@as(i16, -1)), inst);
 
             self.changed = true;
         }
@@ -314,7 +314,7 @@ pub const Peephole = struct {
 
             const result = func.dfg.firstResult(inst) orelse return;
             const result_mut = func.dfg.values.getMut(result) orelse return;
-            result_mut.* = ValueData.inst(ty, -1, inst);
+            result_mut.* = ValueData.inst(ty, @bitCast(@as(i16, -1)), inst);
 
             self.changed = true;
         }

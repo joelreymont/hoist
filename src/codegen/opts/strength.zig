@@ -81,7 +81,8 @@ pub const StrengthReduction = struct {
         const shift_imm = @import("../../ir/immediates.zig").Imm64.new(log2);
         const shift_inst_data = InstructionData{ .unary_imm = @import("../../ir/instruction_data.zig").UnaryImmData.init(.iconst, shift_imm) };
         const shift_inst = try func.dfg.makeInst(shift_inst_data);
-        const shift_val = try func.dfg.appendInstResult(shift_inst, func.dfg.valueType(data.args[0]));
+        const val_type = func.dfg.valueType(data.args[0]) orelse return;
+        const shift_val = try func.dfg.appendInstResult(shift_inst, val_type);
 
         const new_data = InstructionData{ .binary = BinaryData.init(.ishl, data.args[0], shift_val) };
         const inst_mut = func.dfg.insts.getMut(inst) orelse return;
@@ -97,7 +98,7 @@ pub const StrengthReduction = struct {
         const shift_imm = @import("../../ir/immediates.zig").Imm64.new(log2);
         const shift_inst_data = InstructionData{ .unary_imm = @import("../../ir/instruction_data.zig").UnaryImmData.init(.iconst, shift_imm) };
         const shift_inst = try func.dfg.makeInst(shift_inst_data);
-        const shift_val = try func.dfg.appendInstResult(shift_inst, func.dfg.valueType(data.args[0]));
+        const shift_val = try func.dfg.appendInstResult(shift_inst, func.dfg.valueType(data.args[0]) orelse return);
 
         const new_data = InstructionData{ .binary = BinaryData.init(.ushr, data.args[0], shift_val) };
         const inst_mut = func.dfg.insts.getMut(inst) orelse return;
@@ -175,7 +176,7 @@ pub const StrengthReduction = struct {
         const mask_imm = @import("../../ir/immediates.zig").Imm64.new(mask_val);
         const mask_inst_data = InstructionData{ .unary_imm = @import("../../ir/instruction_data.zig").UnaryImmData.init(.iconst, mask_imm) };
         const mask_inst = try func.dfg.makeInst(mask_inst_data);
-        const mask = try func.dfg.appendInstResult(mask_inst, func.dfg.valueType(data.args[0]));
+        const mask = try func.dfg.appendInstResult(mask_inst, func.dfg.valueType(data.args[0]) orelse return);
 
         const new_data = InstructionData{ .binary = BinaryData.init(.band, data.args[0], mask) };
         const inst_mut = func.dfg.insts.getMut(inst) orelse return;

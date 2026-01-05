@@ -73,7 +73,7 @@ pub const SimplifyBranch = struct {
             if (next.index == jump_data.destination.index) {
                 // Jump to next block - can be eliminated (becomes fall-through)
                 func.layout.removeInst(inst);
-                func.dfg.removeInst(inst);
+                // TODO: Need to implement DFG.removeInst or mark instruction as deleted
                 self.changed = true;
             }
         }

@@ -45,7 +45,7 @@ pub const UCE = struct {
     pub fn run(self: *UCE, func: *Function) !bool {
         // Build CFG for successor analysis
         var cfg = ControlFlowGraph.init(self.allocator);
-        defer cfg.deinit();
+        defer cfg.deinit(self.allocator);
         try cfg.compute(func);
 
         // Mark reachable blocks from entry
