@@ -401,7 +401,8 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
                     const src = Reg.fromPReg(preg);
 
                     // Destination: virtual register for this parameter
-                    const param_vreg = VReg.new(@intCast(param.index), RegClass.int);
+                    // Offset by PINNED_VREGS to avoid collision with physical registers
+                    const param_vreg = VReg.new(@intCast(param.index + Reg.PINNED_VREGS), RegClass.int);
                     const dst = WritableReg.fromVReg(param_vreg);
 
                     // Get parameter type to determine size
@@ -503,6 +504,35 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
                 }
             },
             .add_rr => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |preg| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(preg));
+                    }
+                }
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |preg| {
+                        i.src1 = Reg.fromPReg(preg);
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |preg| {
+                        i.src2 = Reg.fromPReg(preg);
+                    }
+                }
+            },
+            .mov_rr => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |preg| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(preg));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |preg| {
+                        i.src = Reg.fromPReg(preg);
+                    }
+                }
+            },
+            .mul_rr => |*i| {
                 if (i.dst.toReg().toVReg()) |vreg| {
                     if (allocator.getAllocation(vreg)) |preg| {
                         i.dst = WritableReg.fromReg(Reg.fromPReg(preg));
@@ -627,10 +657,11 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const Reg = @import("../machinst/reg.zig").Reg;
 
                 // Map IR values to virtual registers
-                // TODO: Proper value-to-vreg mapping
-                const arg0_vreg = VReg.new(@intCast(data.args[0].index), RegClass.int);
-                const arg1_vreg = VReg.new(@intCast(data.args[1].index), RegClass.int);
-                const result_vreg = VReg.new(@intCast(inst.index), RegClass.int);
+                // Offset by PINNED_VREGS to avoid collision with physical registers
+                const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
 
                 const src1 = Reg.fromVReg(arg0_vreg);
                 const src2 = Reg.fromVReg(arg1_vreg);
@@ -663,9 +694,11 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const Reg = @import("../machinst/reg.zig").Reg;
 
                 // Map IR values to virtual registers
-                const arg0_vreg = VReg.new(@intCast(data.args[0].index), RegClass.int);
-                const arg1_vreg = VReg.new(@intCast(data.args[1].index), RegClass.int);
-                const result_vreg = VReg.new(@intCast(inst.index), RegClass.int);
+                // Offset by PINNED_VREGS to avoid collision with physical registers
+                const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
 
                 const src1 = Reg.fromVReg(arg0_vreg);
                 const src2 = Reg.fromVReg(arg1_vreg);
@@ -705,12 +738,15 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
                 const RegClass = @import("../machinst/reg.zig").RegClass;
 
-                // Move return value to x0 (ABI return register)
-                const return_val_vreg = VReg.new(@intCast(data.arg.index), RegClass.int);
+                // Map return value to vreg (will be rewritten to preg later)
+                // Offset by PINNED_VREGS to avoid collision with physical registers
+                const return_val_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
                 const src = Reg.fromVReg(return_val_vreg);
 
-                const x0 = PReg.new(RegClass.int, 0); // x0 is the return register
-                const dst = WritableReg.fromReg(Reg.fromPReg(x0));
+                // Destination is PHYSICAL x0
+                const x0_preg = PReg.new(RegClass.int, 0);
+                const x0 = Reg.fromPReg(x0_preg);
+                const dst = WritableReg.fromReg(x0);
 
                 // Get size from return value type
                 const value_type = ctx.func.dfg.valueType(data.arg) orelse {
@@ -723,7 +759,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 else
                     .size32;
 
-                // Emit: MOV x0, return_val
+                // Emit: MOV x0, return_val_vreg
                 try builder.emit(Inst{
                     .mov_rr = .{
                         .dst = dst,
@@ -745,9 +781,12 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
                 const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
 
                 // Allocate virtual register for result
-                const vreg = VReg.new(@intCast(inst.index), RegClass.int);
+                // Offset by PINNED_VREGS to avoid collision with physical registers
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
                 const writable = WritableReg.fromVReg(vreg);
 
                 // Get immediate value and size from instruction type

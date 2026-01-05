@@ -51,6 +51,21 @@ fn makeExecutable(memory: []align(std.heap.page_size_min) u8) !void {
         .linux, .macos => {
             const prot = std.posix.PROT.READ | std.posix.PROT.EXEC;
             try std.posix.mprotect(memory, prot);
+
+            // On ARM64, we must flush the instruction cache after writing code
+            if (builtin.cpu.arch == .aarch64 or builtin.cpu.arch == .aarch64_be) {
+                // Use __builtin___clear_cache equivalent
+                // On macOS/iOS, we need to call sys_icache_invalidate
+                // On Linux, we can use __builtin___clear_cache
+                if (builtin.os.tag == .macos) {
+                    // sys_icache_invalidate(memory.ptr, memory.len)
+                    // This is exported by libSystem on macOS
+                    const sys_icache_invalidate = struct {
+                        extern "c" fn sys_icache_invalidate(start: *anyopaque, size: usize) void;
+                    }.sys_icache_invalidate;
+                    sys_icache_invalidate(memory.ptr, memory.len);
+                }
+            }
         },
         .windows => {
             const windows = std.os.windows;
@@ -62,6 +77,15 @@ fn makeExecutable(memory: []align(std.heap.page_size_min) u8) !void {
                 &old_protect,
             ) == 0) {
                 return error.ProtectFailed;
+            }
+
+            // On Windows ARM64, flush instruction cache
+            if (builtin.cpu.arch == .aarch64 or builtin.cpu.arch == .aarch64_be) {
+                _ = windows.FlushInstructionCache(
+                    windows.GetCurrentProcess(),
+                    memory.ptr,
+                    memory.len,
+                );
             }
         },
         else => return error.UnsupportedPlatform,
@@ -129,6 +153,14 @@ test "JIT: compile and execute return constant i32" {
     const code = try ctx.compileFunction(&func);
     var code_copy = code;
     defer code_copy.deinit();
+
+    // Debug: Print generated machine code
+    std.debug.print("\nGenerated machine code ({} bytes):\n", .{code.code.items.len});
+    for (code.code.items, 0..) |byte, i| {
+        if (i % 4 == 0) std.debug.print("\n{x:0>8}: ", .{i});
+        std.debug.print("{x:0>2} ", .{byte});
+    }
+    std.debug.print("\n\n", .{});
 
     // Allocate executable memory
     const exec_mem = try allocExecutableMemory(testing.allocator, code.code.items.len);
@@ -276,6 +308,14 @@ test "JIT: compile and execute i64 multiply" {
     const code = try ctx.compileFunction(&func);
     var code_copy = code;
     defer code_copy.deinit();
+
+    // Debug: Print generated machine code
+    std.debug.print("\nGenerated machine code ({} bytes):\n", .{code.code.items.len});
+    for (code.code.items, 0..) |byte, i| {
+        if (i % 4 == 0) std.debug.print("\n{x:0>8}: ", .{i});
+        std.debug.print("{x:0>2} ", .{byte});
+    }
+    std.debug.print("\n\n", .{});
 
     // Allocate executable memory
     const exec_mem = try allocExecutableMemory(testing.allocator, code.code.items.len);
