@@ -82,7 +82,8 @@ pub const Context = struct {
         defer codegen_ctx.deinit();
 
         // Call the main compilation pipeline
-        return compile_mod.compile(&codegen_ctx, func, &target);
+        const result_ptr = try compile_mod.compile(&codegen_ctx, func, &target);
+        return result_ptr.*;
     }
 
     /// Get target ISA name string.

@@ -105,8 +105,7 @@ pub fn compile(
     // 6. Emit machine code
     try emit(ctx, target);
 
-    const code_ptr = ctx.getCompiledCode() orelse return error.EmissionFailed;
-    return code_ptr.*;
+    return ctx.getCompiledCode() orelse return error.EmissionFailed;
 }
 
 /// Verify function if verification is enabled.
