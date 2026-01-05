@@ -38,7 +38,8 @@ test "E2E: while loop with phi node" {
     try func.layout.appendBlock(loop_exit);
 
     // Entry block: jump to loop header
-    _ = func.dfg.blockParams(entry)[0];
+    const param = try func.dfg.appendBlockParam(entry, Type.I32);
+    _ = param;
 
     const jump_entry_data = InstructionData{
         .jump = .{
@@ -180,7 +181,8 @@ test "E2E: nested loops with phi nodes" {
     try func.layout.appendBlock(inner_exit);
     try func.layout.appendBlock(outer_exit);
 
-    _ = func.dfg.blockParams(entry)[0];
+    const param2 = try func.dfg.appendBlockParam(entry, Type.I32);
+    _ = param2;
 
     // Entry: jump to outer loop
     const jump_entry_data = InstructionData{
@@ -360,7 +362,8 @@ test "E2E: loop with accumulator phi" {
     try func.layout.appendBlock(loop_body);
     try func.layout.appendBlock(loop_exit);
 
-    _ = func.dfg.blockParams(entry)[0];
+    const param3 = try func.dfg.appendBlockParam(entry, Type.I32);
+    _ = param3;
 
     // Entry: initialize sum = 0, jump to header
     const zero_data = InstructionData{

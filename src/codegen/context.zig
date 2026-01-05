@@ -18,7 +18,7 @@ pub const Context = struct {
     allocator: std.mem.Allocator,
 
     /// The function being compiled.
-    func: Function,
+    func: *Function,
 
     /// Control flow graph of the function.
     cfg: ControlFlowGraph,
@@ -35,12 +35,10 @@ pub const Context = struct {
     /// Request disassembly output.
     want_disasm: bool,
 
-    pub fn init(allocator: std.mem.Allocator) !Context {
-        const empty_sig = Signature.init(allocator, .system_v);
-        const func = try Function.init(allocator, "", empty_sig);
+    pub fn init(allocator: std.mem.Allocator) Context {
         return .{
             .allocator = allocator,
-            .func = func,
+            .func = undefined, // Must be set before use
             .cfg = ControlFlowGraph.init(allocator),
             .domtree = DominatorTree.init(allocator),
             .loop_analysis = LoopInfo.init(allocator),
@@ -49,7 +47,7 @@ pub const Context = struct {
         };
     }
 
-    pub fn initForFunction(allocator: std.mem.Allocator, func: Function) Context {
+    pub fn initForFunction(allocator: std.mem.Allocator, func: *Function) Context {
         return .{
             .allocator = allocator,
             .func = func,
@@ -62,7 +60,7 @@ pub const Context = struct {
     }
 
     pub fn deinit(self: *Context) void {
-        self.func.deinit();
+        // Note: We don't own func, so don't deinit it
         self.cfg.deinit(self.allocator);
         self.domtree.deinit();
         self.loop_analysis.deinit(self.allocator);
@@ -161,7 +159,7 @@ pub const RelocKind = enum {
 const testing = std.testing;
 
 test "Context: basic lifecycle" {
-    var ctx = try Context.init(testing.allocator);
+    var ctx = Context.init(testing.allocator);
     defer ctx.deinit();
 
     try testing.expect(ctx.compiled_code == null);
@@ -169,7 +167,7 @@ test "Context: basic lifecycle" {
 }
 
 test "Context: clear and reuse" {
-    var ctx = try Context.init(testing.allocator);
+    var ctx = Context.init(testing.allocator);
     defer ctx.deinit();
 
     ctx.want_disasm = true;

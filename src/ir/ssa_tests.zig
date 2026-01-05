@@ -204,6 +204,7 @@ test "SSA: dominance frontier for diamond CFG" {
     try cfg.addEdge(b0, Inst.new(0), b2);
     try cfg.addEdge(b1, Inst.new(0), b3);
     try cfg.addEdge(b2, Inst.new(0), b3);
+    cfg.valid = true; // Mark CFG as valid after manual construction
 
     // Build dominator tree
     var domtree = DominatorTree.init(testing.allocator);

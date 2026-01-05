@@ -87,8 +87,8 @@ pub fn compile(
     func: *Function,
     target: *const Target,
 ) CompileResult {
-    // Set the function in context
-    ctx.func = func.*;
+    // Set the function pointer in context
+    ctx.func = func;
 
     // 1. Verify IR (if enabled)
     try verifyIf(ctx, func, target);
@@ -149,7 +149,7 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
     try legalize(ctx);
 
     // 2. Compute CFG
-    try ctx.cfg.compute(&ctx.func);
+    try ctx.cfg.compute(ctx.func);
 
     // 3. Compute dominator tree
     if (ctx.func.entryBlock()) |entry| {
