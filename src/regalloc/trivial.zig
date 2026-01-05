@@ -68,7 +68,7 @@ pub const TrivialAllocator = struct {
                 if (self.next_free_int >= 30) {
                     return error.OutOfIntegerRegisters;
                 }
-                const preg = PReg.new(.int, self.next_free_int);
+                const preg = PReg.new(.int, @intCast(self.next_free_int));
                 self.next_free_int += 1;
                 break :blk preg;
             },
@@ -76,7 +76,7 @@ pub const TrivialAllocator = struct {
                 if (self.next_free_float >= 32) {
                     return error.OutOfFloatRegisters;
                 }
-                const preg = PReg.new(.float, self.next_free_float);
+                const preg = PReg.new(.float, @intCast(self.next_free_float));
                 self.next_free_float += 1;
                 break :blk preg;
             },
@@ -85,7 +85,7 @@ pub const TrivialAllocator = struct {
                 if (self.next_free_float >= 32) {
                     return error.OutOfVectorRegisters;
                 }
-                const preg = PReg.new(.vector, self.next_free_float);
+                const preg = PReg.new(.vector, @intCast(self.next_free_float));
                 self.next_free_float += 1;
                 break :blk preg;
             },

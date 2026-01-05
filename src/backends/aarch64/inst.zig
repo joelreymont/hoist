@@ -65,6 +65,17 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Add with shifted register (ADD Xd, Xn, Xm, shift #amt).
+    /// Emits: dst = src1 + (src2 << amt)
+    add_shifted: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        shift_op: ShiftOp,
+        shift_amt: u6,
+        size: OperandSize,
+    },
+
     /// Add with extended register (ADD Xd, Xn, Wm, extend).
     /// Emits: dst = src1 + extend(src2)
     add_extended: struct {
@@ -313,7 +324,14 @@ pub const Inst = union(enum) {
     },
 
     /// Bitwise NOT (MVN Xd, Xm).
-    mvn: struct {
+    mvn_rr: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
+    /// Negate (NEG Xd, Xm).
+    neg: struct {
         dst: WritableReg,
         src: Reg,
         size: OperandSize,
@@ -1778,7 +1796,7 @@ pub const Inst = union(enum) {
             .bic_rr => |i| try writer.print("bic.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .orn_rr => |i| try writer.print("orn.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .eon_rr => |i| try writer.print("eon.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .mvn => |i| try writer.print("mvn.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .mvn_rr => |i| try writer.print("mvn.{} {}, {}", .{ i.size, i.dst, i.src }),
             .lsl_rr => |i| try writer.print("lsl.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .lsl_imm => |i| try writer.print("lsl.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
             .lsr_rr => |i| try writer.print("lsr.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
@@ -2981,7 +2999,6 @@ pub fn aarch64_msr(sysreg: SystemReg, src: Reg) Inst {
     } };
 }
 
-
 /// Operand collector for register allocation.
 /// Mimics Cranelift's OperandVisitor pattern for collecting instruction operands.
 pub const OperandCollector = struct {
@@ -2991,15 +3008,15 @@ pub const OperandCollector = struct {
 
     pub fn init(allocator: std.mem.Allocator) OperandCollector {
         return .{
-            .uses = std.ArrayList(Reg).init(allocator),
-            .defs = std.ArrayList(WritableReg).init(allocator),
+            .uses = std.ArrayList(Reg){},
+            .defs = std.ArrayList(WritableReg){},
             .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *OperandCollector) void {
-        self.uses.deinit();
-        self.defs.deinit();
+        self.uses.deinit(self.allocator);
+        self.defs.deinit(self.allocator);
     }
 
     /// Register use (input operand).
@@ -3242,7 +3259,7 @@ test "Bitwise instruction formatting" {
     try testing.expect(std.mem.indexOf(u8, bic_str, "bic") != null);
 
     // MVN
-    const mvn = Inst{ .mvn = .{
+    const mvn = Inst{ .mvn_rr = .{
         .dst = wr0,
         .src = r1,
         .size = .size64,

@@ -397,7 +397,8 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
 
     // Allocate registers using trivial allocator
     const TrivialAllocator = @import("../regalloc/trivial.zig").TrivialAllocator;
-    const OperandCollector = Inst.OperandCollector;
+    const inst_mod = @import("../backends/aarch64/inst.zig");
+    const OperandCollector = inst_mod.OperandCollector;
 
     var allocator = TrivialAllocator.init(ctx.allocator);
     defer allocator.deinit();
@@ -412,17 +413,103 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
         // Allocate registers for all def operands
         for (collector.defs.items) |def_reg| {
             const vreg = def_reg.toReg().toVReg() orelse continue;
-            _ = try allocator.allocate(vreg);
+            _ = allocator.allocate(vreg) catch {
+                return CodegenError.RegisterAllocationFailed;
+            };
         }
 
         // Allocate registers for all use operands (should already be allocated)
         for (collector.uses.items) |use_reg| {
             const vreg = use_reg.toVReg() orelse continue;
-            _ = try allocator.allocate(vreg);
+            _ = allocator.allocate(vreg) catch {
+                return CodegenError.RegisterAllocationFailed;
+            };
         }
     }
 
-    // TODO: Emit machine code using allocator
+    // Emit machine code with register allocation
+    try emitAArch64WithAllocation(ctx, &vcode, &allocator);
+}
+
+/// Emit AArch64 machine code with register allocation applied.
+fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) CodegenError!void {
+    const emit_mod = @import("../backends/aarch64/emit.zig");
+    const buffer_mod = @import("../machinst/buffer.zig");
+    const Reg = @import("../machinst/reg.zig").Reg;
+    const WritableReg = @import("../machinst/reg.zig").WritableReg;
+    const context_mod = @import("context.zig");
+
+    // Create machine code buffer
+    var buffer = buffer_mod.MachBuffer.init(ctx.allocator);
+    defer buffer.deinit();
+
+    // Emit each instruction with vregs rewritten to pregs
+    for (vcode.insns.items) |inst| {
+        var rewritten_inst = inst;
+
+        // Rewrite virtual registers to physical registers
+        switch (rewritten_inst) {
+            .mov_imm => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |preg| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(preg));
+                    }
+                }
+            },
+            .add_rr => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |preg| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(preg));
+                    }
+                }
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |preg| {
+                        i.src1 = Reg.fromPReg(preg);
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |preg| {
+                        i.src2 = Reg.fromPReg(preg);
+                    }
+                }
+            },
+            .ret => {
+                // No registers to rewrite
+            },
+            else => {
+                // Other instructions - no rewriting needed for now
+                // TODO: Add register rewriting for all instruction variants
+            },
+        }
+
+        try emit_mod.emit(rewritten_inst, &buffer);
+    }
+
+    // Store compiled code in context
+    var compiled = context_mod.CompiledCode.init(ctx.allocator);
+
+    // Transfer buffer data to compiled code
+    try compiled.code.appendSlice(ctx.allocator, buffer.data.items);
+
+    // Transfer relocations (convert MachReloc to Relocation)
+    for (buffer.relocs.items) |mach_reloc| {
+        const reloc_kind: context_mod.RelocKind = switch (mach_reloc.kind) {
+            .abs8, .aarch64_abs64 => .abs8,
+            .x86_pc_rel_32 => .pcrel4,
+            .aarch64_adr_prel_pg_hi21 => .aarch64_adr_prel_pg_hi21,
+            .aarch64_add_abs_lo12_nc => .aarch64_add_abs_lo12_nc,
+            else => .abs8, // Default fallback
+        };
+
+        try compiled.relocs.append(ctx.allocator, .{
+            .offset = mach_reloc.offset,
+            .kind = reloc_kind,
+            .name = mach_reloc.name,
+            .addend = mach_reloc.addend,
+        });
+    }
+
+    ctx.compiled_code = compiled;
 }
 
 /// Lower a single AArch64 instruction.
