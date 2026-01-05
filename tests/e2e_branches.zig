@@ -25,15 +25,15 @@ test "E2E: conditional branch if-then-else" {
     var func = try Function.init(testing.allocator, "cond_branch", sig);
     defer func.deinit();
 
-    const entry = Block.new(0);
-    const then_block = Block.new(1);
-    const else_block = Block.new(2);
+    const entry = try func.dfg.makeBlock();
+    const then_block = try func.dfg.makeBlock();
+    const else_block = try func.dfg.makeBlock();
 
     try func.layout.appendBlock(entry);
     try func.layout.appendBlock(then_block);
     try func.layout.appendBlock(else_block);
 
-    const param = func.dfg.blockParams(entry)[0];
+    const param = try func.dfg.appendBlockParam(entry, Type.I32);
 
     const zero_data = InstructionData{
         .unary_imm = .{

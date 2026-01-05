@@ -87,6 +87,9 @@ pub fn compile(
     func: *Function,
     target: *const Target,
 ) CompileResult {
+    // Set the function in context
+    ctx.func = func.*;
+
     // 1. Verify IR (if enabled)
     try verifyIf(ctx, func, target);
 
@@ -620,6 +623,40 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 try builder.emit(Inst.ret);
             } else {
                 // Other unary ops not yet implemented
+                try builder.emit(Inst.nop);
+            }
+        },
+        .unary_imm => |data| {
+            // Handle unary instructions with immediates (iconst, etc.)
+            if (data.opcode == .iconst) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+
+                // Allocate virtual register for result
+                const vreg = VReg.new(@intCast(inst.index), RegClass.int);
+                const writable = WritableReg.fromVReg(vreg);
+
+                // Get immediate value and size from instruction type
+                const value_type = ctx.func.dfg.valueType(ctx.func.dfg.firstResult(inst).?) orelse {
+                    try builder.emit(Inst.nop);
+                    return;
+                };
+
+                const size: OperandSize = if (value_type.bits() == 64)
+                    .size64
+                else
+                    .size32;
+
+                // Emit MOV immediate instruction with actual immediate value
+                try builder.emit(Inst{
+                    .mov_imm = .{
+                        .dst = writable,
+                        .imm = @intCast(data.imm.bits()),
+                        .size = size,
+                    },
+                });
+            } else {
                 try builder.emit(Inst.nop);
             }
         },

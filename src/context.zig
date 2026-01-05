@@ -77,8 +77,8 @@ pub const Context = struct {
             .verify = self.verify,
         };
 
-        // Create a codegen Context for compilation
-        var codegen_ctx = try compile_mod.Context.init(self.allocator);
+        // Create a codegen Context for compilation with the function
+        var codegen_ctx = compile_mod.Context.init(self.allocator);
         defer codegen_ctx.deinit();
 
         // Call the main compilation pipeline
