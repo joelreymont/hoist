@@ -21,6 +21,7 @@ const InstructionData = ir.InstructionData;
 const instruction_data = @import("../../ir/instruction_data.zig");
 const BinaryData = instruction_data.BinaryData;
 const UnaryData = instruction_data.UnaryData;
+const TernaryData = instruction_data.TernaryData;
 const IntCompareData = instruction_data.IntCompareData;
 const condcodes = @import("../../ir/condcodes.zig");
 const IntCC = condcodes.IntCC;
@@ -466,7 +467,7 @@ pub const InstCombine = struct {
                     const result_ty = func.dfg.instResultType(inst) orelse return;
 
                     // If reducing back to the original type, just use the original value
-                    if (inner_val_ty.index == result_ty.index) {
+                    if (inner_val_ty.eql(result_ty)) {
                         try self.replaceWithValue(func, inst, inner.arg);
                         return;
                     }
@@ -573,7 +574,7 @@ pub const InstCombine = struct {
     }
 
     /// Combine ternary operations (select, etc).
-    fn combineTernary(self: *InstCombine, func: *Function, inst: Inst, data: struct { opcode: Opcode, args: [3]Value }) !void {
+    fn combineTernary(self: *InstCombine, func: *Function, inst: Inst, data: TernaryData) !void {
         const cond = data.args[0];
         const true_val = data.args[1];
         const false_val = data.args[2];
@@ -1675,7 +1676,7 @@ pub const InstCombine = struct {
                 // Create y + z
                 const sum = try func.dfg.makeBinary(.iadd, result_ty, y, z);
                 // Create rotl(x, y+z) or rotr(x, y+z)
-                const new_rot = try func.dfg.makeBinary(data.opcode, result_ty, x, sum );
+                const new_rot = try func.dfg.makeBinary(data.opcode, result_ty, x, sum);
                 try self.replaceWithValue(func, inst, new_rot);
                 return true;
             }
@@ -1889,19 +1890,19 @@ pub const InstCombine = struct {
 
                 const x_ty = switch (x_def) {
                     .result => |r| func.dfg.instResultType(r.inst) orelse return false,
-                    .param => |p| func.signature.params[p.index],
+                    .param => |p| func.sig.params.items[p.index].value_type,
                     else => return false,
                 };
                 const y_ty = switch (y_def) {
                     .result => |r| func.dfg.instResultType(r.inst) orelse return false,
-                    .param => |p| func.signature.params[p.index],
+                    .param => |p| func.sig.params.items[p.index].value_type,
                     else => return false,
                 };
 
                 // Types must match
-                if (x_ty.index == y_ty.index) {
+                if (x_ty.eql(y_ty)) {
                     // Create (x op y)
-                    const inner_op = try func.dfg.makeBinary(data.opcode, x_ty, x, y );
+                    const inner_op = try func.dfg.makeBinary(data.opcode, x_ty, x, y);
                     // Create uextend(x op y)
                     const extend = try func.dfg.makeUnary(.uextend, result_ty, inner_op);
                     try self.replaceWithValue(func, inst, extend);
@@ -2225,7 +2226,6 @@ pub const InstCombine = struct {
 
     /// Simplify (x > y) ^ (x < y) = x != y.
     fn simplifyXorComparisons(self: *InstCombine, func: *Function, inst: Inst, lhs: Value, rhs: Value) !bool {
-        const result_ty = func.dfg.instResultType(inst) orelse return false;
 
         // Check if both operands are integer comparisons
         const lhs_def = func.dfg.valueDef(lhs) orelse return false;
@@ -2272,9 +2272,7 @@ pub const InstCombine = struct {
                     (lhs_cmp.cond == .sgt and rhs_cmp.cond == .sgt) or
                     (lhs_cmp.cond == .slt and rhs_cmp.cond == .slt))
                 {
-                    const ne_inst = try func.dfg.makeInstWithData(.icmp, result_ty, .{
-                        .int_compare = IntCompareData.init(.icmp, .ne, lhs_cmp.args[0], lhs_cmp.args[1]),
-                    });
+                    const ne_inst = try func.dfg.makeIntCompare(.ne, lhs_cmp.args[0], lhs_cmp.args[1]);
                     try self.replaceWithValue(func, inst, ne_inst);
                     return true;
                 }
@@ -2374,7 +2372,7 @@ pub const InstCombine = struct {
 
                 // Create x << (k1 + k2)
                 const new_shift_amt = try func.dfg.makeConst(k_sum);
-                const new_shift = try func.dfg.makeBinary(data.opcode, result_ty, x, new_shift_amt );
+                const new_shift = try func.dfg.makeBinary(data.opcode, result_ty, x, new_shift_amt);
                 try self.replaceWithValue(func, inst, new_shift);
                 return true;
             }
@@ -2685,18 +2683,14 @@ pub const InstCombine = struct {
         const ty = func.dfg.valueType(result) orelse return;
 
         // Create new binary instruction
-        const new_inst = try func.dfg.createInst(.{
+        const new_inst = try func.dfg.makeInst(.{
             .binary = .{
                 .opcode = opcode,
                 .args = .{ lhs, rhs },
             },
         });
 
-        // Set result type
-        try func.dfg.attachResult(new_inst, ty);
-
-        // Get new result value
-        const new_result = func.dfg.firstResult(new_inst) orelse return;
+        const new_result = try func.dfg.appendInstResult(new_inst, ty);
 
         // Alias old result to new result
         const result_data = func.dfg.values.getMut(result) orelse return;
@@ -2711,7 +2705,7 @@ pub const InstCombine = struct {
         const ty = func.dfg.valueType(result) orelse return;
 
         // Create new unary instruction
-        const new_inst = try func.dfg.createInst(.{
+        const new_inst = try func.dfg.makeInst(.{
             .unary = .{
                 .opcode = opcode,
                 .arg = arg,
@@ -2719,7 +2713,7 @@ pub const InstCombine = struct {
         });
 
         // Set result type
-        try func.dfg.attachResult(new_inst, ty);
+        _ = try func.dfg.appendInstResult(new_inst, ty);
 
         // Get new result value
         const new_result = func.dfg.firstResult(new_inst) orelse return;
@@ -2737,7 +2731,7 @@ pub const InstCombine = struct {
         const ty = func.dfg.valueType(result) orelse return;
 
         // Create new ternary instruction
-        const new_inst = try func.dfg.createInst(.{
+        const new_inst = try func.dfg.makeInst(.{
             .ternary = .{
                 .opcode = opcode,
                 .args = .{ arg1, arg2, arg3 },
@@ -2745,7 +2739,7 @@ pub const InstCombine = struct {
         });
 
         // Set result type
-        try func.dfg.attachResult(new_inst, ty);
+        _ = try func.dfg.appendInstResult(new_inst, ty);
 
         // Get new result value
         const new_result = func.dfg.firstResult(new_inst) orelse return;
