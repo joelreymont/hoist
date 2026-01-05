@@ -27,7 +27,7 @@ pub const CFGNode = struct {
     /// Set of successor blocks.
     successors: std.AutoHashMap(Block, void),
 
-    fn init(allocator: std.mem.Allocator) CFGNode {
+    pub fn init(allocator: std.mem.Allocator) CFGNode {
         return .{
             .predecessors = std.AutoHashMap(Inst, Block).init(allocator),
             .successors = std.AutoHashMap(Block, void).init(allocator),

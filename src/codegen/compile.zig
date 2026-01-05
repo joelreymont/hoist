@@ -174,6 +174,7 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
 fn removeConstantPhis(ctx: *Context) CodegenError!bool {
     // TODO: Block parameters not yet implemented in IR
     _ = ctx;
+    _ = ctx;
     return false;
 }
 
@@ -393,8 +394,12 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
         try builder.finishBlock(&.{});
     }
 
-    // Store completed VCode in context
-    ctx.vcode = try builder.finish();
+    // Finish building VCode
+    var vcode = try builder.finish();
+    defer vcode.deinit();
+
+    // TODO: Store VCode in context or pass to register allocation
+    // For now, VCode is just discarded since rest of pipeline is stubbed
 }
 
 /// Lower IR to x86-64 VCode.
@@ -418,6 +423,7 @@ fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
     // TODO: Register allocation not yet implemented
     _ = ctx;
     _ = target;
+    _ = target;
 }
 
 /// Insert function prologue and epilogue.
@@ -425,12 +431,14 @@ fn insertPrologueEpilogue(ctx: *Context, target: *const Target) CodegenError!voi
     // TODO: Prologue/epilogue insertion not yet implemented
     _ = ctx;
     _ = target;
+    _ = target;
 }
 
 /// Emit machine code.
 fn emit(ctx: *Context, target: *const Target) CodegenError!void {
     // TODO: Machine code emission not yet implemented
     _ = ctx;
+    _ = target;
     _ = target;
 }
 
