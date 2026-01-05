@@ -474,23 +474,6 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
         }
     }
 
-    // Debug: Print register allocations
-    std.debug.print("\n=== REGISTER ALLOCATIONS ===\n", .{});
-    for (vcode.insns.items, 0..) |*inst, i| {
-        var collector = OperandCollector.init(ctx.allocator);
-        defer collector.deinit();
-        try inst.getOperands(&collector);
-
-        for (collector.defs.items) |def_reg| {
-            if (def_reg.toReg().toVReg()) |vreg| {
-                if (allocator.getAllocation(vreg)) |preg| {
-                    std.debug.print("Inst {}: v{} → p{} (hw={})\n", .{ i, vreg.index(), preg.hwEnc(), preg.hwEnc() });
-                }
-            }
-        }
-    }
-    std.debug.print("\n", .{});
-
     // Emit machine code with register allocation
     try emitAArch64WithAllocation(ctx, &vcode, &allocator);
 }
@@ -507,11 +490,8 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
     var buffer = buffer_mod.MachBuffer.init(ctx.allocator);
     defer buffer.deinit();
 
-    // Debug: Print post-rewrite instructions
-    std.debug.print("=== POST-REWRITE INSTRUCTIONS ===\n", .{});
-
     // Emit each instruction with vregs rewritten to pregs
-    for (vcode.insns.items, 0..) |inst, inst_idx| {
+    for (vcode.insns.items) |inst| {
         var rewritten_inst = inst;
 
         // Rewrite virtual registers to physical registers
@@ -578,17 +558,6 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
             },
         }
 
-        // Debug: Print rewritten instruction
-        std.debug.print("Inst {}: {s}", .{ inst_idx, @tagName(rewritten_inst) });
-        switch (rewritten_inst) {
-            .mov_imm => |i| std.debug.print(" dst={any} imm={}\n", .{ i.dst.toReg(), i.imm }),
-            .mov_rr => |i| std.debug.print(" dst={any} src={any}\n", .{ i.dst.toReg(), i.src }),
-            .add_rr => |i| std.debug.print(" dst={any} src1={any} src2={any}\n", .{ i.dst.toReg(), i.src1, i.src2 }),
-            .mul_rr => |i| std.debug.print(" dst={any} src1={any} src2={any}\n", .{ i.dst.toReg(), i.src1, i.src2 }),
-            .ret => std.debug.print("\n", .{}),
-            else => std.debug.print(" <unsupported>\n", .{}),
-        }
-
         // MVP: Emit supported instructions
         switch (rewritten_inst) {
             .mov_imm => |i| try emit_mod.emitMovImm(i.dst.toReg(), i.imm, i.size, &buffer),
@@ -600,7 +569,6 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
                     if (src_reg.toRealReg()) |src_real| {
                         if (dst_real.hwEnc() == src_real.hwEnc()) {
                             // Redundant mov - skip it
-                            std.debug.print("Skipping redundant mov: {any} -> {any}\n", .{ src_reg, dst_reg });
                             continue;
                         }
                     }
