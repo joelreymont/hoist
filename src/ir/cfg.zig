@@ -126,7 +126,7 @@ pub const ControlFlowGraph = struct {
         }
     }
 
-    fn addEdge(self: *ControlFlowGraph, from: Block, from_inst: Inst, to: Block) !void {
+    pub fn addEdge(self: *ControlFlowGraph, from: Block, from_inst: Inst, to: Block) !void {
         const from_idx = from.toIndex();
         const to_idx = to.toIndex();
 
@@ -172,6 +172,17 @@ pub const ControlFlowGraph = struct {
         };
     }
 
+    /// Iterator over predecessors (alias for predIter).
+    pub fn predecessors(self: *const ControlFlowGraph, block: Block) PredIterator {
+        return self.predIter(block);
+    }
+
+    /// Get count of predecessors for a block.
+    pub fn predecessorCount(self: *const ControlFlowGraph, block: Block) usize {
+        const block_idx = block.toIndex();
+        return self.data.items[block_idx].predecessors.count();
+    }
+
     /// Iterator over successors.
     pub fn succIter(self: *const ControlFlowGraph, block: Block) SuccIterator {
         std.debug.assert(self.valid);
@@ -179,6 +190,11 @@ pub const ControlFlowGraph = struct {
         return SuccIterator{
             .inner = self.data.items[block_idx].successors.keyIterator(),
         };
+    }
+
+    /// Iterator over successors (alias for succIter).
+    pub fn successors(self: *const ControlFlowGraph, block: Block) SuccIterator {
+        return self.succIter(block);
     }
 
     pub fn isValid(self: *const ControlFlowGraph) bool {

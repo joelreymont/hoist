@@ -28,6 +28,10 @@ pub fn EntityRef(comptime IndexType: type, comptime prefix: []const u8) type {
             return .{ .index = @intCast(i) };
         }
 
+        pub fn fromIndex(i: usize) Self {
+            return Self.new(i);
+        }
+
         pub fn fromRaw(raw: IndexType) Self {
             return .{ .index = raw };
         }

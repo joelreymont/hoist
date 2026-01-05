@@ -84,11 +84,12 @@ pub const DominatorTree = struct {
                 if (std.meta.eql(block, entry)) continue;
 
                 // Find first processed predecessor
-                const preds = cfg.predecessors(block);
-                if (preds.len == 0) continue;
+                if (cfg.predecessorCount(block) == 0) continue;
 
                 var new_idom: ?Block = null;
-                for (preds) |pred| {
+                var pred_iter = cfg.predecessors(block);
+                while (pred_iter.next()) |pred_info| {
+                    const pred = pred_info.block;
                     if (self.idom.get(pred)) |_| {
                         new_idom = pred;
                         break;
@@ -96,7 +97,9 @@ pub const DominatorTree = struct {
                 }
 
                 // Intersect with all other processed predecessors
-                for (preds) |pred| {
+                pred_iter = cfg.predecessors(block);
+                while (pred_iter.next()) |pred_info| {
+                    const pred = pred_info.block;
                     if (new_idom) |idom| {
                         if (!std.meta.eql(pred, idom) and self.idom.get(pred) != null) {
                             new_idom = self.intersect(pred, idom);
@@ -153,7 +156,8 @@ pub const DominatorTree = struct {
             const block = worklist.pop() orelse break;
             try blocks.append(allocator, block);
 
-            for (cfg.successors(block)) |succ| {
+            var succ_iter = cfg.successors(block);
+            while (succ_iter.next()) |succ| {
                 if (!visited.contains(succ)) {
                     try visited.put(succ, {});
                     try worklist.append(allocator, succ);
@@ -192,7 +196,7 @@ pub const DominatorTree = struct {
             depth += 1;
             if (depth > max_depth) {
                 // Cycle detected in dominator tree - this is a bug
-                std.debug.panic("Cycle detected in dominator tree at block {}", .{block.index()});
+                std.debug.panic("Cycle detected in dominator tree at block {}", .{block.index});
             }
             current = idom_block;
         }
