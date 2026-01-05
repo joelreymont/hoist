@@ -1029,12 +1029,15 @@ pub const InstCombine = struct {
                 return true;
             },
             // x / 1 = x
-            .udiv, .sdiv => if (rhs == 1) {
+            .sdiv => if (rhs == 1) {
                 try self.replaceWithValue(func, inst, lhs);
                 return true;
             },
-            // udiv(x, pow2) = x >> log2(pow2) (for positive powers of 2)
-            .udiv => if (rhs > 0 and @popCount(@as(u64, @bitCast(rhs))) == 1) {
+            // x / 1 = x, udiv(x, pow2) = x >> log2(pow2) (for positive powers of 2)
+            .udiv => if (rhs == 1) {
+                try self.replaceWithValue(func, inst, lhs);
+                return true;
+            } else if (rhs > 0 and @popCount(@as(u64, @bitCast(rhs))) == 1) {
                 const result_ty = func.dfg.instResultType(inst) orelse return false;
                 const shift_amt = @ctz(@as(u64, @bitCast(rhs)));
                 const shift_const = try func.dfg.makeConst(@as(i64, @intCast(shift_amt)));
@@ -1042,13 +1045,11 @@ pub const InstCombine = struct {
                 try self.replaceWithValue(func, inst, shr_inst);
                 return true;
             },
-            // x % 1 = 0 (any number modulo 1 is 0)
-            .urem, .srem => if (rhs == 1) {
+            // x % 1 = 0, urem(x, pow2) = x & (pow2 - 1) (for powers of 2 > 1)
+            .urem => if (rhs == 1) {
                 try self.replaceWithConst(func, inst, 0);
                 return true;
-            },
-            // urem(x, pow2) = x & (pow2 - 1) (for powers of 2 > 1)
-            .urem => if (rhs > 1 and @popCount(@as(u64, @bitCast(rhs))) == 1) {
+            } else if (rhs > 1 and @popCount(@as(u64, @bitCast(rhs))) == 1) {
                 const result_ty = func.dfg.instResultType(inst) orelse return false;
                 const mask = rhs - 1;
                 const mask_const = try func.dfg.makeConst(mask);
@@ -1056,8 +1057,8 @@ pub const InstCombine = struct {
                 try self.replaceWithValue(func, inst, and_inst);
                 return true;
             },
-            // x % -1 = 0 (signed remainder by -1 is always 0)
-            .srem => if (rhs == -1) {
+            // x % 1 = 0, x % -1 = 0 (signed remainder by 1 or -1 is always 0)
+            .srem => if (rhs == 1 or rhs == -1) {
                 try self.replaceWithConst(func, inst, 0);
                 return true;
             },
