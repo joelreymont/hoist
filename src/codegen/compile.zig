@@ -1342,6 +1342,101 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 try builder.emit(Inst{
                     .fsqrt = .{ .dst = dst, .src = src, .size = size },
                 });
+            } else if (data.opcode == .fcvt_from_sint or data.opcode == .fcvt_from_uint) {
+                // int → float conversion
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.float);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const src_type = ctx.func.dfg.valueType(data.arg) orelse return error.LoweringFailed;
+                const dst_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+
+                const src_size: OperandSize = if (src_type.bits() == 64) .size64 else .size32;
+                const dst_size: FpuOperandSize = if (dst_type.bits() == 64) .size64 else .size32;
+
+                if (data.opcode == .fcvt_from_sint) {
+                    try builder.emit(Inst{
+                        .scvtf = .{ .dst = dst, .src = src, .src_size = src_size, .dst_size = dst_size },
+                    });
+                } else {
+                    try builder.emit(Inst{
+                        .ucvtf = .{ .dst = dst, .src = src, .src_size = src_size, .dst_size = dst_size },
+                    });
+                }
+            } else if (data.opcode == .fcvt_to_sint or data.opcode == .fcvt_to_uint or data.opcode == .fcvt_to_sint_sat or data.opcode == .fcvt_to_uint_sat) {
+                // float → int conversion
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.float);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const src_type = ctx.func.dfg.valueType(data.arg) orelse return error.LoweringFailed;
+                const dst_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+
+                const src_size: FpuOperandSize = if (src_type.bits() == 64) .size64 else .size32;
+                const dst_size: OperandSize = if (dst_type.bits() == 64) .size64 else .size32;
+
+                // Note: ARM64 FCVTZS/FCVTZU are saturating by default
+                if (data.opcode == .fcvt_to_sint or data.opcode == .fcvt_to_sint_sat) {
+                    try builder.emit(Inst{
+                        .fcvtzs = .{ .dst = dst, .src = src, .src_size = src_size, .dst_size = dst_size },
+                    });
+                } else {
+                    try builder.emit(Inst{
+                        .fcvtzu = .{ .dst = dst, .src = src, .src_size = src_size, .dst_size = dst_size },
+                    });
+                }
+            } else if (data.opcode == .fpromote) {
+                // f32 → f64
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.float);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.float);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                try builder.emit(Inst{
+                    .fcvt_f32_to_f64 = .{ .dst = dst, .src = src },
+                });
+            } else if (data.opcode == .fdemote) {
+                // f64 → f32
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.float);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.float);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                try builder.emit(Inst{
+                    .fcvt_f64_to_f32 = .{ .dst = dst, .src = src },
+                });
             } else {
                 // Other unary ops not yet implemented
                 try builder.emit(Inst.nop);
