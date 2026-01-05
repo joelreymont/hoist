@@ -114,13 +114,16 @@ pub const StrengthReduction = struct {
 
         // Get type info to determine bit width
         const ty = func.dfg.valueType(data.args[0]) orelse return;
-        const bits: u6 = switch (ty) {
-            .I8 => 8,
-            .I16 => 16,
-            .I32 => 32,
-            .I64 => 64,
-            else => return, // Not an integer type
-        };
+        const bits: u6 = if (ty.eql(Type.I8))
+            8
+        else if (ty.eql(Type.I16))
+            16
+        else if (ty.eql(Type.I32))
+            32
+        else if (ty.eql(Type.I64))
+            64
+        else
+            return; // Not a supported integer type
 
         // Create constants
         const Imm64 = @import("../../ir/immediates.zig").Imm64;
@@ -192,13 +195,16 @@ pub const StrengthReduction = struct {
 
         // Get type info to determine bit width
         const ty = func.dfg.valueType(data.args[0]) orelse return;
-        const bits: u6 = switch (ty) {
-            .I8 => 8,
-            .I16 => 16,
-            .I32 => 32,
-            .I64 => 64,
-            else => return, // Not an integer type
-        };
+        const bits: u6 = if (ty.eql(Type.I8))
+            8
+        else if (ty.eql(Type.I16))
+            16
+        else if (ty.eql(Type.I32))
+            32
+        else if (ty.eql(Type.I64))
+            64
+        else
+            return; // Not a supported integer type
 
         // Create constants
         const Imm64 = @import("../../ir/immediates.zig").Imm64;
