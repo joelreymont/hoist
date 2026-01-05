@@ -872,6 +872,62 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         },
                     });
                 }
+            } else if (data.opcode == .ishl or data.opcode == .ushr or data.opcode == .sshr) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+
+                const src1 = Reg.fromVReg(arg0_vreg);
+                const src2 = Reg.fromVReg(arg1_vreg);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse {
+                    try builder.emit(Inst.nop);
+                    return;
+                };
+
+                const size: OperandSize = if (value_type.bits() == 64)
+                    .size64
+                else
+                    .size32;
+
+                // Emit shift instruction
+                // TODO: Optimize to use immediate form when shift amount is constant
+                if (data.opcode == .ishl) {
+                    try builder.emit(Inst{
+                        .lsl_rr = .{
+                            .dst = dst,
+                            .src1 = src1,
+                            .src2 = src2,
+                            .size = size,
+                        },
+                    });
+                } else if (data.opcode == .ushr) {
+                    try builder.emit(Inst{
+                        .lsr_rr = .{
+                            .dst = dst,
+                            .src1 = src1,
+                            .src2 = src2,
+                            .size = size,
+                        },
+                    });
+                } else {
+                    // sshr - arithmetic shift right
+                    try builder.emit(Inst{
+                        .asr_rr = .{
+                            .dst = dst,
+                            .src1 = src1,
+                            .src2 = src2,
+                            .size = size,
+                        },
+                    });
+                }
             } else {
                 // Other binary ops not yet implemented
                 try builder.emit(Inst.nop);
