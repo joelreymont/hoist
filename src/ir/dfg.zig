@@ -289,7 +289,7 @@ pub const DataFlowGraph = struct {
 
     /// Create an integer comparison instruction.
     /// Returns the comparison result value (i1).
-    pub fn makeIntCompare(self: *Self, cond: instruction_data.IntCC, arg0: Value, arg1: Value) !Value {
+    pub fn makeIntCompare(self: *Self, cond: IntCC, arg0: Value, arg1: Value) !Value {
         const inst_data = instruction_data.IntCompareData.init(.icmp, cond, arg0, arg1);
         const inst = try self.makeInst(.{ .int_compare = inst_data });
         return try self.appendInstResult(inst, Type.I1);
