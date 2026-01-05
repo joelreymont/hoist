@@ -47,8 +47,8 @@ pub const SimplifyBranch = struct {
     }
 
     fn simplifyBlock(self: *SimplifyBranch, func: *Function, block: Block) !void {
-        const block_data = func.layout.block_data.get(block) orelse return;
-        const last_inst = block_data.last_inst orelse return;
+        const block_node = func.layout.blocks.get(block) orelse return;
+        const last_inst = block_node.last_inst orelse return;
 
         const inst_data = func.dfg.insts.get(last_inst) orelse return;
         const opcode = inst_data.opcode();

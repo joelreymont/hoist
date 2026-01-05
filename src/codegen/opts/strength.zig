@@ -339,7 +339,7 @@ test "StrengthReduction: sdiv by power-of-2 generates bias correction" {
     try func.layout.appendBlock(block);
 
     // Create x parameter
-    const x = try func.dfg.makeBlockParam(block, @import("../../ir/types.zig").Type.I32);
+    const x = try func.dfg.appendBlockParam(block, @import("../../ir/types.zig").Type.I32);
 
     // Create constant 8 (power of 2)
     const Imm64 = @import("../../ir/immediates.zig").Imm64;
@@ -376,7 +376,7 @@ test "StrengthReduction: srem by power-of-2 generates bias correction" {
     try func.layout.appendBlock(block);
 
     // Create x parameter
-    const x = try func.dfg.makeBlockParam(block, @import("../../ir/types.zig").Type.I32);
+    const x = try func.dfg.appendBlockParam(block, @import("../../ir/types.zig").Type.I32);
 
     // Create constant 4 (power of 2)
     const Imm64 = @import("../../ir/immediates.zig").Imm64;
@@ -413,7 +413,7 @@ test "StrengthReduction: sdiv/srem by non-power-of-2 unchanged" {
     try func.layout.appendBlock(block);
 
     // Create x parameter
-    const x = try func.dfg.makeBlockParam(block, @import("../../ir/types.zig").Type.I32);
+    const x = try func.dfg.appendBlockParam(block, @import("../../ir/types.zig").Type.I32);
 
     // Create constant 7 (not a power of 2)
     const Imm64 = @import("../../ir/immediates.zig").Imm64;

@@ -37,7 +37,7 @@ pub const UCE = struct {
 
     pub fn deinit(self: *UCE) void {
         self.reachable.deinit();
-        self.worklist.deinit();
+        self.worklist.deinit(self.allocator);
     }
 
     /// Run UCE on the function.
@@ -67,7 +67,7 @@ pub const UCE = struct {
         const entry = func.entryBlock() orelse return;
 
         // Start with entry block
-        try self.worklist.append(entry);
+        try self.worklist.append(self.allocator, entry);
         try self.reachable.put(entry, {});
 
         // BFS through CFG
@@ -79,7 +79,7 @@ pub const UCE = struct {
             while (succ_iter.next()) |succ| {
                 if (!self.reachable.contains(succ)) {
                     try self.reachable.put(succ, {});
-                    try self.worklist.append(succ);
+                    try self.worklist.append(self.allocator, succ);
                 }
             }
         }
