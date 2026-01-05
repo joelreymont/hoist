@@ -15,6 +15,7 @@ const Function = ir.Function;
 const Block = ir.Block;
 const Inst = ir.Inst;
 const Value = ir.Value;
+const Type = ir.Type;
 const Opcode = @import("../../ir/opcodes.zig").Opcode;
 const InstructionData = ir.InstructionData;
 const instruction_data = @import("../../ir/instruction_data.zig");

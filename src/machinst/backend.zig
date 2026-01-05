@@ -373,7 +373,7 @@ pub fn backend(comptime MachInst: type, comptime Impl: type, impl: *Impl) Loweri
             return self.instClobbers(inst, out);
         }
 
-        fn isMove(ptr: *anyopaque, inst: *const MachInst) ?struct { dst: Reg, src: Reg } {
+        fn isMove(ptr: *anyopaque, inst: *const MachInst) ?MoveInfo {
             const self: *Impl = @ptrCast(@alignCast(ptr));
             return self.isMove(inst);
         }
