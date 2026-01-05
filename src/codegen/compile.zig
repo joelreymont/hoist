@@ -413,7 +413,12 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
 
     // Match instruction opcode and lower accordingly
     switch (inst_data) {
-        .iconst => |data| {
+        .nullary => |data| {
+            // Handle nullary instructions (iconst, etc.)
+            if (data.opcode != .iconst) {
+                try builder.emit(Inst.nop);
+                return;
+            }
             // Load immediate constant into a virtual register
             // For now, allocate a new vreg and emit mov_imm
             const VReg = @import("../machinst/reg.zig").VReg;
@@ -436,11 +441,67 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 .size32;
 
             // Emit MOV immediate instruction
-            try builder.emit(Inst{ .mov_imm = .{
-                .dst = writable,
-                .imm = @bitCast(data.imm),
-                .size = size,
-            } });
+            // TODO: Get actual immediate value from instruction (currently not stored)
+            try builder.emit(Inst{
+                .mov_imm = .{
+                    .dst = writable,
+                    .imm = 42, // Placeholder - immediate not yet stored in IR
+                    .size = size,
+                },
+            });
+        },
+        .binary => |data| {
+            // Handle binary instructions (iadd, isub, etc.)
+            if (data.opcode == .iadd) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                // Map IR values to virtual registers
+                // TODO: Proper value-to-vreg mapping
+                const arg0_vreg = VReg.new(@intCast(data.args[0].index()), RegClass.int);
+                const arg1_vreg = VReg.new(@intCast(data.args[1].index()), RegClass.int);
+                const result_vreg = VReg.new(@intCast(inst.index()), RegClass.int);
+
+                const src1 = Reg.fromVReg(arg0_vreg);
+                const src2 = Reg.fromVReg(arg1_vreg);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                // Get size from result type
+                const value_type = ctx.func.dfg.valueType(ctx.func.dfg.instResult(inst).?) orelse {
+                    try builder.emit(Inst.nop);
+                    return;
+                };
+
+                const size: OperandSize = if (value_type.bits() == 64)
+                    .size64
+                else
+                    .size32;
+
+                // Emit ADD instruction
+                try builder.emit(Inst{
+                    .add_rr = .{
+                        .dst = dst,
+                        .src1 = src1,
+                        .src2 = src2,
+                        .size = size,
+                    },
+                });
+            } else {
+                // Other binary ops not yet implemented
+                try builder.emit(Inst.nop);
+            }
+        },
+        .unary => |data| {
+            // Handle unary instructions (return, etc.)
+            if (data.opcode == .@"return") {
+                // Emit RET instruction
+                try builder.emit(Inst.ret);
+            } else {
+                // Other unary ops not yet implemented
+                try builder.emit(Inst.nop);
+            }
         },
         else => {
             // Unimplemented instruction - emit NOP placeholder
