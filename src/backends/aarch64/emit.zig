@@ -1,17 +1,17 @@
 const std = @import("std");
 const testing = std.testing;
 
-const root = @import("root");
-const Inst = root.aarch64_inst.Inst;
-const OperandSize = root.aarch64_inst.OperandSize;
-const FpuOperandSize = root.aarch64_inst.FpuOperandSize;
-const VectorSize = root.aarch64_inst.VectorSize;
-const VecElemSize = root.aarch64_inst.VecElemSize;
-const BarrierOption = root.aarch64_inst.BarrierOption;
-const CondCode = root.aarch64_inst.CondCode;
-const Reg = root.aarch64_inst.Reg;
-const PReg = root.aarch64_inst.PReg;
-const buffer_mod = root.buffer;
+const inst_mod = @import("inst.zig");
+const Inst = inst_mod.Inst;
+const OperandSize = inst_mod.OperandSize;
+const FpuOperandSize = inst_mod.FpuOperandSize;
+const VectorSize = inst_mod.VectorSize;
+const VecElemSize = inst_mod.VecElemSize;
+const BarrierOption = inst_mod.BarrierOption;
+const CondCode = inst_mod.CondCode;
+const Reg = inst_mod.Reg;
+const PReg = inst_mod.PReg;
+const buffer_mod = @import("../../machinst/buffer.zig");
 
 /// Emit aarch64 instruction to binary.
 /// This is a minimal bootstrap - full aarch64 emission needs:
@@ -470,7 +470,7 @@ fn emitAddImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_m
 
 /// ADD Xd, Xn, Xm, shift_op #shift_amt
 /// ADD (shifted register) instruction
-fn emitAddShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: root.aarch64_inst.ShiftOp, shift_amt: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitAddShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: inst_mod.ShiftOp, shift_amt: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
@@ -493,7 +493,7 @@ fn emitAddShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: root.aarch64_inst.Sh
 
 /// ADD Xd, Xn, Wm, extend_op
 /// ADD (extended register) instruction
-fn emitAddExtended(dst: Reg, src1: Reg, src2: Reg, extend_op: root.aarch64_inst.ExtendOp, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitAddExtended(dst: Reg, src1: Reg, src2: Reg, extend_op: inst_mod.ExtendOp, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
@@ -1006,7 +1006,7 @@ fn emitAndRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
 }
 
 /// AND Xd, Xn, #imm (bitwise AND immediate)
-fn emitAndImm(dst: Reg, src: Reg, imm_logic: root.aarch64_inst.ImmLogic, buffer: *buffer_mod.MachBuffer) !void {
+fn emitAndImm(dst: Reg, src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_mod.MachBuffer) !void {
     const size = imm_logic.size;
     const sf_bit: u32 = @intCast(sf(size));
     const rd = hwEnc(dst);
@@ -1046,7 +1046,7 @@ fn emitOrrRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
 }
 
 /// ORR Xd, Xn, #imm (bitwise OR immediate)
-fn emitOrrImm(dst: Reg, src: Reg, imm_logic: root.aarch64_inst.ImmLogic, buffer: *buffer_mod.MachBuffer) !void {
+fn emitOrrImm(dst: Reg, src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_mod.MachBuffer) !void {
     const size = imm_logic.size;
     const sf_bit: u32 = @intCast(sf(size));
     const rd = hwEnc(dst);
@@ -1086,7 +1086,7 @@ fn emitEorRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
 }
 
 /// EOR Xd, Xn, #imm (bitwise XOR immediate)
-fn emitEorImm(dst: Reg, src: Reg, imm_logic: root.aarch64_inst.ImmLogic, buffer: *buffer_mod.MachBuffer) !void {
+fn emitEorImm(dst: Reg, src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_mod.MachBuffer) !void {
     const size = imm_logic.size;
     const sf_bit: u32 = @intCast(sf(size));
     const rd = hwEnc(dst);
@@ -1129,7 +1129,7 @@ fn emitMvnRR(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuff
 /// NEG Xd, Xm (negate - implemented as SUB Xd, XZR, Xm)
 fn emitNeg(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // NEG is an alias for SUB with XZR as first source
-    const xzr = if (size == .size64) root.reg.PReg.xzr else root.reg.PReg.wzr;
+    const xzr = if (size == .size64) inst_mod.PReg.xzr else inst_mod.PReg.wzr;
     const src1 = Reg.fromPReg(xzr);
     try emitSubRR(dst, src1, src, size, buffer);
 }
@@ -1157,7 +1157,7 @@ fn emitNgc(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
 /// Alias for SUBS XZR, Xn, Xm
 fn emitCmpRR(src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // CMP is just SUBS with XZR as destination
-    const xzr = if (size == .size64) root.reg.PReg.xzr else root.reg.PReg.wzr;
+    const xzr = if (size == .size64) inst_mod.PReg.xzr else inst_mod.PReg.wzr;
     const dst = Reg.fromPReg(xzr);
     try emitSubsRR(dst, src1, src2, size, buffer);
 }
@@ -1166,7 +1166,7 @@ fn emitCmpRR(src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBu
 /// Alias for SUBS XZR, Xn, #imm
 fn emitCmpImm(src: Reg, imm: u16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // CMP is just SUBS with XZR as destination
-    const xzr = if (size == .size64) root.reg.PReg.xzr else root.reg.PReg.wzr;
+    const xzr = if (size == .size64) inst_mod.PReg.xzr else inst_mod.PReg.wzr;
     const dst = Reg.fromPReg(xzr);
     try emitSubsImm(dst, src, imm, size, buffer);
 }
@@ -1175,7 +1175,7 @@ fn emitCmpImm(src: Reg, imm: u16, size: OperandSize, buffer: *buffer_mod.MachBuf
 /// Alias for ADDS XZR, Xn, Xm
 fn emitCmnRR(src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // CMN is just ADDS with XZR as destination
-    const xzr = if (size == .size64) root.reg.PReg.xzr else root.reg.PReg.wzr;
+    const xzr = if (size == .size64) inst_mod.PReg.xzr else inst_mod.PReg.wzr;
     const dst = Reg.fromPReg(xzr);
     try emitAddsRR(dst, src1, src2, size, buffer);
 }
@@ -1184,7 +1184,7 @@ fn emitCmnRR(src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBu
 /// Alias for ADDS XZR, Xn, #imm
 fn emitCmnImm(src: Reg, imm: u16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // CMN is just ADDS with XZR as destination
-    const xzr = if (size == .size64) root.reg.PReg.xzr else root.reg.PReg.wzr;
+    const xzr = if (size == .size64) inst_mod.PReg.xzr else inst_mod.PReg.wzr;
     const dst = Reg.fromPReg(xzr);
     try emitAddsImm(dst, src, imm, size, buffer);
 }
@@ -1211,7 +1211,7 @@ fn emitTstRR(src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBu
 
 /// TST Xn, #imm (test bits with immediate)
 /// Alias for ANDS XZR, Xn, #imm
-fn emitTstImm(src: Reg, imm_logic: root.aarch64_inst.ImmLogic, buffer: *buffer_mod.MachBuffer) !void {
+fn emitTstImm(src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_mod.MachBuffer) !void {
     const size = imm_logic.size;
     const sf_bit: u32 = @intCast(sf(size));
     const rd: u5 = 31; // XZR
@@ -2871,7 +2871,7 @@ fn emitCasl(compare: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffe
 
 /// DMB - Data Memory Barrier
 /// Encoding: 1101010100|0|00|011|0011|CRm|1|01|11111
-fn emitDmb(option: root.aarch64_inst.BarrierOption, buffer: *buffer_mod.MachBuffer) !void {
+fn emitDmb(option: inst_mod.BarrierOption, buffer: *buffer_mod.MachBuffer) !void {
     const crm: u32 = @intFromEnum(option);
 
     const insn: u32 = (0b11010101000000110011 << 12) |
@@ -2884,7 +2884,7 @@ fn emitDmb(option: root.aarch64_inst.BarrierOption, buffer: *buffer_mod.MachBuff
 
 /// DSB - Data Synchronization Barrier
 /// Encoding: 1101010100|0|00|011|0011|CRm|1|00|11111
-fn emitDsb(option: root.aarch64_inst.BarrierOption, buffer: *buffer_mod.MachBuffer) !void {
+fn emitDsb(option: inst_mod.BarrierOption, buffer: *buffer_mod.MachBuffer) !void {
     const crm: u32 = @intFromEnum(option);
 
     const insn: u32 = (0b11010101000000110011 << 12) |
@@ -4090,9 +4090,9 @@ test "emit mov imm" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
     const r0 = Reg.fromVReg(v0);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     try emit(.{ .mov_imm = .{
         .dst = wr0,
@@ -4114,11 +4114,11 @@ test "emit add rr" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     try emit(.{ .add_rr = .{
         .dst = wr0,
@@ -4134,13 +4134,13 @@ test "emit add shifted" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // Test: ADD X0, X1, X2, LSL #3
     try emit(.{ .add_shifted = .{
@@ -4180,13 +4180,13 @@ test "emit mul rr" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     try emit(.{ .mul_rr = .{
         .dst = wr0,
@@ -4212,15 +4212,15 @@ test "emit madd" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
-    const v3 = root.reg.VReg.new(3, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
     const r3 = Reg.fromVReg(v3);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     try emit(.{ .madd = .{
         .dst = wr0,
@@ -4244,15 +4244,15 @@ test "emit msub" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
-    const v3 = root.reg.VReg.new(3, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
     const r3 = Reg.fromVReg(v3);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     try emit(.{ .msub = .{
         .dst = wr0,
@@ -4276,13 +4276,13 @@ test "emit smulh" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     try emit(.{ .smulh = .{
         .dst = wr0,
@@ -4304,13 +4304,13 @@ test "emit umulh" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     try emit(.{ .umulh = .{
         .dst = wr0,
@@ -4329,13 +4329,13 @@ test "emit sdiv 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v3 = root.reg.VReg.new(3, .int);
-    const v10 = root.reg.VReg.new(10, .int);
-    const v5 = root.reg.VReg.new(5, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r3 = Reg.fromVReg(v3);
     const r10 = Reg.fromVReg(v10);
     const r5 = Reg.fromVReg(v5);
-    const wr3 = root.reg.WritableReg.fromReg(r3);
+    const wr3 = inst_mod.WritableReg.fromReg(r3);
 
     // SDIV X3, X10, X5
     try emit(.{ .sdiv = .{
@@ -4380,13 +4380,13 @@ test "emit sdiv 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v3 = root.reg.VReg.new(3, .int);
-    const v10 = root.reg.VReg.new(10, .int);
-    const v5 = root.reg.VReg.new(5, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r3 = Reg.fromVReg(v3);
     const r10 = Reg.fromVReg(v10);
     const r5 = Reg.fromVReg(v5);
-    const wr3 = root.reg.WritableReg.fromReg(r3);
+    const wr3 = inst_mod.WritableReg.fromReg(r3);
 
     // SDIV W3, W10, W5
     try emit(.{ .sdiv = .{
@@ -4416,13 +4416,13 @@ test "emit udiv 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v3 = root.reg.VReg.new(3, .int);
-    const v10 = root.reg.VReg.new(10, .int);
-    const v5 = root.reg.VReg.new(5, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r3 = Reg.fromVReg(v3);
     const r10 = Reg.fromVReg(v10);
     const r5 = Reg.fromVReg(v5);
-    const wr3 = root.reg.WritableReg.fromReg(r3);
+    const wr3 = inst_mod.WritableReg.fromReg(r3);
 
     // UDIV X3, X10, X5
     try emit(.{ .udiv = .{
@@ -4467,13 +4467,13 @@ test "emit udiv 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v3 = root.reg.VReg.new(3, .int);
-    const v10 = root.reg.VReg.new(10, .int);
-    const v5 = root.reg.VReg.new(5, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r3 = Reg.fromVReg(v3);
     const r10 = Reg.fromVReg(v10);
     const r5 = Reg.fromVReg(v5);
-    const wr3 = root.reg.WritableReg.fromReg(r3);
+    const wr3 = inst_mod.WritableReg.fromReg(r3);
 
     // UDIV W3, W10, W5
     try emit(.{ .udiv = .{
@@ -4506,13 +4506,13 @@ test "emit divide with different registers" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // SDIV X0, X1, X2
     try emit(.{ .sdiv = .{
@@ -4535,13 +4535,13 @@ test "emit and rr 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // AND X0, X1, X2
     try emit(.{ .and_rr = .{
@@ -4570,13 +4570,13 @@ test "emit and rr 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v5 = root.reg.VReg.new(5, .int);
-    const v10 = root.reg.VReg.new(10, .int);
-    const v7 = root.reg.VReg.new(7, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v7 = inst_mod.VReg.new(7, .int);
     const r5 = Reg.fromVReg(v5);
     const r10 = Reg.fromVReg(v10);
     const r7 = Reg.fromVReg(v7);
-    const wr5 = root.reg.WritableReg.fromReg(r5);
+    const wr5 = inst_mod.WritableReg.fromReg(r5);
 
     // AND W5, W10, W7
     try emit(.{ .and_rr = .{
@@ -4600,13 +4600,13 @@ test "emit and imm 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r1 = Reg.fromVReg(v1);
-    const wr2 = root.reg.WritableReg.fromReg(Reg.fromVReg(v2));
+    const wr2 = inst_mod.WritableReg.fromReg(Reg.fromVReg(v2));
 
     // AND X2, X1, #0xff (example with simple bitmask)
-    const imm_logic = root.aarch64_inst.ImmLogic{
+    const imm_logic = inst_mod.ImmLogic{
         .value = 0xff,
         .n = true, // N=1 for 64-bit patterns
         .r = 0, // immr
@@ -4645,13 +4645,13 @@ test "emit orr rr 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v3 = root.reg.VReg.new(3, .int);
-    const v4 = root.reg.VReg.new(4, .int);
-    const v5 = root.reg.VReg.new(5, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
+    const v4 = inst_mod.VReg.new(4, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r3 = Reg.fromVReg(v3);
     const r4 = Reg.fromVReg(v4);
     const r5 = Reg.fromVReg(v5);
-    const wr3 = root.reg.WritableReg.fromReg(r3);
+    const wr3 = inst_mod.WritableReg.fromReg(r3);
 
     // ORR X3, X4, X5
     try emit(.{ .orr_rr = .{
@@ -4678,13 +4678,13 @@ test "emit eor rr 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v6 = root.reg.VReg.new(6, .int);
-    const v7 = root.reg.VReg.new(7, .int);
-    const v8 = root.reg.VReg.new(8, .int);
+    const v6 = inst_mod.VReg.new(6, .int);
+    const v7 = inst_mod.VReg.new(7, .int);
+    const v8 = inst_mod.VReg.new(8, .int);
     const r6 = Reg.fromVReg(v6);
     const r7 = Reg.fromVReg(v7);
     const r8 = Reg.fromVReg(v8);
-    const wr6 = root.reg.WritableReg.fromReg(r6);
+    const wr6 = inst_mod.WritableReg.fromReg(r6);
 
     // EOR X6, X7, X8
     try emit(.{ .eor_rr = .{
@@ -4711,11 +4711,11 @@ test "emit mvn rr 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v9 = root.reg.VReg.new(9, .int);
-    const v10 = root.reg.VReg.new(10, .int);
+    const v9 = inst_mod.VReg.new(9, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
     const r9 = Reg.fromVReg(v9);
     const r10 = Reg.fromVReg(v10);
-    const wr9 = root.reg.WritableReg.fromReg(r9);
+    const wr9 = inst_mod.WritableReg.fromReg(r9);
 
     // MVN X9, X10 (implemented as ORN X9, XZR, X10)
     try emit(.{ .mvn_rr = .{
@@ -4749,11 +4749,11 @@ test "emit mvn rr 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // MVN W0, W1
     try emit(.{ .mvn_rr = .{
@@ -4776,11 +4776,11 @@ test "emit neg 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v5 = root.reg.VReg.new(5, .int);
-    const v6 = root.reg.VReg.new(6, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
+    const v6 = inst_mod.VReg.new(6, .int);
     const r5 = Reg.fromVReg(v5);
     const r6 = Reg.fromVReg(v6);
-    const wr5 = root.reg.WritableReg.fromReg(r5);
+    const wr5 = inst_mod.WritableReg.fromReg(r5);
 
     // NEG X5, X6 (implemented as SUB X5, XZR, X6)
     try emit(.{ .neg = .{
@@ -4813,11 +4813,11 @@ test "emit neg 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v3 = root.reg.VReg.new(3, .int);
-    const v4 = root.reg.VReg.new(4, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
+    const v4 = inst_mod.VReg.new(4, .int);
     const r3 = Reg.fromVReg(v3);
     const r4 = Reg.fromVReg(v4);
-    const wr3 = root.reg.WritableReg.fromReg(r3);
+    const wr3 = inst_mod.WritableReg.fromReg(r3);
 
     // NEG W3, W4 (implemented as SUB W3, WZR, W4)
     try emit(.{ .neg = .{
@@ -4843,11 +4843,11 @@ test "emit ngc 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v7 = root.reg.VReg.new(7, .int);
-    const v8 = root.reg.VReg.new(8, .int);
+    const v7 = inst_mod.VReg.new(7, .int);
+    const v8 = inst_mod.VReg.new(8, .int);
     const r7 = Reg.fromVReg(v7);
     const r8 = Reg.fromVReg(v8);
-    const wr7 = root.reg.WritableReg.fromReg(r7);
+    const wr7 = inst_mod.WritableReg.fromReg(r7);
 
     // NGC X7, X8 (implemented as SBC X7, XZR, X8)
     try emit(.{ .ngc = .{
@@ -4880,11 +4880,11 @@ test "emit ngc 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v11 = root.reg.VReg.new(11, .int);
-    const v12 = root.reg.VReg.new(12, .int);
+    const v11 = inst_mod.VReg.new(11, .int);
+    const v12 = inst_mod.VReg.new(12, .int);
     const r11 = Reg.fromVReg(v11);
     const r12 = Reg.fromVReg(v12);
-    const wr11 = root.reg.WritableReg.fromReg(r11);
+    const wr11 = inst_mod.WritableReg.fromReg(r11);
 
     // NGC W11, W12 (implemented as SBC W11, WZR, W12)
     try emit(.{ .ngc = .{
@@ -4913,11 +4913,11 @@ test "neg is alias for sub with xzr" {
     var buffer2 = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer2.deinit();
 
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr1 = root.reg.WritableReg.fromReg(r1);
+    const wr1 = inst_mod.WritableReg.fromReg(r1);
 
     // Emit NEG X1, X2
     try emit(.{ .neg = .{
@@ -4927,8 +4927,8 @@ test "neg is alias for sub with xzr" {
     } }, &buffer1);
 
     // Emit SUB X1, XZR, X2
-    const xzr = Reg.fromPReg(root.reg.PReg.xzr);
-    const wxzr = root.reg.WritableReg.fromReg(r1);
+    const xzr = Reg.fromPReg(inst_mod.PReg.xzr);
+    const wxzr = inst_mod.WritableReg.fromReg(r1);
     try emit(.{ .sub_rr = .{
         .dst = wxzr,
         .src1 = xzr,
@@ -4947,13 +4947,13 @@ test "emit adds rr 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // ADDS X0, X1, X2
     try emit(.{ .adds_rr = .{
@@ -4988,13 +4988,13 @@ test "emit adds rr 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v3 = root.reg.VReg.new(3, .int);
-    const v4 = root.reg.VReg.new(4, .int);
-    const v5 = root.reg.VReg.new(5, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
+    const v4 = inst_mod.VReg.new(4, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r3 = Reg.fromVReg(v3);
     const r4 = Reg.fromVReg(v4);
     const r5 = Reg.fromVReg(v5);
-    const wr3 = root.reg.WritableReg.fromReg(r3);
+    const wr3 = inst_mod.WritableReg.fromReg(r3);
 
     // ADDS W3, W4, W5
     try emit(.{ .adds_rr = .{
@@ -5021,11 +5021,11 @@ test "emit adds imm 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v10 = root.reg.VReg.new(10, .int);
-    const v11 = root.reg.VReg.new(11, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v11 = inst_mod.VReg.new(11, .int);
     const r10 = Reg.fromVReg(v10);
     const r11 = Reg.fromVReg(v11);
-    const wr10 = root.reg.WritableReg.fromReg(r10);
+    const wr10 = inst_mod.WritableReg.fromReg(r10);
 
     // ADDS X10, X11, #42
     try emit(.{ .adds_imm = .{
@@ -5062,11 +5062,11 @@ test "emit adds imm 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v20 = root.reg.VReg.new(20, .int);
-    const v21 = root.reg.VReg.new(21, .int);
+    const v20 = inst_mod.VReg.new(20, .int);
+    const v21 = inst_mod.VReg.new(21, .int);
     const r20 = Reg.fromVReg(v20);
     const r21 = Reg.fromVReg(v21);
-    const wr20 = root.reg.WritableReg.fromReg(r20);
+    const wr20 = inst_mod.WritableReg.fromReg(r20);
 
     // ADDS W20, W21, #100
     try emit(.{ .adds_imm = .{
@@ -5096,13 +5096,13 @@ test "emit subs rr 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v6 = root.reg.VReg.new(6, .int);
-    const v7 = root.reg.VReg.new(7, .int);
-    const v8 = root.reg.VReg.new(8, .int);
+    const v6 = inst_mod.VReg.new(6, .int);
+    const v7 = inst_mod.VReg.new(7, .int);
+    const v8 = inst_mod.VReg.new(8, .int);
     const r6 = Reg.fromVReg(v6);
     const r7 = Reg.fromVReg(v7);
     const r8 = Reg.fromVReg(v8);
-    const wr6 = root.reg.WritableReg.fromReg(r6);
+    const wr6 = inst_mod.WritableReg.fromReg(r6);
 
     // SUBS X6, X7, X8
     try emit(.{ .subs_rr = .{
@@ -5137,13 +5137,13 @@ test "emit subs rr 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v12 = root.reg.VReg.new(12, .int);
-    const v13 = root.reg.VReg.new(13, .int);
-    const v14 = root.reg.VReg.new(14, .int);
+    const v12 = inst_mod.VReg.new(12, .int);
+    const v13 = inst_mod.VReg.new(13, .int);
+    const v14 = inst_mod.VReg.new(14, .int);
     const r12 = Reg.fromVReg(v12);
     const r13 = Reg.fromVReg(v13);
     const r14 = Reg.fromVReg(v14);
-    const wr12 = root.reg.WritableReg.fromReg(r12);
+    const wr12 = inst_mod.WritableReg.fromReg(r12);
 
     // SUBS W12, W13, W14
     try emit(.{ .subs_rr = .{
@@ -5170,11 +5170,11 @@ test "emit subs imm 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v15 = root.reg.VReg.new(15, .int);
-    const v16 = root.reg.VReg.new(16, .int);
+    const v15 = inst_mod.VReg.new(15, .int);
+    const v16 = inst_mod.VReg.new(16, .int);
     const r15 = Reg.fromVReg(v15);
     const r16 = Reg.fromVReg(v16);
-    const wr15 = root.reg.WritableReg.fromReg(r15);
+    const wr15 = inst_mod.WritableReg.fromReg(r15);
 
     // SUBS X15, X16, #777
     try emit(.{ .subs_imm = .{
@@ -5211,11 +5211,11 @@ test "emit subs imm 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v25 = root.reg.VReg.new(25, .int);
-    const v26 = root.reg.VReg.new(26, .int);
+    const v25 = inst_mod.VReg.new(25, .int);
+    const v26 = inst_mod.VReg.new(26, .int);
     const r25 = Reg.fromVReg(v25);
     const r26 = Reg.fromVReg(v26);
-    const wr25 = root.reg.WritableReg.fromReg(r25);
+    const wr25 = inst_mod.WritableReg.fromReg(r25);
 
     // SUBS W25, W26, #999
     try emit(.{ .subs_imm = .{
@@ -5245,8 +5245,8 @@ test "emit cmp rr 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
 
@@ -5282,8 +5282,8 @@ test "emit cmp rr 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v5 = root.reg.VReg.new(5, .int);
-    const v10 = root.reg.VReg.new(10, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
     const r5 = Reg.fromVReg(v5);
     const r10 = Reg.fromVReg(v10);
 
@@ -5308,7 +5308,7 @@ test "emit cmp imm 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v3 = root.reg.VReg.new(3, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
     const r3 = Reg.fromVReg(v3);
 
     // CMP X3, #42 (alias for SUBS XZR, X3, #42)
@@ -5345,7 +5345,7 @@ test "emit cmp imm 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v7 = root.reg.VReg.new(7, .int);
+    const v7 = inst_mod.VReg.new(7, .int);
     const r7 = Reg.fromVReg(v7);
 
     // CMP W7, #100
@@ -5372,8 +5372,8 @@ test "emit cmn rr 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v8 = root.reg.VReg.new(8, .int);
-    const v9 = root.reg.VReg.new(9, .int);
+    const v8 = inst_mod.VReg.new(8, .int);
+    const v9 = inst_mod.VReg.new(9, .int);
     const r8 = Reg.fromVReg(v8);
     const r9 = Reg.fromVReg(v9);
 
@@ -5409,8 +5409,8 @@ test "emit cmn rr 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
 
@@ -5435,7 +5435,7 @@ test "emit cmn imm 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v15 = root.reg.VReg.new(15, .int);
+    const v15 = inst_mod.VReg.new(15, .int);
     const r15 = Reg.fromVReg(v15);
 
     // CMN X15, #255 (alias for ADDS XZR, X15, #255)
@@ -5472,7 +5472,7 @@ test "emit cmn imm 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v20 = root.reg.VReg.new(20, .int);
+    const v20 = inst_mod.VReg.new(20, .int);
     const r20 = Reg.fromVReg(v20);
 
     // CMN W20, #1
@@ -5499,8 +5499,8 @@ test "emit tst rr 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v12 = root.reg.VReg.new(12, .int);
-    const v13 = root.reg.VReg.new(13, .int);
+    const v12 = inst_mod.VReg.new(12, .int);
+    const v13 = inst_mod.VReg.new(13, .int);
     const r12 = Reg.fromVReg(v12);
     const r13 = Reg.fromVReg(v13);
 
@@ -5533,8 +5533,8 @@ test "emit tst rr 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v25 = root.reg.VReg.new(25, .int);
-    const v30 = root.reg.VReg.new(30, .int);
+    const v25 = inst_mod.VReg.new(25, .int);
+    const v30 = inst_mod.VReg.new(30, .int);
     const r25 = Reg.fromVReg(v25);
     const r30 = Reg.fromVReg(v30);
 
@@ -5559,11 +5559,11 @@ test "emit tst imm 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v4 = root.reg.VReg.new(4, .int);
+    const v4 = inst_mod.VReg.new(4, .int);
     const r4 = Reg.fromVReg(v4);
 
     // TST X4, #0xff (alias for ANDS XZR, X4, #0xff)
-    const imm_logic = root.aarch64_inst.ImmLogic{
+    const imm_logic = inst_mod.ImmLogic{
         .value = 0xff,
         .n = true, // N=1 for 64-bit patterns
         .r = 0, // immr
@@ -5604,11 +5604,11 @@ test "emit tst imm 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v6 = root.reg.VReg.new(6, .int);
+    const v6 = inst_mod.VReg.new(6, .int);
     const r6 = Reg.fromVReg(v6);
 
     // TST W6, #0xf (test lower 4 bits)
-    const imm_logic = root.aarch64_inst.ImmLogic{
+    const imm_logic = inst_mod.ImmLogic{
         .value = 0xf,
         .n = false, // N=0 for 32-bit patterns
         .r = 0, // immr
@@ -5642,13 +5642,13 @@ test "emit lsl register 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // LSLV X0, X1, X2
     try emit(.{ .lsl_rr = .{
@@ -5683,13 +5683,13 @@ test "emit lsl register 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // LSLV W0, W1, W2
     try emit(.{ .lsl_rr = .{
@@ -5713,11 +5713,11 @@ test "emit lsl immediate 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // LSL X0, X1, #5
     try emit(.{ .lsl_imm = .{
@@ -5747,11 +5747,11 @@ test "emit lsl immediate 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // LSL W0, W1, #5
     try emit(.{ .lsl_imm = .{
@@ -5775,13 +5775,13 @@ test "emit lsr register 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // LSRV X0, X1, X2
     try emit(.{ .lsr_rr = .{
@@ -5808,11 +5808,11 @@ test "emit lsr immediate 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // LSR X0, X1, #5
     try emit(.{ .lsr_imm = .{
@@ -5836,13 +5836,13 @@ test "emit asr register 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // ASRV X0, X1, X2
     try emit(.{ .asr_rr = .{
@@ -5869,11 +5869,11 @@ test "emit asr immediate 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // ASR X0, X1, #5
     try emit(.{ .asr_imm = .{
@@ -5900,13 +5900,13 @@ test "emit ror register 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // RORV X0, X1, X2
     try emit(.{ .ror_rr = .{
@@ -5933,11 +5933,11 @@ test "emit ror immediate 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // ROR X0, X1, #5
     try emit(.{ .ror_imm = .{
@@ -5964,11 +5964,11 @@ test "emit ror immediate 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // ROR W0, W1, #16
     try emit(.{ .ror_imm = .{
@@ -5992,11 +5992,11 @@ test "emit shift with edge cases" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // LSL X0, X1, #0 (shift by 0)
     try emit(.{ .lsl_imm = .{
@@ -6049,11 +6049,11 @@ test "emit clz 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // CLZ X0, X1
     try emit(.{ .clz = .{
@@ -6091,11 +6091,11 @@ test "emit clz 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v3 = root.reg.VReg.new(3, .int);
-    const v5 = root.reg.VReg.new(5, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r3 = Reg.fromVReg(v3);
     const r5 = Reg.fromVReg(v5);
-    const wr3 = root.reg.WritableReg.fromReg(r3);
+    const wr3 = inst_mod.WritableReg.fromReg(r3);
 
     // CLZ W3, W5
     try emit(.{ .clz = .{
@@ -6130,11 +6130,11 @@ test "emit cls 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v2 = root.reg.VReg.new(2, .int);
-    const v7 = root.reg.VReg.new(7, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
+    const v7 = inst_mod.VReg.new(7, .int);
     const r2 = Reg.fromVReg(v2);
     const r7 = Reg.fromVReg(v7);
-    const wr2 = root.reg.WritableReg.fromReg(r2);
+    const wr2 = inst_mod.WritableReg.fromReg(r2);
 
     // CLS X2, X7
     try emit(.{ .cls = .{
@@ -6172,11 +6172,11 @@ test "emit cls 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v10 = root.reg.VReg.new(10, .int);
-    const v15 = root.reg.VReg.new(15, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v15 = inst_mod.VReg.new(15, .int);
     const r10 = Reg.fromVReg(v10);
     const r15 = Reg.fromVReg(v15);
-    const wr10 = root.reg.WritableReg.fromReg(r10);
+    const wr10 = inst_mod.WritableReg.fromReg(r10);
 
     // CLS W10, W15
     try emit(.{ .cls = .{
@@ -6211,11 +6211,11 @@ test "emit rbit 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v4 = root.reg.VReg.new(4, .int);
-    const v9 = root.reg.VReg.new(9, .int);
+    const v4 = inst_mod.VReg.new(4, .int);
+    const v9 = inst_mod.VReg.new(9, .int);
     const r4 = Reg.fromVReg(v4);
     const r9 = Reg.fromVReg(v9);
-    const wr4 = root.reg.WritableReg.fromReg(r4);
+    const wr4 = inst_mod.WritableReg.fromReg(r4);
 
     // RBIT X4, X9
     try emit(.{ .rbit = .{
@@ -6253,11 +6253,11 @@ test "emit rbit 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v8 = root.reg.VReg.new(8, .int);
-    const v12 = root.reg.VReg.new(12, .int);
+    const v8 = inst_mod.VReg.new(8, .int);
+    const v12 = inst_mod.VReg.new(12, .int);
     const r8 = Reg.fromVReg(v8);
     const r12 = Reg.fromVReg(v12);
-    const wr8 = root.reg.WritableReg.fromReg(r8);
+    const wr8 = inst_mod.WritableReg.fromReg(r8);
 
     // RBIT W8, W12
     try emit(.{ .rbit = .{
@@ -6292,11 +6292,11 @@ test "emit bit manipulation with different registers" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // CLZ X0, X1
     try emit(.{ .clz = .{
@@ -6349,13 +6349,13 @@ test "emit csel 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // CSEL X0, X1, X2, EQ
     try emit(.{ .csel = .{
@@ -6384,13 +6384,13 @@ test "emit csel 32-bit with different conditions" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v10 = root.reg.VReg.new(10, .int);
-    const v11 = root.reg.VReg.new(11, .int);
-    const v12 = root.reg.VReg.new(12, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v11 = inst_mod.VReg.new(11, .int);
+    const v12 = inst_mod.VReg.new(12, .int);
     const r10 = Reg.fromVReg(v10);
     const r11 = Reg.fromVReg(v11);
     const r12 = Reg.fromVReg(v12);
-    const wr10 = root.reg.WritableReg.fromReg(r10);
+    const wr10 = inst_mod.WritableReg.fromReg(r10);
 
     // CSEL W10, W11, W12, GT (greater than)
     try emit(.{ .csel = .{
@@ -6417,13 +6417,13 @@ test "emit csinc 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v3 = root.reg.VReg.new(3, .int);
-    const v4 = root.reg.VReg.new(4, .int);
-    const v5 = root.reg.VReg.new(5, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
+    const v4 = inst_mod.VReg.new(4, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r3 = Reg.fromVReg(v3);
     const r4 = Reg.fromVReg(v4);
     const r5 = Reg.fromVReg(v5);
-    const wr3 = root.reg.WritableReg.fromReg(r3);
+    const wr3 = inst_mod.WritableReg.fromReg(r3);
 
     // CSINC X3, X4, X5, NE
     try emit(.{ .csinc = .{
@@ -6452,13 +6452,13 @@ test "emit csinc 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v20 = root.reg.VReg.new(20, .int);
-    const v21 = root.reg.VReg.new(21, .int);
-    const v22 = root.reg.VReg.new(22, .int);
+    const v20 = inst_mod.VReg.new(20, .int);
+    const v21 = inst_mod.VReg.new(21, .int);
+    const v22 = inst_mod.VReg.new(22, .int);
     const r20 = Reg.fromVReg(v20);
     const r21 = Reg.fromVReg(v21);
     const r22 = Reg.fromVReg(v22);
-    const wr20 = root.reg.WritableReg.fromReg(r20);
+    const wr20 = inst_mod.WritableReg.fromReg(r20);
 
     // CSINC W20, W21, W22, HS (higher or same, unsigned >=)
     try emit(.{ .csinc = .{
@@ -6485,13 +6485,13 @@ test "emit csinv 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v6 = root.reg.VReg.new(6, .int);
-    const v7 = root.reg.VReg.new(7, .int);
-    const v8 = root.reg.VReg.new(8, .int);
+    const v6 = inst_mod.VReg.new(6, .int);
+    const v7 = inst_mod.VReg.new(7, .int);
+    const v8 = inst_mod.VReg.new(8, .int);
     const r6 = Reg.fromVReg(v6);
     const r7 = Reg.fromVReg(v7);
     const r8 = Reg.fromVReg(v8);
-    const wr6 = root.reg.WritableReg.fromReg(r6);
+    const wr6 = inst_mod.WritableReg.fromReg(r6);
 
     // CSINV X6, X7, X8, LT (signed less than)
     try emit(.{ .csinv = .{
@@ -6520,13 +6520,13 @@ test "emit csinv 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v15 = root.reg.VReg.new(15, .int);
-    const v16 = root.reg.VReg.new(16, .int);
-    const v17 = root.reg.VReg.new(17, .int);
+    const v15 = inst_mod.VReg.new(15, .int);
+    const v16 = inst_mod.VReg.new(16, .int);
+    const v17 = inst_mod.VReg.new(17, .int);
     const r15 = Reg.fromVReg(v15);
     const r16 = Reg.fromVReg(v16);
     const r17 = Reg.fromVReg(v17);
-    const wr15 = root.reg.WritableReg.fromReg(r15);
+    const wr15 = inst_mod.WritableReg.fromReg(r15);
 
     // CSINV W15, W16, W17, GE (signed >=)
     try emit(.{ .csinv = .{
@@ -6553,13 +6553,13 @@ test "emit csneg 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v9 = root.reg.VReg.new(9, .int);
-    const v10 = root.reg.VReg.new(10, .int);
-    const v11 = root.reg.VReg.new(11, .int);
+    const v9 = inst_mod.VReg.new(9, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v11 = inst_mod.VReg.new(11, .int);
     const r9 = Reg.fromVReg(v9);
     const r10 = Reg.fromVReg(v10);
     const r11 = Reg.fromVReg(v11);
-    const wr9 = root.reg.WritableReg.fromReg(r9);
+    const wr9 = inst_mod.WritableReg.fromReg(r9);
 
     // CSNEG X9, X10, X11, LE (signed <=)
     try emit(.{ .csneg = .{
@@ -6588,13 +6588,13 @@ test "emit csneg 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v25 = root.reg.VReg.new(25, .int);
-    const v26 = root.reg.VReg.new(26, .int);
-    const v27 = root.reg.VReg.new(27, .int);
+    const v25 = inst_mod.VReg.new(25, .int);
+    const v26 = inst_mod.VReg.new(26, .int);
+    const v27 = inst_mod.VReg.new(27, .int);
     const r25 = Reg.fromVReg(v25);
     const r26 = Reg.fromVReg(v26);
     const r27 = Reg.fromVReg(v27);
-    const wr25 = root.reg.WritableReg.fromReg(r25);
+    const wr25 = inst_mod.WritableReg.fromReg(r25);
 
     // CSNEG W25, W26, W27, HI (unsigned >)
     try emit(.{ .csneg = .{
@@ -6621,9 +6621,9 @@ test "emit conditional select with same registers" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v5 = root.reg.VReg.new(5, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r5 = Reg.fromVReg(v5);
-    const wr5 = root.reg.WritableReg.fromReg(r5);
+    const wr5 = inst_mod.WritableReg.fromReg(r5);
 
     // CSEL X5, X5, X5, AL (always)
     try emit(.{ .csel = .{
@@ -6647,9 +6647,9 @@ test "emit movz 64-bit shift 0" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
     const r0 = Reg.fromVReg(v0);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // MOVZ X0, #0x1234, lsl #0
     try emit(.{ .movz = .{
@@ -6688,9 +6688,9 @@ test "emit movz 64-bit shift 16" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v5 = root.reg.VReg.new(5, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r5 = Reg.fromVReg(v5);
-    const wr5 = root.reg.WritableReg.fromReg(r5);
+    const wr5 = inst_mod.WritableReg.fromReg(r5);
 
     // MOVZ X5, #0xABCD, lsl #16
     try emit(.{ .movz = .{
@@ -6713,9 +6713,9 @@ test "emit movz 64-bit shift 32" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v10 = root.reg.VReg.new(10, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
     const r10 = Reg.fromVReg(v10);
-    const wr10 = root.reg.WritableReg.fromReg(r10);
+    const wr10 = inst_mod.WritableReg.fromReg(r10);
 
     // MOVZ X10, #0x5678, lsl #32
     try emit(.{ .movz = .{
@@ -6738,9 +6738,9 @@ test "emit movz 64-bit shift 48" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v15 = root.reg.VReg.new(15, .int);
+    const v15 = inst_mod.VReg.new(15, .int);
     const r15 = Reg.fromVReg(v15);
-    const wr15 = root.reg.WritableReg.fromReg(r15);
+    const wr15 = inst_mod.WritableReg.fromReg(r15);
 
     // MOVZ X15, #0x1111, lsl #48
     try emit(.{ .movz = .{
@@ -6763,9 +6763,9 @@ test "emit movz 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v20 = root.reg.VReg.new(20, .int);
+    const v20 = inst_mod.VReg.new(20, .int);
     const r20 = Reg.fromVReg(v20);
-    const wr20 = root.reg.WritableReg.fromReg(r20);
+    const wr20 = inst_mod.WritableReg.fromReg(r20);
 
     // MOVZ W20, #0x9999, lsl #0
     try emit(.{ .movz = .{
@@ -6789,9 +6789,9 @@ test "emit movz 32-bit shift 16" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v7 = root.reg.VReg.new(7, .int);
+    const v7 = inst_mod.VReg.new(7, .int);
     const r7 = Reg.fromVReg(v7);
-    const wr7 = root.reg.WritableReg.fromReg(r7);
+    const wr7 = inst_mod.WritableReg.fromReg(r7);
 
     // MOVZ W7, #0x4321, lsl #16
     try emit(.{ .movz = .{
@@ -6815,9 +6815,9 @@ test "emit movk 64-bit shift 0" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v1 = root.reg.VReg.new(1, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r1 = Reg.fromVReg(v1);
-    const wr1 = root.reg.WritableReg.fromReg(r1);
+    const wr1 = inst_mod.WritableReg.fromReg(r1);
 
     // MOVK X1, #0x5678, lsl #0
     try emit(.{ .movk = .{
@@ -6843,9 +6843,9 @@ test "emit movk 64-bit all shifts" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v2 = root.reg.VReg.new(2, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r2 = Reg.fromVReg(v2);
-    const wr2 = root.reg.WritableReg.fromReg(r2);
+    const wr2 = inst_mod.WritableReg.fromReg(r2);
 
     // Test shift 16
     try emit(.{ .movk = .{ .dst = wr2, .imm = 0xFFFF, .shift = 16, .size = .size64 } }, &buffer);
@@ -6855,9 +6855,9 @@ test "emit movk 64-bit all shifts" {
     buffer.data.clearRetainingCapacity();
 
     // Test shift 32
-    const v3 = root.reg.VReg.new(3, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
     const r3 = Reg.fromVReg(v3);
-    const wr3 = root.reg.WritableReg.fromReg(r3);
+    const wr3 = inst_mod.WritableReg.fromReg(r3);
     try emit(.{ .movk = .{ .dst = wr3, .imm = 0x1234, .shift = 32, .size = .size64 } }, &buffer);
     insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 2), (insn >> 21) & 0x3);
@@ -6865,9 +6865,9 @@ test "emit movk 64-bit all shifts" {
     buffer.data.clearRetainingCapacity();
 
     // Test shift 48
-    const v4 = root.reg.VReg.new(4, .int);
+    const v4 = inst_mod.VReg.new(4, .int);
     const r4 = Reg.fromVReg(v4);
-    const wr4 = root.reg.WritableReg.fromReg(r4);
+    const wr4 = inst_mod.WritableReg.fromReg(r4);
     try emit(.{ .movk = .{ .dst = wr4, .imm = 0xABCD, .shift = 48, .size = .size64 } }, &buffer);
     insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 3), (insn >> 21) & 0x3);
@@ -6877,9 +6877,9 @@ test "emit movk 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v25 = root.reg.VReg.new(25, .int);
+    const v25 = inst_mod.VReg.new(25, .int);
     const r25 = Reg.fromVReg(v25);
-    const wr25 = root.reg.WritableReg.fromReg(r25);
+    const wr25 = inst_mod.WritableReg.fromReg(r25);
 
     // MOVK W25, #0x8888, lsl #0
     try emit(.{ .movk = .{ .dst = wr25, .imm = 0x8888, .shift = 0, .size = .size32 } }, &buffer);
@@ -6890,9 +6890,9 @@ test "emit movk 32-bit" {
     buffer.data.clearRetainingCapacity();
 
     // Test shift 16
-    const v30 = root.reg.VReg.new(30, .int);
+    const v30 = inst_mod.VReg.new(30, .int);
     const r30 = Reg.fromVReg(v30);
-    const wr30 = root.reg.WritableReg.fromReg(r30);
+    const wr30 = inst_mod.WritableReg.fromReg(r30);
     try emit(.{ .movk = .{ .dst = wr30, .imm = 0x2222, .shift = 16, .size = .size32 } }, &buffer);
     const insn2 = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 1), (insn2 >> 21) & 0x3);
@@ -6902,9 +6902,9 @@ test "emit movn 64-bit all shifts" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v8 = root.reg.VReg.new(8, .int);
+    const v8 = inst_mod.VReg.new(8, .int);
     const r8 = Reg.fromVReg(v8);
-    const wr8 = root.reg.WritableReg.fromReg(r8);
+    const wr8 = inst_mod.WritableReg.fromReg(r8);
 
     // Test shift 0
     try emit(.{ .movn = .{ .dst = wr8, .imm = 0x1234, .shift = 0, .size = .size64 } }, &buffer);
@@ -6921,9 +6921,9 @@ test "emit movn 64-bit all shifts" {
     const regs = [_]u8{ 9, 11, 12 };
 
     for (shifts, expected_hw, regs) |shift, hw, reg| {
-        const v = root.reg.VReg.new(reg, .int);
+        const v = inst_mod.VReg.new(reg, .int);
         const r = Reg.fromVReg(v);
-        const wr = root.reg.WritableReg.fromReg(r);
+        const wr = inst_mod.WritableReg.fromReg(r);
         try emit(.{ .movn = .{ .dst = wr, .imm = 0x5678, .shift = shift, .size = .size64 } }, &buffer);
         insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
         try testing.expectEqual(hw, (insn >> 21) & 0x3);
@@ -6935,9 +6935,9 @@ test "emit movn 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v13 = root.reg.VReg.new(13, .int);
+    const v13 = inst_mod.VReg.new(13, .int);
     const r13 = Reg.fromVReg(v13);
-    const wr13 = root.reg.WritableReg.fromReg(r13);
+    const wr13 = inst_mod.WritableReg.fromReg(r13);
 
     // Test shift 0
     try emit(.{ .movn = .{ .dst = wr13, .imm = 0x7777, .shift = 0, .size = .size32 } }, &buffer);
@@ -6948,9 +6948,9 @@ test "emit movn 32-bit" {
     buffer.data.clearRetainingCapacity();
 
     // Test shift 16
-    const v14 = root.reg.VReg.new(14, .int);
+    const v14 = inst_mod.VReg.new(14, .int);
     const r14 = Reg.fromVReg(v14);
-    const wr14 = root.reg.WritableReg.fromReg(r14);
+    const wr14 = inst_mod.WritableReg.fromReg(r14);
     try emit(.{ .movn = .{ .dst = wr14, .imm = 0x1111, .shift = 16, .size = .size32 } }, &buffer);
     const insn2 = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 1), (insn2 >> 21) & 0x3); // hw=1
@@ -6960,9 +6960,9 @@ test "emit stp 64-bit zero offset" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
@@ -6992,9 +6992,9 @@ test "emit stp 64-bit positive offset" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v10 = root.reg.VReg.new(10, .int);
-    const v11 = root.reg.VReg.new(11, .int);
-    const v12 = root.reg.VReg.new(12, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v11 = inst_mod.VReg.new(11, .int);
+    const v12 = inst_mod.VReg.new(12, .int);
     const r10 = Reg.fromVReg(v10);
     const r11 = Reg.fromVReg(v11);
     const r12 = Reg.fromVReg(v12);
@@ -7024,9 +7024,9 @@ test "emit stp 64-bit negative offset" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v20 = root.reg.VReg.new(20, .int);
-    const v21 = root.reg.VReg.new(21, .int);
-    const v22 = root.reg.VReg.new(22, .int);
+    const v20 = inst_mod.VReg.new(20, .int);
+    const v21 = inst_mod.VReg.new(21, .int);
+    const v22 = inst_mod.VReg.new(22, .int);
     const r20 = Reg.fromVReg(v20);
     const r21 = Reg.fromVReg(v21);
     const r22 = Reg.fromVReg(v22);
@@ -7056,9 +7056,9 @@ test "emit stp 32-bit zero offset" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v3 = root.reg.VReg.new(3, .int);
-    const v4 = root.reg.VReg.new(4, .int);
-    const v5 = root.reg.VReg.new(5, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
+    const v4 = inst_mod.VReg.new(4, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r3 = Reg.fromVReg(v3);
     const r4 = Reg.fromVReg(v4);
     const r5 = Reg.fromVReg(v5);
@@ -7088,9 +7088,9 @@ test "emit stp 32-bit with offset" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v6 = root.reg.VReg.new(6, .int);
-    const v7 = root.reg.VReg.new(7, .int);
-    const v8 = root.reg.VReg.new(8, .int);
+    const v6 = inst_mod.VReg.new(6, .int);
+    const v7 = inst_mod.VReg.new(7, .int);
+    const v8 = inst_mod.VReg.new(8, .int);
     const r6 = Reg.fromVReg(v6);
     const r7 = Reg.fromVReg(v7);
     const r8 = Reg.fromVReg(v8);
@@ -7121,14 +7121,14 @@ test "emit ldp 64-bit zero offset" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
-    const wr1 = root.reg.WritableReg.fromReg(r1);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+    const wr1 = inst_mod.WritableReg.fromReg(r1);
 
     // LDP X0, X1, [X2, #0]
     try emit(.{ .ldp = .{
@@ -7155,14 +7155,14 @@ test "emit ldp 64-bit positive offset" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v10 = root.reg.VReg.new(10, .int);
-    const v11 = root.reg.VReg.new(11, .int);
-    const v12 = root.reg.VReg.new(12, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v11 = inst_mod.VReg.new(11, .int);
+    const v12 = inst_mod.VReg.new(12, .int);
     const r10 = Reg.fromVReg(v10);
     const r11 = Reg.fromVReg(v11);
     const r12 = Reg.fromVReg(v12);
-    const wr10 = root.reg.WritableReg.fromReg(r10);
-    const wr11 = root.reg.WritableReg.fromReg(r11);
+    const wr10 = inst_mod.WritableReg.fromReg(r10);
+    const wr11 = inst_mod.WritableReg.fromReg(r11);
 
     // LDP X10, X11, [X12, #32]
     // Offset 32 bytes = 4 * 8 bytes, so imm7 = 4
@@ -7189,14 +7189,14 @@ test "emit ldp 64-bit negative offset" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v20 = root.reg.VReg.new(20, .int);
-    const v21 = root.reg.VReg.new(21, .int);
-    const v22 = root.reg.VReg.new(22, .int);
+    const v20 = inst_mod.VReg.new(20, .int);
+    const v21 = inst_mod.VReg.new(21, .int);
+    const v22 = inst_mod.VReg.new(22, .int);
     const r20 = Reg.fromVReg(v20);
     const r21 = Reg.fromVReg(v21);
     const r22 = Reg.fromVReg(v22);
-    const wr20 = root.reg.WritableReg.fromReg(r20);
-    const wr21 = root.reg.WritableReg.fromReg(r21);
+    const wr20 = inst_mod.WritableReg.fromReg(r20);
+    const wr21 = inst_mod.WritableReg.fromReg(r21);
 
     // LDP X20, X21, [X22, #-24]
     // Offset -24 bytes = -3 * 8 bytes, so imm7 = -3 (0x7D in 7-bit two's complement)
@@ -7223,14 +7223,14 @@ test "emit ldp 32-bit zero offset" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v3 = root.reg.VReg.new(3, .int);
-    const v4 = root.reg.VReg.new(4, .int);
-    const v5 = root.reg.VReg.new(5, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
+    const v4 = inst_mod.VReg.new(4, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r3 = Reg.fromVReg(v3);
     const r4 = Reg.fromVReg(v4);
     const r5 = Reg.fromVReg(v5);
-    const wr3 = root.reg.WritableReg.fromReg(r3);
-    const wr4 = root.reg.WritableReg.fromReg(r4);
+    const wr3 = inst_mod.WritableReg.fromReg(r3);
+    const wr4 = inst_mod.WritableReg.fromReg(r4);
 
     // LDP W3, W4, [X5, #0]
     try emit(.{ .ldp = .{
@@ -7257,14 +7257,14 @@ test "emit ldp 32-bit with offset" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v6 = root.reg.VReg.new(6, .int);
-    const v7 = root.reg.VReg.new(7, .int);
-    const v8 = root.reg.VReg.new(8, .int);
+    const v6 = inst_mod.VReg.new(6, .int);
+    const v7 = inst_mod.VReg.new(7, .int);
+    const v8 = inst_mod.VReg.new(8, .int);
     const r6 = Reg.fromVReg(v6);
     const r7 = Reg.fromVReg(v7);
     const r8 = Reg.fromVReg(v8);
-    const wr6 = root.reg.WritableReg.fromReg(r6);
-    const wr7 = root.reg.WritableReg.fromReg(r7);
+    const wr6 = inst_mod.WritableReg.fromReg(r6);
+    const wr7 = inst_mod.WritableReg.fromReg(r7);
 
     // LDP W6, W7, [X8, #16]
     // For 32-bit, offset is scaled by 4, so 16 bytes = imm7 of 4
@@ -7292,14 +7292,14 @@ test "emit ldp and stp with max positive offset" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
-    const wr1 = root.reg.WritableReg.fromReg(r1);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+    const wr1 = inst_mod.WritableReg.fromReg(r1);
 
     // Max positive offset for 7-bit signed: 63 * 8 = 504 bytes
     try emit(.{ .stp = .{
@@ -7332,14 +7332,14 @@ test "emit ldp and stp with max negative offset" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
-    const wr1 = root.reg.WritableReg.fromReg(r1);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+    const wr1 = inst_mod.WritableReg.fromReg(r1);
 
     // Max negative offset for 7-bit signed: -64 * 8 = -512 bytes
     try emit(.{ .stp = .{
@@ -7372,7 +7372,7 @@ test "emit br" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v5 = root.reg.VReg.new(5, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r5 = Reg.fromVReg(v5);
 
     // BR X5
@@ -7400,7 +7400,7 @@ test "emit br multiple registers" {
     for (registers) |reg_idx| {
         buffer.data.clearRetainingCapacity();
 
-        const vreg = root.reg.VReg.new(reg_idx, .int);
+        const vreg = inst_mod.VReg.new(reg_idx, .int);
         const reg = Reg.fromVReg(vreg);
 
         try emit(.{ .br = .{ .target = reg } }, &buffer);
@@ -7420,7 +7420,7 @@ test "emit blr" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v5 = root.reg.VReg.new(5, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r5 = Reg.fromVReg(v5);
 
     // BLR X5
@@ -7448,7 +7448,7 @@ test "emit blr multiple registers" {
     for (registers) |reg_idx| {
         buffer.data.clearRetainingCapacity();
 
-        const vreg = root.reg.VReg.new(reg_idx, .int);
+        const vreg = inst_mod.VReg.new(reg_idx, .int);
         const reg = Reg.fromVReg(vreg);
 
         try emit(.{ .blr = .{ .target = reg } }, &buffer);
@@ -7468,11 +7468,11 @@ test "emit bl indirect via CallTarget" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v10 = root.reg.VReg.new(10, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
     const r10 = Reg.fromVReg(v10);
 
     // BL with indirect target (should emit BLR)
-    const target = root.aarch64_inst.CallTarget{ .indirect = r10 };
+    const target = inst_mod.CallTarget{ .indirect = r10 };
     try emit(.{ .bl = .{ .target = target } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -7510,7 +7510,7 @@ test "emit ret with explicit register" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v15 = root.reg.VReg.new(15, .int);
+    const v15 = inst_mod.VReg.new(15, .int);
     const r15 = Reg.fromVReg(v15);
 
     // RET X15
@@ -7532,8 +7532,8 @@ test "cmp is alias for subs with xzr" {
     var buffer2 = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer2.deinit();
 
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
 
@@ -7545,8 +7545,8 @@ test "cmp is alias for subs with xzr" {
     } }, &buffer1);
 
     // Emit SUBS XZR, X1, X2
-    const xzr = Reg.fromPReg(root.reg.PReg.xzr);
-    const wxzr = root.reg.WritableReg.fromReg(xzr);
+    const xzr = Reg.fromPReg(inst_mod.PReg.xzr);
+    const wxzr = inst_mod.WritableReg.fromReg(xzr);
     try emit(.{ .subs_rr = .{
         .dst = wxzr,
         .src1 = r1,
@@ -7566,13 +7566,13 @@ test "emit ldr_reg 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // LDR X0, [X1, X2]
     try emit(.{ .ldr_reg = .{
@@ -7594,13 +7594,13 @@ test "emit ldr_reg 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v5 = root.reg.VReg.new(5, .int);
-    const v10 = root.reg.VReg.new(10, .int);
-    const v15 = root.reg.VReg.new(15, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v15 = inst_mod.VReg.new(15, .int);
     const r5 = Reg.fromVReg(v5);
     const r10 = Reg.fromVReg(v10);
     const r15 = Reg.fromVReg(v15);
-    const wr5 = root.reg.WritableReg.fromReg(r5);
+    const wr5 = inst_mod.WritableReg.fromReg(r5);
 
     // LDR W5, [X10, X15]
     try emit(.{ .ldr_reg = .{
@@ -7621,13 +7621,13 @@ test "emit ldr_ext sxtw 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // LDR X0, [X1, W2, SXTW]
     try emit(.{ .ldr_ext = .{
@@ -7649,13 +7649,13 @@ test "emit ldr_ext uxtw 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v3 = root.reg.VReg.new(3, .int);
-    const v4 = root.reg.VReg.new(4, .int);
-    const v5 = root.reg.VReg.new(5, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
+    const v4 = inst_mod.VReg.new(4, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r3 = Reg.fromVReg(v3);
     const r4 = Reg.fromVReg(v4);
     const r5 = Reg.fromVReg(v5);
-    const wr3 = root.reg.WritableReg.fromReg(r3);
+    const wr3 = inst_mod.WritableReg.fromReg(r3);
 
     // LDR X3, [X4, W5, UXTW]
     try emit(.{ .ldr_ext = .{
@@ -7677,13 +7677,13 @@ test "emit ldr_shifted 64-bit with LSL" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // LDR X0, [X1, X2, LSL #3]
     try emit(.{ .ldr_shifted = .{
@@ -7706,13 +7706,13 @@ test "emit ldr_shifted 32-bit with LSL" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v6 = root.reg.VReg.new(6, .int);
-    const v7 = root.reg.VReg.new(7, .int);
-    const v8 = root.reg.VReg.new(8, .int);
+    const v6 = inst_mod.VReg.new(6, .int);
+    const v7 = inst_mod.VReg.new(7, .int);
+    const v8 = inst_mod.VReg.new(8, .int);
     const r6 = Reg.fromVReg(v6);
     const r7 = Reg.fromVReg(v7);
     const r8 = Reg.fromVReg(v8);
-    const wr6 = root.reg.WritableReg.fromReg(r6);
+    const wr6 = inst_mod.WritableReg.fromReg(r6);
 
     // LDR W6, [X7, X8, LSL #2]
     try emit(.{ .ldr_shifted = .{
@@ -7735,9 +7735,9 @@ test "emit str_reg 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
@@ -7762,9 +7762,9 @@ test "emit str_reg 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v10 = root.reg.VReg.new(10, .int);
-    const v20 = root.reg.VReg.new(20, .int);
-    const v30 = root.reg.VReg.new(30, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v20 = inst_mod.VReg.new(20, .int);
+    const v30 = inst_mod.VReg.new(30, .int);
     const r10 = Reg.fromVReg(v10);
     const r20 = Reg.fromVReg(v20);
     const r30 = Reg.fromVReg(v30);
@@ -7788,9 +7788,9 @@ test "emit str_ext sxtw 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v3 = root.reg.VReg.new(3, .int);
-    const v4 = root.reg.VReg.new(4, .int);
-    const v5 = root.reg.VReg.new(5, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
+    const v4 = inst_mod.VReg.new(4, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r3 = Reg.fromVReg(v3);
     const r4 = Reg.fromVReg(v4);
     const r5 = Reg.fromVReg(v5);
@@ -7815,9 +7815,9 @@ test "emit str_ext uxtw 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v6 = root.reg.VReg.new(6, .int);
-    const v7 = root.reg.VReg.new(7, .int);
-    const v8 = root.reg.VReg.new(8, .int);
+    const v6 = inst_mod.VReg.new(6, .int);
+    const v7 = inst_mod.VReg.new(7, .int);
+    const v8 = inst_mod.VReg.new(8, .int);
     const r6 = Reg.fromVReg(v6);
     const r7 = Reg.fromVReg(v7);
     const r8 = Reg.fromVReg(v8);
@@ -7842,9 +7842,9 @@ test "emit str_shifted 64-bit with LSL" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v9 = root.reg.VReg.new(9, .int);
-    const v10 = root.reg.VReg.new(10, .int);
-    const v11 = root.reg.VReg.new(11, .int);
+    const v9 = inst_mod.VReg.new(9, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v11 = inst_mod.VReg.new(11, .int);
     const r9 = Reg.fromVReg(v9);
     const r10 = Reg.fromVReg(v10);
     const r11 = Reg.fromVReg(v11);
@@ -7870,9 +7870,9 @@ test "emit str_shifted 32-bit with LSL" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v12 = root.reg.VReg.new(12, .int);
-    const v13 = root.reg.VReg.new(13, .int);
-    const v14 = root.reg.VReg.new(14, .int);
+    const v12 = inst_mod.VReg.new(12, .int);
+    const v13 = inst_mod.VReg.new(13, .int);
+    const v14 = inst_mod.VReg.new(14, .int);
     const r12 = Reg.fromVReg(v12);
     const r13 = Reg.fromVReg(v13);
     const r14 = Reg.fromVReg(v14);
@@ -7898,13 +7898,13 @@ test "emit ldr/str all extend modes" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // Test all extend types
     const extend_types = [_]Inst.ExtendOp{ .uxtb, .uxth, .uxtw, .uxtx, .sxtb, .sxth, .sxtw, .sxtx };
@@ -7943,8 +7943,8 @@ test "cmn is alias for adds with xzr" {
     var buffer2 = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer2.deinit();
 
-    const v3 = root.reg.VReg.new(3, .int);
-    const v4 = root.reg.VReg.new(4, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
+    const v4 = inst_mod.VReg.new(4, .int);
     const r3 = Reg.fromVReg(v3);
     const r4 = Reg.fromVReg(v4);
 
@@ -7956,8 +7956,8 @@ test "cmn is alias for adds with xzr" {
     } }, &buffer1);
 
     // Emit ADDS XZR, X3, X4
-    const xzr = Reg.fromPReg(root.reg.PReg.xzr);
-    const wxzr = root.reg.WritableReg.fromReg(xzr);
+    const xzr = Reg.fromPReg(inst_mod.PReg.xzr);
+    const wxzr = inst_mod.WritableReg.fromReg(xzr);
     try emit(.{ .adds_rr = .{
         .dst = wxzr,
         .src1 = r3,
@@ -7977,11 +7977,11 @@ test "emit ldarb - verify correct encoding" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // LDARB W0, [X1] - encoding: 0x08dffc20
     try emit(.{ .ldarb = .{
@@ -7998,11 +7998,11 @@ test "emit ldarh - verify correct encoding" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v2 = root.reg.VReg.new(2, .int);
-    const v3 = root.reg.VReg.new(3, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
     const r2 = Reg.fromVReg(v2);
     const r3 = Reg.fromVReg(v3);
-    const wr2 = root.reg.WritableReg.fromReg(r2);
+    const wr2 = inst_mod.WritableReg.fromReg(r2);
 
     // LDARH W2, [X3] - encoding: 0x48dffc62
     try emit(.{ .ldarh = .{
@@ -8019,11 +8019,11 @@ test "emit ldar_w - verify correct encoding" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v4 = root.reg.VReg.new(4, .int);
-    const v5 = root.reg.VReg.new(5, .int);
+    const v4 = inst_mod.VReg.new(4, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r4 = Reg.fromVReg(v4);
     const r5 = Reg.fromVReg(v5);
-    const wr4 = root.reg.WritableReg.fromReg(r4);
+    const wr4 = inst_mod.WritableReg.fromReg(r4);
 
     // LDAR W4, [X5] - encoding: 0x88dffca4
     try emit(.{ .ldar_w = .{
@@ -8040,11 +8040,11 @@ test "emit ldar_x - verify correct encoding" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v6 = root.reg.VReg.new(6, .int);
-    const v7 = root.reg.VReg.new(7, .int);
+    const v6 = inst_mod.VReg.new(6, .int);
+    const v7 = inst_mod.VReg.new(7, .int);
     const r6 = Reg.fromVReg(v6);
     const r7 = Reg.fromVReg(v7);
-    const wr6 = root.reg.WritableReg.fromReg(r6);
+    const wr6 = inst_mod.WritableReg.fromReg(r6);
 
     // LDAR X6, [X7] - encoding: 0xc8dffce6
     try emit(.{ .ldar_x = .{
@@ -8061,8 +8061,8 @@ test "emit stlrb - verify correct encoding" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v8 = root.reg.VReg.new(8, .int);
-    const v9 = root.reg.VReg.new(9, .int);
+    const v8 = inst_mod.VReg.new(8, .int);
+    const v9 = inst_mod.VReg.new(9, .int);
     const r8 = Reg.fromVReg(v8);
     const r9 = Reg.fromVReg(v9);
 
@@ -8081,8 +8081,8 @@ test "emit stlrh - verify correct encoding" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v10 = root.reg.VReg.new(10, .int);
-    const v11 = root.reg.VReg.new(11, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v11 = inst_mod.VReg.new(11, .int);
     const r10 = Reg.fromVReg(v10);
     const r11 = Reg.fromVReg(v11);
 
@@ -8101,8 +8101,8 @@ test "emit stlr_w - verify correct encoding" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v12 = root.reg.VReg.new(12, .int);
-    const v13 = root.reg.VReg.new(13, .int);
+    const v12 = inst_mod.VReg.new(12, .int);
+    const v13 = inst_mod.VReg.new(13, .int);
     const r12 = Reg.fromVReg(v12);
     const r13 = Reg.fromVReg(v13);
 
@@ -8121,8 +8121,8 @@ test "emit stlr_x - verify correct encoding" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v14 = root.reg.VReg.new(14, .int);
-    const v15 = root.reg.VReg.new(15, .int);
+    const v14 = inst_mod.VReg.new(14, .int);
+    const v15 = inst_mod.VReg.new(15, .int);
     const r14 = Reg.fromVReg(v14);
     const r15 = Reg.fromVReg(v15);
 
@@ -8141,13 +8141,13 @@ test "emit ldr_shifted with no shift" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // LDR X0, [X1, X2, LSL #0] - No shift, S bit should be 0
     try emit(.{ .ldr_shifted = .{
@@ -8170,9 +8170,9 @@ test "emit str_shifted with no shift" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v5 = root.reg.VReg.new(5, .int);
-    const v6 = root.reg.VReg.new(6, .int);
-    const v7 = root.reg.VReg.new(7, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
+    const v6 = inst_mod.VReg.new(6, .int);
+    const v7 = inst_mod.VReg.new(7, .int);
     const r5 = Reg.fromVReg(v5);
     const r6 = Reg.fromVReg(v6);
     const r7 = Reg.fromVReg(v7);
@@ -8198,13 +8198,13 @@ test "emit ldr_shifted verifies encoding format" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v10 = root.reg.VReg.new(10, .int);
-    const v11 = root.reg.VReg.new(11, .int);
-    const v12 = root.reg.VReg.new(12, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v11 = inst_mod.VReg.new(11, .int);
+    const v12 = inst_mod.VReg.new(12, .int);
     const r10 = Reg.fromVReg(v10);
     const r11 = Reg.fromVReg(v11);
     const r12 = Reg.fromVReg(v12);
-    const wr10 = root.reg.WritableReg.fromReg(r10);
+    const wr10 = inst_mod.WritableReg.fromReg(r10);
 
     // LDR X10, [X11, X12, LSL #3]
     try emit(.{ .ldr_shifted = .{
@@ -8260,9 +8260,9 @@ test "emit str_shifted verifies encoding format" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v20 = root.reg.VReg.new(20, .int);
-    const v21 = root.reg.VReg.new(21, .int);
-    const v22 = root.reg.VReg.new(22, .int);
+    const v20 = inst_mod.VReg.new(20, .int);
+    const v21 = inst_mod.VReg.new(21, .int);
+    const v22 = inst_mod.VReg.new(22, .int);
     const r20 = Reg.fromVReg(v20);
     const r21 = Reg.fromVReg(v21);
     const r22 = Reg.fromVReg(v22);
@@ -8318,8 +8318,8 @@ test "emit str_shifted verifies encoding format" {
 }
 
 test "emit vec_add 4s" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -8380,8 +8380,8 @@ test "emit vec_add 4s" {
 }
 
 test "emit vec_add 8b" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -8415,8 +8415,8 @@ test "emit vec_add 8b" {
 }
 
 test "emit vec_sub 8h" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -8466,8 +8466,8 @@ test "emit vec_sub 8h" {
 }
 
 test "emit vec_mul 2s" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -8514,8 +8514,8 @@ test "emit vec_mul 2s" {
 }
 
 test "emit vec_mul 16b" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -8549,8 +8549,8 @@ test "emit vec_mul 16b" {
 }
 
 test "emit vec_add 2d" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -8587,11 +8587,11 @@ test "emit sxtb 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // SXTB W0, W1 (sign extend byte to 32-bit)
     try emit(.{ .sxtb = .{
@@ -8613,11 +8613,11 @@ test "emit sxtb 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v2 = root.reg.VReg.new(2, .int);
-    const v3 = root.reg.VReg.new(3, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
+    const v3 = inst_mod.VReg.new(3, .int);
     const r2 = Reg.fromVReg(v2);
     const r3 = Reg.fromVReg(v3);
-    const wr2 = root.reg.WritableReg.fromReg(r2);
+    const wr2 = inst_mod.WritableReg.fromReg(r2);
 
     // SXTB X2, W3 (sign extend byte to 64-bit)
     try emit(.{ .sxtb = .{
@@ -8639,11 +8639,11 @@ test "emit sxth 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v4 = root.reg.VReg.new(4, .int);
-    const v5 = root.reg.VReg.new(5, .int);
+    const v4 = inst_mod.VReg.new(4, .int);
+    const v5 = inst_mod.VReg.new(5, .int);
     const r4 = Reg.fromVReg(v4);
     const r5 = Reg.fromVReg(v5);
-    const wr4 = root.reg.WritableReg.fromReg(r4);
+    const wr4 = inst_mod.WritableReg.fromReg(r4);
 
     // SXTH W4, W5 (sign extend halfword to 32-bit)
     try emit(.{ .sxth = .{
@@ -8665,11 +8665,11 @@ test "emit sxth 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v6 = root.reg.VReg.new(6, .int);
-    const v7 = root.reg.VReg.new(7, .int);
+    const v6 = inst_mod.VReg.new(6, .int);
+    const v7 = inst_mod.VReg.new(7, .int);
     const r6 = Reg.fromVReg(v6);
     const r7 = Reg.fromVReg(v7);
-    const wr6 = root.reg.WritableReg.fromReg(r6);
+    const wr6 = inst_mod.WritableReg.fromReg(r6);
 
     // SXTH X6, W7 (sign extend halfword to 64-bit)
     try emit(.{ .sxth = .{
@@ -8691,11 +8691,11 @@ test "emit sxtw" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v8 = root.reg.VReg.new(8, .int);
-    const v9 = root.reg.VReg.new(9, .int);
+    const v8 = inst_mod.VReg.new(8, .int);
+    const v9 = inst_mod.VReg.new(9, .int);
     const r8 = Reg.fromVReg(v8);
     const r9 = Reg.fromVReg(v9);
-    const wr8 = root.reg.WritableReg.fromReg(r8);
+    const wr8 = inst_mod.WritableReg.fromReg(r8);
 
     // SXTW X8, W9 (sign extend word to 64-bit)
     try emit(.{ .sxtw = .{
@@ -8716,11 +8716,11 @@ test "emit uxtb 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v10 = root.reg.VReg.new(10, .int);
-    const v11 = root.reg.VReg.new(11, .int);
+    const v10 = inst_mod.VReg.new(10, .int);
+    const v11 = inst_mod.VReg.new(11, .int);
     const r10 = Reg.fromVReg(v10);
     const r11 = Reg.fromVReg(v11);
-    const wr10 = root.reg.WritableReg.fromReg(r10);
+    const wr10 = inst_mod.WritableReg.fromReg(r10);
 
     // UXTB W10, W11 (zero extend byte to 32-bit)
     try emit(.{ .uxtb = .{
@@ -8742,11 +8742,11 @@ test "emit uxtb 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v12 = root.reg.VReg.new(12, .int);
-    const v13 = root.reg.VReg.new(13, .int);
+    const v12 = inst_mod.VReg.new(12, .int);
+    const v13 = inst_mod.VReg.new(13, .int);
     const r12 = Reg.fromVReg(v12);
     const r13 = Reg.fromVReg(v13);
-    const wr12 = root.reg.WritableReg.fromReg(r12);
+    const wr12 = inst_mod.WritableReg.fromReg(r12);
 
     // UXTB X12, W13 (zero extend byte to 64-bit)
     try emit(.{ .uxtb = .{
@@ -8768,11 +8768,11 @@ test "emit uxth 32-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v14 = root.reg.VReg.new(14, .int);
-    const v15 = root.reg.VReg.new(15, .int);
+    const v14 = inst_mod.VReg.new(14, .int);
+    const v15 = inst_mod.VReg.new(15, .int);
     const r14 = Reg.fromVReg(v14);
     const r15 = Reg.fromVReg(v15);
-    const wr14 = root.reg.WritableReg.fromReg(r14);
+    const wr14 = inst_mod.WritableReg.fromReg(r14);
 
     // UXTH W14, W15 (zero extend halfword to 32-bit)
     try emit(.{ .uxth = .{
@@ -8794,11 +8794,11 @@ test "emit uxth 64-bit" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v16 = root.reg.VReg.new(16, .int);
-    const v17 = root.reg.VReg.new(17, .int);
+    const v16 = inst_mod.VReg.new(16, .int);
+    const v17 = inst_mod.VReg.new(17, .int);
     const r16 = Reg.fromVReg(v16);
     const r17 = Reg.fromVReg(v17);
-    const wr16 = root.reg.WritableReg.fromReg(r16);
+    const wr16 = inst_mod.WritableReg.fromReg(r16);
 
     // UXTH X16, W17 (zero extend halfword to 64-bit)
     try emit(.{ .uxth = .{
@@ -8820,11 +8820,11 @@ test "emit extend instructions - verify against ARM manual examples" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // Test SXTB W0, W1 encoding: should be 0x13001C20
     buffer.reset();
@@ -8917,8 +8917,8 @@ test "emit extend instructions - verify against ARM manual examples" {
 }
 
 test "emit adr positive offset" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -8955,8 +8955,8 @@ test "emit adr positive offset" {
 }
 
 test "emit adr negative offset" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -8989,8 +8989,8 @@ test "emit adr negative offset" {
 }
 
 test "emit adr zero offset" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9019,8 +9019,8 @@ test "emit adr zero offset" {
 }
 
 test "emit adrp positive offset" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9055,8 +9055,8 @@ test "emit adrp positive offset" {
 }
 
 test "emit adrp negative offset" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9089,8 +9089,8 @@ test "emit adrp negative offset" {
 }
 
 test "emit adr max positive offset" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9116,8 +9116,8 @@ test "emit adr max positive offset" {
 }
 
 test "emit adr max negative offset" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9144,8 +9144,8 @@ test "emit adr max negative offset" {
 }
 
 test "emit adr/adrp different registers" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9170,8 +9170,8 @@ test "emit adr/adrp different registers" {
 }
 
 test "emit ldr_pre 64-bit positive offset" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9213,8 +9213,8 @@ test "emit ldr_pre 64-bit positive offset" {
 }
 
 test "emit ldr_pre 64-bit negative offset" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9251,8 +9251,8 @@ test "emit ldr_pre 64-bit negative offset" {
 }
 
 test "emit ldr_pre 32-bit" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9286,8 +9286,8 @@ test "emit ldr_pre 32-bit" {
 }
 
 test "emit ldr_post 64-bit positive offset" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9324,8 +9324,8 @@ test "emit ldr_post 64-bit positive offset" {
 }
 
 test "emit ldr_post 64-bit negative offset" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9362,8 +9362,8 @@ test "emit ldr_post 64-bit negative offset" {
 }
 
 test "emit ldr_post 32-bit" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9397,8 +9397,8 @@ test "emit ldr_post 32-bit" {
 }
 
 test "emit str_pre 64-bit positive offset" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9438,8 +9438,8 @@ test "emit str_pre 64-bit positive offset" {
 }
 
 test "emit str_pre 64-bit negative offset" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9475,8 +9475,8 @@ test "emit str_pre 64-bit negative offset" {
 }
 
 test "emit str_pre 32-bit" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9509,8 +9509,8 @@ test "emit str_pre 32-bit" {
 }
 
 test "emit str_post 64-bit positive offset" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9546,8 +9546,8 @@ test "emit str_post 64-bit positive offset" {
 }
 
 test "emit str_post 64-bit negative offset" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9583,8 +9583,8 @@ test "emit str_post 64-bit negative offset" {
 }
 
 test "emit str_post 32-bit" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9617,8 +9617,8 @@ test "emit str_post 32-bit" {
 }
 
 test "emit ldr/str pre/post index boundary values" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9672,8 +9672,8 @@ test "emit ldr/str pre/post index boundary values" {
 }
 
 test "emit ldr/str pre/post verify opcode differences" {
-    const VReg = root.reg.VReg;
-    const WritableReg = root.reg.WritableReg;
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -9745,13 +9745,13 @@ test "emit fadd single-precision" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .float);
-    const v1 = root.reg.VReg.new(1, .float);
-    const v2 = root.reg.VReg.new(2, .float);
+    const v0 = inst_mod.VReg.new(0, .float);
+    const v1 = inst_mod.VReg.new(1, .float);
+    const v2 = inst_mod.VReg.new(2, .float);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // FADD S0, S1, S2
     try emit(.{ .fadd_s = .{
@@ -9782,13 +9782,13 @@ test "emit fadd double-precision" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v3 = root.reg.VReg.new(3, .float);
-    const v4 = root.reg.VReg.new(4, .float);
-    const v5 = root.reg.VReg.new(5, .float);
+    const v3 = inst_mod.VReg.new(3, .float);
+    const v4 = inst_mod.VReg.new(4, .float);
+    const v5 = inst_mod.VReg.new(5, .float);
     const r3 = Reg.fromVReg(v3);
     const r4 = Reg.fromVReg(v4);
     const r5 = Reg.fromVReg(v5);
-    const wr3 = root.reg.WritableReg.fromReg(r3);
+    const wr3 = inst_mod.WritableReg.fromReg(r3);
 
     // FADD D3, D4, D5
     try emit(.{ .fadd_d = .{
@@ -9811,13 +9811,13 @@ test "emit fsub and fmul" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .float);
-    const v1 = root.reg.VReg.new(1, .float);
-    const v2 = root.reg.VReg.new(2, .float);
+    const v0 = inst_mod.VReg.new(0, .float);
+    const v1 = inst_mod.VReg.new(1, .float);
+    const v2 = inst_mod.VReg.new(2, .float);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // FSUB S0, S1, S2
     try emit(.{ .fsub_s = .{
@@ -9854,11 +9854,11 @@ test "emit fmov register and immediate" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .float);
-    const v1 = root.reg.VReg.new(1, .float);
+    const v0 = inst_mod.VReg.new(0, .float);
+    const v1 = inst_mod.VReg.new(1, .float);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // FMOV S0, S1
     try emit(.{ .fmov_rr_s = .{
@@ -9882,11 +9882,11 @@ test "emit fcmp and fcvt" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .float);
-    const v1 = root.reg.VReg.new(1, .float);
+    const v0 = inst_mod.VReg.new(0, .float);
+    const v1 = inst_mod.VReg.new(1, .float);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // FCMP S0, S1
     try emit(.{ .fcmp_s = .{
@@ -9910,12 +9910,12 @@ test "emit scvtf and fcvtzs conversions" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0_int = root.reg.VReg.new(0, .int);
-    const v1_float = root.reg.VReg.new(1, .float);
+    const v0_int = inst_mod.VReg.new(0, .int);
+    const v1_float = inst_mod.VReg.new(1, .float);
     const r0 = Reg.fromVReg(v0_int);
     const r1 = Reg.fromVReg(v1_float);
-    const wr1 = root.reg.WritableReg.fromReg(r1);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr1 = inst_mod.WritableReg.fromReg(r1);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // SCVTF S1, W0
     try emit(.{ .scvtf_w_to_s = .{
@@ -9939,13 +9939,13 @@ test "emit fneg fabs fmax fmin" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .float);
-    const v1 = root.reg.VReg.new(1, .float);
-    const v2 = root.reg.VReg.new(2, .float);
+    const v0 = inst_mod.VReg.new(0, .float);
+    const v1 = inst_mod.VReg.new(1, .float);
+    const v2 = inst_mod.VReg.new(2, .float);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // FNEG S0, S1
     try emit(.{ .fneg_s = .{
@@ -9991,14 +9991,14 @@ test "emit ldxr and stxr word" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
-    const wr2 = root.reg.WritableReg.fromReg(r2);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+    const wr2 = inst_mod.WritableReg.fromReg(r2);
 
     // LDXR W0, [X1] - 32-bit
     try emit(.{ .ldxr_w = .{
@@ -10025,14 +10025,14 @@ test "emit ldxr and stxr doubleword" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
-    const wr2 = root.reg.WritableReg.fromReg(r2);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+    const wr2 = inst_mod.WritableReg.fromReg(r2);
 
     // LDXR X0, [X1] - 64-bit
     try emit(.{ .ldxr_x = .{
@@ -10058,14 +10058,14 @@ test "emit ldxrb ldxrh stxrb stxrh" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
-    const wr2 = root.reg.WritableReg.fromReg(r2);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+    const wr2 = inst_mod.WritableReg.fromReg(r2);
 
     // LDXRB W0, [X1]
     try emit(.{ .ldxrb = .{
@@ -10111,14 +10111,14 @@ test "emit ldaxr and stlxr with acquire/release" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
-    const wr2 = root.reg.WritableReg.fromReg(r2);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+    const wr2 = inst_mod.WritableReg.fromReg(r2);
 
     // LDAXR W0, [X1] - acquire (o0=1)
     try emit(.{ .ldaxr_w = .{
@@ -10164,13 +10164,13 @@ test "emit ldadd atomic operations" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // LDADD W0, W1, [X2] - 32-bit no ordering
     try emit(.{ .ldadd = .{
@@ -10236,13 +10236,13 @@ test "emit ldclr ldset ldeor atomic operations" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
-    const wr0 = root.reg.WritableReg.fromReg(r0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // LDCLR X0, X1, [X2] - clear bits
     try emit(.{ .ldclr = .{
@@ -10284,9 +10284,9 @@ test "emit cas compare and swap" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    const v0 = root.reg.VReg.new(0, .int);
-    const v1 = root.reg.VReg.new(1, .int);
-    const v2 = root.reg.VReg.new(2, .int);
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
@@ -11093,7 +11093,7 @@ fn emitVecRev64(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.Ma
 /// USHR: 0Q 1 01111 immh immb 000001 Rn Rd
 /// SSHR: 0Q 0 01111 immh immb 000001 Rn Rd
 fn emitVecShiftImm(
-    op: root.aarch64_inst.VecShiftImmOp,
+    op: inst_mod.VecShiftImmOp,
     dst: Reg,
     src: Reg,
     vec_size: VectorSize,
@@ -12128,7 +12128,7 @@ pub fn emitLoadGlobal(dst: Reg, symbol: []const u8, size: OperandSize, buffer: *
 /// MRS - Move from System Register
 /// Encoding: 1101 0101 0011 SSSSSSS SSSSS Rt
 /// where S is the system register encoding and Rt is the destination register
-fn emitMrs(dst: Reg, sysreg: root.aarch64_inst.SystemReg, buffer: *buffer_mod.MachBuffer) !void {
+fn emitMrs(dst: Reg, sysreg: inst_mod.SystemReg, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const sys_enc: u15 = sysreg.encoding();
 
@@ -12311,7 +12311,7 @@ fn emitVecFcvtn(dst: Reg, src: Reg, high: bool, buffer: *buffer_mod.MachBuffer) 
 /// MSR - Move to System Register
 /// Encoding: 1101 0101 0001 SSSSSSS SSSSS Rt
 /// where S is the system register encoding and Rt is the source register
-fn emitMsr(sysreg: root.aarch64_inst.SystemReg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
+fn emitMsr(sysreg: inst_mod.SystemReg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
     const rt = hwEnc(src);
     const sys_enc: u15 = sysreg.encoding();
 
