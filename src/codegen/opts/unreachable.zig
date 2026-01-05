@@ -71,9 +71,7 @@ pub const UCE = struct {
         try self.reachable.put(entry, {});
 
         // BFS through CFG
-        while (self.worklist.items.len > 0) {
-            const block = self.worklist.pop();
-
+        while (self.worklist.pop()) |block| {
             // Visit all successors
             var succ_iter = cfg.succIter(block);
             while (succ_iter.next()) |succ| {
@@ -88,14 +86,14 @@ pub const UCE = struct {
     /// Remove unreachable blocks from the function.
     fn removeUnreachableBlocks(self: *UCE, func: *Function) !bool {
         var removed = false;
-        var dead_blocks = std.ArrayList(Block).init(self.allocator);
-        defer dead_blocks.deinit();
+        var dead_blocks = std.ArrayList(Block){};
+        defer dead_blocks.deinit(self.allocator);
 
         // Collect unreachable blocks
         var block_iter = func.layout.blockIter();
         while (block_iter.next()) |block| {
             if (!self.reachable.contains(block)) {
-                try dead_blocks.append(block);
+                try dead_blocks.append(self.allocator, block);
             }
         }
 
@@ -111,8 +109,8 @@ pub const UCE = struct {
     /// Remove instructions after terminators within blocks.
     fn removeDeadInsts(self: *UCE, func: *Function) !bool {
         var removed = false;
-        var dead_insts = std.ArrayList(Inst).init(self.allocator);
-        defer dead_insts.deinit();
+        var dead_insts = std.ArrayList(Inst){};
+        defer dead_insts.deinit(self.allocator);
 
         // Check each reachable block for dead instructions
         var block_iter = func.layout.blockIter();
@@ -124,7 +122,7 @@ pub const UCE = struct {
             while (inst_iter.next()) |inst| {
                 if (found_terminator) {
                     // Instruction after terminator - unreachable
-                    try dead_insts.append(inst);
+                    try dead_insts.append(self.allocator, inst);
                 } else {
                     const inst_data = func.dfg.insts.get(inst) orelse continue;
                     if (self.isTerminator(inst_data.opcode())) {
