@@ -1093,6 +1093,7 @@ pub fn aarch64_sadd_overflow_cin(
 }
 
 /// Constructor: uadd_overflow_trap - unsigned add with overflow trap.
+/// Emits ADDS to set carry flag, B.CC to skip trap, UDF to trap on overflow.
 pub fn aarch64_uadd_overflow_trap(
     ctx: *IsleContext,
     ty: Type,
@@ -1100,12 +1101,37 @@ pub fn aarch64_uadd_overflow_trap(
     b: Value,
     code: u32,
 ) !void {
-    _ = ty;
-    _ = a;
-    _ = b;
-    _ = code;
-    _ = ctx;
-    @panic("TODO: Implement uadd_overflow_trap - needs ADDS + B.VS + BRK");
+    const size = ctx.typeToSize(ty);
+    const reg_a = try ctx.getValueReg(a, .int);
+    const reg_b = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    // ADDS dst, a, b (sets carry flag on unsigned overflow)
+    try ctx.emit(.{ .adds_rr = .{
+        .dst = dst,
+        .src1 = reg_a,
+        .src2 = reg_b,
+        .size = size,
+    } });
+
+    // Allocate skip label
+    const skip_label = ctx.lower_ctx.allocLabel();
+
+    // B.CC skip (branch if no carry - no overflow)
+    try ctx.emit(.{
+        .b_cond = .{
+            .cond = .lo, // LO = no carry (inverse of CS/HS)
+            .target = .{ .label = skip_label },
+        },
+    });
+
+    // UDF (trap on overflow)
+    try ctx.emit(.{ .udf = .{
+        .imm = @intCast(code),
+    } });
+
+    // Bind skip label
+    ctx.lower_ctx.bindLabel(skip_label);
 }
 
 /// Constructor: return_call - direct tail call.
