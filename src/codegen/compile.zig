@@ -1525,6 +1525,45 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .size = size,
                     },
                 });
+            } else if (data.opcode == .irsub_imm) {
+                // Reverse subtract immediate: result = imm - arg
+                // Implement as: NEG dst, arg; ADD dst, dst, #imm
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                // NEG dst, src (dst = -src)
+                try builder.emit(Inst{
+                    .neg = .{
+                        .dst = dst,
+                        .src = src,
+                        .size = size,
+                    },
+                });
+
+                // ADD dst, dst, #imm (dst = -src + imm = imm - src)
+                const imm_val = data.imm.value;
+                const imm_u16: u16 = @intCast(@mod(imm_val, 4096));
+
+                try builder.emit(Inst{
+                    .add_imm = .{
+                        .dst = dst,
+                        .src = Reg.fromVReg(result_vreg),
+                        .imm = imm_u16,
+                        .size = size,
+                    },
+                });
             } else {
                 try builder.emit(Inst.nop);
             }
