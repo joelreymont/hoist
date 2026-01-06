@@ -1665,7 +1665,7 @@ pub const Inst = union(enum) {
         op: VecShiftImmOp,
         dst: WritableReg,
         rn: Reg,
-        size: VectorSize,
+        size: VecElemSize,
         imm: u8,
     },
 
@@ -2141,6 +2141,16 @@ pub const VecElemSize = enum {
         };
     }
 
+    /// Returns log2 of element size in bits (for encoding)
+    pub fn elemSizeLog2(self: VecElemSize) u32 {
+        return switch (self) {
+            .size8x8, .size8x16 => 0, // 8-bit = 2^0 bytes
+            .size16x4, .size16x8 => 1, // 16-bit = 2^1 bytes
+            .size32x2, .size32x4 => 2, // 32-bit = 2^2 bytes
+            .size64x2 => 3, // 64-bit = 2^3 bytes
+        };
+    }
+
     pub fn laneCount(self: VecElemSize) u32 {
         return switch (self) {
             .size8x8 => 8,
@@ -2150,6 +2160,24 @@ pub const VecElemSize = enum {
             .size32x2 => 2,
             .size32x4 => 4,
             .size64x2 => 2,
+        };
+    }
+
+    /// Returns the Q bit for vector encoding (0 = 64-bit, 1 = 128-bit)
+    pub fn qBit(self: VecElemSize) u1 {
+        return switch (self) {
+            .size8x8, .size16x4, .size32x2 => 0,
+            .size8x16, .size16x8, .size32x4, .size64x2 => 1,
+        };
+    }
+
+    /// Returns the size field for vector encoding (element size in encoding)
+    pub fn sizeBits(self: VecElemSize) u2 {
+        return switch (self) {
+            .size8x8, .size8x16 => 0b00,
+            .size16x4, .size16x8 => 0b01,
+            .size32x2, .size32x4 => 0b10,
+            .size64x2 => 0b11,
         };
     }
 
@@ -2421,7 +2449,7 @@ pub const SystemReg = enum(u16) {
 
     /// Get the encoding for MRS/MSR instructions.
     pub fn encoding(self: SystemReg) u15 {
-        return @intFromEnum(self);
+        return @intCast(@intFromEnum(self));
     }
 
     pub fn format(self: SystemReg, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {

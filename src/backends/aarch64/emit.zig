@@ -153,7 +153,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .mrs => |i| try emitMrs(i.dst.toReg(), i.sysreg, buffer),
         .msr => |i| try emitMsr(i.sysreg, i.src, buffer),
 
-        else => ("Unimplemented instruction in emit"),
+        else => @panic("Unimplemented instruction in emit"),
     }
 }
 
@@ -10104,7 +10104,7 @@ test "emit memory barriers" {
 
 /// Vector ADD (NEON): ADD Vd.T, Vn.T, Vm.T
 /// Encoding: Q|0|0|01110|size|1|Rm|100001|Rn|Rd
-fn emitVecAdd(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecAdd(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10127,7 +10127,7 @@ fn emitVecAdd(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buf
 
 /// Vector SUB (NEON): SUB Vd.T, Vn.T, Vm.T
 /// Encoding: Q|0|1|01110|size|1|Rm|100001|Rn|Rd
-fn emitVecSub(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecSub(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10150,7 +10150,7 @@ fn emitVecSub(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buf
 
 /// Vector ADDP (NEON): ADDP Vd.T, Vn.T, Vm.T (pairwise add)
 /// Encoding: Q|0|0|01110|size|1|Rm|101111|Rn|Rd
-fn emitVecAddp(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecAddp(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10173,7 +10173,7 @@ fn emitVecAddp(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
 
 /// Vector EXT (NEON): EXT Vd.T, Vn.T, Vm.T, #index
 /// Encoding: Q|0|0|101110|000|Rm|0|index|Rn|Rd
-fn emitVecExt(dst: Reg, src1: Reg, src2: Reg, index: u8, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecExt(dst: Reg, src1: Reg, src2: Reg, index: u8, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10195,7 +10195,7 @@ fn emitVecExt(dst: Reg, src1: Reg, src2: Reg, index: u8, vec_size: VectorSize, b
 
 /// Vector MUL (NEON): MUL Vd.T, Vn.T, Vm.T
 /// Encoding: Q|0|0|01110|size|1|Rm|100111|Rn|Rd
-fn emitVecMul(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecMul(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10218,7 +10218,7 @@ fn emitVecMul(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buf
 
 /// Vector CMEQ (compare equal): CMEQ Vd.T, Vn.T, Vm.T
 /// Encoding: Q|1|0|01110|size|1|Rm|100011|Rn|Rd
-fn emitVecCmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecCmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10241,7 +10241,7 @@ fn emitVecCmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
 
 /// Vector CMGT (compare greater than, signed): CMGT Vd.T, Vn.T, Vm.T
 /// Encoding: Q|0|0|01110|size|1|Rm|001101|Rn|Rd
-fn emitVecCmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecCmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10264,7 +10264,7 @@ fn emitVecCmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
 
 /// Vector CMGE (compare greater or equal, signed): CMGE Vd.T, Vn.T, Vm.T
 /// Encoding: Q|0|0|01110|size|1|Rm|001111|Rn|Rd
-fn emitVecCmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecCmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10348,7 +10348,7 @@ fn emitVecEor(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !v
 /// Vector FADD (FP add): FADD Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|0|sz|1|Rm|110101|Rn|Rd
 /// sz: 0 for .2s/.4s, 1 for .2d
-fn emitVecFadd(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecFadd(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10377,7 +10377,7 @@ fn emitVecFadd(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
 
 /// Vector FSUB (FP subtract): FSUB Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|1|sz|1|Rm|110101|Rn|Rd
-fn emitVecFsub(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecFsub(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10405,7 +10405,7 @@ fn emitVecFsub(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
 
 /// Vector FMUL (FP multiply): FMUL Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|1|01110|0|sz|1|Rm|110111|Rn|Rd
-fn emitVecFmul(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecFmul(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10433,7 +10433,7 @@ fn emitVecFmul(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
 
 /// Vector FDIV (FP divide): FDIV Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|1|01110|1|sz|1|Rm|111111|Rn|Rd
-fn emitVecFdiv(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecFdiv(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10461,7 +10461,7 @@ fn emitVecFdiv(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
 
 /// ADDV (add across vector): ADDV Vd, Vn.T
 /// Encoding: 0|Q|0|01110|size|11000|110110|Rn|Rd
-fn emitAddv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitAddv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q = vec_size.qBit();
@@ -10482,7 +10482,7 @@ fn emitAddv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBu
 
 /// SMINV (signed minimum across vector): SMINV Vd, Vn.T
 /// Encoding: 0|Q|0|01110|size|11000|110010|Rn|Rd
-fn emitSminv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitSminv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q = vec_size.qBit();
@@ -10503,7 +10503,7 @@ fn emitSminv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachB
 
 /// SMAXV (signed maximum across vector): SMAXV Vd, Vn.T
 /// Encoding: 0|Q|0|01110|size|11000|110100|Rn|Rd
-fn emitSmaxv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitSmaxv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q = vec_size.qBit();
@@ -10524,7 +10524,7 @@ fn emitSmaxv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachB
 
 /// UMINV (unsigned minimum across vector): UMINV Vd, Vn.T
 /// Encoding: 0|Q|1|01110|size|11000|110010|Rn|Rd
-fn emitUminv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitUminv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q = vec_size.qBit();
@@ -10545,7 +10545,7 @@ fn emitUminv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachB
 
 /// UMAXV (unsigned maximum across vector): UMAXV Vd, Vn.T
 /// Encoding: 0|Q|1|01110|size|11000|110100|Rn|Rd
-fn emitUmaxv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitUmaxv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q = vec_size.qBit();
@@ -10566,7 +10566,7 @@ fn emitUmaxv(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachB
 
 /// ZIP1 (zip vectors, primary): ZIP1 Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|0|Rm|001110|Rn|Rd
-fn emitZip1(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitZip1(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10589,7 +10589,7 @@ fn emitZip1(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffe
 
 /// ZIP2 (zip vectors, secondary): ZIP2 Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|0|Rm|011110|Rn|Rd
-fn emitZip2(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitZip2(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10612,7 +10612,7 @@ fn emitZip2(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffe
 
 /// UZP1 (unzip vectors, primary): UZP1 Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|0|Rm|000110|Rn|Rd
-fn emitUzp1(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitUzp1(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10635,7 +10635,7 @@ fn emitUzp1(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffe
 
 /// UZP2 (unzip vectors, secondary): UZP2 Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|0|Rm|010110|Rn|Rd
-fn emitUzp2(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitUzp2(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10658,7 +10658,7 @@ fn emitUzp2(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffe
 
 /// TRN1 (transpose vectors, primary): TRN1 Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|0|Rm|001010|Rn|Rd
-fn emitTrn1(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitTrn1(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10681,7 +10681,7 @@ fn emitTrn1(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffe
 
 /// TRN2 (transpose vectors, secondary): TRN2 Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|0|Rm|011010|Rn|Rd
-fn emitTrn2(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitTrn2(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -10704,7 +10704,7 @@ fn emitTrn2(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffe
 
 /// REV16 - Reverse bytes within 16-bit halfwords (vector)
 /// Encoding: 0|Q|001110|size|100000|00001|10|Rn|Rd
-fn emitVecRev16(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecRev16(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q: u32 = vec_size.qBit();
@@ -10720,12 +10720,12 @@ fn emitVecRev16(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.Ma
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// REV32 - Reverse bytes within 32-bit words (vector)
 /// Encoding: 0|Q|101110|size|100000|00000|10|Rn|Rd
-fn emitVecRev32(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecRev32(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q: u32 = vec_size.qBit();
@@ -10741,12 +10741,12 @@ fn emitVecRev32(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.Ma
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// REV64 - Reverse bytes within 64-bit doublewords (vector)
 /// Encoding: 0|Q|001110|size|100000|00000|10|Rn|Rd
-fn emitVecRev64(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecRev64(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q: u32 = vec_size.qBit();
@@ -10762,7 +10762,7 @@ fn emitVecRev64(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.Ma
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// Vector shift by immediate
@@ -10773,7 +10773,7 @@ fn emitVecShiftImm(
     op: inst_mod.VecShiftImmOp,
     dst: Reg,
     src: Reg,
-    vec_size: VectorSize,
+    vec_size: VecElemSize,
     imm: u8,
     buffer: *buffer_mod.MachBuffer,
 ) !void {
@@ -10783,7 +10783,7 @@ fn emitVecShiftImm(
 
     // Encode immh:immb based on element size
     // immh:immb = shift_amount + (8 << element_size_log2)
-    const elem_size_log2 = vec_size.elemSizeLog2();
+    const elem_size_log2: u5 = @intCast(vec_size.elemSizeLog2());
     const immh_immb: u32 = (@as(u32, imm) + (@as(u32, 8) << elem_size_log2));
     const immh: u32 = (immh_immb >> 3) & 0xF;
     const immb: u32 = immh_immb & 0x7;
@@ -10810,13 +10810,13 @@ fn emitVecShiftImm(
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// LD1 (load single structure, one register): LD1 {Vt.T}, [Xn]
 /// Encoding: 0|Q|0011010|L|0|00000|opcode|size|Rn|Rt
 /// L=1 for load, opcode=0111 for single register
-fn emitLd1(dst: Reg, addr: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitLd1(dst: Reg, addr: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rt = hwEnc(dst);
     const rn = hwEnc(addr);
     const q = vec_size.qBit();
@@ -10839,7 +10839,7 @@ fn emitLd1(dst: Reg, addr: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBu
 /// ST1 (store single structure, one register): ST1 {Vt.T}, [Xn]
 /// Encoding: 0|Q|0011010|L|0|00000|opcode|size|Rn|Rt
 /// L=0 for store, opcode=0111 for single register
-fn emitSt1(src: Reg, addr: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitSt1(src: Reg, addr: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rt = hwEnc(src);
     const rn = hwEnc(addr);
     const q = vec_size.qBit();
@@ -10862,7 +10862,7 @@ fn emitSt1(src: Reg, addr: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBu
 /// INS (insert element from register): INS Vd.T[index], Vn.T[0]
 /// Encoding: 0|Q|1|01110000|imm5|0|imm4|1|Rn|Rd
 /// imm5 encodes size and destination index, imm4=0000 for source lane 0
-fn emitIns(dst: Reg, src: Reg, index: u4, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitIns(dst: Reg, src: Reg, index: u4, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
 
@@ -10915,7 +10915,7 @@ fn emitExt(dst: Reg, src1: Reg, src2: Reg, imm: u4, buffer: *buffer_mod.MachBuff
 /// DUP (duplicate element): DUP Vd.T, Vn.T[index]
 /// Encoding: 0|Q|0|01110000|imm5|0|00001|Rn|Rd
 /// imm5 encodes size and source index
-fn emitDupElem(dst: Reg, src: Reg, index: u4, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitDupElem(dst: Reg, src: Reg, index: u4, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q = vec_size.qBit();
@@ -10945,7 +10945,7 @@ fn emitDupElem(dst: Reg, src: Reg, index: u4, vec_size: VectorSize, buffer: *buf
 /// SXTL (signed extend long): SXTL Vd.T, Vn.Tb
 /// Encoding: 0|Q|0|01111|immh|immb|101001|Rn|Rd
 /// immh:immb = shift amount (element width for extend)
-fn emitSxtl(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitSxtl(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
 
@@ -10972,7 +10972,7 @@ fn emitSxtl(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBu
 
 /// UXTL (unsigned extend long): UXTL Vd.T, Vn.Tb
 /// Encoding: 0|Q|1|01111|immh|immb|101001|Rn|Rd
-fn emitUxtl(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitUxtl(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
 
@@ -10999,7 +10999,7 @@ fn emitUxtl(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBu
 /// SADDL (signed add long): SADDL Vd.T, Vn.Tb, Vm.Tb
 /// Encoding: 0|Q|0|01110|size|1|Rm|000000|Rn|Rd
 /// Q=0 for lower half, size encodes source element size
-fn emitSaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitSaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -11028,7 +11028,7 @@ fn emitSaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buff
 
 /// UADDL (unsigned add long): UADDL Vd.T, Vn.Tb, Vm.Tb
 /// Encoding: 0|Q|1|01110|size|1|Rm|000000|Rn|Rd
-fn emitUaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitUaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -11057,7 +11057,7 @@ fn emitUaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buff
 /// XTN (extract narrow): XTN Vd.Tb, Vn.T
 /// Encoding: 0|Q|0|01110|size|100001|010010|Rn|Rd
 /// size encodes source element size
-fn emitXtn(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitXtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
 
@@ -11083,7 +11083,7 @@ fn emitXtn(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuf
 
 /// SQXTN (signed saturating extract narrow): SQXTN Vd.Tb, Vn.T
 /// Encoding: 0|Q|0|01110|size|100001|010010|Rn|Rd (with U=0)
-fn emitSqxtn(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitSqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
 
@@ -11109,7 +11109,7 @@ fn emitSqxtn(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachB
 
 /// UQXTN (unsigned saturating extract narrow): UQXTN Vd.Tb, Vn.T
 /// Encoding: 0|Q|1|01110|size|100001|010010|Rn|Rd (with U=1)
-fn emitUqxtn(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitUqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
 
@@ -11354,7 +11354,7 @@ fn emitRev(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
 /// DUP (duplicate general-purpose register to vector): DUP Vd.T, Xn
 /// Encoding: 0|Q|0|01110000|imm5|0|00011|Rn|Rd
 /// imm5 encodes element size
-fn emitDupScalar(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitDupScalar(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q = vec_size.qBit();
@@ -11384,7 +11384,7 @@ fn emitDupScalar(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.M
 /// MOVI (move immediate to vector): MOVI Vd.T, #imm
 /// Encoding: 0|Q|0|0111100000|abc|cmode|01|defgh|Rd
 /// Simplified encoding for byte replication
-fn emitMovi(dst: Reg, imm: u8, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitMovi(dst: Reg, imm: u8, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const q = vec_size.qBit();
 
@@ -11408,7 +11408,7 @@ fn emitMovi(dst: Reg, imm: u8, vec_size: VectorSize, buffer: *buffer_mod.MachBuf
 
 /// Vector SMIN (signed minimum element-wise): SMIN Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|1|Rm|011011|Rn|Rd
-fn emitVecSmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecSmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -11431,7 +11431,7 @@ fn emitVecSmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
 
 /// Vector SMAX (signed maximum element-wise): SMAX Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|1|Rm|011001|Rn|Rd
-fn emitVecSmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecSmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -11454,7 +11454,7 @@ fn emitVecSmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
 
 /// Vector UMIN (unsigned minimum element-wise): UMIN Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|1|01110|size|1|Rm|011011|Rn|Rd
-fn emitVecUmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecUmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -11477,7 +11477,7 @@ fn emitVecUmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
 
 /// Vector UMAX (unsigned maximum element-wise): UMAX Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|1|01110|size|1|Rm|011001|Rn|Rd
-fn emitVecUmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecUmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -11524,7 +11524,7 @@ fn emitAbs(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
 
 /// Vector ABS (absolute value): ABS Vd.T, Vn.T
 /// Encoding: 0|Q|0|01110|size|10000|010110|Rn|Rd
-fn emitVecAbs(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecAbs(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q = vec_size.qBit();
@@ -11545,7 +11545,7 @@ fn emitVecAbs(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.Mach
 
 /// Vector NEG (negate): NEG Vd.T, Vn.T
 /// Encoding: 0|Q|1|01110|size|10000|010110|Rn|Rd
-fn emitVecNeg(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecNeg(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q = vec_size.qBit();
@@ -11566,7 +11566,7 @@ fn emitVecNeg(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.Mach
 
 /// Vector FP FCMEQ (compare equal): FCMEQ Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|0|sz|1|Rm|111001|Rn|Rd
-fn emitVecFcmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecFcmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -11591,7 +11591,7 @@ fn emitVecFcmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *b
 
     try buffer.put4(insn);
 }
-fn emitVecFcmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecFcmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -11604,7 +11604,7 @@ fn emitVecFcmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *b
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111001 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
     try buffer.put4(insn);
 }
-fn emitVecFcmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecFcmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -11617,7 +11617,7 @@ fn emitVecFcmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *b
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b0 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111001 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
     try buffer.put4(insn);
 }
-fn emitVecFmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecFmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -11630,7 +11630,7 @@ fn emitVecFmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111101 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
     try buffer.put4(insn);
 }
-fn emitVecFmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecFmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src1);
     const rm = hwEnc(src2);
@@ -11643,7 +11643,7 @@ fn emitVecFmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VectorSize, buffer: *bu
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b0 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111101 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
     try buffer.put4(insn);
 }
-fn emitVecFabs(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecFabs(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q = vec_size.qBit();
@@ -11655,7 +11655,7 @@ fn emitVecFabs(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.Mac
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b10000 << 17) | (0b011110 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
     try buffer.put4(insn);
 }
-fn emitVecFneg(dst: Reg, src: Reg, vec_size: VectorSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecFneg(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q = vec_size.qBit();
@@ -11725,13 +11725,13 @@ pub fn emitLoadSymbolAddr(dst: Reg, symbol: []const u8, buffer: *buffer_mod.Mach
     // ADRP Xd, symbol@PAGE
     const adrp_offset = buffer.curOffset();
     const adrp_insn: u32 = (0b1 << 31) | (0b10000 << 24) | rd;
-    try buffer.put(&std.mem.toBytes(adrp_insn));
+    try buffer.put4(adrp_insn);
     try buffer.addReloc(adrp_offset, .aarch64_adr_prel_pg_hi21, symbol, 0);
 
     // ADD Xd, Xd, #symbol@PAGEOFF
     const add_offset = buffer.curOffset();
     const add_insn: u32 = (0b1 << 31) | (0b10001 << 24) | (rd << 5) | rd;
-    try buffer.put(&std.mem.toBytes(add_insn));
+    try buffer.put4(add_insn);
     try buffer.addReloc(add_offset, .aarch64_add_abs_lo12_nc, symbol, 0);
 }
 
@@ -11745,7 +11745,7 @@ pub fn emitLoadGlobal(dst: Reg, symbol: []const u8, size: OperandSize, buffer: *
     // ADRP Xtemp, symbol@PAGE
     const adrp_offset = buffer.curOffset();
     const adrp_insn: u32 = (0b1 << 31) | (0b10000 << 24) | temp_reg;
-    try buffer.put(&std.mem.toBytes(adrp_insn));
+    try buffer.put4(adrp_insn);
     try buffer.addReloc(adrp_offset, .aarch64_adr_prel_pg_hi21, symbol, 0);
 
     // LDR Xd, [Xtemp, #symbol@PAGEOFF]
@@ -11757,7 +11757,7 @@ pub fn emitLoadGlobal(dst: Reg, symbol: []const u8, size: OperandSize, buffer: *
         (0b01 << 22) | // unsigned offset
         (temp_reg << 5) |
         rd;
-    try buffer.put(&std.mem.toBytes(ldr_insn));
+    try buffer.put4(ldr_insn);
     try buffer.addReloc(ldr_offset, .aarch64_ldst64_abs_lo12_nc, symbol, 0);
 }
 
@@ -11773,12 +11773,12 @@ fn emitMrs(dst: Reg, sysreg: inst_mod.SystemReg, buffer: *buffer_mod.MachBuffer)
         (@as(u32, sys_enc) << 5) |
         rd;
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// SSHLL/SSHLL2 - Signed Shift Left Long
 /// Encoding: 0 Q 0 0 1 1 1 1 0 immh:immb 1 0 1 0 0 1 Rn Rd
-fn emitVecSshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VectorSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecSshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VecElemSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q: u1 = if (high) 1 else 0;
@@ -11790,9 +11790,9 @@ fn emitVecSshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VectorSize, high: b
     //   0100 -> 32-bit input, 64-bit output
     // immb is shift amount in low bits
     const immh_immb: u7 = switch (vec_size) {
-        .size16x8 => (0b0001 << 3) | (shift_amt & 0x7), // 8->16
-        .size32x4 => (0b0010 << 3) | (shift_amt & 0xF), // 16->32
-        .size64x2 => (0b0100 << 3) | (shift_amt & 0x1F), // 32->64
+        .size16x8 => @as(u7, 0b0001 << 3) | @as(u7, @intCast(shift_amt & 0x7)), // 8->16
+        .size32x4 => @as(u7, 0b0010 << 3) | @as(u7, @intCast(shift_amt & 0xF)), // 16->32
+        .size64x2 => @as(u7, 0b0100 << 3) | @as(u7, @intCast(shift_amt & 0x1F)), // 32->64
         else => unreachable, // Invalid for SSHLL
     };
 
@@ -11803,21 +11803,21 @@ fn emitVecSshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VectorSize, high: b
         (@as(u32, rn) << 5) |
         rd;
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// USHLL/USHLL2 - Unsigned Shift Left Long
 /// Encoding: 0 Q 1 0 1 1 1 1 0 immh:immb 1 0 1 0 0 1 Rn Rd
-fn emitVecUshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VectorSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecUshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VecElemSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q: u1 = if (high) 1 else 0;
 
     // Same immh:immb encoding as SSHLL
     const immh_immb: u7 = switch (vec_size) {
-        .size16x8 => (0b0001 << 3) | (shift_amt & 0x7), // 8->16
-        .size32x4 => (0b0010 << 3) | (shift_amt & 0xF), // 16->32
-        .size64x2 => (0b0100 << 3) | (shift_amt & 0x1F), // 32->64
+        .size16x8 => @as(u7, 0b0001 << 3) | @as(u7, @intCast(shift_amt & 0x7)), // 8->16
+        .size32x4 => @as(u7, 0b0010 << 3) | @as(u7, @intCast(shift_amt & 0xF)), // 16->32
+        .size64x2 => @as(u7, 0b0100 << 3) | @as(u7, @intCast(shift_amt & 0x1F)), // 32->64
         else => unreachable, // Invalid for USHLL
     };
 
@@ -11829,13 +11829,13 @@ fn emitVecUshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VectorSize, high: b
         (@as(u32, rn) << 5) |
         rd;
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// SQXTN/SQXTN2 - Signed saturating extract narrow
 /// Encoding: 0Q001110 immh:immb 100101 Rn Rd
 /// Q=0 for SQXTN (low half), Q=1 for SQXTN2 (high half)
-fn emitVecSqxtn(dst: Reg, src: Reg, vec_size: VectorSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecSqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q: u1 = if (high) 1 else 0;
@@ -11855,12 +11855,12 @@ fn emitVecSqxtn(dst: Reg, src: Reg, vec_size: VectorSize, high: bool, buffer: *b
         (@as(u32, rn) << 5) |
         rd;
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// SQXTUN/SQXTUN2 - Signed saturating extract unsigned narrow
 /// Encoding: 0Q101110 immh:immb 100101 Rn Rd
-fn emitVecSqxtun(dst: Reg, src: Reg, vec_size: VectorSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecSqxtun(dst: Reg, src: Reg, vec_size: VecElemSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q: u1 = if (high) 1 else 0;
@@ -11879,12 +11879,12 @@ fn emitVecSqxtun(dst: Reg, src: Reg, vec_size: VectorSize, high: bool, buffer: *
         (@as(u32, rn) << 5) |
         rd;
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// UQXTN/UQXTN2 - Unsigned saturating extract narrow
 /// Encoding: 0Q101110 immh:immb 100110 Rn Rd
-fn emitVecUqxtn(dst: Reg, src: Reg, vec_size: VectorSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
+fn emitVecUqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
     const q: u1 = if (high) 1 else 0;
@@ -11903,7 +11903,7 @@ fn emitVecUqxtn(dst: Reg, src: Reg, vec_size: VectorSize, high: bool, buffer: *b
         (@as(u32, rn) << 5) |
         rd;
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// FCVTL/FCVTL2 - Floating-point convert to higher precision
@@ -11922,7 +11922,7 @@ fn emitVecFcvtl(dst: Reg, src: Reg, high: bool, buffer: *buffer_mod.MachBuffer) 
         (@as(u32, rn) << 5) |
         rd;
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// FCVTN/FCVTN2 - Floating-point convert to lower precision
@@ -11941,7 +11941,7 @@ fn emitVecFcvtn(dst: Reg, src: Reg, high: bool, buffer: *buffer_mod.MachBuffer) 
         (@as(u32, rn) << 5) |
         rd;
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// MSR - Move to System Register
@@ -11956,7 +11956,7 @@ fn emitMsr(sysreg: inst_mod.SystemReg, src: Reg, buffer: *buffer_mod.MachBuffer)
         (@as(u32, sys_enc) << 5) |
         rt;
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// DUP (general) - Duplicate general-purpose register to vector
@@ -11987,7 +11987,7 @@ fn emitVecDup(dst: Reg, src: Reg, size: VecElemSize, buffer: *buffer_mod.MachBuf
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// DUP (element) - Duplicate vector element to all lanes
@@ -12030,7 +12030,7 @@ fn emitVecDupLane(dst: Reg, src: Reg, lane: u8, size: VecElemSize, buffer: *buff
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// UMOV - Unsigned move vector element to general-purpose register
@@ -12064,7 +12064,7 @@ fn emitVecExtractLane(dst: Reg, src: Reg, lane: u8, size: VecElemSize, buffer: *
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }
 
 /// INS (general) - Insert general-purpose register into vector lane
@@ -12078,14 +12078,14 @@ fn emitVecInsertLane(dst: Reg, vec: Reg, src: Reg, lane: u8, size: VecElemSize, 
 
     // First, move vec to dst if they're different (INS modifies destination)
     // Vector MOV is implemented as ORR Vd.16B, Vn.16B, Vn.16B
-    if (dst.toU8() != vec.toU8()) {
+    if (hwEnc(dst) != hwEnc(vec)) {
         const mov_insn: u32 = (0b01 << 30) | // Q=1 (128-bit)
             (0b001110101 << 21) |
             (@as(u32, rv) << 16) |
             (0b000111 << 10) |
             (@as(u32, rv) << 5) |
             @as(u32, rd);
-        try buffer.put(&std.mem.toBytes(mov_insn));
+        try buffer.put4(mov_insn);
     }
 
     // Determine Q bit and imm5 encoding
@@ -12108,5 +12108,5 @@ fn emitVecInsertLane(dst: Reg, vec: Reg, src: Reg, lane: u8, size: VecElemSize, 
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 
-    try buffer.put(&std.mem.toBytes(insn));
+    try buffer.put4(insn);
 }

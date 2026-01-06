@@ -1635,6 +1635,18 @@ pub fn aarch64_fcopysign_32(x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_
     } };
 }
 
+/// AND (immediate) - Bitwise AND with logical immediate
+pub fn aarch64_and_imm(ty: types.Type, x: lower_mod.Value, imm: ImmLogic, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const size = typeToOperandSize(ty);
+    _ = size; // ImmLogic already encodes size
+    return Inst{ .and_imm = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
+        .src = x_reg,
+        .imm = imm,
+    } };
+}
+
 /// ORR (immediate) - Bitwise OR with logical immediate
 pub fn aarch64_orr_imm(ty: types.Type, x: lower_mod.Value, imm: ImmLogic, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const x_reg = try getValueReg(ctx, x);
@@ -3343,7 +3355,7 @@ pub fn aarch64_str(
     const src = try ctx.getValueReg(val, .int);
     const ty = ctx.valueType(val);
     const size = typeToOperandSize(ty);
-    
+
     return Inst{
         .str = .{
             .src = src,
@@ -3366,7 +3378,7 @@ pub fn aarch64_str_imm(
     const ty = ctx.valueType(val);
     const size = typeToOperandSize(ty);
     const offset_i16: i16 = @intCast(offset);
-    
+
     return Inst{
         .str = .{
             .src = src,
@@ -3389,7 +3401,7 @@ pub fn aarch64_str_reg(
     const src = try ctx.getValueReg(val, .int);
     const ty = ctx.valueType(val);
     const size = typeToOperandSize(ty);
-    
+
     return Inst{
         .str_reg = .{
             .src = src,
@@ -3413,7 +3425,7 @@ pub fn aarch64_str_ext(
     const src = try ctx.getValueReg(val, .int);
     const ty = ctx.valueType(val);
     const size = typeToOperandSize(ty);
-    
+
     return Inst{
         .str_ext = .{
             .src = src,
@@ -3439,7 +3451,7 @@ pub fn aarch64_str_shifted(
     const ty = ctx.valueType(val);
     const size = typeToOperandSize(ty);
     const shift_u8: u8 = @intCast(shift);
-    
+
     return Inst{
         .str_shifted = .{
             .src = src,
@@ -3464,7 +3476,7 @@ pub fn aarch64_str_pre(
     const ty = ctx.valueType(val);
     const size = typeToOperandSize(ty);
     const offset_i16: i16 = @intCast(offset);
-    
+
     return Inst{
         .str_pre = .{
             .src = src,
@@ -3487,7 +3499,7 @@ pub fn aarch64_str_post(
     const ty = ctx.valueType(val);
     const size = typeToOperandSize(ty);
     const offset_i16: i16 = @intCast(offset);
-    
+
     return Inst{
         .str_post = .{
             .src = src,

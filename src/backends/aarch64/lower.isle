@@ -1062,6 +1062,11 @@
 (rule (lower (band ty x y))
       (aarch64_and_rr ty x y))
 
+;; band: Bitwise AND (immediate form with logical immediate)
+(rule 1 (lower (band ty x (iconst k)))
+      (if-let imm (imm_logic_from_u64 ty k))
+      (aarch64_and_imm ty x imm))
+
 ;; band: Fusion with bnot -> BIC instruction
 
 ;; Vector BIC (64-bit vectors)
@@ -2081,6 +2086,7 @@
 
 ;; Bitwise operations
 (decl aarch64_and_rr (Type Value Value) Aarch64Inst)
+(decl aarch64_and_imm (Type Value ImmLogic) Aarch64Inst)
 (decl aarch64_orr_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_orr_imm (Type Value ImmLogic) Aarch64Inst)
 (decl aarch64_eor_rr (Type Value Value) Aarch64Inst)
