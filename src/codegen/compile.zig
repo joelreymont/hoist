@@ -1297,6 +1297,59 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .size = size,
                     },
                 });
+            } else if (data.opcode == .sadd_sat or data.opcode == .ssub_sat or data.opcode == .uadd_sat or data.opcode == .usub_sat) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                if (data.opcode == .sadd_sat) {
+                    try builder.emit(Inst{
+                        .sqadd = .{
+                            .dst = dst,
+                            .src1 = Reg.fromVReg(arg0_vreg),
+                            .src2 = Reg.fromVReg(arg1_vreg),
+                            .size = size,
+                        },
+                    });
+                } else if (data.opcode == .ssub_sat) {
+                    try builder.emit(Inst{
+                        .sqsub = .{
+                            .dst = dst,
+                            .src1 = Reg.fromVReg(arg0_vreg),
+                            .src2 = Reg.fromVReg(arg1_vreg),
+                            .size = size,
+                        },
+                    });
+                } else if (data.opcode == .uadd_sat) {
+                    try builder.emit(Inst{
+                        .uqadd = .{
+                            .dst = dst,
+                            .src1 = Reg.fromVReg(arg0_vreg),
+                            .src2 = Reg.fromVReg(arg1_vreg),
+                            .size = size,
+                        },
+                    });
+                } else if (data.opcode == .usub_sat) {
+                    try builder.emit(Inst{
+                        .uqsub = .{
+                            .dst = dst,
+                            .src1 = Reg.fromVReg(arg0_vreg),
+                            .src2 = Reg.fromVReg(arg1_vreg),
+                            .size = size,
+                        },
+                    });
+                }
             } else if (data.opcode == .fma) {
                 // Fused multiply-add: result = args[0] * args[1] + args[2]
                 const VReg = @import("../machinst/reg.zig").VReg;
