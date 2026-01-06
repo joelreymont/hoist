@@ -112,6 +112,15 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Subtract with extended register (SUB Xd, Xn, Wm, extend).
+    sub_extended: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        extend: ExtendOp,
+        size: OperandSize,
+    },
+
     /// Add register to register with flags (ADDS Xd, Xn, Xm).
     /// Sets condition flags (NZCV).
     adds_rr: struct {

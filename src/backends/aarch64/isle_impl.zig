@@ -11,6 +11,7 @@ const Reg = root.aarch64_inst.Reg;
 const WritableReg = root.aarch64_inst.WritableReg;
 const OperandSize = root.aarch64_inst.OperandSize;
 const ExtendOp = root.aarch64_inst.ExtendOp;
+const ShiftOp = root.aarch64_inst.ShiftOp;
 const Imm12 = root.aarch64_inst.Imm12;
 const ImmLogic = root.aarch64_inst.ImmLogic;
 const ImmShift = root.aarch64_inst.ImmShift;
@@ -230,6 +231,31 @@ pub fn aarch64_sub_shifted(
         .src2 = reg_y,
         .shift_op = shift_op,
         .shift_amt = shift_amt,
+        .size = size,
+    } });
+
+    return dst;
+}
+
+/// Constructor: SUB with extended operand (SUB Xd, Xn, Xm, extend).
+/// Emits: dst = src1 - extended(src2)
+pub fn aarch64_sub_extended(
+    ctx: *IsleContext,
+    ty: Type,
+    x: Value,
+    y: Value,
+    extend: ExtendOp,
+) !WritableReg {
+    const size = ctx.typeToSize(ty);
+    const reg_x = try ctx.getValueReg(x, .int);
+    const reg_y = try ctx.getValueReg(y, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(.{ .sub_extended = .{
+        .dst = dst,
+        .src1 = reg_x,
+        .src2 = reg_y,
+        .extend = extend,
         .size = size,
     } });
 

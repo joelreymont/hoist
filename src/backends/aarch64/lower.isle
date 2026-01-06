@@ -415,6 +415,36 @@
       (if (u64_lteq shift 63))
       (aarch64_sub_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
 
+;; isub with sign-extended byte operand (higher priority than generic)
+;; Pattern: isub(x, sextb(y)) => SUB Xd, Xn, Wm, SXTB
+(rule 2 (lower (isub ty x (aarch64_sxtb ext_ty y)))
+      (if-let $I64 ty)
+      (aarch64_sub_extended ty x y ExtendOp.sxtb))
+
+;; isub with sign-extended halfword operand (higher priority than generic)
+;; Pattern: isub(x, sexth(y)) => SUB Xd, Xn, Wm, SXTH
+(rule 2 (lower (isub ty x (aarch64_sxth ext_ty y)))
+      (if-let $I64 ty)
+      (aarch64_sub_extended ty x y ExtendOp.sxth))
+
+;; isub with sign-extended word operand (higher priority than generic)
+;; Pattern: isub(x, sextw(y)) => SUB Xd, Xn, Wm, SXTW
+(rule 2 (lower (isub ty x (aarch64_sxtw y)))
+      (if-let $I64 ty)
+      (aarch64_sub_extended ty x y ExtendOp.sxtw))
+
+;; isub with zero-extended byte operand (higher priority than generic)
+;; Pattern: isub(x, uextb(y)) => SUB Xd, Xn, Wm, UXTB
+(rule 2 (lower (isub ty x (aarch64_uxtb ext_ty y)))
+      (if-let $I64 ty)
+      (aarch64_sub_extended ty x y ExtendOp.uxtb))
+
+;; isub with zero-extended halfword operand (higher priority than generic)
+;; Pattern: isub(x, uexth(y)) => SUB Xd, Xn, Wm, UXTH
+(rule 2 (lower (isub ty x (aarch64_uxth ext_ty y)))
+      (if-let $I64 ty)
+      (aarch64_sub_extended ty x y ExtendOp.uxth))
+
 ;; isub: Vector integer subtraction (type-parameterized via multi_lane)
 (rule 1 (lower (has_type ty @ (multi_lane _ _) (isub x y)))
       (sub_vec x y (vector_size ty)))
@@ -2095,6 +2125,7 @@
 (decl aarch64_sub_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_sub_imm (Type Value i64) Aarch64Inst)
 (decl aarch64_sub_shifted (Type Value Value ShiftOp u6) Aarch64Inst)
+(decl aarch64_sub_extended (Type Value Value ExtendOp) Aarch64Inst)
 
 ;; Arithmetic instructions that set flags (for I128 operations)
 (decl aarch64_adds_rr (Type Reg Reg Reg) Aarch64Inst)

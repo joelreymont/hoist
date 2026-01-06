@@ -16,6 +16,8 @@ const ShiftOp = inst_mod.ShiftOp;
 const buffer_mod = @import("../../machinst/buffer.zig");
 const machinst = @import("../../machinst/machinst.zig");
 const MachLabel = machinst.MachLabel;
+const extfunc = @import("../../ir/extfunc.zig");
+const ExternalName = extfunc.ExternalName;
 
 /// Emit aarch64 instruction to binary.
 /// This is a minimal bootstrap - full aarch64 emission needs:
@@ -37,9 +39,10 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .sub_rr => |i| try emitSubRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .sub_imm => |i| try emitSubImm(i.dst.toReg(), i.src, i.imm, i.size, buffer),
         .sub_shifted => |i| try emitSubShifted(i.dst.toReg(), i.src1, i.src2, i.shift_op, i.shift_amt, i.size, buffer),
+        .sub_extended => |i| try emitSubExtended(i.dst.toReg(), i.src1, i.src2, i.extend, i.size, buffer),
         .mul_rr => |i| try emitMulRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .madd => |i| try emitMadd(i.dst.toReg(), i.src1, i.src2, i.addend, i.size, buffer),
-        .msub => |i| try emitMsub(i.dst.toReg(), i.src1, i.src2, i.subtrahend, i.size, buffer),
+        .msub => |i| try emitMsub(i.dst.toReg(), i.src1, i.src2, i.minuend, i.size, buffer),
         .lsl_rr => |i| try emitLslRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .lsl_imm => |i| try emitLslImm(i.dst.toReg(), i.src, i.imm, i.size, buffer),
         .lsr_rr => |i| try emitLsrRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -378,6 +381,29 @@ fn emitSubShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: ShiftOp, shift_amt: 
         (@as(u32, shift) << 22) |
         (@as(u32, rm) << 16) |
         (@as(u32, shift_amt) << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    try buffer.put4(insn);
+}
+
+/// SUB Xd, Xn, Xm, extend
+fn emitSubExtended(dst: Reg, src1: Reg, src2: Reg, extend: ExtendOp, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const option: u3 = @intFromEnum(extend);
+    const imm3: u3 = 0; // No extra shift for basic extend
+
+    // SUB extended: sf|1|0|01011|00|1|Rm|option|imm3|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (1 << 30) |
+        (0b01011 << 24) |
+        (1 << 21) |
+        (@as(u32, rm) << 16) |
+        (@as(u32, option) << 13) |
+        (@as(u32, imm3) << 10) |
         (@as(u32, rn) << 5) |
         rd;
 
@@ -2734,7 +2760,7 @@ fn emitBL(label: u32, buffer: *buffer_mod.MachBuffer) !void {
 }
 
 /// BL to external symbol (branch with link to external function)
-fn emitBLExternal(name: inst_mod.ExternalName, buffer: *buffer_mod.MachBuffer) !void {
+fn emitBLExternal(name: []const u8, buffer: *buffer_mod.MachBuffer) !void {
     // BL: 1|00101|imm26
     const insn: u32 = (0b100101 << 26);
     const offset = buffer.curOffset();
