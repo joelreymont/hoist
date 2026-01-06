@@ -2325,6 +2325,73 @@ pub const Inst = union(enum) {
                 try collector.regUse(i.src2);
                 try collector.regDef(i.dst);
             },
+            .vec_fadd => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_fsub => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_fmul => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_fdiv => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_smin => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_smax => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_umin => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_umax => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_fmin => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_fmax => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_dup => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .vec_dup_lane => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .vec_extract_lane => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .vec_insert_lane => |*i| {
+                try collector.regUse(i.vec);
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
             .ldr => |*i| {
                 try collector.regUse(i.base);
                 try collector.regDef(i.dst);

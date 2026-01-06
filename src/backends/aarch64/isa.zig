@@ -662,6 +662,73 @@ pub const Aarch64ISA = struct {
                 vec.src2 = replaceReg(vec.src2, result);
                 vec.dst = replaceWritableReg(vec.dst, result);
             },
+            .vec_fadd => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_fsub => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_fmul => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_fdiv => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_smin => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_smax => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_umin => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_umax => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_fmin => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_fmax => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_dup => |*vec| {
+                vec.src = replaceReg(vec.src, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_dup_lane => |*vec| {
+                vec.src = replaceReg(vec.src, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_extract_lane => |*vec| {
+                vec.src = replaceReg(vec.src, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_insert_lane => |*vec| {
+                vec.vec = replaceReg(vec.vec, result);
+                vec.src = replaceReg(vec.src, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
             .ldr => |*ldr| {
                 ldr.base = replaceReg(ldr.base, result);
                 ldr.dst = replaceWritableReg(ldr.dst, result);
