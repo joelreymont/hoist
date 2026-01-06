@@ -1079,6 +1079,11 @@ pub const Inst = union(enum) {
     /// No operation (NOP).
     nop: void,
 
+    /// Conditional speculation barrier (CSDB).
+    /// Prevents speculative execution across branch misprediction.
+    /// Used for Spectre mitigation after conditional branches.
+    csdb: void,
+
     /// Breakpoint (BRK #imm).
     brk: struct {
         imm: u16,

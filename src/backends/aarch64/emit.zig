@@ -123,6 +123,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .adrp_symbol => |i| try emitAdrpSymbol(i.dst.toReg(), i.symbol, buffer),
         .add_symbol_lo12 => |i| try emitAddSymbolLo12(i.dst.toReg(), i.src, i.symbol, buffer),
         .nop => try emitNop(buffer),
+        .csdb => try emitCsdb(buffer),
         .fsqrt => |i| try emitFsqrt(i.dst.toReg(), i.src, i.size, buffer),
         .vec_add => |i| try emitVecAdd(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_sub => |i| try emitVecSub(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -2853,6 +2854,13 @@ fn emitAddSymbolLo12(dst: Reg, src: Reg, symbol: []const u8, buffer: *buffer_mod
 fn emitNop(buffer: *buffer_mod.MachBuffer) !void {
     // NOP: 11010101000000110010000011111111
     const insn: u32 = 0xD503201F;
+    try buffer.put4(insn);
+}
+
+/// CSDB - Conditional Speculation Barrier (Spectre v1 mitigation)
+fn emitCsdb(buffer: *buffer_mod.MachBuffer) !void {
+    // CSDB: 11010101000000110010001010011111
+    const insn: u32 = 0xD503229F;
     try buffer.put4(insn);
 }
 
