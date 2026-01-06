@@ -907,6 +907,11 @@
       (if-let amt (valid_shift_imm k))
       (aarch64_lsl_imm ty x amt))
 
+;; ishl_imm: Integer shift left with immediate operand
+(rule (lower (ishl_imm ty x k))
+      (if-let amt (valid_shift_imm k))
+      (aarch64_lsl_imm ty x amt))
+
 ;; ishl: Vector shift left by immediate (ty_vec128)
 (rule -2 (lower (has_type (ty_vec128 ty) (ishl x (iconst (u64_from_imm64 n)))))
       (ushl_vec_imm x (shift_masked_imm ty n) (vector_size ty)))
@@ -1014,6 +1019,11 @@
       (if-let amt (valid_shift_imm k))
       (aarch64_ror_imm ty x amt))
 
+;; rotr_imm: Rotate right with immediate operand
+(rule (lower (rotr_imm ty x k))
+      (if-let amt (valid_shift_imm k))
+      (aarch64_ror_imm ty x amt))
+
 ;; rotr: I128 rotate right (rotateright(x, amt) = (x >> amt) | (x << (128 - amt)))
 (rule (lower (has_type $I128 (rotr x y)))
       (let ((val ValueRegs x)
@@ -1032,6 +1042,11 @@
 
 ;; rotl: Rotate left (immediate form) - implemented as rotr(x, bits - amount)
 (rule (lower (rotl ty x (iconst k)))
+      (if-let amt (valid_rotl_imm ty k))
+      (aarch64_ror_imm ty x amt))
+
+;; rotl_imm: Rotate left with immediate operand
+(rule (lower (rotl_imm ty x k))
       (if-let amt (valid_rotl_imm ty k))
       (aarch64_ror_imm ty x amt))
 ;; rotl(x, k) = rotr(x, width - k)
@@ -1235,6 +1250,11 @@
       (if-let imm (imm_logic_from_u64 ty k))
       (aarch64_and_imm ty x imm))
 
+;; band_imm: Bitwise AND with immediate operand
+(rule 1 (lower (band_imm ty x k))
+      (if-let imm (imm_logic_from_u64 ty k))
+      (aarch64_and_imm ty x imm))
+
 ;; band: Fusion with bnot -> BIC instruction
 
 ;; Vector BIC (64-bit vectors)
@@ -1289,6 +1309,11 @@
       (if-let imm (imm_logic_from_u64 ty k))
       (aarch64_orr_imm ty x imm))
 
+;; bor_imm: Bitwise OR with immediate operand
+(rule 1 (lower (bor_imm ty x k))
+      (if-let imm (imm_logic_from_u64 ty k))
+      (aarch64_orr_imm ty x imm))
+
 ;; bor: Fusion with bnot -> ORN instruction
 ;; bor(x, bnot(y)) -> bor_not(x, y) -> ORN
 (rule 2 (lower (has_type ty @ (fits_in_64 _) (bor x (bnot _ y))))
@@ -1327,6 +1352,11 @@
 
 ;; bxor: Bitwise XOR (immediate form with logical immediate)
 (rule 1 (lower (bxor ty x (iconst k)))
+      (if-let imm (imm_logic_from_u64 ty k))
+      (aarch64_eor_imm ty x imm))
+
+;; bxor_imm: Bitwise XOR with immediate operand
+(rule 1 (lower (bxor_imm ty x k))
       (if-let imm (imm_logic_from_u64 ty k))
       (aarch64_eor_imm ty x imm))
 
