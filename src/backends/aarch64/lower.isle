@@ -543,6 +543,22 @@
 (rule 1 (lower (has_type $I64X2 (umax x y)))
       (aarch64_bitselect (vec_rrr (VecALUOp.Cmhi) x y (VectorSize.Size64x2)) x y))
 
+;; avg_round: Unsigned rounding average (x + y + 1) >> 1
+;; Uses URHADD instruction for lanes that fit in 32 bits
+(rule -1 (lower (has_type (lane_fits_in_32 ty) (avg_round x y)))
+      (vec_rrr (VecALUOp.Urhadd) x y (vector_size ty)))
+
+;; avg_round: I64X2 requires manual implementation
+;; (x | y) & 1 gives the rounding bit, then ((x >> 1) + (y >> 1)) + rounding
+(rule (lower (has_type $I64X2 (avg_round x y)))
+      (let ((one Reg (splat_const 1 (VectorSize.Size64x2)))
+            (c Reg (orr_vec x y (VectorSize.Size64x2)))
+            (c Reg (and_vec c one (VectorSize.Size64x2)))
+            (x Reg (ushr_vec_imm x 1 (VectorSize.Size64x2)))
+            (y Reg (ushr_vec_imm y 1 (VectorSize.Size64x2)))
+            (sum Reg (add_vec x y (VectorSize.Size64x2))))
+       (add_vec c sum (VectorSize.Size64x2))))
+
 ;; Vector reduction operations (type-parameterized via multi_lane)
 
 ;; reduce_add: Horizontal vector addition (sum all elements)
