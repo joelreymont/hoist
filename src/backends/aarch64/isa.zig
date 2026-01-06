@@ -327,6 +327,128 @@ pub const Aarch64ISA = struct {
         };
     }
 
+    /// Insert spill and reload instructions for spilled virtual registers.
+    ///
+    /// For each spilled vreg:
+    /// - Insert STR after its definition to save to stack
+    /// - Insert LDR before each use to reload from stack
+    fn insertSpillReloads(
+        vcode: *vcode_mod.VCode(Inst),
+        result: *const @import("../../regalloc/linear_scan.zig").RegAllocResult,
+        liveness_info: *const @import("../../regalloc/liveness.zig").LivenessInfo,
+        allocator: std.mem.Allocator,
+    ) !void {
+        const linear_scan_mod = @import("../../regalloc/linear_scan.zig");
+        const reg_mod = @import("../../machinst/reg.zig");
+
+        // Collect all spilled vregs
+        var spilled_vregs = std.ArrayList(struct {
+            vreg: reg_mod.VReg,
+            slot: linear_scan_mod.SpillSlot,
+        }).init(allocator);
+        defer spilled_vregs.deinit();
+
+        // Iterate through all live ranges to find spilled vregs
+        for (liveness_info.ranges.items) |range| {
+            if (result.getSpillSlot(range.vreg)) |slot| {
+                try spilled_vregs.append(.{
+                    .vreg = range.vreg,
+                    .slot = slot,
+                });
+            }
+        }
+
+        if (spilled_vregs.items.len == 0) return;
+
+        // Build list of instruction insertions (spills and reloads)
+        var insertions = std.ArrayList(struct {
+            position: u32, // Instruction index to insert after/before
+            insert_after: bool, // true = after, false = before
+            inst: Inst,
+        }).init(allocator);
+        defer insertions.deinit();
+
+        // For each spilled vreg, find def/use points and insert spill/reload
+        for (spilled_vregs.items) |spill_info| {
+            const vreg = spill_info.vreg;
+            const slot_offset = spill_info.slot.offset;
+
+            // Find def and use positions
+            for (vcode.insns.items, 0..) |inst, idx| {
+                var inst_copy = inst;
+                const defs = try inst_copy.getDefs(allocator);
+                defer allocator.free(defs);
+
+                const uses = try inst_copy.getUses(allocator);
+                defer allocator.free(uses);
+
+                // Check if this instruction defines the spilled vreg
+                for (defs) |def_vreg| {
+                    if (def_vreg.index == vreg.index) {
+                        // Insert spill store after this instruction
+                        // STR Xn, [sp, #offset]
+                        const preg = result.getPhysReg(vreg) orelse continue;
+
+                        try insertions.append(.{
+                            .position = @intCast(idx),
+                            .insert_after = true,
+                            .inst = .{
+                                .str_imm = .{
+                                    .src = preg.toReg(),
+                                    .base = reg_mod.Reg.fromPReg(reg_mod.PReg.new(.int, 31)), // SP
+                                    .offset = @intCast(slot_offset),
+                                    .size = .size64,
+                                },
+                            },
+                        });
+                    }
+                }
+
+                // Check if this instruction uses the spilled vreg
+                for (uses) |use_vreg| {
+                    if (use_vreg.index == vreg.index) {
+                        // Insert reload before this instruction
+                        // LDR Xn, [sp, #offset]
+                        const preg = result.getPhysReg(vreg) orelse continue;
+
+                        try insertions.append(.{
+                            .position = @intCast(idx),
+                            .insert_after = false,
+                            .inst = .{
+                                .ldr_imm = .{
+                                    .dst = reg_mod.WritableReg.init(preg.toReg()),
+                                    .base = reg_mod.Reg.fromPReg(reg_mod.PReg.new(.int, 31)), // SP
+                                    .offset = @intCast(slot_offset),
+                                    .size = .size64,
+                                },
+                            },
+                        });
+                    }
+                }
+            }
+        }
+
+        // Sort insertions by position (descending) to insert from end to start
+        // This preserves instruction indices
+        std.mem.sort(@TypeOf(insertions.items[0]), insertions.items, {}, struct {
+            fn lessThan(_: void, a: @TypeOf(insertions.items[0]), b: @TypeOf(insertions.items[0])) bool {
+                if (a.position != b.position) return a.position > b.position;
+                // Insert "after" operations before "before" operations at same position
+                return a.insert_after and !b.insert_after;
+            }
+        }.lessThan);
+
+        // Apply insertions
+        for (insertions.items) |insertion| {
+            const insert_idx = if (insertion.insert_after)
+                insertion.position + 1
+            else
+                insertion.position;
+
+            try vcode.insns.insert(allocator, insert_idx, insertion.inst);
+        }
+    }
+
     /// Apply register allocations to an instruction.
     /// Replaces virtual registers with allocated physical registers.
     fn applyAllocations(
@@ -427,7 +549,10 @@ pub const Aarch64ISA = struct {
         var result = try linear_scan.allocate(&liveness_info);
         defer result.deinit();
 
-        // Apply allocations to VCode
+        // Phase 4: Insert spill/reload instructions
+        try insertSpillReloads(&vcode, &result, &liveness_info, ctx.allocator);
+
+        // Phase 5: Apply allocations to VCode
         for (vcode.insns.items) |*inst| {
             try applyAllocations(inst, &result);
         }
@@ -467,8 +592,8 @@ pub const Aarch64ISA = struct {
             };
         }
 
-        // Stack frame size (no spills yet)
-        const stack_frame_size: u32 = 0;
+        // Stack frame size = spill slot size from allocator
+        const stack_frame_size: u32 = linear_scan.next_spill_offset;
 
         return compile_mod.CompiledCode{
             .code = code,
