@@ -36,6 +36,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .add_extended => |i| try emitAddExtended(i.dst.toReg(), i.src1, i.src2, i.extend, i.size, buffer),
         .sub_rr => |i| try emitSubRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .sub_imm => |i| try emitSubImm(i.dst.toReg(), i.src, i.imm, i.size, buffer),
+        .sub_shifted => |i| try emitSubShifted(i.dst.toReg(), i.src1, i.src2, i.shift_op, i.shift_amt, i.size, buffer),
         .mul_rr => |i| try emitMulRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .madd => |i| try emitMadd(i.dst.toReg(), i.src1, i.src2, i.addend, i.size, buffer),
         .msub => |i| try emitMsub(i.dst.toReg(), i.src1, i.src2, i.subtrahend, i.size, buffer),
@@ -356,6 +357,27 @@ fn emitSubRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
         (1 << 30) |
         (0b01011 << 24) |
         (@as(u32, rm) << 16) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    try buffer.put4(insn);
+}
+
+/// SUB Xd, Xn, Xm, shift #amount
+fn emitSubShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: ShiftOp, shift_amt: u6, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const shift: u2 = @intFromEnum(shift_op);
+
+    // SUB shifted: sf|1|0|01011|shift|0|Rm|imm6|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (1 << 30) |
+        (0b01011 << 24) |
+        (@as(u32, shift) << 22) |
+        (@as(u32, rm) << 16) |
+        (@as(u32, shift_amt) << 10) |
         (@as(u32, rn) << 5) |
         rd;
 

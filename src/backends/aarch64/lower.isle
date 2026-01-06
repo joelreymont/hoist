@@ -315,6 +315,45 @@
       (if-let $I64 ty)
       (aarch64_add_extended ty x y ExtendOp.uxth))
 
+;; iadd with left-shifted operand (higher priority than generic)
+;; Pattern: iadd(x, ishl(y, iconst(shift))) => ADD Xd, Xn, Xm, LSL #shift
+(rule 3 (lower (iadd ty x (ishl shift_ty y (iconst (u64_from_imm64 shift)))))
+      (if-let $I64 ty)
+      (if (u64_lteq shift 63))
+      (aarch64_add_shifted ty x y ShiftOp.lsl (u64_to_u6 shift)))
+
+;; iadd with commuted left-shifted operand
+(rule 3 (lower (iadd ty (ishl shift_ty y (iconst (u64_from_imm64 shift))) x))
+      (if-let $I64 ty)
+      (if (u64_lteq shift 63))
+      (aarch64_add_shifted ty x y ShiftOp.lsl (u64_to_u6 shift)))
+
+;; iadd with right-shifted operand (logical)
+;; Pattern: iadd(x, ushr(y, iconst(shift))) => ADD Xd, Xn, Xm, LSR #shift
+(rule 3 (lower (iadd ty x (ushr shift_ty y (iconst (u64_from_imm64 shift)))))
+      (if-let $I64 ty)
+      (if (u64_lteq shift 63))
+      (aarch64_add_shifted ty x y ShiftOp.lsr (u64_to_u6 shift)))
+
+;; iadd with commuted right-shifted operand (logical)
+(rule 3 (lower (iadd ty (ushr shift_ty y (iconst (u64_from_imm64 shift))) x))
+      (if-let $I64 ty)
+      (if (u64_lteq shift 63))
+      (aarch64_add_shifted ty x y ShiftOp.lsr (u64_to_u6 shift)))
+
+;; iadd with arithmetic right-shifted operand
+;; Pattern: iadd(x, sshr(y, iconst(shift))) => ADD Xd, Xn, Xm, ASR #shift
+(rule 3 (lower (iadd ty x (sshr shift_ty y (iconst (u64_from_imm64 shift)))))
+      (if-let $I64 ty)
+      (if (u64_lteq shift 63))
+      (aarch64_add_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
+
+;; iadd with commuted arithmetic right-shifted operand
+(rule 3 (lower (iadd ty (sshr shift_ty y (iconst (u64_from_imm64 shift))) x))
+      (if-let $I64 ty)
+      (if (u64_lteq shift 63))
+      (aarch64_add_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
+
 ;; iadd: I128 addition using register pairs (ADDS + ADC)
 ;; Priority -3 to match before vector and scalar rules
 (rule -3 (lower (has_type $I128 (iadd x y)))
@@ -354,6 +393,27 @@
 ;; isub: Subtract integers (scalar)
 (rule (lower (isub ty x y))
       (aarch64_sub_rr ty x y))
+
+;; isub with left-shifted operand (higher priority than generic)
+;; Pattern: isub(x, ishl(y, iconst(shift))) => SUB Xd, Xn, Xm, LSL #shift
+(rule 2 (lower (isub ty x (ishl shift_ty y (iconst (u64_from_imm64 shift)))))
+      (if-let $I64 ty)
+      (if (u64_lteq shift 63))
+      (aarch64_sub_shifted ty x y ShiftOp.lsl (u64_to_u6 shift)))
+
+;; isub with right-shifted operand (logical)
+;; Pattern: isub(x, ushr(y, iconst(shift))) => SUB Xd, Xn, Xm, LSR #shift
+(rule 2 (lower (isub ty x (ushr shift_ty y (iconst (u64_from_imm64 shift)))))
+      (if-let $I64 ty)
+      (if (u64_lteq shift 63))
+      (aarch64_sub_shifted ty x y ShiftOp.lsr (u64_to_u6 shift)))
+
+;; isub with arithmetic right-shifted operand
+;; Pattern: isub(x, sshr(y, iconst(shift))) => SUB Xd, Xn, Xm, ASR #shift
+(rule 2 (lower (isub ty x (sshr shift_ty y (iconst (u64_from_imm64 shift)))))
+      (if-let $I64 ty)
+      (if (u64_lteq shift 63))
+      (aarch64_sub_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
 
 ;; isub: Vector integer subtraction (type-parameterized via multi_lane)
 (rule 1 (lower (has_type ty @ (multi_lane _ _) (isub x y)))
@@ -2031,8 +2091,10 @@
 (decl aarch64_add_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_add_imm (Type Value i64) Aarch64Inst)
 (decl aarch64_add_extended (Type Value Value ExtendOp) Aarch64Inst)
+(decl aarch64_add_shifted (Type Value Value ShiftOp u6) Aarch64Inst)
 (decl aarch64_sub_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_sub_imm (Type Value i64) Aarch64Inst)
+(decl aarch64_sub_shifted (Type Value Value ShiftOp u6) Aarch64Inst)
 
 ;; Arithmetic instructions that set flags (for I128 operations)
 (decl aarch64_adds_rr (Type Reg Reg Reg) Aarch64Inst)

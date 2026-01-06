@@ -102,6 +102,16 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Subtract with shifted register (SUB Xd, Xn, Xm, shift #amount).
+    sub_shifted: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        shift_op: ShiftOp,
+        shift_amt: u6,
+        size: OperandSize,
+    },
+
     /// Add register to register with flags (ADDS Xd, Xn, Xm).
     /// Sets condition flags (NZCV).
     adds_rr: struct {

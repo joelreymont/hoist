@@ -77,6 +77,11 @@ pub fn u8_into_imm12(val: u8) Imm12 {
     return .{ .bits = val, .shift12 = false };
 }
 
+/// Constructor: Convert u64 to u6 (for shift amounts).
+pub fn u64_to_u6(val: u64) u6 {
+    return @intCast(val & 0x3F);
+}
+
 /// Extractor: Try to extract ImmShift from u64.
 pub fn imm_shift_from_u64(val: u64) ?ImmShift {
     return ImmShift.maybeFromU64(val);

@@ -113,6 +113,33 @@ pub fn aarch64_add_extended(
     return dst;
 }
 
+/// Constructor: ADD with shifted register (ADD Xd, Xn, Xm, shift #amount).
+/// Emits: dst = x + (y << shift_amt)
+pub fn aarch64_add_shifted(
+    ctx: *IsleContext,
+    ty: Type,
+    x: Value,
+    y: Value,
+    shift_op: ShiftOp,
+    shift_amt: u6,
+) !WritableReg {
+    const size = ctx.typeToSize(ty);
+    const reg_x = try ctx.getValueReg(x, .int);
+    const reg_y = try ctx.getValueReg(y, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(.{ .add_shifted = .{
+        .dst = dst,
+        .src1 = reg_x,
+        .src2 = reg_y,
+        .shift_op = shift_op,
+        .shift_amt = shift_amt,
+        .size = size,
+    } });
+
+    return dst;
+}
+
 /// Constructor: ADD immediate (ADD Xd, Xn, #imm).
 /// Emits: dst = src + imm
 pub fn aarch64_add_imm(
@@ -176,6 +203,33 @@ pub fn aarch64_sub_imm(
         .dst = dst,
         .src = reg_x,
         .imm = @intCast(imm12.bits),
+        .size = size,
+    } });
+
+    return dst;
+}
+
+/// Constructor: SUB with shifted register (SUB Xd, Xn, Xm, shift #amount).
+/// Emits: dst = x - (y << shift_amt)
+pub fn aarch64_sub_shifted(
+    ctx: *IsleContext,
+    ty: Type,
+    x: Value,
+    y: Value,
+    shift_op: ShiftOp,
+    shift_amt: u6,
+) !WritableReg {
+    const size = ctx.typeToSize(ty);
+    const reg_x = try ctx.getValueReg(x, .int);
+    const reg_y = try ctx.getValueReg(y, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(.{ .sub_shifted = .{
+        .dst = dst,
+        .src1 = reg_x,
+        .src2 = reg_y,
+        .shift_op = shift_op,
+        .shift_amt = shift_amt,
         .size = size,
     } });
 
