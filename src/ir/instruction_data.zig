@@ -43,6 +43,7 @@ pub const InstructionData = union(enum) {
     binary: BinaryData,
     binary_imm64: BinaryImm64Data,
     int_compare: IntCompareData,
+    int_compare_imm: IntCompareImmData,
     float_compare: FloatCompareData,
     branch: BranchData,
     jump: JumpData,
@@ -165,6 +166,17 @@ pub const IntCompareData = struct {
 
     pub fn init(op: Opcode, cond: IntCC, arg0: Value, arg1: Value) IntCompareData {
         return .{ .opcode = op, .cond = cond, .args = .{ arg0, arg1 } };
+    }
+};
+
+pub const IntCompareImmData = struct {
+    opcode: Opcode,
+    cond: IntCC,
+    arg: Value,
+    imm: Imm64,
+
+    pub fn init(op: Opcode, cond: IntCC, arg: Value, imm: Imm64) IntCompareImmData {
+        return .{ .opcode = op, .cond = cond, .arg = arg, .imm = imm };
     }
 };
 

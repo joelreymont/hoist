@@ -417,6 +417,9 @@ pub const DataFlowGraph = struct {
                     data.args[0] = self.resolveAliases(data.args[0]);
                     data.args[1] = self.resolveAliases(data.args[1]);
                 },
+                .int_compare_imm => |*data| {
+                    data.arg = self.resolveAliases(data.arg);
+                },
                 .float_compare => |*data| {
                     data.args[0] = self.resolveAliases(data.args[0]);
                     data.args[1] = self.resolveAliases(data.args[1]);
