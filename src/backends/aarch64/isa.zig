@@ -1413,6 +1413,10 @@ pub const Aarch64ISA = struct {
                 zext32.src = replaceReg(zext32.src, result);
                 zext32.dst = replaceWritableReg(zext32.dst, result);
             },
+            .add_symbol_lo12 => |*add_symbol_lo12| {
+                add_symbol_lo12.src = replaceReg(add_symbol_lo12.src, result);
+                add_symbol_lo12.dst = replaceWritableReg(add_symbol_lo12.dst, result);
+            },
             // TODO: Add more instruction types as needed
             else => {
                 // For unimplemented instructions, do nothing

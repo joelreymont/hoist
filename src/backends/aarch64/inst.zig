@@ -3079,6 +3079,10 @@ pub const Inst = union(enum) {
                 try collector.regUse(i.src);
                 try collector.regDef(i.dst);
             },
+            .add_symbol_lo12 => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
             .ret => {
                 // No operands to collect (implicit use of X30/LR handled by ABI)
             },
