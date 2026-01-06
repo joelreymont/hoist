@@ -1409,6 +1409,10 @@ pub const Aarch64ISA = struct {
                 vec_fmla_elem.rm = replaceReg(vec_fmla_elem.rm, result);
                 vec_fmla_elem.dst = replaceWritableReg(vec_fmla_elem.dst, result);
             },
+            .zext32 => |*zext32| {
+                zext32.src = replaceReg(zext32.src, result);
+                zext32.dst = replaceWritableReg(zext32.dst, result);
+            },
             // TODO: Add more instruction types as needed
             else => {
                 // For unimplemented instructions, do nothing

@@ -3075,7 +3075,14 @@ pub const Inst = union(enum) {
                 try collector.regUse(i.rm);
                 try collector.regDef(i.dst);
             },
+            .zext32 => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
             .ret => {
+                // No operands to collect (implicit use of X30/LR handled by ABI)
+            },
+            .ret_call => {
                 // No operands to collect (implicit use of X30/LR handled by ABI)
             },
             .call, .b, .b_cond, .bl, .nop, .dmb, .dsb, .fence, .epilogue_placeholder, .data, .brk, .udf, .bti, .csdb, .isb, .autiasp, .paciasp => {
