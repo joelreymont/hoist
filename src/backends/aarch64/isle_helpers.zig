@@ -4260,3 +4260,76 @@ pub fn shift_masked_imm(ty: types.Type, imm: u64) u8 {
     const lane_bits = ty.laneBits();
     return @intCast((imm & (lane_bits - 1)));
 }
+
+/// Vector arithmetic operations (ISLE constructors)
+/// Vector ADD: element-wise addition
+pub fn aarch64_vec_add(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+
+    const elem_size: Inst.VecElemSize = switch (size) {
+        .V8B => .size8x8,
+        .V16B => .size8x16,
+        .V4H => .size16x4,
+        .V8H => .size16x8,
+        .V2S => .size32x2,
+        .V4S => .size32x4,
+        .V2D => .size64x2,
+    };
+
+    return Inst{ .vec_add = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}
+
+/// Vector SUB: element-wise subtraction
+pub fn aarch64_vec_sub(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+
+    const elem_size: Inst.VecElemSize = switch (size) {
+        .V8B => .size8x8,
+        .V16B => .size8x16,
+        .V4H => .size16x4,
+        .V8H => .size16x8,
+        .V2S => .size32x2,
+        .V4S => .size32x4,
+        .V2D => .size64x2,
+    };
+
+    return Inst{ .vec_sub = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}
+
+/// Vector MUL: element-wise multiplication
+pub fn aarch64_vec_mul(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+
+    const elem_size: Inst.VecElemSize = switch (size) {
+        .V8B => .size8x8,
+        .V16B => .size8x16,
+        .V4H => .size16x4,
+        .V8H => .size16x8,
+        .V2S => .size32x2,
+        .V4S => .size32x4,
+        .V2D => .size64x2,
+    };
+
+    return Inst{ .vec_mul = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}

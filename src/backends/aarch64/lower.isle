@@ -256,6 +256,10 @@
 
 ;; Integer arithmetic lowering
 
+;; Vector iadd: Add vector elements
+(rule 1 (lower (has_type (ty_vec ty) (iadd x y)))
+      (aarch64_vec_add (vector_size ty) x y))
+
 ;; iadd: Add two integers (default, lowest priority)
 (rule 0 (lower (iadd ty x y))
       (aarch64_add_rr ty x y))
@@ -390,6 +394,10 @@
           (sub_with_flags_paired $I64 x_lo y_lo)
           (sbc_paired $I64 x_hi y_hi))))
 
+;; Vector isub: Subtract vector elements
+(rule 1 (lower (has_type (ty_vec ty) (isub x y)))
+      (aarch64_vec_sub (vector_size ty) x y))
+
 ;; isub: Subtract integers (scalar)
 (rule (lower (isub ty x y))
       (aarch64_sub_rr ty x y))
@@ -485,6 +493,10 @@
             ;; Compute low part
             (dst_lo Reg (aarch64_madd $I64 x_lo y_lo zero)))
         (value_regs dst_lo dst_hi)))
+
+;; Vector imul: Multiply vector elements
+(rule 1 (lower (has_type (ty_vec ty) (imul x y)))
+      (aarch64_vec_mul (vector_size ty) x y))
 
 ;; imul: Multiply integers (scalar)
 (rule (lower (imul ty x y))
