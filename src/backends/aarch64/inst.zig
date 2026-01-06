@@ -2636,6 +2636,39 @@ pub const Inst = union(enum) {
                 try collector.regUse(i.src);
                 try collector.regDef(i.dst);
             },
+            .csel => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .movz => |*i| {
+                try collector.regDef(i.dst);
+            },
+            .movk => |*i| {
+                try collector.regUse(i.dst.toReg());
+                try collector.regDef(i.dst);
+            },
+            .movn => |*i| {
+                try collector.regDef(i.dst);
+            },
+            .cbz => |*i| {
+                try collector.regUse(i.reg);
+            },
+            .cbnz => |*i| {
+                try collector.regUse(i.reg);
+            },
+            .tbz => |*i| {
+                try collector.regUse(i.reg);
+            },
+            .tbnz => |*i| {
+                try collector.regUse(i.reg);
+            },
+            .br => |*i| {
+                try collector.regUse(i.target);
+            },
+            .blr => |*i| {
+                try collector.regUse(i.target);
+            },
             .ret => {
                 // No operands to collect (implicit use of X30/LR handled by ABI)
             },

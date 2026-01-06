@@ -973,6 +973,38 @@ pub const Aarch64ISA = struct {
                 rev.src = replaceReg(rev.src, result);
                 rev.dst = replaceWritableReg(rev.dst, result);
             },
+            .csel => |*csel| {
+                csel.src1 = replaceReg(csel.src1, result);
+                csel.src2 = replaceReg(csel.src2, result);
+                csel.dst = replaceWritableReg(csel.dst, result);
+            },
+            .movz => |*movz| {
+                movz.dst = replaceWritableReg(movz.dst, result);
+            },
+            .movk => |*movk| {
+                movk.dst = replaceWritableReg(movk.dst, result);
+            },
+            .movn => |*movn| {
+                movn.dst = replaceWritableReg(movn.dst, result);
+            },
+            .cbz => |*cbz| {
+                cbz.reg = replaceReg(cbz.reg, result);
+            },
+            .cbnz => |*cbnz| {
+                cbnz.reg = replaceReg(cbnz.reg, result);
+            },
+            .tbz => |*tbz| {
+                tbz.reg = replaceReg(tbz.reg, result);
+            },
+            .tbnz => |*tbnz| {
+                tbnz.reg = replaceReg(tbnz.reg, result);
+            },
+            .br => |*br| {
+                br.target = replaceReg(br.target, result);
+            },
+            .blr => |*blr| {
+                blr.target = replaceReg(blr.target, result);
+            },
             // TODO: Add more instruction types as needed
             else => {
                 // For unimplemented instructions, do nothing
