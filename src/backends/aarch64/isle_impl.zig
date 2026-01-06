@@ -1137,3 +1137,111 @@ pub fn aarch64_return_call_indirect(
     _ = ctx;
     @panic("TODO: Implement return_call_indirect - needs epilogue + BR instruction");
 }
+
+/// Constructor: ldadd - atomic add (LSE).
+pub fn aarch64_ldadd(
+    ctx: *IsleContext,
+    addr: Value,
+    val: Value,
+) !WritableReg {
+    _ = addr;
+    _ = val;
+    _ = ctx;
+    @panic("TODO: Implement ldadd - needs LSE LDADD instruction");
+}
+
+/// Constructor: ldclr - atomic clear (LSE).
+pub fn aarch64_ldclr(
+    ctx: *IsleContext,
+    addr: Value,
+    val: Value,
+) !WritableReg {
+    _ = addr;
+    _ = val;
+    _ = ctx;
+    @panic("TODO: Implement ldclr - needs LSE LDCLR instruction");
+}
+
+/// Constructor: ldset - atomic set (LSE).
+pub fn aarch64_ldset(
+    ctx: *IsleContext,
+    addr: Value,
+    val: Value,
+) !WritableReg {
+    _ = addr;
+    _ = val;
+    _ = ctx;
+    @panic("TODO: Implement ldset - needs LSE LDSET instruction");
+}
+
+/// Constructor: ldeor - atomic XOR (LSE).
+pub fn aarch64_ldeor(
+    ctx: *IsleContext,
+    addr: Value,
+    val: Value,
+) !WritableReg {
+    _ = addr;
+    _ = val;
+    _ = ctx;
+    @panic("TODO: Implement ldeor - needs LSE LDEOR instruction");
+}
+
+/// Constructor: swpal - atomic exchange (LSE).
+pub fn aarch64_swpal(
+    ctx: *IsleContext,
+    addr: Value,
+    val: Value,
+) !WritableReg {
+    _ = addr;
+    _ = val;
+    _ = ctx;
+    @panic("TODO: Implement swpal - needs LSE SWPAL instruction");
+}
+
+/// Constructor: ldsmax - atomic signed max (LSE).
+pub fn aarch64_ldsmax(
+    ctx: *IsleContext,
+    addr: Value,
+    val: Value,
+) !WritableReg {
+    _ = addr;
+    _ = val;
+    _ = ctx;
+    @panic("TODO: Implement ldsmax - needs LSE LDSMAX instruction");
+}
+
+/// Constructor: ldsmin - atomic signed min (LSE).
+pub fn aarch64_ldsmin(
+    ctx: *IsleContext,
+    addr: Value,
+    val: Value,
+) !WritableReg {
+    _ = addr;
+    _ = val;
+    _ = ctx;
+    @panic("TODO: Implement ldsmin - needs LSE LDSMIN instruction");
+}
+
+/// Constructor: ldumax - atomic unsigned max (LSE).
+pub fn aarch64_ldumax(
+    ctx: *IsleContext,
+    addr: Value,
+    val: Value,
+) !WritableReg {
+    _ = addr;
+    _ = val;
+    _ = ctx;
+    @panic("TODO: Implement ldumax - needs LSE LDUMAX instruction");
+}
+
+/// Constructor: ldumin - atomic unsigned min (LSE).
+pub fn aarch64_ldumin(
+    ctx: *IsleContext,
+    addr: Value,
+    val: Value,
+) !WritableReg {
+    _ = addr;
+    _ = val;
+    _ = ctx;
+    @panic("TODO: Implement ldumin - needs LSE LDUMIN instruction");
+}
