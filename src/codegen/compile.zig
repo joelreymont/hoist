@@ -450,8 +450,47 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
     var allocator = TrivialAllocator.init(ctx.allocator);
     defer allocator.deinit();
 
+    // Compute liveness ranges for all vregs
+    var vreg_first_def = std.AutoHashMap(@import("../machinst/reg.zig").VReg, u32).init(ctx.allocator);
+    defer vreg_first_def.deinit();
+    var vreg_last_use = std.AutoHashMap(@import("../machinst/reg.zig").VReg, u32).init(ctx.allocator);
+    defer vreg_last_use.deinit();
+
+    // Scan all instructions to build liveness ranges
+    for (vcode.insns.items, 0..) |*inst, idx| {
+        const inst_idx: u32 = @intCast(idx);
+        var collector = OperandCollector.init(ctx.allocator);
+        defer collector.deinit();
+        try inst.getOperands(&collector);
+
+        // Record defs
+        for (collector.defs.items) |def_reg| {
+            const vreg = def_reg.toReg().toVReg() orelse continue;
+            if (!vreg_first_def.contains(vreg)) {
+                try vreg_first_def.put(vreg, inst_idx);
+            }
+            try vreg_last_use.put(vreg, inst_idx);
+        }
+
+        // Record uses
+        for (collector.uses.items) |use_reg| {
+            const vreg = use_reg.toVReg() orelse continue;
+            try vreg_last_use.put(vreg, inst_idx);
+        }
+    }
+
+    // Record live ranges in allocator
+    var iter = vreg_first_def.iterator();
+    while (iter.next()) |entry| {
+        const vreg = entry.key_ptr.*;
+        const start = entry.value_ptr.*;
+        const end = vreg_last_use.get(vreg) orelse start;
+        try allocator.recordLiveRange(vreg, start, end);
+    }
+
     // Walk instructions and allocate registers for all vregs
-    for (vcode.insns.items) |*inst| {
+    for (vcode.insns.items, 0..) |*inst, idx| {
+        const inst_idx: u32 = @intCast(idx);
         var collector = OperandCollector.init(ctx.allocator);
         defer collector.deinit();
 
@@ -460,7 +499,7 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
         // Allocate registers for all def operands
         for (collector.defs.items) |def_reg| {
             const vreg = def_reg.toReg().toVReg() orelse continue;
-            _ = allocator.allocate(vreg) catch {
+            _ = allocator.allocate(vreg, inst_idx) catch {
                 return CodegenError.RegisterAllocationFailed;
             };
         }
@@ -468,7 +507,7 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
         // Allocate registers for all use operands (should already be allocated)
         for (collector.uses.items) |use_reg| {
             const vreg = use_reg.toVReg() orelse continue;
-            _ = allocator.allocate(vreg) catch {
+            _ = allocator.allocate(vreg, inst_idx) catch {
                 return CodegenError.RegisterAllocationFailed;
             };
         }
@@ -498,53 +537,89 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
         switch (rewritten_inst) {
             .mov_imm => |*i| {
                 if (i.dst.toReg().toVReg()) |vreg| {
-                    if (allocator.getAllocation(vreg)) |preg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                    const preg = switch (alloc) {
+                        .reg => |r| r,
+                        .spill => @panic("Spilling not yet implemented in emission"),
+                    };
                         i.dst = WritableReg.fromReg(Reg.fromPReg(preg));
                     }
                 }
             },
             .add_rr => |*i| {
                 if (i.dst.toReg().toVReg()) |vreg| {
-                    if (allocator.getAllocation(vreg)) |preg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                    const preg = switch (alloc) {
+                        .reg => |r| r,
+                        .spill => @panic("Spilling not yet implemented in emission"),
+                    };
                         i.dst = WritableReg.fromReg(Reg.fromPReg(preg));
                     }
                 }
                 if (i.src1.toVReg()) |vreg| {
-                    if (allocator.getAllocation(vreg)) |preg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                    const preg = switch (alloc) {
+                        .reg => |r| r,
+                        .spill => @panic("Spilling not yet implemented in emission"),
+                    };
                         i.src1 = Reg.fromPReg(preg);
                     }
                 }
                 if (i.src2.toVReg()) |vreg| {
-                    if (allocator.getAllocation(vreg)) |preg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                    const preg = switch (alloc) {
+                        .reg => |r| r,
+                        .spill => @panic("Spilling not yet implemented in emission"),
+                    };
                         i.src2 = Reg.fromPReg(preg);
                     }
                 }
             },
             .mov_rr => |*i| {
                 if (i.dst.toReg().toVReg()) |vreg| {
-                    if (allocator.getAllocation(vreg)) |preg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                    const preg = switch (alloc) {
+                        .reg => |r| r,
+                        .spill => @panic("Spilling not yet implemented in emission"),
+                    };
                         i.dst = WritableReg.fromReg(Reg.fromPReg(preg));
                     }
                 }
                 if (i.src.toVReg()) |vreg| {
-                    if (allocator.getAllocation(vreg)) |preg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                    const preg = switch (alloc) {
+                        .reg => |r| r,
+                        .spill => @panic("Spilling not yet implemented in emission"),
+                    };
                         i.src = Reg.fromPReg(preg);
                     }
                 }
             },
             .mul_rr => |*i| {
                 if (i.dst.toReg().toVReg()) |vreg| {
-                    if (allocator.getAllocation(vreg)) |preg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                    const preg = switch (alloc) {
+                        .reg => |r| r,
+                        .spill => @panic("Spilling not yet implemented in emission"),
+                    };
                         i.dst = WritableReg.fromReg(Reg.fromPReg(preg));
                     }
                 }
                 if (i.src1.toVReg()) |vreg| {
-                    if (allocator.getAllocation(vreg)) |preg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                    const preg = switch (alloc) {
+                        .reg => |r| r,
+                        .spill => @panic("Spilling not yet implemented in emission"),
+                    };
                         i.src1 = Reg.fromPReg(preg);
                     }
                 }
                 if (i.src2.toVReg()) |vreg| {
-                    if (allocator.getAllocation(vreg)) |preg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                    const preg = switch (alloc) {
+                        .reg => |r| r,
+                        .spill => @panic("Spilling not yet implemented in emission"),
+                    };
                         i.src2 = Reg.fromPReg(preg);
                     }
                 }
@@ -558,29 +633,22 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
             },
         }
 
-        // MVP: Emit supported instructions
-        switch (rewritten_inst) {
-            .mov_imm => |i| try emit_mod.emitMovImm(i.dst.toReg(), i.imm, i.size, &buffer),
-            .mov_rr => |i| {
-                // Skip redundant mov when src == dst (both are physical registers after rewriting)
-                const dst_reg = i.dst.toReg();
-                const src_reg = i.src;
-                if (dst_reg.toRealReg()) |dst_real| {
-                    if (src_reg.toRealReg()) |src_real| {
-                        if (dst_real.hwEnc() == src_real.hwEnc()) {
-                            // Redundant mov - skip it
-                            continue;
-                        }
+        // Special handling for redundant moves
+        if (rewritten_inst == .mov_rr) {
+            const dst_reg = rewritten_inst.mov_rr.dst.toReg();
+            const src_reg = rewritten_inst.mov_rr.src;
+            if (dst_reg.toRealReg()) |dst_real| {
+                if (src_reg.toRealReg()) |src_real| {
+                    if (dst_real.hwEnc() == src_real.hwEnc()) {
+                        // Redundant mov - skip it
+                        continue;
                     }
                 }
-                try emit_mod.emitMovRR(dst_reg, src_reg, i.size, &buffer);
-            },
-            .add_rr => |i| try emit_mod.emitAddRR(i.dst.toReg(), i.src1, i.src2, i.size, &buffer),
-            .mul_rr => |i| try emit_mod.emitMulRR(i.dst.toReg(), i.src1, i.src2, i.size, &buffer),
-            .ret => try emit_mod.emitRet(null, &buffer),
-            .nop => {}, // Skip NOPs
-            else => return CodegenError.EmissionFailed, // Unsupported instruction for MVP
+            }
         }
+
+        // Emit instruction using generic emit function
+        try emit_mod.emit(rewritten_inst, &buffer);
     }
 
     // Store compiled code in context
