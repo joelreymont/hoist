@@ -1376,6 +1376,42 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .size = size,
                     },
                 });
+            } else if (data.opcode == .uadd_overflow or data.opcode == .sadd_overflow) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const CondCode = @import("../backends/aarch64/inst.zig").CondCode;
+
+                const x_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const y_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
+
+                const results = ctx.func.dfg.instResults(inst);
+                if (results.len != 2) return error.LoweringFailed;
+
+                const sum_vreg = VReg.new(@intCast(results[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const overflow_vreg = VReg.new(@intCast(results[1].index + Reg.PINNED_VREGS), RegClass.int);
+
+                const value_type = ctx.func.dfg.valueType(results[0]) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                try builder.emit(Inst{
+                    .adds_rr = .{
+                        .dst = WritableReg.fromVReg(sum_vreg),
+                        .src1 = Reg.fromVReg(x_vreg),
+                        .src2 = Reg.fromVReg(y_vreg),
+                        .size = size,
+                    },
+                });
+
+                const cond: CondCode = if (data.opcode == .sadd_overflow) .vs else .cs;
+                try builder.emit(Inst{
+                    .cset = .{
+                        .dst = WritableReg.fromVReg(overflow_vreg),
+                        .cond = cond,
+                        .size = .size32,
+                    },
+                });
             } else if (data.opcode == .sadd_sat or data.opcode == .ssub_sat or data.opcode == .uadd_sat or data.opcode == .usub_sat) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
