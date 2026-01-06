@@ -333,7 +333,7 @@ pub const Aarch64ISA = struct {
     /// - Insert STR after its definition to save to stack
     /// - Insert LDR before each use to reload from stack
     fn insertSpillReloads(
-        vcode: *vcode_mod.VCode(Inst),
+        vcode: *lower_mod.VCode(Inst),
         result: *const @import("../../regalloc/linear_scan.zig").RegAllocResult,
         liveness_info: *const @import("../../regalloc/liveness.zig").LivenessInfo,
         allocator: std.mem.Allocator,
@@ -393,7 +393,7 @@ pub const Aarch64ISA = struct {
                             .position = @intCast(idx),
                             .insert_after = true,
                             .inst = .{
-                                .str_imm = .{
+                                .str = .{
                                     .src = preg.toReg(),
                                     .base = reg_mod.Reg.fromPReg(reg_mod.PReg.new(.int, 31)), // SP
                                     .offset = @intCast(slot_offset),
@@ -415,7 +415,7 @@ pub const Aarch64ISA = struct {
                             .position = @intCast(idx),
                             .insert_after = false,
                             .inst = .{
-                                .ldr_imm = .{
+                                .ldr = .{
                                     .dst = reg_mod.WritableReg.init(preg.toReg()),
                                     .base = reg_mod.Reg.fromPReg(reg_mod.PReg.new(.int, 31)), // SP
                                     .offset = @intCast(slot_offset),
@@ -542,27 +542,9 @@ pub const Aarch64ISA = struct {
                 eor.src = replaceReg(eor.src, result);
                 eor.dst = replaceWritableReg(eor.dst, result);
             },
-            .ldr_imm => |*ldr| {
-                ldr.base = replaceReg(ldr.base, result);
-                ldr.dst = replaceWritableReg(ldr.dst, result);
-            },
-            .ldr_reg => |*ldr| {
-                ldr.base = replaceReg(ldr.base, result);
-                ldr.offset = replaceReg(ldr.offset, result);
-                ldr.dst = replaceWritableReg(ldr.dst, result);
-            },
-            .str_imm => |*str| {
-                str.src = replaceReg(str.src, result);
-                str.base = replaceReg(str.base, result);
-            },
-            .str_reg => |*str| {
-                str.src = replaceReg(str.src, result);
-                str.base = replaceReg(str.base, result);
-                str.offset = replaceReg(str.offset, result);
-            },
             .lsl_rr => |*lsl| {
-                lsl.src = replaceReg(lsl.src, result);
-                lsl.shift = replaceReg(lsl.shift, result);
+                lsl.src1 = replaceReg(lsl.src1, result);
+                lsl.src2 = replaceReg(lsl.src2, result);
                 lsl.dst = replaceWritableReg(lsl.dst, result);
             },
             .lsl_imm => |*lsl| {
@@ -570,8 +552,8 @@ pub const Aarch64ISA = struct {
                 lsl.dst = replaceWritableReg(lsl.dst, result);
             },
             .lsr_rr => |*lsr| {
-                lsr.src = replaceReg(lsr.src, result);
-                lsr.shift = replaceReg(lsr.shift, result);
+                lsr.src1 = replaceReg(lsr.src1, result);
+                lsr.src2 = replaceReg(lsr.src2, result);
                 lsr.dst = replaceWritableReg(lsr.dst, result);
             },
             .lsr_imm => |*lsr| {
@@ -579,8 +561,8 @@ pub const Aarch64ISA = struct {
                 lsr.dst = replaceWritableReg(lsr.dst, result);
             },
             .asr_rr => |*asr| {
-                asr.src = replaceReg(asr.src, result);
-                asr.shift = replaceReg(asr.shift, result);
+                asr.src1 = replaceReg(asr.src1, result);
+                asr.src2 = replaceReg(asr.src2, result);
                 asr.dst = replaceWritableReg(asr.dst, result);
             },
             .asr_imm => |*asr| {
@@ -614,8 +596,8 @@ pub const Aarch64ISA = struct {
                 mvn.dst = replaceWritableReg(mvn.dst, result);
             },
             .ror_rr => |*ror| {
-                ror.src = replaceReg(ror.src, result);
-                ror.shift = replaceReg(ror.shift, result);
+                ror.src1 = replaceReg(ror.src1, result);
+                ror.src2 = replaceReg(ror.src2, result);
                 ror.dst = replaceWritableReg(ror.dst, result);
             },
             .ror_imm => |*ror| {
@@ -642,7 +624,7 @@ pub const Aarch64ISA = struct {
                 fdiv.src2 = replaceReg(fdiv.src2, result);
                 fdiv.dst = replaceWritableReg(fdiv.dst, result);
             },
-            .fmov_rr => |*fmov| {
+            .fmov => |*fmov| {
                 fmov.src = replaceReg(fmov.src, result);
                 fmov.dst = replaceWritableReg(fmov.dst, result);
             },
@@ -930,7 +912,7 @@ pub const Aarch64ISA = struct {
             .msub => |*msub| {
                 msub.src1 = replaceReg(msub.src1, result);
                 msub.src2 = replaceReg(msub.src2, result);
-                msub.addend = replaceReg(msub.addend, result);
+                msub.minuend = replaceReg(msub.minuend, result);
                 msub.dst = replaceWritableReg(msub.dst, result);
             },
             .smull => |*smull| {
@@ -1061,6 +1043,64 @@ pub const Aarch64ISA = struct {
                 fcvt.src = replaceReg(fcvt.src, result);
                 fcvt.dst = replaceWritableReg(fcvt.dst, result);
             },
+            .adds_rr => |*adds| {
+                adds.src1 = replaceReg(adds.src1, result);
+                adds.src2 = replaceReg(adds.src2, result);
+                adds.dst = replaceWritableReg(adds.dst, result);
+            },
+            .adds_imm => |*adds| {
+                adds.src = replaceReg(adds.src, result);
+                adds.dst = replaceWritableReg(adds.dst, result);
+            },
+            .adcs => |*adcs| {
+                adcs.src1 = replaceReg(adcs.src1, result);
+                adcs.src2 = replaceReg(adcs.src2, result);
+                adcs.dst = replaceWritableReg(adcs.dst, result);
+            },
+            .subs_rr => |*subs| {
+                subs.src1 = replaceReg(subs.src1, result);
+                subs.src2 = replaceReg(subs.src2, result);
+                subs.dst = replaceWritableReg(subs.dst, result);
+            },
+            .subs_imm => |*subs| {
+                subs.src = replaceReg(subs.src, result);
+                subs.dst = replaceWritableReg(subs.dst, result);
+            },
+            .sbcs => |*sbcs| {
+                sbcs.src1 = replaceReg(sbcs.src1, result);
+                sbcs.src2 = replaceReg(sbcs.src2, result);
+                sbcs.dst = replaceWritableReg(sbcs.dst, result);
+            },
+            .sqadd => |*sqadd| {
+                sqadd.src1 = replaceReg(sqadd.src1, result);
+                sqadd.src2 = replaceReg(sqadd.src2, result);
+                sqadd.dst = replaceWritableReg(sqadd.dst, result);
+            },
+            .sqsub => |*sqsub| {
+                sqsub.src1 = replaceReg(sqsub.src1, result);
+                sqsub.src2 = replaceReg(sqsub.src2, result);
+                sqsub.dst = replaceWritableReg(sqsub.dst, result);
+            },
+            .uqadd => |*uqadd| {
+                uqadd.src1 = replaceReg(uqadd.src1, result);
+                uqadd.src2 = replaceReg(uqadd.src2, result);
+                uqadd.dst = replaceWritableReg(uqadd.dst, result);
+            },
+            .uqsub => |*uqsub| {
+                uqsub.src1 = replaceReg(uqsub.src1, result);
+                uqsub.src2 = replaceReg(uqsub.src2, result);
+                uqsub.dst = replaceWritableReg(uqsub.dst, result);
+            },
+            .smulh => |*smulh| {
+                smulh.src1 = replaceReg(smulh.src1, result);
+                smulh.src2 = replaceReg(smulh.src2, result);
+                smulh.dst = replaceWritableReg(smulh.dst, result);
+            },
+            .umulh => |*umulh| {
+                umulh.src1 = replaceReg(umulh.src1, result);
+                umulh.src2 = replaceReg(umulh.src2, result);
+                umulh.dst = replaceWritableReg(umulh.dst, result);
+            },
             // TODO: Add more instruction types as needed
             else => {
                 // For unimplemented instructions, do nothing
@@ -1075,7 +1115,6 @@ pub const Aarch64ISA = struct {
         func: *const lower_mod.Function,
     ) !compile_mod.CompiledCode {
         const linear_scan_mod = @import("../../regalloc/linear_scan.zig");
-        const trivial_mod = @import("../../regalloc/trivial.zig");
         const buffer_mod = @import("../../machinst/buffer.zig");
 
         // Phase 1: Lower IR to VCode

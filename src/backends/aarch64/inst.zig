@@ -2205,27 +2205,9 @@ pub const Inst = union(enum) {
                 try collector.regUse(i.src);
                 try collector.regDef(i.dst);
             },
-            .ldr_imm => |*i| {
-                try collector.regUse(i.base);
-                try collector.regDef(i.dst);
-            },
-            .ldr_reg => |*i| {
-                try collector.regUse(i.base);
-                try collector.regUse(i.offset);
-                try collector.regDef(i.dst);
-            },
-            .str_imm => |*i| {
-                try collector.regUse(i.src);
-                try collector.regUse(i.base);
-            },
-            .str_reg => |*i| {
-                try collector.regUse(i.src);
-                try collector.regUse(i.base);
-                try collector.regUse(i.offset);
-            },
             .lsl_rr => |*i| {
-                try collector.regUse(i.src);
-                try collector.regUse(i.shift);
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
                 try collector.regDef(i.dst);
             },
             .lsl_imm => |*i| {
@@ -2233,8 +2215,8 @@ pub const Inst = union(enum) {
                 try collector.regDef(i.dst);
             },
             .lsr_rr => |*i| {
-                try collector.regUse(i.src);
-                try collector.regUse(i.shift);
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
                 try collector.regDef(i.dst);
             },
             .lsr_imm => |*i| {
@@ -2242,8 +2224,8 @@ pub const Inst = union(enum) {
                 try collector.regDef(i.dst);
             },
             .asr_rr => |*i| {
-                try collector.regUse(i.src);
-                try collector.regUse(i.shift);
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
                 try collector.regDef(i.dst);
             },
             .asr_imm => |*i| {
@@ -2277,8 +2259,8 @@ pub const Inst = union(enum) {
                 try collector.regDef(i.dst);
             },
             .ror_rr => |*i| {
-                try collector.regUse(i.src);
-                try collector.regUse(i.shift);
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
                 try collector.regDef(i.dst);
             },
             .ror_imm => |*i| {
@@ -2305,7 +2287,7 @@ pub const Inst = union(enum) {
                 try collector.regUse(i.src2);
                 try collector.regDef(i.dst);
             },
-            .fmov_rr => |*i| {
+            .fmov => |*i| {
                 try collector.regUse(i.src);
                 try collector.regDef(i.dst);
             },
@@ -2410,23 +2392,23 @@ pub const Inst = union(enum) {
                 try collector.regDef(i.dst2);
             },
             .ldr_pre => |*i| {
-                try collector.regUse(i.base);
+                try collector.regUse(i.base.toReg());
                 try collector.regDef(i.dst);
                 try collector.regDef(i.base); // base is modified
             },
             .ldr_post => |*i| {
-                try collector.regUse(i.base);
+                try collector.regUse(i.base.toReg());
                 try collector.regDef(i.dst);
                 try collector.regDef(i.base); // base is modified
             },
             .str_pre => |*i| {
                 try collector.regUse(i.src);
-                try collector.regUse(i.base);
+                try collector.regUse(i.base.toReg());
                 try collector.regDef(i.base); // base is modified
             },
             .str_post => |*i| {
                 try collector.regUse(i.src);
-                try collector.regUse(i.base);
+                try collector.regUse(i.base.toReg());
                 try collector.regDef(i.base); // base is modified
             },
             .ldarb => |*i| {
@@ -2593,7 +2575,7 @@ pub const Inst = union(enum) {
             .msub => |*i| {
                 try collector.regUse(i.src1);
                 try collector.regUse(i.src2);
-                try collector.regUse(i.addend);
+                try collector.regUse(i.minuend);
                 try collector.regDef(i.dst);
             },
             .smull => |*i| {
@@ -2723,6 +2705,64 @@ pub const Inst = union(enum) {
             },
             .fcvt_f64_to_f32 => |*i| {
                 try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .adds_rr => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .adds_imm => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .adcs => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .subs_rr => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .subs_imm => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .sbcs => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .sqadd => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .sqsub => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .uqadd => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .uqsub => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .smulh => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .umulh => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
                 try collector.regDef(i.dst);
             },
             .ret => {
