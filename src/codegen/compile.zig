@@ -2377,7 +2377,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     },
                     else => return error.LoweringFailed,
                 }
-            } else if (data.opcode == .clz or data.opcode == .ctz or data.opcode == .popcnt) {
+            } else if (data.opcode == .clz or data.opcode == .cls or data.opcode == .ctz or data.opcode == .popcnt) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
                 const RegClass = @import("../machinst/reg.zig").RegClass;
@@ -2397,6 +2397,11 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     // Count leading zeros - direct instruction
                     try builder.emit(Inst{
                         .clz = .{ .dst = dst, .src = src, .size = size },
+                    });
+                } else if (data.opcode == .cls) {
+                    // Count leading sign bits - direct instruction
+                    try builder.emit(Inst{
+                        .cls = .{ .dst = dst, .src = src, .size = size },
                     });
                 } else if (data.opcode == .ctz) {
                     // Count trailing zeros: RBIT + CLZ
