@@ -498,6 +498,10 @@
 (rule 1 (lower (has_type (ty_vec ty) (imul x y)))
       (aarch64_vec_mul (vector_size ty) x y))
 
+;; imul_imm: Multiply with immediate operand (no direct encoding, lower as register multiply)
+(rule (lower (imul_imm ty x k))
+      (aarch64_mul_rr ty x (iconst_u64 k)))
+
 ;; imul: Multiply integers (scalar)
 (rule (lower (imul ty x y))
       (aarch64_mul_rr ty x y))
@@ -592,19 +596,37 @@
 (rule (lower (has_type $I64 (umulhi x y)))
       (aarch64_umulh x y))
 
+;; sdiv_imm: Signed divide with immediate (lower as register divide)
+(rule (lower (sdiv_imm ty x k))
+      (aarch64_sdiv ty x (iconst_u64 k)))
+
 ;; sdiv: Signed divide
 (rule (lower (sdiv ty x y))
       (aarch64_sdiv ty x y))
 
+;; udiv_imm: Unsigned divide with immediate (lower as register divide)
+(rule (lower (udiv_imm ty x k))
+      (aarch64_udiv ty x (iconst_u64 k)))
+
 ;; udiv: Unsigned divide
 (rule (lower (udiv ty x y))
       (aarch64_udiv ty x y))
+
+;; srem_imm: Signed remainder with immediate (lower as register remainder)
+(rule (lower (srem_imm ty x k))
+      (let ((quot Aarch64Inst (aarch64_sdiv ty x (iconst_u64 k))))
+            (aarch64_msub ty quot (iconst_u64 k) x)))
 
 ;; srem: Signed remainder (implemented as sdiv + msub)
 ;; srem(x, y) = x - (x / y) * y
 (rule (lower (srem ty x y))
       (let ((quot Aarch64Inst (aarch64_sdiv ty x y)))
             (aarch64_msub ty quot y x)))
+
+;; urem_imm: Unsigned remainder with immediate (lower as register remainder)
+(rule (lower (urem_imm ty x k))
+      (let ((quot Aarch64Inst (aarch64_udiv ty x (iconst_u64 k))))
+            (aarch64_msub ty quot (iconst_u64 k) x)))
 
 ;; urem: Unsigned remainder (implemented as udiv + msub)
 ;; urem(x, y) = x - (x / y) * y
@@ -1590,6 +1612,11 @@
 
 ;; Immediate forms
 
+;; iadd_imm: Add with immediate operand
+(rule 1 (lower (iadd_imm ty x k))
+      (if-let $true (uimm12 k))
+      (aarch64_add_imm ty x k))
+
 ;; iadd with 12-bit immediate (priority 1 - higher than generic, lower than extensions/fusions)
 (rule 1 (lower (iadd ty x (iconst k)))
       (if-let $true (uimm12 k))
@@ -1611,6 +1638,12 @@
 (rule (lower (isub ty x (iconst k)))
       (if-let $true (uimm12 k))
       (aarch64_sub_imm ty x k))
+
+;; irsub_imm: Reverse subtract with immediate (k - x)
+;; Lower as: sub(iconst(k), x) which becomes SUB imm, reg
+(rule (lower (irsub_imm ty x k))
+      (if-let $true (uimm12 k))
+      (aarch64_sub_imm ty (iconst_u64 k) x))
 
 ;; Load/store lowering
 
