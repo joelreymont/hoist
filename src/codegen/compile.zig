@@ -1290,6 +1290,67 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         },
                     });
                 }
+            } else if (data.opcode == .fcopysign) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+                const CondCode = @import("../backends/aarch64/inst.zig").CondCode;
+
+                const mag_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.float);
+                const sign_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.float);
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.float);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: FpuOperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                const abs_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS + 1), RegClass.float);
+                const neg_abs_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS + 2), RegClass.float);
+                const zero_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS + 3), RegClass.float);
+
+                try builder.emit(Inst{
+                    .fabs = .{
+                        .dst = WritableReg.fromVReg(abs_vreg),
+                        .src = Reg.fromVReg(mag_vreg),
+                        .size = size,
+                    },
+                });
+
+                try builder.emit(Inst{
+                    .fneg = .{
+                        .dst = WritableReg.fromVReg(neg_abs_vreg),
+                        .src = Reg.fromVReg(abs_vreg),
+                        .size = size,
+                    },
+                });
+
+                try builder.emit(Inst{
+                    .fmov_imm = .{
+                        .dst = WritableReg.fromVReg(zero_vreg),
+                        .imm = 0.0,
+                        .size = size,
+                    },
+                });
+
+                try builder.emit(Inst{
+                    .fcmp = .{
+                        .src1 = Reg.fromVReg(sign_vreg),
+                        .src2 = Reg.fromVReg(zero_vreg),
+                        .size = size,
+                    },
+                });
+
+                try builder.emit(Inst{
+                    .fcsel = .{
+                        .dst = WritableReg.fromVReg(result_vreg),
+                        .src1 = Reg.fromVReg(neg_abs_vreg),
+                        .src2 = Reg.fromVReg(abs_vreg),
+                        .cond = CondCode.mi,
+                        .size = size,
+                    },
+                });
             } else {
                 // Other binary ops not yet implemented
                 try builder.emit(Inst.nop);
