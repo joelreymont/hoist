@@ -1889,6 +1889,95 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         },
                     });
                 }
+            } else if (data.opcode == .urem_imm) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                const imm_val = data.imm.value;
+
+                if (imm_val > 0 and std.math.isPowerOfTwo(imm_val)) {
+                    const mask: u64 = @intCast(imm_val - 1);
+                    const ImmLogic = @import("../backends/aarch64/inst.zig").ImmLogic;
+                    if (ImmLogic.maybeFromU64(mask, size)) |imm_logic| {
+                        try builder.emit(Inst{
+                            .and_imm = .{
+                                .dst = dst,
+                                .src = src,
+                                .imm = imm_logic,
+                            },
+                        });
+                    } else {
+                        const temp_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS + 1), RegClass.int);
+                        const temp_reg = Reg.fromVReg(temp_vreg);
+                        const temp_dst = WritableReg.fromVReg(temp_vreg);
+
+                        try builder.emit(Inst{
+                            .movz = .{
+                                .dst = temp_dst,
+                                .imm = @intCast(mask & 0xFFFF),
+                                .shift = 0,
+                                .size = size,
+                            },
+                        });
+
+                        try builder.emit(Inst{
+                            .and_rr = .{
+                                .dst = dst,
+                                .src1 = src,
+                                .src2 = temp_reg,
+                                .size = size,
+                            },
+                        });
+                    }
+                } else {
+                    const divisor_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS + 1), RegClass.int);
+                    const divisor_reg = Reg.fromVReg(divisor_vreg);
+                    const divisor_dst = WritableReg.fromVReg(divisor_vreg);
+
+                    const quot_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS + 2), RegClass.int);
+                    const quot_reg = Reg.fromVReg(quot_vreg);
+                    const quot_dst = WritableReg.fromVReg(quot_vreg);
+
+                    try builder.emit(Inst{
+                        .movz = .{
+                            .dst = divisor_dst,
+                            .imm = @intCast(imm_val & 0xFFFF),
+                            .shift = 0,
+                            .size = size,
+                        },
+                    });
+
+                    try builder.emit(Inst{
+                        .udiv = .{
+                            .dst = quot_dst,
+                            .src1 = src,
+                            .src2 = divisor_reg,
+                            .size = size,
+                        },
+                    });
+
+                    try builder.emit(Inst{
+                        .msub = .{
+                            .dst = dst,
+                            .src1 = quot_reg,
+                            .src2 = divisor_reg,
+                            .minuend = src,
+                            .size = size,
+                        },
+                    });
+                }
             } else {
                 try builder.emit(Inst.nop);
             }
