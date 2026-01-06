@@ -3366,6 +3366,198 @@ pub fn aarch64_ldr_post(
     };
 }
 
+/// Constructor: uload8x8 - Load 8x8-bit, zero-extend to 8x16-bit
+/// Pattern: LD1 {v.8B}, [addr] + USHLL v.8H, v.8B, #0
+pub fn aarch64_uload8x8(
+    addr_val: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const addr = try ctx.getValueReg(addr_val, .int);
+    const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+
+    // LD1 {v.8B}, [addr] - load 8 bytes into lower 64 bits
+    try ctx.emit(Inst{
+        .ldr = .{
+            .dst = tmp,
+            .base = addr,
+            .offset = 0,
+            .size = .size64, // Load 64 bits (8 bytes)
+        },
+    });
+
+    // USHLL v.8H, v.8B, #0 - unsigned shift left long (widen 8B -> 8H)
+    return Inst{
+        .vec_ushll = .{
+            .dst = dst,
+            .src = tmp.toVReg(),
+            .shift_amt = 0,
+            .size = .size8x8, // 8 bytes -> 8 halfwords
+            .high = false, // Use low half of source
+        },
+    };
+}
+
+/// Constructor: sload8x8 - Load 8x8-bit, sign-extend to 8x16-bit
+/// Pattern: LD1 {v.8B}, [addr] + SSHLL v.8H, v.8B, #0
+pub fn aarch64_sload8x8(
+    addr_val: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const addr = try ctx.getValueReg(addr_val, .int);
+    const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+
+    // LD1 {v.8B}, [addr]
+    try ctx.emit(Inst{
+        .ldr = .{
+            .dst = tmp,
+            .base = addr,
+            .offset = 0,
+            .size = .size64,
+        },
+    });
+
+    // SSHLL v.8H, v.8B, #0 - signed shift left long
+    return Inst{
+        .vec_sshll = .{
+            .dst = dst,
+            .src = tmp.toVReg(),
+            .shift_amt = 0,
+            .size = .size8x8,
+            .high = false,
+        },
+    };
+}
+
+/// Constructor: uload16x4 - Load 4x16-bit, zero-extend to 4x32-bit
+/// Pattern: LD1 {v.4H}, [addr] + USHLL v.4S, v.4H, #0
+pub fn aarch64_uload16x4(
+    addr_val: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const addr = try ctx.getValueReg(addr_val, .int);
+    const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+
+    // LD1 {v.4H}, [addr] - load 4 halfwords (64 bits)
+    try ctx.emit(Inst{
+        .ldr = .{
+            .dst = tmp,
+            .base = addr,
+            .offset = 0,
+            .size = .size64,
+        },
+    });
+
+    // USHLL v.4S, v.4H, #0
+    return Inst{
+        .vec_ushll = .{
+            .dst = dst,
+            .src = tmp.toVReg(),
+            .shift_amt = 0,
+            .size = .size16x4,
+            .high = false,
+        },
+    };
+}
+
+/// Constructor: sload16x4 - Load 4x16-bit, sign-extend to 4x32-bit
+/// Pattern: LD1 {v.4H}, [addr] + SSHLL v.4S, v.4H, #0
+pub fn aarch64_sload16x4(
+    addr_val: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const addr = try ctx.getValueReg(addr_val, .int);
+    const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+
+    // LD1 {v.4H}, [addr]
+    try ctx.emit(Inst{
+        .ldr = .{
+            .dst = tmp,
+            .base = addr,
+            .offset = 0,
+            .size = .size64,
+        },
+    });
+
+    // SSHLL v.4S, v.4H, #0
+    return Inst{
+        .vec_sshll = .{
+            .dst = dst,
+            .src = tmp.toVReg(),
+            .shift_amt = 0,
+            .size = .size16x4,
+            .high = false,
+        },
+    };
+}
+
+/// Constructor: uload32x2 - Load 2x32-bit, zero-extend to 2x64-bit
+/// Pattern: LD1 {v.2S}, [addr] + USHLL v.2D, v.2S, #0
+pub fn aarch64_uload32x2(
+    addr_val: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const addr = try ctx.getValueReg(addr_val, .int);
+    const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+
+    // LD1 {v.2S}, [addr] - load 2 words (64 bits)
+    try ctx.emit(Inst{
+        .ldr = .{
+            .dst = tmp,
+            .base = addr,
+            .offset = 0,
+            .size = .size64,
+        },
+    });
+
+    // USHLL v.2D, v.2S, #0
+    return Inst{
+        .vec_ushll = .{
+            .dst = dst,
+            .src = tmp.toVReg(),
+            .shift_amt = 0,
+            .size = .size32x2,
+            .high = false,
+        },
+    };
+}
+
+/// Constructor: sload32x2 - Load 2x32-bit, sign-extend to 2x64-bit
+/// Pattern: LD1 {v.2S}, [addr] + SSHLL v.2D, v.2S, #0
+pub fn aarch64_sload32x2(
+    addr_val: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const addr = try ctx.getValueReg(addr_val, .int);
+    const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+
+    // LD1 {v.2S}, [addr]
+    try ctx.emit(Inst{
+        .ldr = .{
+            .dst = tmp,
+            .base = addr,
+            .offset = 0,
+            .size = .size64,
+        },
+    });
+
+    // SSHLL v.2D, v.2S, #0
+    return Inst{
+        .vec_sshll = .{
+            .dst = dst,
+            .src = tmp.toVReg(),
+            .shift_amt = 0,
+            .size = .size32x2,
+            .high = false,
+        },
+    };
+}
+
 /// Constructor: Store with base register only (STR Xt, [Xn])
 pub fn aarch64_str(
     val: lower_mod.Value,

@@ -1649,6 +1649,50 @@
 (rule (lower (load ty addr _flags _offset))
       (aarch64_ldr ty addr))
 
+;;;; Widening loads ;;;;
+
+;; uload8x8: Load 8x8-bit, zero-extend to 8x16-bit
+(decl aarch64_uload8x8 (Value) Aarch64Inst)
+(extern constructor aarch64_uload8x8 aarch64_uload8x8)
+
+(rule (lower (uload8x8 addr _flags _offset))
+      (aarch64_uload8x8 addr))
+
+;; sload8x8: Load 8x8-bit, sign-extend to 8x16-bit
+(decl aarch64_sload8x8 (Value) Aarch64Inst)
+(extern constructor aarch64_sload8x8 aarch64_sload8x8)
+
+(rule (lower (sload8x8 addr _flags _offset))
+      (aarch64_sload8x8 addr))
+
+;; uload16x4: Load 4x16-bit, zero-extend to 4x32-bit
+(decl aarch64_uload16x4 (Value) Aarch64Inst)
+(extern constructor aarch64_uload16x4 aarch64_uload16x4)
+
+(rule (lower (uload16x4 addr _flags _offset))
+      (aarch64_uload16x4 addr))
+
+;; sload16x4: Load 4x16-bit, sign-extend to 4x32-bit
+(decl aarch64_sload16x4 (Value) Aarch64Inst)
+(extern constructor aarch64_sload16x4 aarch64_sload16x4)
+
+(rule (lower (sload16x4 addr _flags _offset))
+      (aarch64_sload16x4 addr))
+
+;; uload32x2: Load 2x32-bit, zero-extend to 2x64-bit
+(decl aarch64_uload32x2 (Value) Aarch64Inst)
+(extern constructor aarch64_uload32x2 aarch64_uload32x2)
+
+(rule (lower (uload32x2 addr _flags _offset))
+      (aarch64_uload32x2 addr))
+
+;; sload32x2: Load 2x32-bit, sign-extend to 2x64-bit
+(decl aarch64_sload32x2 (Value) Aarch64Inst)
+(extern constructor aarch64_sload32x2 aarch64_sload32x2)
+
+(rule (lower (sload32x2 addr _flags _offset))
+      (aarch64_sload32x2 addr))
+
 ;; store: Store to memory with register+immediate offset
 ;; Pattern: store(val, iadd(base, iconst(offset))) => STR Xt, [Xn, #offset]
 (rule (lower (store val (iadd ptr_ty base (iconst offset)) _flags _mem_offset))
