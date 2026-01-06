@@ -3333,6 +3333,171 @@ pub fn aarch64_ldr_post(
     };
 }
 
+/// Constructor: Store with base register only (STR Xt, [Xn])
+pub fn aarch64_str(
+    val: lower_mod.Value,
+    addr: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(addr, .int);
+    const src = try ctx.getValueReg(val, .int);
+    const ty = ctx.valueType(val);
+    const size = typeToOperandSize(ty);
+    
+    return Inst{
+        .str = .{
+            .src = src,
+            .base = base,
+            .offset = 0,
+            .size = size,
+        },
+    };
+}
+
+/// Constructor: Store with immediate offset (STR Xt, [Xn, #offset])
+pub fn aarch64_str_imm(
+    val: lower_mod.Value,
+    base_val: lower_mod.Value,
+    offset: i64,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(base_val, .int);
+    const src = try ctx.getValueReg(val, .int);
+    const ty = ctx.valueType(val);
+    const size = typeToOperandSize(ty);
+    const offset_i16: i16 = @intCast(offset);
+    
+    return Inst{
+        .str = .{
+            .src = src,
+            .base = base,
+            .offset = offset_i16,
+            .size = size,
+        },
+    };
+}
+
+/// Constructor: Store with register offset (STR Xt, [Xn, Xm])
+pub fn aarch64_str_reg(
+    val: lower_mod.Value,
+    base_val: lower_mod.Value,
+    offset_val: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(base_val, .int);
+    const offset = try ctx.getValueReg(offset_val, .int);
+    const src = try ctx.getValueReg(val, .int);
+    const ty = ctx.valueType(val);
+    const size = typeToOperandSize(ty);
+    
+    return Inst{
+        .str_reg = .{
+            .src = src,
+            .base = base,
+            .offset = offset,
+            .size = size,
+        },
+    };
+}
+
+/// Constructor: Store with extended register offset (STR Xt, [Xn, Wm, SXTW])
+pub fn aarch64_str_ext(
+    val: lower_mod.Value,
+    base_val: lower_mod.Value,
+    offset_val: lower_mod.Value,
+    extend: ExtendOp,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(base_val, .int);
+    const offset = try ctx.getValueReg(offset_val, .int);
+    const src = try ctx.getValueReg(val, .int);
+    const ty = ctx.valueType(val);
+    const size = typeToOperandSize(ty);
+    
+    return Inst{
+        .str_ext = .{
+            .src = src,
+            .base = base,
+            .offset = offset,
+            .extend = extend,
+            .size = size,
+        },
+    };
+}
+
+/// Constructor: Store with shifted register offset (STR Xt, [Xn, Xm, LSL #shift])
+pub fn aarch64_str_shifted(
+    val: lower_mod.Value,
+    base_val: lower_mod.Value,
+    offset_val: lower_mod.Value,
+    shift: i64,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(base_val, .int);
+    const offset = try ctx.getValueReg(offset_val, .int);
+    const src = try ctx.getValueReg(val, .int);
+    const ty = ctx.valueType(val);
+    const size = typeToOperandSize(ty);
+    const shift_u8: u8 = @intCast(shift);
+    
+    return Inst{
+        .str_shifted = .{
+            .src = src,
+            .base = base,
+            .offset = offset,
+            .shift_op = .lsl, // Only LSL is supported for load/store addressing
+            .shift_amt = shift_u8,
+            .size = size,
+        },
+    };
+}
+
+/// Constructor: Store with pre-index (base += offset, then store)
+pub fn aarch64_str_pre(
+    val: lower_mod.Value,
+    base_val: lower_mod.Value,
+    offset: i64,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(base_val, .int);
+    const src = try ctx.getValueReg(val, .int);
+    const ty = ctx.valueType(val);
+    const size = typeToOperandSize(ty);
+    const offset_i16: i16 = @intCast(offset);
+    
+    return Inst{
+        .str_pre = .{
+            .src = src,
+            .base = base,
+            .offset = offset_i16,
+            .size = size,
+        },
+    };
+}
+
+/// Constructor: Store with post-index (store, then base += offset)
+pub fn aarch64_str_post(
+    val: lower_mod.Value,
+    base_val: lower_mod.Value,
+    offset: i64,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(base_val, .int);
+    const src = try ctx.getValueReg(val, .int);
+    const ty = ctx.valueType(val);
+    const size = typeToOperandSize(ty);
+    const offset_i16: i16 = @intCast(offset);
+    
+    return Inst{
+        .str_post = .{
+            .src = src,
+            .base = base,
+            .offset = offset_i16,
+            .size = size,
+        },
+    };
+}
+
 pub fn aarch64_uload8(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
