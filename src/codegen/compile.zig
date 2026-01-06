@@ -538,10 +538,10 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
             .mov_imm => |*i| {
                 if (i.dst.toReg().toVReg()) |vreg| {
                     if (allocator.getAllocation(vreg)) |alloc| {
-                    const preg = switch (alloc) {
-                        .reg => |r| r,
-                        .spill => @panic("Spilling not yet implemented in emission"),
-                    };
+                        const preg = switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented in emission"),
+                        };
                         i.dst = WritableReg.fromReg(Reg.fromPReg(preg));
                     }
                 }
@@ -549,28 +549,28 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
             .add_rr => |*i| {
                 if (i.dst.toReg().toVReg()) |vreg| {
                     if (allocator.getAllocation(vreg)) |alloc| {
-                    const preg = switch (alloc) {
-                        .reg => |r| r,
-                        .spill => @panic("Spilling not yet implemented in emission"),
-                    };
+                        const preg = switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented in emission"),
+                        };
                         i.dst = WritableReg.fromReg(Reg.fromPReg(preg));
                     }
                 }
                 if (i.src1.toVReg()) |vreg| {
                     if (allocator.getAllocation(vreg)) |alloc| {
-                    const preg = switch (alloc) {
-                        .reg => |r| r,
-                        .spill => @panic("Spilling not yet implemented in emission"),
-                    };
+                        const preg = switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented in emission"),
+                        };
                         i.src1 = Reg.fromPReg(preg);
                     }
                 }
                 if (i.src2.toVReg()) |vreg| {
                     if (allocator.getAllocation(vreg)) |alloc| {
-                    const preg = switch (alloc) {
-                        .reg => |r| r,
-                        .spill => @panic("Spilling not yet implemented in emission"),
-                    };
+                        const preg = switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented in emission"),
+                        };
                         i.src2 = Reg.fromPReg(preg);
                     }
                 }
@@ -578,19 +578,19 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
             .mov_rr => |*i| {
                 if (i.dst.toReg().toVReg()) |vreg| {
                     if (allocator.getAllocation(vreg)) |alloc| {
-                    const preg = switch (alloc) {
-                        .reg => |r| r,
-                        .spill => @panic("Spilling not yet implemented in emission"),
-                    };
+                        const preg = switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented in emission"),
+                        };
                         i.dst = WritableReg.fromReg(Reg.fromPReg(preg));
                     }
                 }
                 if (i.src.toVReg()) |vreg| {
                     if (allocator.getAllocation(vreg)) |alloc| {
-                    const preg = switch (alloc) {
-                        .reg => |r| r,
-                        .spill => @panic("Spilling not yet implemented in emission"),
-                    };
+                        const preg = switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented in emission"),
+                        };
                         i.src = Reg.fromPReg(preg);
                     }
                 }
@@ -598,28 +598,28 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
             .mul_rr => |*i| {
                 if (i.dst.toReg().toVReg()) |vreg| {
                     if (allocator.getAllocation(vreg)) |alloc| {
-                    const preg = switch (alloc) {
-                        .reg => |r| r,
-                        .spill => @panic("Spilling not yet implemented in emission"),
-                    };
+                        const preg = switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented in emission"),
+                        };
                         i.dst = WritableReg.fromReg(Reg.fromPReg(preg));
                     }
                 }
                 if (i.src1.toVReg()) |vreg| {
                     if (allocator.getAllocation(vreg)) |alloc| {
-                    const preg = switch (alloc) {
-                        .reg => |r| r,
-                        .spill => @panic("Spilling not yet implemented in emission"),
-                    };
+                        const preg = switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented in emission"),
+                        };
                         i.src1 = Reg.fromPReg(preg);
                     }
                 }
                 if (i.src2.toVReg()) |vreg| {
                     if (allocator.getAllocation(vreg)) |alloc| {
-                    const preg = switch (alloc) {
-                        .reg => |r| r,
-                        .spill => @panic("Spilling not yet implemented in emission"),
-                    };
+                        const preg = switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented in emission"),
+                        };
                         i.src2 = Reg.fromPReg(preg);
                     }
                 }
@@ -1951,6 +1951,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .cmp_imm = .{
                             .src = Reg.fromVReg(high_vreg),
                             .imm = .{ .bits = 0, .shift12 = false },
+                            .size = .size64,
                         },
                     });
 

@@ -429,17 +429,17 @@ fn emitSubsRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer
 }
 
 /// SUBS Xd, Xn, #imm (subtract immediate and set flags)
-fn emitSubsImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitSubsImm(dst: Reg, src: Reg, imm: inst_mod.Imm12, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
-    const imm12: u12 = @truncate(imm);
 
     // SUBS imm: sf|1|1|10001|shift|imm12|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
         (0b11 << 29) |
         (0b10001 << 24) |
-        (@as(u32, imm12) << 10) |
+        (@as(u32, @as(u1, @intFromBool(imm.shift12))) << 22) |
+        (@as(u32, imm.bits) << 10) |
         (@as(u32, rn) << 5) |
         rd;
 
@@ -809,14 +809,23 @@ fn emitAndImm(dst: Reg, src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_
     const sf_bit: u32 = @intCast(sf(size));
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
-    const n: u1 = if (imm_logic.n) 1 else 0;
+
+    // Encode the logical immediate to get N:immr:imms packed in u13
+    const encoding = @import("encoding.zig");
+    const is_64bit = size == .size64;
+    const encoded = encoding.encodeLogicalImmediate(imm_logic.value, is_64bit) orelse unreachable;
+
+    // Unpack: (n << 12) | (immr << 6) | imms
+    const n: u1 = @intCast((encoded >> 12) & 1);
+    const immr: u6 = @intCast((encoded >> 6) & 0x3F);
+    const imms: u6 = @intCast(encoded & 0x3F);
 
     // AND (immediate): sf|00|100100|N|immr|imms|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
         (0b00100100 << 23) |
         (@as(u32, n) << 22) |
-        (@as(u32, imm_logic.r) << 16) |
-        (@as(u32, imm_logic.s) << 10) |
+        (@as(u32, immr) << 16) |
+        (@as(u32, imms) << 10) |
         (@as(u32, rn) << 5) |
         rd;
 
@@ -847,14 +856,23 @@ fn emitOrrImm(dst: Reg, src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_
     const sf_bit: u32 = @intCast(sf(size));
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
-    const n: u1 = if (imm_logic.n) 1 else 0;
+
+    // Encode the logical immediate to get N:immr:imms packed in u13
+    const encoding = @import("encoding.zig");
+    const is_64bit = size == .size64;
+    const encoded = encoding.encodeLogicalImmediate(imm_logic.value, is_64bit) orelse unreachable;
+
+    // Unpack: (n << 12) | (immr << 6) | imms
+    const n: u1 = @intCast((encoded >> 12) & 1);
+    const immr: u6 = @intCast((encoded >> 6) & 0x3F);
+    const imms: u6 = @intCast(encoded & 0x3F);
 
     // ORR (immediate): sf|01|100100|N|immr|imms|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
         (0b01100100 << 23) |
         (@as(u32, n) << 22) |
-        (@as(u32, imm_logic.r) << 16) |
-        (@as(u32, imm_logic.s) << 10) |
+        (@as(u32, immr) << 16) |
+        (@as(u32, imms) << 10) |
         (@as(u32, rn) << 5) |
         rd;
 
@@ -885,14 +903,23 @@ fn emitEorImm(dst: Reg, src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_
     const sf_bit: u32 = @intCast(sf(size));
     const rd = hwEnc(dst);
     const rn = hwEnc(src);
-    const n: u1 = if (imm_logic.n) 1 else 0;
+
+    // Encode the logical immediate to get N:immr:imms packed in u13
+    const encoding = @import("encoding.zig");
+    const is_64bit = size == .size64;
+    const encoded = encoding.encodeLogicalImmediate(imm_logic.value, is_64bit) orelse unreachable;
+
+    // Unpack: (n << 12) | (immr << 6) | imms
+    const n: u1 = @intCast((encoded >> 12) & 1);
+    const immr: u6 = @intCast((encoded >> 6) & 0x3F);
+    const imms: u6 = @intCast(encoded & 0x3F);
 
     // EOR (immediate): sf|10|100100|N|immr|imms|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
         (0b10100100 << 23) |
         (@as(u32, n) << 22) |
-        (@as(u32, imm_logic.r) << 16) |
-        (@as(u32, imm_logic.s) << 10) |
+        (@as(u32, immr) << 16) |
+        (@as(u32, imms) << 10) |
         (@as(u32, rn) << 5) |
         rd;
 
@@ -921,7 +948,8 @@ fn emitMvnRR(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuff
 /// NEG Xd, Xm (negate - implemented as SUB Xd, XZR, Xm)
 fn emitNeg(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // NEG is an alias for SUB with XZR as first source
-    const xzr = if (size == .size64) inst_mod.PReg.xzr else inst_mod.PReg.wzr;
+    // XZR/WZR is hardware register 31
+    const xzr = inst_mod.PReg.new(.int, 31);
     const src1 = Reg.fromPReg(xzr);
     try emitSubRR(dst, src1, src, size, buffer);
 }
@@ -948,16 +976,16 @@ fn emitNgc(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
 /// Alias for SUBS XZR, Xn, Xm
 fn emitCmpRR(src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // CMP is just SUBS with XZR as destination
-    const xzr = if (size == .size64) inst_mod.PReg.xzr else inst_mod.PReg.wzr;
+    const xzr = inst_mod.PReg.new(.int, 31); // XZR/WZR is hardware register 31
     const dst = Reg.fromPReg(xzr);
     try emitSubsRR(dst, src1, src2, size, buffer);
 }
 
 /// CMP Xn, #imm (compare register with immediate)
 /// Alias for SUBS XZR, Xn, #imm
-fn emitCmpImm(src: Reg, imm: u16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitCmpImm(src: Reg, imm: inst_mod.Imm12, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // CMP is just SUBS with XZR as destination
-    const xzr = if (size == .size64) inst_mod.PReg.xzr else inst_mod.PReg.wzr;
+    const xzr = inst_mod.PReg.new(.int, 31); // XZR/WZR is hardware register 31
     const dst = Reg.fromPReg(xzr);
     try emitSubsImm(dst, src, imm, size, buffer);
 }
@@ -966,7 +994,7 @@ fn emitCmpImm(src: Reg, imm: u16, size: OperandSize, buffer: *buffer_mod.MachBuf
 /// Alias for ADDS XZR, Xn, Xm
 fn emitCmnRR(src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // CMN is just ADDS with XZR as destination
-    const xzr = if (size == .size64) inst_mod.PReg.xzr else inst_mod.PReg.wzr;
+    const xzr = inst_mod.PReg.new(.int, 31); // XZR/WZR is hardware register 31
     const dst = Reg.fromPReg(xzr);
     try emitAddsRR(dst, src1, src2, size, buffer);
 }
@@ -975,7 +1003,7 @@ fn emitCmnRR(src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBu
 /// Alias for ADDS XZR, Xn, #imm
 fn emitCmnImm(src: Reg, imm: u16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // CMN is just ADDS with XZR as destination
-    const xzr = if (size == .size64) inst_mod.PReg.xzr else inst_mod.PReg.wzr;
+    const xzr = inst_mod.PReg.new(.int, 31); // XZR/WZR is hardware register 31
     const dst = Reg.fromPReg(xzr);
     try emitAddsImm(dst, src, imm, size, buffer);
 }
@@ -1006,14 +1034,23 @@ fn emitTstImm(src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_mod.MachBu
     const sf_bit: u32 = @intCast(sf(size));
     const rd: u5 = 31; // XZR
     const rn = hwEnc(src);
-    const n: u1 = if (imm_logic.n) 1 else 0;
+
+    // Encode the logical immediate to get N:immr:imms packed in u13
+    const encoding = @import("encoding.zig");
+    const is_64bit = size == .size64;
+    const encoded = encoding.encodeLogicalImmediate(imm_logic.value, is_64bit) orelse unreachable;
+
+    // Unpack: (n << 12) | (immr << 6) | imms
+    const n: u1 = @intCast((encoded >> 12) & 1);
+    const immr: u6 = @intCast((encoded >> 6) & 0x3F);
+    const imms: u6 = @intCast(encoded & 0x3F);
 
     // ANDS (immediate): sf|11|100100|N|immr|imms|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
         (0b11100100 << 23) |
         (@as(u32, n) << 22) |
-        (@as(u32, imm_logic.r) << 16) |
-        (@as(u32, imm_logic.s) << 10) |
+        (@as(u32, immr) << 16) |
+        (@as(u32, imms) << 10) |
         (@as(u32, rn) << 5) |
         rd;
 

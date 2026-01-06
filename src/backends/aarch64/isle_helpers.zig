@@ -584,6 +584,17 @@ fn typeToFpuOperandSize(ty: root.types.Type) root.aarch64_inst.FpuOperandSize {
     }
 }
 
+/// Helper: Convert IR type to register class.
+fn typeToRegClass(ty: root.types.Type) root.machinst.RegClass {
+    if (ty.isVector()) {
+        return .vector;
+    } else if (ty.isFloat()) {
+        return .float;
+    } else {
+        return .int;
+    }
+}
+
 /// Helper: Get register for IR value.
 fn getValueReg(ctx: *lower_mod.LowerCtx(Inst), value: lower_mod.Value) !lower_mod.Reg {
     const vreg = try ctx.getValueReg(value, .int);
@@ -3164,6 +3175,164 @@ pub fn cmp(
 // Extending load helpers
 
 /// Load byte (unsigned, zero-extend)
+/// Constructor: Load with base register only (LDR Xt, [Xn])
+pub fn aarch64_ldr(
+    ty: types.Type,
+    addr: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(addr, .int);
+    const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
+    const size = typeToOperandSize(ty);
+
+    return Inst{
+        .ldr = .{
+            .dst = dst,
+            .base = base,
+            .offset = 0,
+            .size = size,
+        },
+    };
+}
+
+/// Constructor: Load with immediate offset (LDR Xt, [Xn, #offset])
+pub fn aarch64_ldr_imm(
+    ty: types.Type,
+    base_val: lower_mod.Value,
+    offset: i64,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(base_val, .int);
+    const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
+    const size = typeToOperandSize(ty);
+    const offset_i16: i16 = @intCast(offset);
+
+    return Inst{
+        .ldr = .{
+            .dst = dst,
+            .base = base,
+            .offset = offset_i16,
+            .size = size,
+        },
+    };
+}
+
+/// Constructor: Load with register offset (LDR Xt, [Xn, Xm])
+pub fn aarch64_ldr_reg(
+    ty: types.Type,
+    base_val: lower_mod.Value,
+    offset_val: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(base_val, .int);
+    const offset = try ctx.getValueReg(offset_val, .int);
+    const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
+    const size = typeToOperandSize(ty);
+
+    return Inst{
+        .ldr_reg = .{
+            .dst = dst,
+            .base = base,
+            .offset = offset,
+            .size = size,
+        },
+    };
+}
+
+/// Constructor: Load with extended register offset (LDR Xt, [Xn, Wm, SXTW])
+pub fn aarch64_ldr_ext(
+    ty: types.Type,
+    base_val: lower_mod.Value,
+    offset_val: lower_mod.Value,
+    extend: ExtendOp,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(base_val, .int);
+    const offset = try ctx.getValueReg(offset_val, .int);
+    const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
+    const size = typeToOperandSize(ty);
+
+    return Inst{
+        .ldr_ext = .{
+            .dst = dst,
+            .base = base,
+            .offset = offset,
+            .extend = extend,
+            .size = size,
+        },
+    };
+}
+
+/// Constructor: Load with shifted register offset (LDR Xt, [Xn, Xm, LSL #shift])
+pub fn aarch64_ldr_shifted(
+    ty: types.Type,
+    base_val: lower_mod.Value,
+    offset_val: lower_mod.Value,
+    shift: i64,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(base_val, .int);
+    const offset = try ctx.getValueReg(offset_val, .int);
+    const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
+    const size = typeToOperandSize(ty);
+    const shift_u8: u8 = @intCast(shift);
+
+    return Inst{
+        .ldr_shifted = .{
+            .dst = dst,
+            .base = base,
+            .offset = offset,
+            .shift_op = .lsl, // Only LSL is supported for load/store addressing
+            .shift_amt = shift_u8,
+            .size = size,
+        },
+    };
+}
+
+/// Constructor: Load with pre-index (base += offset, then load)
+pub fn aarch64_ldr_pre(
+    ty: types.Type,
+    base_val: lower_mod.Value,
+    offset: i64,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(base_val, .int);
+    const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
+    const size = typeToOperandSize(ty);
+    const offset_i16: i16 = @intCast(offset);
+
+    return Inst{
+        .ldr_pre = .{
+            .dst = dst,
+            .base = base,
+            .offset = offset_i16,
+            .size = size,
+        },
+    };
+}
+
+/// Constructor: Load with post-index (load, then base += offset)
+pub fn aarch64_ldr_post(
+    ty: types.Type,
+    base_val: lower_mod.Value,
+    offset: i64,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(base_val, .int);
+    const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
+    const size = typeToOperandSize(ty);
+    const offset_i16: i16 = @intCast(offset);
+
+    return Inst{
+        .ldr_post = .{
+            .dst = dst,
+            .base = base,
+            .offset = offset_i16,
+            .size = size,
+        },
+    };
+}
+
 pub fn aarch64_uload8(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),

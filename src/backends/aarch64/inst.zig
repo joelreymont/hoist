@@ -144,7 +144,7 @@ pub const Inst = union(enum) {
     subs_imm: struct {
         dst: WritableReg,
         src: Reg,
-        imm: u16,
+        imm: Imm12,
         size: OperandSize,
     },
 
@@ -433,6 +433,7 @@ pub const Inst = union(enum) {
     cmp_imm: struct {
         src: Reg,
         imm: Imm12,
+        size: OperandSize,
     },
 
     /// Compare negative register (CMN Xn, Xm).
