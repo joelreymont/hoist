@@ -138,10 +138,19 @@ pub const LinearScanAllocator = struct {
             const maybe_preg = try self.tryAllocateReg(range, &result);
 
             if (maybe_preg == null) {
-                // No free register available - spilling needed
-                // TODO: Implement spilling heuristic
-                // For now, just fail - this will be handled in a future commit
-                return error.OutOfRegisters;
+                // No free register available - try spilling
+                const spilled_reg = try self.spillInterval(range, &result);
+
+                if (spilled_reg) |preg| {
+                    // Successfully spilled - allocate the freed register
+                    try result.assign(range.vreg, preg);
+                    const free_regs = self.getFreeRegs(range.reg_class);
+                    free_regs.unset(preg.index);
+                    try self.active.append(self.allocator, range);
+                } else {
+                    // No suitable spill candidate - out of registers
+                    return error.OutOfRegisters;
+                }
             }
         }
 
@@ -229,6 +238,54 @@ pub const LinearScanAllocator = struct {
 
         // No free register available
         return null;
+    }
+
+    /// Spill an active interval to free up a register.
+    ///
+    /// Chooses the active interval with the furthest next use (approximated as
+    /// the interval that ends latest) and evicts it from the active list.
+    /// This frees up its physical register for allocation to the current range.
+    ///
+    /// Returns the freed register, or null if no suitable spill candidate exists.
+    fn spillInterval(
+        self: *LinearScanAllocator,
+        range: liveness.LiveRange,
+        result: *RegAllocResult,
+    ) !?machinst.PReg {
+        // Find the active interval of the same register class with the furthest end
+        var best_idx: ?usize = null;
+        var best_end: u32 = range.end_inst;
+
+        for (self.active.items, 0..) |active_range, idx| {
+            // Only consider intervals of the same register class
+            if (active_range.reg_class != range.reg_class) continue;
+
+            // Find interval that ends furthest in the future
+            if (active_range.end_inst > best_end) {
+                best_end = active_range.end_inst;
+                best_idx = idx;
+            }
+        }
+
+        // If no candidate found, spilling won't help
+        const spill_idx = best_idx orelse return null;
+
+        // Get the interval to spill
+        const spill_range = self.active.items[spill_idx];
+
+        // Get its allocated register
+        const preg = result.getPhysReg(spill_range.vreg) orelse return null;
+
+        // Remove from active list
+        _ = self.active.swapRemove(spill_idx);
+
+        // Mark register as free
+        const free_regs = self.getFreeRegs(spill_range.reg_class);
+        free_regs.set(preg.index);
+
+        // TODO: Mark vreg as spilled in result (need spill slot allocation)
+
+        return preg;
     }
 
     /// Get the bitset for free registers of a given class
