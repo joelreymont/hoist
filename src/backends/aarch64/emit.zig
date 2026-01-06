@@ -120,6 +120,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .br => |i| try emitBR(i.target, buffer),
         .blr => |i| try emitBLR(i.target, buffer),
         .ret => try emitRet(null, buffer),
+        .adrp_symbol => |i| try emitAdrpSymbol(i.dst.toReg(), i.symbol, buffer),
+        .add_symbol_lo12 => |i| try emitAddSymbolLo12(i.dst.toReg(), i.src, i.symbol, buffer),
         .nop => try emitNop(buffer),
         .fsqrt => |i| try emitFsqrt(i.dst.toReg(), i.src, i.size, buffer),
         .vec_add => |i| try emitVecAdd(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -2806,6 +2808,45 @@ pub fn emitRet(reg: ?Reg, buffer: *buffer_mod.MachBuffer) !void {
         (@as(u32, rn) << 5);
 
     try buffer.put4(insn);
+}
+
+/// ADRP Xd, symbol (load page address of global symbol)
+fn emitAdrpSymbol(dst: Reg, symbol: []const u8, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+
+    // ADRP: 1|immlo|10000|immhi|Rd
+    // Placeholder encoding - immhi:immlo will be patched by linker
+    const insn: u32 = (@as(u32, 1) << 31) | (@as(u32, 0b10000) << 24) | rd;
+    const offset = buffer.curOffset();
+    try buffer.put4(insn);
+
+    // Add relocation for ADRP page address
+    try buffer.addReloc(
+        offset,
+        buffer_mod.Reloc.aarch64_adr_prel_pg_hi21,
+        symbol,
+        0,
+    );
+}
+
+/// ADD Xd, Xn, :lo12:symbol (add low 12 bits of symbol offset)
+fn emitAddSymbolLo12(dst: Reg, src: Reg, symbol: []const u8, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+
+    // ADD imm: 1|00|100010|shift|imm12|Rn|Rd
+    // Placeholder encoding - imm12 will be patched by linker
+    const insn: u32 = (1 << 31) | (0b00100010 << 23) | (@as(u32, rn) << 5) | rd;
+    const offset = buffer.curOffset();
+    try buffer.put4(insn);
+
+    // Add relocation for low 12 bits of symbol offset
+    try buffer.addReloc(
+        offset,
+        buffer_mod.Reloc.aarch64_add_abs_lo12_nc,
+        symbol,
+        0,
+    );
 }
 
 /// NOP

@@ -2863,6 +2863,11 @@
 (rule (lower (stack_store val stack_slot offset))
       (aarch64_stack_store (value_type val) val stack_slot offset))
 
+;; global_value: Load address of global value
+(decl aarch64_global_value (GlobalValue) Aarch64Inst)
+(rule (lower (global_value gv))
+      (aarch64_global_value gv))
+
 ;; symbol_value: Load address of external symbol
 (decl aarch64_symbol_value (ExternalName i64) Aarch64Inst)
 (rule (lower (symbol_value (symbol_value_data extname dist offset)))

@@ -1033,3 +1033,14 @@ pub fn aarch64_stack_store(
     _ = ctx;
     @panic("TODO: Implement stack_store - needs frame layout infrastructure");
 }
+
+/// Constructor: global_value - load address of global value.
+/// Emits ADRP+ADD sequence for PC-relative global addressing.
+pub fn aarch64_global_value(
+    ctx: *IsleContext,
+    gv: u32,
+) !WritableReg {
+    _ = gv;
+    _ = ctx;
+    @panic("TODO: Implement global_value - needs global value data structure");
+}

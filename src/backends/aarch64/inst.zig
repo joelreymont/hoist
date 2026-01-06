@@ -1061,6 +1061,21 @@ pub const Inst = union(enum) {
         label: u32,
     },
 
+    /// Load page address of global symbol (ADRP Xd, symbol).
+    /// Used for first half of global address materialization.
+    adrp_symbol: struct {
+        dst: WritableReg,
+        symbol: []const u8,
+    },
+
+    /// Add low 12 bits of global offset (ADD Xd, Xn, :lo12:symbol).
+    /// Used for second half of global address materialization.
+    add_symbol_lo12: struct {
+        dst: WritableReg,
+        src: Reg,
+        symbol: []const u8,
+    },
+
     /// No operation (NOP).
     nop: void,
 
