@@ -1448,6 +1448,97 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .size = .size32,
                     },
                 });
+            } else if (data.opcode == .umul_overflow or data.opcode == .smul_overflow) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const CondCode = @import("../backends/aarch64/inst.zig").CondCode;
+
+                const x_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const y_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
+
+                const results = ctx.func.dfg.instResults(inst);
+                if (results.len != 2) return error.LoweringFailed;
+
+                const prod_vreg = VReg.new(@intCast(results[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const overflow_vreg = VReg.new(@intCast(results[1].index + Reg.PINNED_VREGS), RegClass.int);
+
+                const value_type = ctx.func.dfg.valueType(results[0]) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                if (size != .size64) return error.LoweringFailed;
+
+                try builder.emit(Inst{
+                    .mul_rr = .{
+                        .dst = WritableReg.fromVReg(prod_vreg),
+                        .src1 = Reg.fromVReg(x_vreg),
+                        .src2 = Reg.fromVReg(y_vreg),
+                        .size = size,
+                    },
+                });
+
+                const high_vreg = VReg.new(@intCast(results[0].index + Reg.PINNED_VREGS + 1), RegClass.int);
+
+                if (data.opcode == .umul_overflow) {
+                    try builder.emit(Inst{
+                        .umulh = .{
+                            .dst = WritableReg.fromVReg(high_vreg),
+                            .src1 = Reg.fromVReg(x_vreg),
+                            .src2 = Reg.fromVReg(y_vreg),
+                        },
+                    });
+
+                    try builder.emit(Inst{
+                        .cmp_imm = .{
+                            .src = Reg.fromVReg(high_vreg),
+                            .imm = .{ .bits = 0, .shift12 = false },
+                        },
+                    });
+
+                    try builder.emit(Inst{
+                        .cset = .{
+                            .dst = WritableReg.fromVReg(overflow_vreg),
+                            .cond = CondCode.ne,
+                            .size = .size32,
+                        },
+                    });
+                } else {
+                    try builder.emit(Inst{
+                        .smulh = .{
+                            .dst = WritableReg.fromVReg(high_vreg),
+                            .src1 = Reg.fromVReg(x_vreg),
+                            .src2 = Reg.fromVReg(y_vreg),
+                        },
+                    });
+
+                    const temp_vreg = VReg.new(@intCast(results[0].index + Reg.PINNED_VREGS + 2), RegClass.int);
+
+                    try builder.emit(Inst{
+                        .asr_imm = .{
+                            .dst = WritableReg.fromVReg(temp_vreg),
+                            .src = Reg.fromVReg(prod_vreg),
+                            .imm = 63,
+                            .size = .size64,
+                        },
+                    });
+
+                    try builder.emit(Inst{
+                        .cmp_rr = .{
+                            .src1 = Reg.fromVReg(high_vreg),
+                            .src2 = Reg.fromVReg(temp_vreg),
+                            .size = .size64,
+                        },
+                    });
+
+                    try builder.emit(Inst{
+                        .cset = .{
+                            .dst = WritableReg.fromVReg(overflow_vreg),
+                            .cond = CondCode.ne,
+                            .size = .size32,
+                        },
+                    });
+                }
             } else if (data.opcode == .sadd_sat or data.opcode == .ssub_sat or data.opcode == .uadd_sat or data.opcode == .usub_sat) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
