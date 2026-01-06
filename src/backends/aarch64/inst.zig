@@ -1084,6 +1084,20 @@ pub const Inst = union(enum) {
     /// Used for Spectre mitigation after conditional branches.
     csdb: void,
 
+    /// BTI - Branch Target Identification (ARMv8.5-A)
+    /// Marks valid indirect branch/call targets for CFI
+    bti: struct {
+        target: BtiTarget,
+    },
+
+    /// PACIASP - Sign LR with SP as modifier (ARMv8.3-A PAC)
+    /// Used in function prologue for return address protection
+    paciasp: void,
+
+    /// AUTIASP - Authenticate LR with SP as modifier (ARMv8.3-A PAC)
+    /// Used before RET to verify return address integrity
+    autiasp: void,
+
     /// Breakpoint (BRK #imm).
     brk: struct {
         imm: u16,
@@ -2774,6 +2788,16 @@ pub const BarrierOption = enum(u4) {
     osh = 0x3, // Outer shareable
     oshst = 0x2, // Outer shareable store
     oshld = 0x1, // Outer shareable load
+};
+
+/// BTI target type for Branch Target Identification
+pub const BtiTarget = enum(u2) {
+    /// BTI c - Valid target for call instructions (BL, BLR)
+    c = 0b00,
+    /// BTI j - Valid target for jump instructions (BR)
+    j = 0b01,
+    /// BTI jc - Valid target for both call and jump
+    jc = 0b10,
 };
 
 /// Create AND immediate instruction.

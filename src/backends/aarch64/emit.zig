@@ -9,6 +9,7 @@ const VectorSize = inst_mod.VectorSize;
 const VecElemSize = inst_mod.VecElemSize;
 const BarrierOption = inst_mod.BarrierOp;
 const CondCode = inst_mod.CondCode;
+const BtiTarget = inst_mod.BtiTarget;
 const Reg = inst_mod.Reg;
 const PReg = inst_mod.PReg;
 const ExtendOp = inst_mod.ExtendOp;
@@ -124,6 +125,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .add_symbol_lo12 => |i| try emitAddSymbolLo12(i.dst.toReg(), i.src, i.symbol, buffer),
         .nop => try emitNop(buffer),
         .csdb => try emitCsdb(buffer),
+        .bti => |i| try emitBti(i.target, buffer),
+        .paciasp => try emitPaciasp(buffer),
+        .autiasp => try emitAutiasp(buffer),
         .fsqrt => |i| try emitFsqrt(i.dst.toReg(), i.src, i.size, buffer),
         .vec_add => |i| try emitVecAdd(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_sub => |i| try emitVecSub(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -2861,6 +2865,28 @@ fn emitNop(buffer: *buffer_mod.MachBuffer) !void {
 fn emitCsdb(buffer: *buffer_mod.MachBuffer) !void {
     // CSDB: 11010101000000110010001010011111
     const insn: u32 = 0xD503229F;
+    try buffer.put4(insn);
+}
+
+/// BTI - Branch Target Identification (ARMv8.5-A)
+fn emitBti(target: BtiTarget, buffer: *buffer_mod.MachBuffer) !void {
+    // BTI: 1101010100000011001001|op|11111
+    const op: u2 = @intFromEnum(target);
+    const insn: u32 = 0xD503241F | (@as(u32, op) << 6);
+    try buffer.put4(insn);
+}
+
+/// PACIASP - Sign LR with SP as modifier (ARMv8.3-A PAC)
+fn emitPaciasp(buffer: *buffer_mod.MachBuffer) !void {
+    // PACIASP: 11010101000000110010001110111111
+    const insn: u32 = 0xD503233F;
+    try buffer.put4(insn);
+}
+
+/// AUTIASP - Authenticate LR with SP as modifier (ARMv8.3-A PAC)
+fn emitAutiasp(buffer: *buffer_mod.MachBuffer) !void {
+    // AUTIASP: 11010101000000110010001111111111
+    const insn: u32 = 0xD50323BF;
     try buffer.put4(insn);
 }
 
