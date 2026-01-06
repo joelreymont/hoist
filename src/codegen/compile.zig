@@ -625,45 +625,66 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
     // Match instruction opcode and lower accordingly
     switch (inst_data_ptr.*) {
         .unary_imm => |data| {
-            // Handle unary_imm instructions (iconst)
-            if (data.opcode != .iconst) {
-                try builder.emit(Inst.nop);
-                return;
-            }
-            // Load immediate constant into a virtual register
+            // Handle unary_imm instructions (iconst, f32const, f64const)
             const VReg = @import("../machinst/reg.zig").VReg;
             const WritableReg = @import("../machinst/reg.zig").WritableReg;
             const RegClass = @import("../machinst/reg.zig").RegClass;
             const Reg = @import("../machinst/reg.zig").Reg;
 
             // Allocate virtual register for result
-            // Offset by PINNED_VREGS to avoid collision with physical registers
             const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
-            const vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
-            const writable = WritableReg.fromVReg(vreg);
-
-            // Get immediate value and size from instruction type
             const value_type = ctx.func.dfg.valueType(result_value) orelse {
                 try builder.emit(Inst.nop);
                 return;
             };
 
-            const size: OperandSize = if (value_type.bits() == 64)
-                .size64
-            else
-                .size32;
+            if (data.opcode == .iconst) {
+                // Integer constant
+                const vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const writable = WritableReg.fromVReg(vreg);
 
-            // Get actual immediate value from instruction
-            const imm_value = data.imm.bits();
+                const size: OperandSize = if (value_type.bits() == 64)
+                    .size64
+                else
+                    .size32;
 
-            // Emit MOV immediate instruction
-            try builder.emit(Inst{
-                .mov_imm = .{
-                    .dst = writable,
-                    .imm = @bitCast(imm_value),
-                    .size = size,
-                },
-            });
+                const imm_value = data.imm.bits();
+
+                try builder.emit(Inst{
+                    .mov_imm = .{
+                        .dst = writable,
+                        .imm = @bitCast(imm_value),
+                        .size = size,
+                    },
+                });
+            } else if (data.opcode == .f32const or data.opcode == .f64const) {
+                // Floating-point constant
+                const vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.float);
+                const writable = WritableReg.fromVReg(vreg);
+
+                const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+                const size: FpuOperandSize = if (data.opcode == .f64const) .size64 else .size32;
+
+                // Reinterpret immediate bits as float
+                const imm_bits = data.imm.bits();
+                const fp_value: f64 = if (data.opcode == .f64const)
+                    @bitCast(imm_bits)
+                else
+                    @floatCast(@as(f32, @bitCast(@as(u32, @intCast(imm_bits & 0xFFFFFFFF)))));
+
+                // Try to encode as FMOV immediate
+                // For now, always use FMOV immediate and let the encoder handle it
+                // TODO: For constants that can't be encoded, use literal pool
+                try builder.emit(Inst{
+                    .fmov_imm = .{
+                        .dst = writable,
+                        .imm = fp_value,
+                        .size = size,
+                    },
+                });
+            } else {
+                try builder.emit(Inst.nop);
+            }
         },
         .nullary => |data| {
             // Handle nullary instructions (trap, debugtrap, nop, etc.)
