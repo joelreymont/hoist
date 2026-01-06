@@ -1005,6 +1005,62 @@ pub const Aarch64ISA = struct {
             .blr => |*blr| {
                 blr.target = replaceReg(blr.target, result);
             },
+            .sxtb => |*sxtb| {
+                sxtb.src = replaceReg(sxtb.src, result);
+                sxtb.dst = replaceWritableReg(sxtb.dst, result);
+            },
+            .sxth => |*sxth| {
+                sxth.src = replaceReg(sxth.src, result);
+                sxth.dst = replaceWritableReg(sxth.dst, result);
+            },
+            .sxtw => |*sxtw| {
+                sxtw.src = replaceReg(sxtw.src, result);
+                sxtw.dst = replaceWritableReg(sxtw.dst, result);
+            },
+            .uxtb => |*uxtb| {
+                uxtb.src = replaceReg(uxtb.src, result);
+                uxtb.dst = replaceWritableReg(uxtb.dst, result);
+            },
+            .uxth => |*uxth| {
+                uxth.src = replaceReg(uxth.src, result);
+                uxth.dst = replaceWritableReg(uxth.dst, result);
+            },
+            .fneg => |*fneg| {
+                fneg.src = replaceReg(fneg.src, result);
+                fneg.dst = replaceWritableReg(fneg.dst, result);
+            },
+            .fabs => |*fabs| {
+                fabs.src = replaceReg(fabs.src, result);
+                fabs.dst = replaceWritableReg(fabs.dst, result);
+            },
+            .fsqrt => |*fsqrt| {
+                fsqrt.src = replaceReg(fsqrt.src, result);
+                fsqrt.dst = replaceWritableReg(fsqrt.dst, result);
+            },
+            .scvtf => |*scvtf| {
+                scvtf.src = replaceReg(scvtf.src, result);
+                scvtf.dst = replaceWritableReg(scvtf.dst, result);
+            },
+            .ucvtf => |*ucvtf| {
+                ucvtf.src = replaceReg(ucvtf.src, result);
+                ucvtf.dst = replaceWritableReg(ucvtf.dst, result);
+            },
+            .fcvtzs => |*fcvtzs| {
+                fcvtzs.src = replaceReg(fcvtzs.src, result);
+                fcvtzs.dst = replaceWritableReg(fcvtzs.dst, result);
+            },
+            .fcvtzu => |*fcvtzu| {
+                fcvtzu.src = replaceReg(fcvtzu.src, result);
+                fcvtzu.dst = replaceWritableReg(fcvtzu.dst, result);
+            },
+            .fcvt_f32_to_f64 => |*fcvt| {
+                fcvt.src = replaceReg(fcvt.src, result);
+                fcvt.dst = replaceWritableReg(fcvt.dst, result);
+            },
+            .fcvt_f64_to_f32 => |*fcvt| {
+                fcvt.src = replaceReg(fcvt.src, result);
+                fcvt.dst = replaceWritableReg(fcvt.dst, result);
+            },
             // TODO: Add more instruction types as needed
             else => {
                 // For unimplemented instructions, do nothing
