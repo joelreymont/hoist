@@ -2771,6 +2771,26 @@
 ;; UQXTN + UQXTN2 - Unsigned narrow combined
 (decl aarch64_uqxtn_combined (Value Value VecElemSize) Aarch64Inst)
 
+;;;; Rules for vector narrowing ;;;;
+
+;; snarrow: Signed saturating narrow (SQXTN)
+(decl aarch64_snarrow (VectorSize Value) Aarch64Inst)
+(extern constructor aarch64_snarrow aarch64_snarrow)
+(rule 1 (lower (has_type (ty_vec ty) (snarrow x)))
+      (aarch64_snarrow (vector_size ty) x))
+
+;; unarrow: Signed to unsigned saturating narrow (SQXTUN)
+(decl aarch64_unarrow (VectorSize Value) Aarch64Inst)
+(extern constructor aarch64_unarrow aarch64_unarrow)
+(rule 1 (lower (has_type (ty_vec ty) (unarrow x)))
+      (aarch64_unarrow (vector_size ty) x))
+
+;; uunarrow: Unsigned saturating narrow (UQXTN)
+(decl aarch64_uunarrow (VectorSize Value) Aarch64Inst)
+(extern constructor aarch64_uunarrow aarch64_uunarrow)
+(rule 1 (lower (has_type (ty_vec ty) (uunarrow x)))
+      (aarch64_uunarrow (vector_size ty) x))
+
 ;;;; Rules for `swiden_low` (signed widen low half) ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; I8X16 -> I16X8: widen low 8 lanes

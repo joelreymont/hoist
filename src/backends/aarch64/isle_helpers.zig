@@ -4746,3 +4746,48 @@ pub fn aarch64_vec_fmax(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
         .size = elem_size,
     } };
 }
+
+/// Constructor: snarrow - Signed saturating narrow (SQXTN)
+/// Narrow from 16→8, 32→16, or 64→32 with signed saturation
+pub fn aarch64_snarrow(size: VectorSize, x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+    const elem_size = try vectorSizeToElemSize(size);
+
+    return Inst{ .vec_sqxtn = .{
+        .dst = dst,
+        .src = x_reg,
+        .size = elem_size,
+        .high = false,
+    } };
+}
+
+/// Constructor: unarrow - Signed to unsigned saturating narrow (SQXTUN)
+/// Narrow from 16→8, 32→16, or 64→32 with unsigned saturation (from signed input)
+pub fn aarch64_unarrow(size: VectorSize, x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+    const elem_size = try vectorSizeToElemSize(size);
+
+    return Inst{ .vec_sqxtun = .{
+        .dst = dst,
+        .src = x_reg,
+        .size = elem_size,
+        .high = false,
+    } };
+}
+
+/// Constructor: uunarrow - Unsigned saturating narrow (UQXTN)
+/// Narrow from 16→8, 32→16, or 64→32 with unsigned saturation
+pub fn aarch64_uunarrow(size: VectorSize, x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+    const elem_size = try vectorSizeToElemSize(size);
+
+    return Inst{ .vec_uqxtn = .{
+        .dst = dst,
+        .src = x_reg,
+        .size = elem_size,
+        .high = false,
+    } };
+}
