@@ -1273,6 +1273,28 @@ pub const Aarch64ISA = struct {
                 ctz.src = replaceReg(ctz.src, result);
                 ctz.dst = replaceWritableReg(ctz.dst, result);
             },
+            .neg => |*neg| {
+                neg.src = replaceReg(neg.src, result);
+                neg.dst = replaceWritableReg(neg.dst, result);
+            },
+            .uxtw => |*uxtw| {
+                uxtw.src = replaceReg(uxtw.src, result);
+                uxtw.dst = replaceWritableReg(uxtw.dst, result);
+            },
+            .popcnt => |*popcnt| {
+                popcnt.src = replaceReg(popcnt.src, result);
+                popcnt.dst = replaceWritableReg(popcnt.dst, result);
+            },
+            .lea => |*lea| {
+                lea.dst = replaceWritableReg(lea.dst, result);
+                // TODO: Handle registers in Amode
+            },
+            .mrs => |*mrs| {
+                mrs.dst = replaceWritableReg(mrs.dst, result);
+            },
+            .msr => |*msr| {
+                msr.src = replaceReg(msr.src, result);
+            },
             // TODO: Add more instruction types as needed
             else => {
                 // For unimplemented instructions, do nothing

@@ -2937,10 +2937,34 @@ pub const Inst = union(enum) {
                 try collector.regUse(i.src);
                 try collector.regDef(i.dst);
             },
+            .neg => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .uxtw => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .popcnt => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .lea => |*i| {
+                // Address mode may contain base/index registers
+                // For now, conservatively mark dst as def only
+                // TODO: Extract registers from Amode
+                try collector.regDef(i.dst);
+            },
+            .mrs => |*i| {
+                try collector.regDef(i.dst);
+            },
+            .msr => |*i| {
+                try collector.regUse(i.src);
+            },
             .ret => {
                 // No operands to collect (implicit use of X30/LR handled by ABI)
             },
-            .call, .b, .b_cond, .bl, .nop, .dmb, .dsb, .fence, .epilogue_placeholder, .data => {
+            .call, .b, .b_cond, .bl, .nop, .dmb, .dsb, .fence, .epilogue_placeholder, .data, .brk, .udf, .bti, .csdb, .isb, .autiasp, .paciasp => {
                 // No register operands (labels/immediates/special only)
             },
             else => {
