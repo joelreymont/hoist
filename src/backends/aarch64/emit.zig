@@ -110,7 +110,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .b => |i| try emitB(i.target.label, buffer),
         .b_cond => |i| try emitBCond(@intFromEnum(i.cond), i.target.label, buffer),
         .bl => |i| switch (i.target) {
-            .external_name => |_| @panic("External function calls not yet implemented"),
+            .external_name => |name| try emitBLExternal(name, buffer),
             .label => |label| try emitBL(label, buffer),
         },
         .br => |i| try emitBR(i.target, buffer),
@@ -2708,6 +2708,22 @@ fn emitBL(label: u32, buffer: *buffer_mod.MachBuffer) !void {
     try buffer.useLabel(
         MachLabel.new(label),
         buffer_mod.LabelUseKind.branch26,
+    );
+}
+
+/// BL to external symbol (branch with link to external function)
+fn emitBLExternal(name: inst_mod.ExternalName, buffer: *buffer_mod.MachBuffer) !void {
+    // BL: 1|00101|imm26
+    const insn: u32 = (0b100101 << 26);
+    const offset = buffer.curOffset();
+    try buffer.put4(insn);
+
+    // Add relocation for external symbol
+    try buffer.addReloc(
+        offset,
+        buffer_mod.Reloc.aarch64_call26,
+        name,
+        0,
     );
 }
 
