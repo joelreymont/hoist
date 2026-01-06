@@ -3106,7 +3106,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
             }
         },
         .load => |data| {
-            // Handle load instructions
+            // Handle load instructions (load, uload8, sload8, uload16, sload16, uload32, sload32)
             const VReg = @import("../machinst/reg.zig").VReg;
             const WritableReg = @import("../machinst/reg.zig").WritableReg;
             const RegClass = @import("../machinst/reg.zig").RegClass;
@@ -3125,18 +3125,51 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
             const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), reg_class);
             const dst = WritableReg.fromVReg(result_vreg);
 
-            // Emit load instruction based on size
             const offset_i16: i16 = @intCast(data.offset);
-            if (result_type.bits() == 64) {
+
+            // Handle explicit sized loads with sign/zero extension
+            if (data.opcode == .uload8) {
+                // Unsigned 8-bit load (zero-extend)
                 try builder.emit(Inst{
-                    .ldr = .{
+                    .ldrb = .{
                         .dst = dst,
                         .base = base,
                         .offset = offset_i16,
-                        .size = .size64,
+                        .size = .size32,
                     },
                 });
-            } else if (result_type.bits() == 32) {
+            } else if (data.opcode == .sload8) {
+                // Signed 8-bit load (sign-extend)
+                try builder.emit(Inst{
+                    .ldrsb = .{
+                        .dst = dst,
+                        .base = base,
+                        .offset = offset_i16,
+                        .size = .size32,
+                    },
+                });
+            } else if (data.opcode == .uload16) {
+                // Unsigned 16-bit load (zero-extend)
+                try builder.emit(Inst{
+                    .ldrh = .{
+                        .dst = dst,
+                        .base = base,
+                        .offset = offset_i16,
+                        .size = .size32,
+                    },
+                });
+            } else if (data.opcode == .sload16) {
+                // Signed 16-bit load (sign-extend)
+                try builder.emit(Inst{
+                    .ldrsh = .{
+                        .dst = dst,
+                        .base = base,
+                        .offset = offset_i16,
+                        .size = .size32,
+                    },
+                });
+            } else if (data.opcode == .uload32) {
+                // Unsigned 32-bit load (zero-extend to 64-bit)
                 try builder.emit(Inst{
                     .ldr = .{
                         .dst = dst,
@@ -3145,25 +3178,55 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .size = .size32,
                     },
                 });
-            } else if (result_type.bits() == 16) {
+            } else if (data.opcode == .sload32) {
+                // Signed 32-bit load (sign-extend to 64-bit)
                 try builder.emit(Inst{
-                    .ldrh = .{
+                    .ldrsw = .{
                         .dst = dst,
                         .base = base,
                         .offset = offset_i16,
-                        .size = .size32, // zero-extend to 32-bit
                     },
                 });
             } else {
-                // 8-bit load
-                try builder.emit(Inst{
-                    .ldrb = .{
-                        .dst = dst,
-                        .base = base,
-                        .offset = offset_i16,
-                        .size = .size32, // zero-extend to 32-bit
-                    },
-                });
+                // Regular load - emit based on result type size
+                if (result_type.bits() == 64) {
+                    try builder.emit(Inst{
+                        .ldr = .{
+                            .dst = dst,
+                            .base = base,
+                            .offset = offset_i16,
+                            .size = .size64,
+                        },
+                    });
+                } else if (result_type.bits() == 32) {
+                    try builder.emit(Inst{
+                        .ldr = .{
+                            .dst = dst,
+                            .base = base,
+                            .offset = offset_i16,
+                            .size = .size32,
+                        },
+                    });
+                } else if (result_type.bits() == 16) {
+                    try builder.emit(Inst{
+                        .ldrh = .{
+                            .dst = dst,
+                            .base = base,
+                            .offset = offset_i16,
+                            .size = .size32, // zero-extend to 32-bit
+                        },
+                    });
+                } else {
+                    // 8-bit load
+                    try builder.emit(Inst{
+                        .ldrb = .{
+                            .dst = dst,
+                            .base = base,
+                            .offset = offset_i16,
+                            .size = .size32, // zero-extend to 32-bit
+                        },
+                    });
+                }
             }
         },
         .store => |data| {
