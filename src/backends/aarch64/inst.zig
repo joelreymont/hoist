@@ -2199,6 +2199,48 @@ pub const Inst = union(enum) {
             .size = if (ty.bits() == 64) .size64 else .size32,
         } };
     }
+
+    /// Get defined (output) registers for this instruction.
+    /// Returns a list of virtual registers written by this instruction.
+    pub fn getDefs(self: *Inst, allocator: std.mem.Allocator) ![]VReg {
+        var collector = OperandCollector.init(allocator);
+        defer collector.deinit();
+
+        try self.getOperands(&collector);
+
+        // Convert WritableReg to VReg, filtering out physical registers
+        var vregs = std.ArrayList(VReg).init(allocator);
+        defer vregs.deinit();
+
+        for (collector.defs.items) |writable_reg| {
+            if (writable_reg.toReg().toVReg()) |vreg| {
+                try vregs.append(vreg);
+            }
+        }
+
+        return try vregs.toOwnedSlice();
+    }
+
+    /// Get used (input) registers for this instruction.
+    /// Returns a list of virtual registers read by this instruction.
+    pub fn getUses(self: *Inst, allocator: std.mem.Allocator) ![]VReg {
+        var collector = OperandCollector.init(allocator);
+        defer collector.deinit();
+
+        try self.getOperands(&collector);
+
+        // Convert Reg to VReg, filtering out physical registers
+        var vregs = std.ArrayList(VReg).init(allocator);
+        defer vregs.deinit();
+
+        for (collector.uses.items) |reg| {
+            if (reg.toVReg()) |vreg| {
+                try vregs.append(vreg);
+            }
+        }
+
+        return try vregs.toOwnedSlice();
+    }
 };
 
 /// Operand size for integer operations.

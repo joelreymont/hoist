@@ -327,6 +327,67 @@ pub const Aarch64ISA = struct {
         };
     }
 
+    /// Apply register allocations to an instruction.
+    /// Replaces virtual registers with allocated physical registers.
+    fn applyAllocations(
+        inst: *Inst,
+        result: *const @import("../../regalloc/linear_scan.zig").RegAllocResult,
+    ) !void {
+        const reg_mod = @import("../../machinst/reg.zig");
+
+        // Helper to replace a Reg if it's a virtual register
+        const replaceReg = struct {
+            fn apply(reg: reg_mod.Reg, alloc_result: *const @import("../../regalloc/linear_scan.zig").RegAllocResult) reg_mod.Reg {
+                if (reg.toVReg()) |vreg| {
+                    if (alloc_result.getPhysReg(vreg)) |preg| {
+                        return preg.toReg();
+                    }
+                }
+                return reg;
+            }
+        }.apply;
+
+        // Helper to replace a WritableReg if it's a virtual register
+        const replaceWritableReg = struct {
+            fn apply(wreg: reg_mod.WritableReg, alloc_result: *const @import("../../regalloc/linear_scan.zig").RegAllocResult) reg_mod.WritableReg {
+                const reg = wreg.toReg();
+                if (reg.toVReg()) |vreg| {
+                    if (alloc_result.getPhysReg(vreg)) |preg| {
+                        return reg_mod.WritableReg.init(preg.toReg());
+                    }
+                }
+                return wreg;
+            }
+        }.apply;
+
+        // Apply allocations based on instruction type
+        // This is a simplified version that handles common cases
+        switch (inst.*) {
+            .mov_rr => |*mov| {
+                mov.src = replaceReg(mov.src, result);
+                mov.dst = replaceWritableReg(mov.dst, result);
+            },
+            .mov_imm => |*mov| {
+                mov.dst = replaceWritableReg(mov.dst, result);
+            },
+            .add_rr => |*add| {
+                add.src1 = replaceReg(add.src1, result);
+                add.src2 = replaceReg(add.src2, result);
+                add.dst = replaceWritableReg(add.dst, result);
+            },
+            .mul_rr => |*mul| {
+                mul.src1 = replaceReg(mul.src1, result);
+                mul.src2 = replaceReg(mul.src2, result);
+                mul.dst = replaceWritableReg(mul.dst, result);
+            },
+            // TODO: Add more instruction types as needed
+            else => {
+                // For unimplemented instructions, do nothing
+                // This is safe because getOperands() returns empty lists for them
+            },
+        }
+    }
+
     /// Compile function using linear scan register allocation.
     fn compileWithLinearScan(
         ctx: compile_mod.CompileCtx,
@@ -345,13 +406,31 @@ pub const Aarch64ISA = struct {
         );
         defer vcode.deinit();
 
-        // Phase 2: Register allocation using linear scan
-        // For now, fall back to trivial allocator since we don't have
-        // getDefs/getUses on Inst yet
-        var allocator = trivial_mod.TrivialAllocator.init(ctx.allocator);
-        defer allocator.deinit();
+        // Phase 2: Liveness analysis
+        const liveness_mod = @import("../../regalloc/liveness.zig");
+        var liveness_info = try liveness_mod.LivenessInfo.compute(Inst, ctx.allocator, &vcode);
+        defer liveness_info.deinit();
 
-        try allocator.allocateVCode(&vcode);
+        // Phase 3: Register allocation using linear scan
+        const num_int_regs: u32 = 28; // X0-X27 (excluding X28=SP, X29=FP, X30=LR, X31=ZR)
+        const num_float_regs: u32 = 32; // V0-V31
+        const num_vector_regs: u32 = 32; // Same as float on AArch64
+
+        var linear_scan = linear_scan_mod.LinearScanAllocator.init(
+            ctx.allocator,
+            num_int_regs,
+            num_float_regs,
+            num_vector_regs,
+        );
+        defer linear_scan.deinit();
+
+        var result = try linear_scan.allocate(&liveness_info);
+        defer result.deinit();
+
+        // Apply allocations to VCode
+        for (vcode.insns.items) |*inst| {
+            try applyAllocations(inst, &result);
+        }
 
         // Phase 3: Emit machine code
         const emit_mod = @import("emit.zig");
