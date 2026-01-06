@@ -3005,6 +3005,43 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .fabs = .{ .dst = dst, .src = src, .size = size },
                     });
                 }
+            } else if (data.opcode == .scalar_to_vector) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const arg_type = ctx.func.dfg.valueType(data.arg) orelse return error.LoweringFailed;
+
+                const is_float = arg_type.isFloat();
+                const src_class: RegClass = if (is_float) .float else .int;
+                const fp_size: FpuOperandSize = if (arg_type.bits() == 64) .size64 else .size32;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), src_class);
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), .float);
+
+                const src = Reg.fromVReg(arg_vreg);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                if (is_float) {
+                    try builder.emit(Inst{
+                        .fmov = .{
+                            .dst = dst,
+                            .src = src,
+                            .size = fp_size,
+                        },
+                    });
+                } else {
+                    try builder.emit(Inst{
+                        .fmov_from_gpr = .{
+                            .dst = dst,
+                            .src = src,
+                            .size = fp_size,
+                        },
+                    });
+                }
             } else {
                 // Other unary ops not yet implemented
                 try builder.emit(Inst.nop);
