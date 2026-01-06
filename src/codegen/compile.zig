@@ -1702,6 +1702,87 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .size = size,
                     },
                 });
+            } else if (data.opcode == .band_imm) {
+                // Bitwise AND immediate: result = arg & imm
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const ImmLogic = @import("../backends/aarch64/inst.zig").ImmLogic;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                const imm_val: u64 = @bitCast(data.imm.value);
+
+                try builder.emit(Inst{
+                    .and_imm = .{
+                        .dst = dst,
+                        .src = src,
+                        .imm = ImmLogic{ .value = imm_val, .size = size },
+                    },
+                });
+            } else if (data.opcode == .bor_imm) {
+                // Bitwise OR immediate: result = arg | imm
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const ImmLogic = @import("../backends/aarch64/inst.zig").ImmLogic;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                const imm_val: u64 = @bitCast(data.imm.value);
+
+                try builder.emit(Inst{
+                    .orr_imm = .{
+                        .dst = dst,
+                        .src = src,
+                        .imm = ImmLogic{ .value = imm_val, .size = size },
+                    },
+                });
+            } else if (data.opcode == .bxor_imm) {
+                // Bitwise XOR immediate: result = arg ^ imm
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const ImmLogic = @import("../backends/aarch64/inst.zig").ImmLogic;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                const imm_val: u64 = @bitCast(data.imm.value);
+
+                try builder.emit(Inst{
+                    .eor_imm = .{
+                        .dst = dst,
+                        .src = src,
+                        .imm = ImmLogic{ .value = imm_val, .size = size },
+                    },
+                });
             } else {
                 try builder.emit(Inst.nop);
             }
