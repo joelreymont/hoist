@@ -1495,6 +1495,40 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 try builder.emit(Inst.nop);
             }
         },
+        .binary_imm64 => |data| {
+            if (data.opcode == .iadd_imm) {
+                // Add immediate: result = arg + imm
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                // ARM64 ADD immediate supports 12-bit unsigned immediate
+                const imm_val = data.imm.value;
+                const imm_u16: u16 = @intCast(@mod(imm_val, 4096)); // Mask to 12 bits
+
+                try builder.emit(Inst{
+                    .add_imm = .{
+                        .dst = dst,
+                        .src = src,
+                        .imm = imm_u16,
+                        .size = size,
+                    },
+                });
+            } else {
+                try builder.emit(Inst.nop);
+            }
+        },
         .unary => |data| {
             // Handle unary instructions (return, etc.)
             if (data.opcode == .@"return") {
