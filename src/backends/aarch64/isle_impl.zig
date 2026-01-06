@@ -989,30 +989,47 @@ pub fn aarch64_cmp_and_branch(
     } });
 }
 
-/// Constructor: CMP+branch fusion with immediate (CMP x, #imm; B.cond target).
-/// Emits CMP instruction with immediate followed by conditional branch.
-pub fn aarch64_cmp_imm_and_branch(
+/// Constructor: stack_addr - compute address of stack slot.
+/// Returns SP/FP + offset for accessing stack-allocated data.
+pub fn aarch64_stack_addr(
+    ctx: *IsleContext,
+    stack_slot: u32,
+    offset: i32,
+) !WritableReg {
+    _ = stack_slot;
+    _ = offset;
+    _ = ctx;
+    @panic("TODO: Implement stack_addr - needs frame layout infrastructure");
+}
+
+/// Constructor: stack_load - load from stack slot.
+/// Emits LDR with SP/FP-relative addressing.
+pub fn aarch64_stack_load(
     ctx: *IsleContext,
     ty: Type,
-    x: Value,
-    imm: i64,
-    cc: IntCC,
-    target: Block,
+    stack_slot: u32,
+    offset: i32,
+) !WritableReg {
+    _ = ty;
+    _ = stack_slot;
+    _ = offset;
+    _ = ctx;
+    @panic("TODO: Implement stack_load - needs frame layout infrastructure");
+}
+
+/// Constructor: stack_store - store to stack slot.
+/// Emits STR with SP/FP-relative addressing.
+pub fn aarch64_stack_store(
+    ctx: *IsleContext,
+    ty: Type,
+    value: Value,
+    stack_slot: u32,
+    offset: i32,
 ) !void {
-    const size = ctx.typeToSize(ty);
-    const reg_x = try ctx.getValueReg(x, .int);
-    const cond = intccToCondCode(cc);
-
-    // Emit CMP instruction with immediate
-    try ctx.emit(.{ .cmp_imm = .{
-        .src = reg_x,
-        .imm = Imm12.new(@intCast(imm)),
-        .size = size,
-    } });
-
-    // Emit conditional branch
-    try ctx.emit(.{ .b_cond = .{
-        .cond = cond,
-        .target = target,
-    } });
+    _ = ty;
+    _ = value;
+    _ = stack_slot;
+    _ = offset;
+    _ = ctx;
+    @panic("TODO: Implement stack_store - needs frame layout infrastructure");
 }

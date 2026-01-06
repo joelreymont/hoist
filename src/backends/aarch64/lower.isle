@@ -2853,6 +2853,16 @@
 (rule (lower (stack_addr stack_slot offset))
       (aarch64_stack_addr stack_slot offset))
 
+;; stack_load: Load from stack slot
+(decl aarch64_stack_load (Type StackSlot Offset32) Aarch64Inst)
+(rule (lower (has_type ty (stack_load stack_slot offset)))
+      (aarch64_stack_load ty stack_slot offset))
+
+;; stack_store: Store to stack slot
+(decl aarch64_stack_store (Type Value StackSlot Offset32) Aarch64Inst)
+(rule (lower (stack_store val stack_slot offset))
+      (aarch64_stack_store (value_type val) val stack_slot offset))
+
 ;; symbol_value: Load address of external symbol
 (decl aarch64_symbol_value (ExternalName i64) Aarch64Inst)
 (rule (lower (symbol_value (symbol_value_data extname dist offset)))
