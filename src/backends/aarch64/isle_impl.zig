@@ -10,6 +10,7 @@ const Inst = root.aarch64_inst.Inst;
 const Reg = root.aarch64_inst.Reg;
 const WritableReg = root.aarch64_inst.WritableReg;
 const OperandSize = root.aarch64_inst.OperandSize;
+const CondCode = root.aarch64_inst.CondCode;
 const ExtendOp = root.aarch64_inst.ExtendOp;
 const ShiftOp = root.aarch64_inst.ShiftOp;
 const Imm12 = root.aarch64_inst.Imm12;
@@ -19,8 +20,11 @@ const ImmShift = root.aarch64_inst.ImmShift;
 const lower_mod = root.lower;
 const LowerCtx = lower_mod.LowerCtx;
 const Value = lower_mod.Value;
+const Block = lower_mod.Block;
 const types = root.types;
 const Type = types.Type;
+const condcodes = root.condcodes;
+const IntCC = condcodes.IntCC;
 
 /// ISLE context for aarch64 lowering.
 /// This wraps LowerCtx with backend-specific state needed by ISLE constructors.
@@ -937,4 +941,78 @@ test "typeToSize maps types correctly" {
     try testing.expectEqual(OperandSize.size32, ctx.typeToSize(Type.I16));
     try testing.expectEqual(OperandSize.size32, ctx.typeToSize(Type.I32));
     try testing.expectEqual(OperandSize.size64, ctx.typeToSize(Type.I64));
+}
+
+/// Convert IntCC to AArch64 CondCode.
+fn intccToCondCode(cc: IntCC) CondCode {
+    return switch (cc) {
+        .eq => .eq,
+        .ne => .ne,
+        .slt => .lt,
+        .sge => .ge,
+        .sgt => .gt,
+        .sle => .le,
+        .ult => .cc,
+        .uge => .cs,
+        .ugt => .hi,
+        .ule => .ls,
+    };
+}
+
+/// Constructor: CMP+branch fusion (CMP x, y; B.cond target).
+/// Emits CMP instruction followed by conditional branch.
+/// Avoids materializing comparison result in a register.
+pub fn aarch64_cmp_and_branch(
+    ctx: *IsleContext,
+    ty: Type,
+    x: Value,
+    y: Value,
+    cc: IntCC,
+    target: Block,
+) !void {
+    const size = ctx.typeToSize(ty);
+    const reg_x = try ctx.getValueReg(x, .int);
+    const reg_y = try ctx.getValueReg(y, .int);
+    const cond = intccToCondCode(cc);
+
+    // Emit CMP instruction
+    try ctx.emit(.{ .cmp_rr = .{
+        .src1 = reg_x,
+        .src2 = reg_y,
+        .size = size,
+    } });
+
+    // Emit conditional branch
+    try ctx.emit(.{ .b_cond = .{
+        .cond = cond,
+        .target = target,
+    } });
+}
+
+/// Constructor: CMP+branch fusion with immediate (CMP x, #imm; B.cond target).
+/// Emits CMP instruction with immediate followed by conditional branch.
+pub fn aarch64_cmp_imm_and_branch(
+    ctx: *IsleContext,
+    ty: Type,
+    x: Value,
+    imm: i64,
+    cc: IntCC,
+    target: Block,
+) !void {
+    const size = ctx.typeToSize(ty);
+    const reg_x = try ctx.getValueReg(x, .int);
+    const cond = intccToCondCode(cc);
+
+    // Emit CMP instruction with immediate
+    try ctx.emit(.{ .cmp_imm = .{
+        .src = reg_x,
+        .imm = Imm12.new(@intCast(imm)),
+        .size = size,
+    } });
+
+    // Emit conditional branch
+    try ctx.emit(.{ .b_cond = .{
+        .cond = cond,
+        .target = target,
+    } });
 }

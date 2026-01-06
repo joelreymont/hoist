@@ -1733,6 +1733,17 @@
 (rule (lower (brif (icmp ne (band x (ishl (iconst 1) bit)) (iconst 0)) target))
       (aarch64_tbnz x bit target))
 
+;; CMP+branch fusion for general comparisons (higher priority than materialization)
+;; Pattern: brif(icmp(cc, x, y), target) => CMP x, y; B.cc target
+(rule 3 (lower (brif (icmp cc ty x y) target))
+      (aarch64_cmp_and_branch ty x y cc target))
+
+;; CMP+branch fusion with immediate (higher priority than materialization)
+;; Pattern: brif(icmp(cc, x, imm), target) => CMP x, #imm; B.cc target
+(rule 3 (lower (brif (icmp cc ty x (iconst k)) target))
+      (if-let $true (uimm12 k))
+      (aarch64_cmp_imm_and_branch ty x k cc target))
+
 ;; return: Return from function
 (rule (lower (return))
       (aarch64_ret))
@@ -2265,6 +2276,8 @@
 ;; Control flow
 (decl aarch64_b (Block) Aarch64Inst)
 (decl aarch64_b_cond (Value Block) Aarch64Inst)
+(decl aarch64_cmp_and_branch (Type Value Value IntCC Block) Aarch64Inst)
+(decl aarch64_cmp_imm_and_branch (Type Value i64 IntCC Block) Aarch64Inst)
 (decl aarch64_ret () Aarch64Inst)
 
 ;; Constants
