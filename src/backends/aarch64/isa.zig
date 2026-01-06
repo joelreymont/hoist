@@ -870,6 +870,57 @@ pub const Aarch64ISA = struct {
                 stlxr.base = replaceReg(stlxr.base, result);
                 stlxr.status = replaceWritableReg(stlxr.status, result);
             },
+            .ldadd => |*ldadd| {
+                ldadd.src = replaceReg(ldadd.src, result);
+                ldadd.base = replaceReg(ldadd.base, result);
+                ldadd.dst = replaceWritableReg(ldadd.dst, result);
+            },
+            .ldclr => |*ldclr| {
+                ldclr.src = replaceReg(ldclr.src, result);
+                ldclr.base = replaceReg(ldclr.base, result);
+                ldclr.dst = replaceWritableReg(ldclr.dst, result);
+            },
+            .ldeor => |*ldeor| {
+                ldeor.src = replaceReg(ldeor.src, result);
+                ldeor.base = replaceReg(ldeor.base, result);
+                ldeor.dst = replaceWritableReg(ldeor.dst, result);
+            },
+            .ldset => |*ldset| {
+                ldset.src = replaceReg(ldset.src, result);
+                ldset.base = replaceReg(ldset.base, result);
+                ldset.dst = replaceWritableReg(ldset.dst, result);
+            },
+            .ldsmax => |*ldsmax| {
+                ldsmax.src = replaceReg(ldsmax.src, result);
+                ldsmax.base = replaceReg(ldsmax.base, result);
+                ldsmax.dst = replaceWritableReg(ldsmax.dst, result);
+            },
+            .ldsmin => |*ldsmin| {
+                ldsmin.src = replaceReg(ldsmin.src, result);
+                ldsmin.base = replaceReg(ldsmin.base, result);
+                ldsmin.dst = replaceWritableReg(ldsmin.dst, result);
+            },
+            .ldumax => |*ldumax| {
+                ldumax.src = replaceReg(ldumax.src, result);
+                ldumax.base = replaceReg(ldumax.base, result);
+                ldumax.dst = replaceWritableReg(ldumax.dst, result);
+            },
+            .ldumin => |*ldumin| {
+                ldumin.src = replaceReg(ldumin.src, result);
+                ldumin.base = replaceReg(ldumin.base, result);
+                ldumin.dst = replaceWritableReg(ldumin.dst, result);
+            },
+            .swp => |*swp| {
+                swp.src = replaceReg(swp.src, result);
+                swp.base = replaceReg(swp.base, result);
+                swp.dst = replaceWritableReg(swp.dst, result);
+            },
+            .cas => |*cas| {
+                cas.compare = replaceReg(cas.compare, result);
+                cas.swap = replaceReg(cas.swap, result);
+                cas.base = replaceReg(cas.base, result);
+                cas.dst = replaceWritableReg(cas.dst, result);
+            },
             // TODO: Add more instruction types as needed
             else => {
                 // For unimplemented instructions, do nothing
