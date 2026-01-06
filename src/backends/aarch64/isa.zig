@@ -502,6 +502,98 @@ pub const Aarch64ISA = struct {
                 mul.src2 = replaceReg(mul.src2, result);
                 mul.dst = replaceWritableReg(mul.dst, result);
             },
+            .add_imm => |*add| {
+                add.src = replaceReg(add.src, result);
+                add.dst = replaceWritableReg(add.dst, result);
+            },
+            .sub_rr => |*sub| {
+                sub.src1 = replaceReg(sub.src1, result);
+                sub.src2 = replaceReg(sub.src2, result);
+                sub.dst = replaceWritableReg(sub.dst, result);
+            },
+            .sub_imm => |*sub| {
+                sub.src = replaceReg(sub.src, result);
+                sub.dst = replaceWritableReg(sub.dst, result);
+            },
+            .and_rr => |*and_inst| {
+                and_inst.src1 = replaceReg(and_inst.src1, result);
+                and_inst.src2 = replaceReg(and_inst.src2, result);
+                and_inst.dst = replaceWritableReg(and_inst.dst, result);
+            },
+            .and_imm => |*and_inst| {
+                and_inst.src = replaceReg(and_inst.src, result);
+                and_inst.dst = replaceWritableReg(and_inst.dst, result);
+            },
+            .orr_rr => |*orr| {
+                orr.src1 = replaceReg(orr.src1, result);
+                orr.src2 = replaceReg(orr.src2, result);
+                orr.dst = replaceWritableReg(orr.dst, result);
+            },
+            .orr_imm => |*orr| {
+                orr.src = replaceReg(orr.src, result);
+                orr.dst = replaceWritableReg(orr.dst, result);
+            },
+            .eor_rr => |*eor| {
+                eor.src1 = replaceReg(eor.src1, result);
+                eor.src2 = replaceReg(eor.src2, result);
+                eor.dst = replaceWritableReg(eor.dst, result);
+            },
+            .eor_imm => |*eor| {
+                eor.src = replaceReg(eor.src, result);
+                eor.dst = replaceWritableReg(eor.dst, result);
+            },
+            .ldr_imm => |*ldr| {
+                ldr.base = replaceReg(ldr.base, result);
+                ldr.dst = replaceWritableReg(ldr.dst, result);
+            },
+            .ldr_reg => |*ldr| {
+                ldr.base = replaceReg(ldr.base, result);
+                ldr.offset = replaceReg(ldr.offset, result);
+                ldr.dst = replaceWritableReg(ldr.dst, result);
+            },
+            .str_imm => |*str| {
+                str.src = replaceReg(str.src, result);
+                str.base = replaceReg(str.base, result);
+            },
+            .str_reg => |*str| {
+                str.src = replaceReg(str.src, result);
+                str.base = replaceReg(str.base, result);
+                str.offset = replaceReg(str.offset, result);
+            },
+            .lsl_rr => |*lsl| {
+                lsl.src = replaceReg(lsl.src, result);
+                lsl.shift = replaceReg(lsl.shift, result);
+                lsl.dst = replaceWritableReg(lsl.dst, result);
+            },
+            .lsl_imm => |*lsl| {
+                lsl.src = replaceReg(lsl.src, result);
+                lsl.dst = replaceWritableReg(lsl.dst, result);
+            },
+            .lsr_rr => |*lsr| {
+                lsr.src = replaceReg(lsr.src, result);
+                lsr.shift = replaceReg(lsr.shift, result);
+                lsr.dst = replaceWritableReg(lsr.dst, result);
+            },
+            .lsr_imm => |*lsr| {
+                lsr.src = replaceReg(lsr.src, result);
+                lsr.dst = replaceWritableReg(lsr.dst, result);
+            },
+            .asr_rr => |*asr| {
+                asr.src = replaceReg(asr.src, result);
+                asr.shift = replaceReg(asr.shift, result);
+                asr.dst = replaceWritableReg(asr.dst, result);
+            },
+            .asr_imm => |*asr| {
+                asr.src = replaceReg(asr.src, result);
+                asr.dst = replaceWritableReg(asr.dst, result);
+            },
+            .cmp_rr => |*cmp| {
+                cmp.src1 = replaceReg(cmp.src1, result);
+                cmp.src2 = replaceReg(cmp.src2, result);
+            },
+            .cmp_imm => |*cmp| {
+                cmp.src = replaceReg(cmp.src, result);
+            },
             // TODO: Add more instruction types as needed
             else => {
                 // For unimplemented instructions, do nothing
