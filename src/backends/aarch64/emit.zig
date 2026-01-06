@@ -80,7 +80,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .ldr_reg => |i| try emitLdrReg(i.dst.toReg(), i.base, i.offset, i.size, buffer),
         .ldr_ext => |i| try emitLdrExt(i.dst.toReg(), i.base, i.offset, i.extend, i.size, buffer),
         .ldr_shifted => |i| try emitLdrShifted(i.dst.toReg(), i.base, i.offset, i.shift_op, i.shift_amt, i.size, buffer),
+        .vldr => |i| try emitVldr(i.dst.toReg(), i.base, i.offset, i.size, buffer),
         .str => |i| try emitStr(i.src, i.base, i.offset, i.size, buffer),
+        .vstr => |i| try emitVstr(i.src, i.base, i.offset, i.size, buffer),
         .str_reg => |i| try emitStrReg(i.src, i.base, i.offset, i.size, buffer),
         .str_ext => |i| try emitStrExt(i.src, i.base, i.offset, i.extend, i.size, buffer),
         .str_shifted => |i| try emitStrShifted(i.src, i.base, i.offset, i.shift_op, i.shift_amt, i.size, buffer),
@@ -1480,6 +1482,78 @@ fn emitStr(src: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_
         (@as(u32, imm9) << 12) |
         (@as(u32, rn) << 5) |
         rt;
+
+    try buffer.put4(insn);
+}
+
+/// LDR Vt, [Xn, #offset] (SIMD/FP load with immediate offset)
+/// Encoding: size|111|V=1|01|imm12|Rn|Rt
+fn emitVldr(dst: Reg, base: Reg, offset: i16, fp_size: FpuOperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(dst);
+    const rn = hwEnc(base);
+
+    // Scale offset by element size
+    const scale: u4 = switch (fp_size) {
+        .size32 => 2, // 4 bytes
+        .size64 => 3, // 8 bytes
+        .size128 => 4, // 16 bytes
+    };
+    const scaled_offset: u12 = @intCast(@divExact(offset, @as(i16, 1) << scale));
+
+    // size field encoding
+    const size: u32 = switch (fp_size) {
+        .size32 => 0b10,
+        .size64 => 0b11,
+        .size128 => 0b00,
+    };
+
+    // For 128-bit, need Q=1 in bit 22
+    const q_bit: u32 = if (fp_size == .size128) 1 else 0;
+
+    const insn: u32 = (size << 30) |
+        (0b111 << 27) |
+        (0b1 << 26) | // V=1 for SIMD/FP
+        (0b01 << 24) |
+        (@as(u32, scaled_offset) << 10) |
+        (@as(u32, rn) << 5) |
+        rt |
+        (q_bit << 22);
+
+    try buffer.put4(insn);
+}
+
+/// STR Vt, [Xn, #offset] (SIMD/FP store with immediate offset)
+/// Encoding: size|111|V=1|00|imm12|Rn|Rt
+fn emitVstr(src: Reg, base: Reg, offset: i16, fp_size: FpuOperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(src);
+    const rn = hwEnc(base);
+
+    // Scale offset by element size
+    const scale: u4 = switch (fp_size) {
+        .size32 => 2,
+        .size64 => 3,
+        .size128 => 4,
+    };
+    const scaled_offset: u12 = @intCast(@divExact(offset, @as(i16, 1) << scale));
+
+    // size field encoding
+    const size: u32 = switch (fp_size) {
+        .size32 => 0b10,
+        .size64 => 0b11,
+        .size128 => 0b00,
+    };
+
+    // For 128-bit, need Q=1 in bit 22
+    const q_bit: u32 = if (fp_size == .size128) 1 else 0;
+
+    const insn: u32 = (size << 30) |
+        (0b111 << 27) |
+        (0b1 << 26) | // V=1 for SIMD/FP
+        (0b00 << 24) |
+        (@as(u32, scaled_offset) << 10) |
+        (@as(u32, rn) << 5) |
+        rt |
+        (q_bit << 22);
 
     try buffer.put4(insn);
 }
