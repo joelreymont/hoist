@@ -3107,3 +3107,83 @@ test "VarargsRegisterSaveArea float register coverage" {
     // 4 STP instructions = 16 bytes, saves all V0-V7
     try testing.expectEqual(@as(usize, 16), buffer.data.items.len);
 }
+
+/// Return value location according to AAPCS64.
+pub const ReturnLocation = union(enum) {
+    /// Returned in a single register (X0 for int, V0 for float).
+    single_reg: PReg,
+    /// Returned in register pair (e.g., i128 in X0+X1).
+    reg_pair: struct { lo: PReg, hi: PReg },
+    /// HFA (Homogeneous Floating-point Aggregate) returned in V0-V3.
+    hfa: struct { regs: []const PReg, count: u8 },
+    /// Large struct returned via pointer in X8 (indirect return).
+    indirect: void,
+};
+
+/// Classify return value according to AAPCS64 rules.
+/// Returns how the value should be returned.
+pub fn classifyReturn(ty: root.types.Type) ReturnLocation {
+    // Integer types (i8, i16, i32, i64) -> X0
+    if (ty.isInt()) {
+        const bits = ty.bits();
+        if (bits <= 64) {
+            return .{ .single_reg = PReg.new(.int, 0) };
+        } else if (bits == 128) {
+            // i128 returned in X0 (lo) + X1 (hi)
+            return .{ .reg_pair = .{
+                .lo = PReg.new(.int, 0),
+                .hi = PReg.new(.int, 1),
+            } };
+        }
+        // Larger than 128-bit: indirect
+        return .{ .indirect = {} };
+    }
+
+    // Float types (f32, f64) -> V0
+    if (ty.isFloat()) {
+        return .{ .single_reg = PReg.new(.float, 0) };
+    }
+
+    // Vector types -> V0
+    if (ty.isVector()) {
+        return .{ .single_reg = PReg.new(.vector, 0) };
+    }
+
+    // TODO: Struct classification (HFA detection, indirect for large structs)
+    // For now, assume small structs fit in X0
+    return .{ .single_reg = PReg.new(.int, 0) };
+}
+
+test "classifyReturn - integer types" {
+    const Type = root.types.Type;
+
+    // i32 -> X0
+    const i32_ret = classifyReturn(Type.I32);
+    try testing.expect(i32_ret == .single_reg);
+    try testing.expectEqual(PReg.new(.int, 0), i32_ret.single_reg);
+
+    // i64 -> X0
+    const i64_ret = classifyReturn(Type.I64);
+    try testing.expect(i64_ret == .single_reg);
+    try testing.expectEqual(PReg.new(.int, 0), i64_ret.single_reg);
+
+    // i128 -> X0+X1
+    const i128_ret = classifyReturn(Type.I128);
+    try testing.expect(i128_ret == .reg_pair);
+    try testing.expectEqual(PReg.new(.int, 0), i128_ret.reg_pair.lo);
+    try testing.expectEqual(PReg.new(.int, 1), i128_ret.reg_pair.hi);
+}
+
+test "classifyReturn - float types" {
+    const Type = root.types.Type;
+
+    // f32 -> V0
+    const f32_ret = classifyReturn(Type.F32);
+    try testing.expect(f32_ret == .single_reg);
+    try testing.expectEqual(PReg.new(.float, 0), f32_ret.single_reg);
+
+    // f64 -> V0
+    const f64_ret = classifyReturn(Type.F64);
+    try testing.expect(f64_ret == .single_reg);
+    try testing.expectEqual(PReg.new(.float, 0), f64_ret.single_reg);
+}
