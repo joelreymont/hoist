@@ -1059,3 +1059,51 @@ pub fn aarch64_br_table(
     _ = ctx;
     @panic("TODO: Implement br_table - needs jump table data structure and constant pool");
 }
+
+/// Constructor: uadd_overflow_cin - unsigned add with carry-in and overflow.
+pub fn aarch64_uadd_overflow_cin(
+    ctx: *IsleContext,
+    ty: Type,
+    a: Value,
+    b: Value,
+    cin: Value,
+) !WritableReg {
+    _ = ty;
+    _ = a;
+    _ = b;
+    _ = cin;
+    _ = ctx;
+    @panic("TODO: Implement uadd_overflow_cin - needs ADCS and flag handling");
+}
+
+/// Constructor: sadd_overflow_cin - signed add with carry-in and overflow.
+pub fn aarch64_sadd_overflow_cin(
+    ctx: *IsleContext,
+    ty: Type,
+    a: Value,
+    b: Value,
+    cin: Value,
+) !WritableReg {
+    _ = ty;
+    _ = a;
+    _ = b;
+    _ = cin;
+    _ = ctx;
+    @panic("TODO: Implement sadd_overflow_cin - needs ADCS and flag handling");
+}
+
+/// Constructor: uadd_overflow_trap - unsigned add with overflow trap.
+pub fn aarch64_uadd_overflow_trap(
+    ctx: *IsleContext,
+    ty: Type,
+    a: Value,
+    b: Value,
+    code: u32,
+) !void {
+    _ = ty;
+    _ = a;
+    _ = b;
+    _ = code;
+    _ = ctx;
+    @panic("TODO: Implement uadd_overflow_trap - needs ADDS + B.VS + BRK");
+}

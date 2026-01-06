@@ -2904,6 +2904,21 @@
 (rule (lower (has_type (ty_32_or_64 ty) (ssub_overflow a b)))
       (aarch64_ssub_overflow ty a b))
 
+;; uadd_overflow_cin: Unsigned add with carry-in and overflow detection
+(decl aarch64_uadd_overflow_cin (Type Value Value Value) ValueRegs)
+(rule (lower (has_type (ty_32_or_64 ty) (uadd_overflow_cin a b cin)))
+      (aarch64_uadd_overflow_cin ty a b cin))
+
+;; sadd_overflow_cin: Signed add with carry-in and overflow detection
+(decl aarch64_sadd_overflow_cin (Type Value Value Value) ValueRegs)
+(rule (lower (has_type (ty_32_or_64 ty) (sadd_overflow_cin a b cin)))
+      (aarch64_sadd_overflow_cin ty a b cin))
+
+;; uadd_overflow_trap: Unsigned add with overflow trap
+(decl aarch64_uadd_overflow_trap (Type Value Value TrapCode) Aarch64Inst)
+(rule (lower (uadd_overflow_trap a b code))
+      (aarch64_uadd_overflow_trap (value_type a) a b code))
+
 ;; umul_overflow: Unsigned multiply with overflow detection
 (decl aarch64_umul_overflow_i16 (Type Value Value) ValueRegs)
 (decl aarch64_umul_overflow_i32 (Value Value) ValueRegs)
