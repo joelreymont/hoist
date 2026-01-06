@@ -13,22 +13,37 @@ const std = @import("std");
 const liveness = @import("liveness.zig");
 const machinst = @import("../machinst/machinst.zig");
 
+/// A spill slot represents a location on the stack for a spilled virtual register.
+/// The offset is in bytes from the stack frame base.
+pub const SpillSlot = struct {
+    offset: u32,
+
+    pub fn init(offset: u32) SpillSlot {
+        return .{ .offset = offset };
+    }
+};
+
 /// Result of register allocation.
 pub const RegAllocResult = struct {
     /// Map from virtual register index to physical register
     vreg_to_preg: std.AutoHashMap(u32, machinst.PReg),
+
+    /// Map from virtual register index to spill slot
+    vreg_to_spill: std.AutoHashMap(u32, SpillSlot),
 
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) RegAllocResult {
         return .{
             .vreg_to_preg = std.AutoHashMap(u32, machinst.PReg).init(allocator),
+            .vreg_to_spill = std.AutoHashMap(u32, SpillSlot).init(allocator),
             .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *RegAllocResult) void {
         self.vreg_to_preg.deinit();
+        self.vreg_to_spill.deinit();
     }
 
     /// Get the physical register allocated to a virtual register
@@ -39,6 +54,16 @@ pub const RegAllocResult = struct {
     /// Assign a physical register to a virtual register
     pub fn assign(self: *RegAllocResult, vreg: machinst.VReg, preg: machinst.PReg) !void {
         try self.vreg_to_preg.put(vreg.index, preg);
+    }
+
+    /// Get the spill slot for a virtual register
+    pub fn getSpillSlot(self: *RegAllocResult, vreg: machinst.VReg) ?SpillSlot {
+        return self.vreg_to_spill.get(vreg.index);
+    }
+
+    /// Assign a spill slot to a virtual register
+    pub fn assignSpillSlot(self: *RegAllocResult, vreg: machinst.VReg, slot: SpillSlot) !void {
+        try self.vreg_to_spill.put(vreg.index, slot);
     }
 };
 
@@ -65,6 +90,9 @@ pub const LinearScanAllocator = struct {
     num_int_regs: u32,
     num_float_regs: u32,
     num_vector_regs: u32,
+
+    /// Next available spill slot offset (in bytes)
+    next_spill_offset: u32,
 
     allocator: std.mem.Allocator,
 
@@ -99,6 +127,7 @@ pub const LinearScanAllocator = struct {
             .num_int_regs = num_int_regs,
             .num_float_regs = num_float_regs,
             .num_vector_regs = num_vector_regs,
+            .next_spill_offset = 0,
             .allocator = allocator,
         };
     }
@@ -283,9 +312,21 @@ pub const LinearScanAllocator = struct {
         const free_regs = self.getFreeRegs(spill_range.reg_class);
         free_regs.set(preg.index);
 
-        // TODO: Mark vreg as spilled in result (need spill slot allocation)
+        // Allocate a spill slot for the spilled vreg
+        const spill_slot = self.allocateSpillSlot();
+        try result.assignSpillSlot(spill_range.vreg, spill_slot);
 
         return preg;
+    }
+
+    /// Allocate a new spill slot on the stack.
+    ///
+    /// Returns a SpillSlot with the next available stack offset.
+    /// Spill slots are allocated in 8-byte increments to maintain alignment.
+    fn allocateSpillSlot(self: *LinearScanAllocator) SpillSlot {
+        const slot = SpillSlot.init(self.next_spill_offset);
+        self.next_spill_offset += 8; // 8-byte slots for all types
+        return slot;
     }
 
     /// Get the bitset for free registers of a given class
