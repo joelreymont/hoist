@@ -3723,6 +3723,47 @@ pub fn aarch64_str_post(
     };
 }
 
+/// Constructor: Vector load with base register (VLDR Vt, [Xn])
+pub fn aarch64_vldr(
+    ty: types.Type,
+    addr: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(addr, .int);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+    const fp_size = typeToFpuOperandSize(ty);
+
+    return Inst{
+        .vldr = .{
+            .dst = dst,
+            .base = base,
+            .offset = 0,
+            .size = fp_size,
+        },
+    };
+}
+
+/// Constructor: Vector store with base register (VSTR Vt, [Xn])
+pub fn aarch64_vstr(
+    val: lower_mod.Value,
+    addr: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(addr, .int);
+    const src = try ctx.getValueReg(val, .vector);
+    const ty = ctx.valueType(val);
+    const fp_size = typeToFpuOperandSize(ty);
+
+    return Inst{
+        .vstr = .{
+            .src = src,
+            .base = base,
+            .offset = 0,
+            .size = fp_size,
+        },
+    };
+}
+
 pub fn aarch64_uload8(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),

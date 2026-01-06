@@ -218,7 +218,6 @@ test "compile error handling" {
 }
 
 test "match tree: basic compilation" {
-
     var typeenv = sema_mod.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 

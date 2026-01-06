@@ -169,12 +169,12 @@ test "DataValue getType" {
 }
 
 test "DataValue isVector" {
-    try testing.expect(DataValue{ .v128 = undefined }.isVector());
-    try testing.expect(!DataValue{ .i32 = 0 }.isVector());
+    try testing.expect((DataValue{ .v128 = undefined }).isVector());
+    try testing.expect(!(DataValue{ .i32 = 0 }).isVector());
 }
 
 test "DataValue sizeInBytes" {
-    try testing.expectEqual(@as(usize, 1), DataValue{ .i8 = 0 }.sizeInBytes());
-    try testing.expectEqual(@as(usize, 4), DataValue{ .i32 = 0 }.sizeInBytes());
-    try testing.expectEqual(@as(usize, 16), DataValue{ .v128 = undefined }.sizeInBytes());
+    try testing.expectEqual(@as(usize, 1), (DataValue{ .i8 = 0 }).sizeInBytes());
+    try testing.expectEqual(@as(usize, 4), (DataValue{ .i32 = 0 }).sizeInBytes());
+    try testing.expectEqual(@as(usize, 16), (DataValue{ .v128 = undefined }).sizeInBytes());
 }

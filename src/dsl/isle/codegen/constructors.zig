@@ -353,11 +353,13 @@ test "ConstructorGen: partial constructor" {
     const partial_term = sema.Term{
         .name = partial_sym,
         .id = sema.TermId.new(0),
-        .kind = .{ .decl = .{
-            .arg_tys = arg_tys,
-            .ret_ty = i32_ty,
-            .pure = false, // Partial constructor
-        } },
+        .kind = .{
+            .decl = .{
+                .arg_tys = arg_tys,
+                .ret_ty = i32_ty,
+                .pure = false, // Partial constructor
+            },
+        },
         .pos = sema.Pos.new(0, 0),
     };
     _ = try termenv.addTerm(partial_term);

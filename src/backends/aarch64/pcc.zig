@@ -15,7 +15,6 @@ const std = @import("std");
 /// - Capability bounds and permissions
 /// - Capability derivation chains
 /// - Tag propagation through memory
-
 /// Provenance tracking for a value.
 pub const Provenance = enum {
     /// Value is a pure integer with no pointer derivation
