@@ -2471,6 +2471,51 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 try builder.emit(Inst{
                     .neg = .{ .dst = dst, .src = src, .size = size },
                 });
+            } else if (data.opcode == .iabs) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const CondCode = @import("../backends/aarch64/inst.zig").CondCode;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                const temp_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS + 1), RegClass.int);
+                const temp_reg = Reg.fromVReg(temp_vreg);
+                const temp_dst = WritableReg.fromVReg(temp_vreg);
+
+                try builder.emit(Inst{
+                    .neg = .{
+                        .dst = temp_dst,
+                        .src = src,
+                        .size = size,
+                    },
+                });
+
+                try builder.emit(Inst{
+                    .cmp_imm = .{
+                        .src = src,
+                        .imm = .{ .bits = 0, .shift12 = false },
+                    },
+                });
+
+                try builder.emit(Inst{
+                    .csel = .{
+                        .dst = dst,
+                        .src1 = temp_reg,
+                        .src2 = src,
+                        .cond = CondCode.lt,
+                        .size = size,
+                    },
+                });
             } else if (data.opcode == .sqrt) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
