@@ -3603,6 +3603,49 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 });
             }
         },
+        .ternary_imm8 => |data| {
+            if (data.opcode == .insertlane) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+
+                if (data.imm != 0) return error.LoweringFailed;
+
+                _ = data.args[0];
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), .float);
+
+                const scalar_type = ctx.func.dfg.valueType(data.args[1]) orelse return error.LoweringFailed;
+                const is_float = scalar_type.isFloat();
+                const scalar_class: RegClass = if (is_float) .float else .int;
+                const scalar_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), scalar_class);
+
+                const dst = WritableReg.fromVReg(result_vreg);
+                const size: FpuOperandSize = if (scalar_type.bits() == 64) .size64 else .size32;
+
+                if (is_float) {
+                    try builder.emit(Inst{
+                        .fmov = .{
+                            .dst = dst,
+                            .src = Reg.fromVReg(scalar_vreg),
+                            .size = size,
+                        },
+                    });
+                } else {
+                    try builder.emit(Inst{
+                        .fmov_from_gpr = .{
+                            .dst = dst,
+                            .src = Reg.fromVReg(scalar_vreg),
+                            .size = size,
+                        },
+                    });
+                }
+            } else {
+                try builder.emit(Inst.nop);
+            }
+        },
         else => {
             // Unimplemented instruction - emit NOP placeholder
             try builder.emit(Inst.nop);
