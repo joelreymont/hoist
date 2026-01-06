@@ -2693,6 +2693,22 @@ pub fn aarch64_and(dst: WritableReg, src1: Reg, src2: Reg, size: OperandSize) In
     } };
 }
 
+/// Memory barrier options for DMB/DSB/ISB instructions.
+pub const BarrierOption = enum(u4) {
+    sy = 0xF, // Full system
+    st = 0xE, // Store
+    ld = 0xD, // Load
+    ish = 0xB, // Inner shareable
+    ishst = 0xA, // Inner shareable store
+    ishld = 0x9, // Inner shareable load
+    nsh = 0x7, // Non-shareable
+    nshst = 0x6, // Non-shareable store
+    nshld = 0x5, // Non-shareable load
+    osh = 0x3, // Outer shareable
+    oshst = 0x2, // Outer shareable store
+    oshld = 0x1, // Outer shareable load
+};
+
 /// Create AND immediate instruction.
 /// Computes dst = src & imm.
 /// Returns null if immediate cannot be encoded as logical immediate.

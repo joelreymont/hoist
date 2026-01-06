@@ -7,10 +7,12 @@ const OperandSize = inst_mod.OperandSize;
 const FpuOperandSize = inst_mod.FpuOperandSize;
 const VectorSize = inst_mod.VectorSize;
 const VecElemSize = inst_mod.VecElemSize;
-const BarrierOption = inst_mod.BarrierOption;
+const BarrierOption = inst_mod.BarrierOp;
 const CondCode = inst_mod.CondCode;
 const Reg = inst_mod.Reg;
 const PReg = inst_mod.PReg;
+const ExtendOp = inst_mod.ExtendOp;
+const ShiftOp = inst_mod.ShiftOp;
 const buffer_mod = @import("../../machinst/buffer.zig");
 
 /// Emit aarch64 instruction to binary.
@@ -60,11 +62,11 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .cmp_imm => |i| try emitCmpImm(i.src, i.imm, i.size, buffer),
         .tst_rr => |i| try emitTstRR(i.src1, i.src2, i.size, buffer),
         .tst_imm => |i| try emitTstImm(i.src, i.imm, buffer),
-        .sxtb => |i| try emitSxtb(i.dst.toReg(), i.src, i.size, buffer),
-        .sxth => |i| try emitSxth(i.dst.toReg(), i.src, i.size, buffer),
+        .sxtb => |i| try emitSxtb(i.dst.toReg(), i.src, i.dst_size, buffer),
+        .sxth => |i| try emitSxth(i.dst.toReg(), i.src, i.dst_size, buffer),
         .sxtw => |i| try emitSxtw(i.dst.toReg(), i.src, buffer),
-        .uxtb => |i| try emitUxtb(i.dst.toReg(), i.src, i.size, buffer),
-        .uxth => |i| try emitUxth(i.dst.toReg(), i.src, i.size, buffer),
+        .uxtb => |i| try emitUxtb(i.dst.toReg(), i.src, i.dst_size, buffer),
+        .uxth => |i| try emitUxth(i.dst.toReg(), i.src, i.dst_size, buffer),
         .ldr => |i| try emitLdr(i.dst.toReg(), i.base, i.offset, i.size, buffer),
         .ldr_reg => |i| try emitLdrReg(i.dst.toReg(), i.base, i.offset, i.size, buffer),
         .ldr_ext => |i| try emitLdrExt(i.dst.toReg(), i.base, i.offset, i.extend, i.size, buffer),
@@ -99,8 +101,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .dmb => |i| try emitDmb(i.option, buffer),
         .dsb => |i| try emitDsb(i.option, buffer),
         .isb => try emitIsb(buffer),
-        .ldaxr => |i| try emitLdaxr(i.dst.toReg(), i.addr, i.size, buffer),
-        .stlxr => |i| try emitStlxr(i.status.toReg(), i.src, i.addr, i.size, buffer),
+        .ldaxr => |i| try emitLdaxr(i.dst.toReg(), i.base, i.size, buffer),
+        .stlxr => |i| try emitStlxr(i.status.toReg(), i.src, i.base, i.size, buffer),
         .b => |i| try emitB(i.target.label, buffer),
         .b_cond => |i| try emitBCond(@intFromEnum(i.cond), i.target.label, buffer),
         .bl => |i| switch (i.target) {
@@ -1433,7 +1435,7 @@ fn emitLdrReg(dst: Reg, base: Reg, offset: Reg, size: OperandSize, buffer: *buff
 }
 
 /// LDR Xt, [Xn, Wm, extend] (extended register offset)
-fn emitLdrExt(dst: Reg, base: Reg, offset: Reg, extend: Inst.ExtendOp, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitLdrExt(dst: Reg, base: Reg, offset: Reg, extend: ExtendOp, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
     const rt = hwEnc(dst);
     const rn = hwEnc(base);
@@ -1473,7 +1475,7 @@ fn emitLdrExt(dst: Reg, base: Reg, offset: Reg, extend: Inst.ExtendOp, size: Ope
 /// Attempting to use them will cause a runtime panic.
 ///
 /// Example: LDR X0, [X1, X2, LSL #3] loads from address (X1 + (X2 << 3))
-fn emitLdrShifted(dst: Reg, base: Reg, offset: Reg, shift_op: Inst.ShiftOp, shift_amt: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitLdrShifted(dst: Reg, base: Reg, offset: Reg, shift_op: ShiftOp, shift_amt: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // Validate that only LSL is used for load/store addressing
     if (shift_op != .lsl) {
         @panic("ARM64 load/store register offset only supports LSL shift operation");
@@ -1519,7 +1521,7 @@ fn emitStrReg(src: Reg, base: Reg, offset: Reg, size: OperandSize, buffer: *buff
 }
 
 /// STR Xt, [Xn, Wm, extend] (extended register offset)
-fn emitStrExt(src: Reg, base: Reg, offset: Reg, extend: Inst.ExtendOp, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitStrExt(src: Reg, base: Reg, offset: Reg, extend: ExtendOp, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
     const rt = hwEnc(src);
     const rn = hwEnc(base);
@@ -1559,7 +1561,7 @@ fn emitStrExt(src: Reg, base: Reg, offset: Reg, extend: Inst.ExtendOp, size: Ope
 /// Attempting to use them will cause a runtime panic.
 ///
 /// Example: STR X0, [X1, X2, LSL #3] stores to address (X1 + (X2 << 3))
-fn emitStrShifted(src: Reg, base: Reg, offset: Reg, shift_op: Inst.ShiftOp, shift_amt: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+fn emitStrShifted(src: Reg, base: Reg, offset: Reg, shift_op: ShiftOp, shift_amt: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // Validate that only LSL is used for load/store addressing
     if (shift_op != .lsl) {
         @panic("ARM64 load/store register offset only supports LSL shift operation");
@@ -2631,7 +2633,7 @@ fn emitCasl(compare: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffe
 
 /// DMB - Data Memory Barrier
 /// Encoding: 1101010100|0|00|011|0011|CRm|1|01|11111
-fn emitDmb(option: inst_mod.BarrierOption, buffer: *buffer_mod.MachBuffer) !void {
+fn emitDmb(option: BarrierOption, buffer: *buffer_mod.MachBuffer) !void {
     const crm: u32 = @intFromEnum(option);
 
     const insn: u32 = (0b11010101000000110011 << 12) |
@@ -2643,7 +2645,7 @@ fn emitDmb(option: inst_mod.BarrierOption, buffer: *buffer_mod.MachBuffer) !void
 
 /// DSB - Data Synchronization Barrier
 /// Encoding: 1101010100|0|00|011|0011|CRm|1|00|11111
-fn emitDsb(option: inst_mod.BarrierOption, buffer: *buffer_mod.MachBuffer) !void {
+fn emitDsb(option: BarrierOption, buffer: *buffer_mod.MachBuffer) !void {
     const crm: u32 = @intFromEnum(option);
 
     const insn: u32 = (0b11010101000000110011 << 12) |
@@ -7606,7 +7608,7 @@ test "emit ldr/str all extend modes" {
     const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // Test all extend types
-    const extend_types = [_]Inst.ExtendOp{ .uxtb, .uxth, .uxtw, .uxtx, .sxtb, .sxth, .sxtw, .sxtx };
+    const extend_types = [_]ExtendOp{ .uxtb, .uxth, .uxtw, .uxtx, .sxtb, .sxth, .sxtw, .sxtx };
 
     for (extend_types) |ext| {
         buffer.data.clearRetainingCapacity();

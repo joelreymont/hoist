@@ -2111,7 +2111,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     .subs_imm = .{
                         .dst = xzr_writable,
                         .src = Reg.fromVReg(c_in_vreg),
-                        .imm = 1,
+                        .imm = .{ .bits = 1, .shift12 = false },
                         .size = .size32,
                     },
                 });
@@ -2163,7 +2163,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     .subs_imm = .{
                         .dst = xzr_writable,
                         .src = Reg.fromVReg(c_in_vreg),
-                        .imm = 1,
+                        .imm = .{ .bits = 1, .shift12 = false },
                         .size = .size32,
                     },
                 });
@@ -3210,6 +3210,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     .cmp_imm = .{
                         .src = src,
                         .imm = .{ .bits = 0, .shift12 = false },
+                        .size = .size64,
                     },
                 });
 
@@ -3832,6 +3833,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     .cmp_imm = .{
                         .src = src,
                         .imm = Imm12{ .bits = @intCast(imm_val), .shift12 = false },
+                        .size = .size64,
                     },
                 });
 
