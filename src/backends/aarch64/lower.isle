@@ -1744,6 +1744,11 @@
       (if-let $true (uimm12 k))
       (aarch64_cmp_imm_and_branch ty x k cc target))
 
+;; br_table: Branch table (jump table dispatch)
+(decl aarch64_br_table (Value JumpTable Block) Aarch64Inst)
+(rule (lower (br_table index jt default_target))
+      (aarch64_br_table index jt default_target))
+
 ;; return: Return from function
 (rule (lower (return))
       (aarch64_ret))

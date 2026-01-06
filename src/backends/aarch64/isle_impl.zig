@@ -1044,3 +1044,18 @@ pub fn aarch64_global_value(
     _ = ctx;
     @panic("TODO: Implement global_value - needs global value data structure");
 }
+
+/// Constructor: br_table - branch table (jump table dispatch).
+/// Emits bounds check + jump table lookup + indirect branch.
+pub fn aarch64_br_table(
+    ctx: *IsleContext,
+    index: Value,
+    jt: u32,
+    default_target: Block,
+) !void {
+    _ = index;
+    _ = jt;
+    _ = default_target;
+    _ = ctx;
+    @panic("TODO: Implement br_table - needs jump table data structure and constant pool");
+}
