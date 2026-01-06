@@ -1295,6 +1295,120 @@ pub const Aarch64ISA = struct {
             .msr => |*msr| {
                 msr.src = replaceReg(msr.src, result);
             },
+            .vec_ext => |*vec_ext| {
+                vec_ext.src1 = replaceReg(vec_ext.src1, result);
+                vec_ext.src2 = replaceReg(vec_ext.src2, result);
+                vec_ext.dst = replaceWritableReg(vec_ext.dst, result);
+            },
+            .vec_addp => |*vec_addp| {
+                vec_addp.src1 = replaceReg(vec_addp.src1, result);
+                vec_addp.src2 = replaceReg(vec_addp.src2, result);
+                vec_addp.dst = replaceWritableReg(vec_addp.dst, result);
+            },
+            .vec_umaxp => |*vec_umaxp| {
+                vec_umaxp.src1 = replaceReg(vec_umaxp.src1, result);
+                vec_umaxp.src2 = replaceReg(vec_umaxp.src2, result);
+                vec_umaxp.dst = replaceWritableReg(vec_umaxp.dst, result);
+            },
+            .vec_cmeq0 => |*vec_cmeq0| {
+                vec_cmeq0.src = replaceReg(vec_cmeq0.src, result);
+                vec_cmeq0.dst = replaceWritableReg(vec_cmeq0.dst, result);
+            },
+            .vec_sshll => |*vec_sshll| {
+                vec_sshll.src = replaceReg(vec_sshll.src, result);
+                vec_sshll.dst = replaceWritableReg(vec_sshll.dst, result);
+            },
+            .vec_ushll => |*vec_ushll| {
+                vec_ushll.src = replaceReg(vec_ushll.src, result);
+                vec_ushll.dst = replaceWritableReg(vec_ushll.dst, result);
+            },
+            .vec_sqxtn => |*vec_sqxtn| {
+                vec_sqxtn.src = replaceReg(vec_sqxtn.src, result);
+                vec_sqxtn.dst = replaceWritableReg(vec_sqxtn.dst, result);
+            },
+            .vec_sqxtun => |*vec_sqxtun| {
+                vec_sqxtun.src = replaceReg(vec_sqxtun.src, result);
+                vec_sqxtun.dst = replaceWritableReg(vec_sqxtun.dst, result);
+            },
+            .vec_uqxtn => |*vec_uqxtn| {
+                vec_uqxtn.src = replaceReg(vec_uqxtn.src, result);
+                vec_uqxtn.dst = replaceWritableReg(vec_uqxtn.dst, result);
+            },
+            .vec_fcvtl => |*vec_fcvtl| {
+                vec_fcvtl.src = replaceReg(vec_fcvtl.src, result);
+                vec_fcvtl.dst = replaceWritableReg(vec_fcvtl.dst, result);
+            },
+            .vec_fcvtn => |*vec_fcvtn| {
+                vec_fcvtn.src = replaceReg(vec_fcvtn.src, result);
+                vec_fcvtn.dst = replaceWritableReg(vec_fcvtn.dst, result);
+            },
+            .zip1 => |*zip1| {
+                zip1.src1 = replaceReg(zip1.src1, result);
+                zip1.src2 = replaceReg(zip1.src2, result);
+                zip1.dst = replaceWritableReg(zip1.dst, result);
+            },
+            .zip2 => |*zip2| {
+                zip2.src1 = replaceReg(zip2.src1, result);
+                zip2.src2 = replaceReg(zip2.src2, result);
+                zip2.dst = replaceWritableReg(zip2.dst, result);
+            },
+            .uzp1 => |*uzp1| {
+                uzp1.src1 = replaceReg(uzp1.src1, result);
+                uzp1.src2 = replaceReg(uzp1.src2, result);
+                uzp1.dst = replaceWritableReg(uzp1.dst, result);
+            },
+            .uzp2 => |*uzp2| {
+                uzp2.src1 = replaceReg(uzp2.src1, result);
+                uzp2.src2 = replaceReg(uzp2.src2, result);
+                uzp2.dst = replaceWritableReg(uzp2.dst, result);
+            },
+            .trn1 => |*trn1| {
+                trn1.src1 = replaceReg(trn1.src1, result);
+                trn1.src2 = replaceReg(trn1.src2, result);
+                trn1.dst = replaceWritableReg(trn1.dst, result);
+            },
+            .trn2 => |*trn2| {
+                trn2.src1 = replaceReg(trn2.src1, result);
+                trn2.src2 = replaceReg(trn2.src2, result);
+                trn2.dst = replaceWritableReg(trn2.dst, result);
+            },
+            .vec_rev16 => |*vec_rev16| {
+                vec_rev16.src = replaceReg(vec_rev16.src, result);
+                vec_rev16.dst = replaceWritableReg(vec_rev16.dst, result);
+            },
+            .vec_rev32 => |*vec_rev32| {
+                vec_rev32.src = replaceReg(vec_rev32.src, result);
+                vec_rev32.dst = replaceWritableReg(vec_rev32.dst, result);
+            },
+            .vec_rev64 => |*vec_rev64| {
+                vec_rev64.src = replaceReg(vec_rev64.src, result);
+                vec_rev64.dst = replaceWritableReg(vec_rev64.dst, result);
+            },
+            .vec_rrr_mod => |*vec_rrr_mod| {
+                vec_rrr_mod.ri = replaceReg(vec_rrr_mod.ri, result);
+                vec_rrr_mod.rn = replaceReg(vec_rrr_mod.rn, result);
+                vec_rrr_mod.rm = replaceReg(vec_rrr_mod.rm, result);
+                vec_rrr_mod.dst = replaceWritableReg(vec_rrr_mod.dst, result);
+            },
+            .vec_rrr => |*vec_rrr| {
+                vec_rrr.rn = replaceReg(vec_rrr.rn, result);
+                vec_rrr.rm = replaceReg(vec_rrr.rm, result);
+                vec_rrr.dst = replaceWritableReg(vec_rrr.dst, result);
+            },
+            .vec_misc => |*vec_misc| {
+                vec_misc.rn = replaceReg(vec_misc.rn, result);
+                vec_misc.dst = replaceWritableReg(vec_misc.dst, result);
+            },
+            .vec_shift_imm => |*vec_shift_imm| {
+                vec_shift_imm.rn = replaceReg(vec_shift_imm.rn, result);
+                vec_shift_imm.dst = replaceWritableReg(vec_shift_imm.dst, result);
+            },
+            .vec_fmla_elem => |*vec_fmla_elem| {
+                vec_fmla_elem.ri = replaceReg(vec_fmla_elem.ri, result);
+                vec_fmla_elem.rn = replaceReg(vec_fmla_elem.rn, result);
+                vec_fmla_elem.rm = replaceReg(vec_fmla_elem.rm, result);
+                vec_fmla_elem.dst = replaceWritableReg(vec_fmla_elem.dst, result);
+            },
             // TODO: Add more instruction types as needed
             else => {
                 // For unimplemented instructions, do nothing

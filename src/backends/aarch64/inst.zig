@@ -2961,6 +2961,120 @@ pub const Inst = union(enum) {
             .msr => |*i| {
                 try collector.regUse(i.src);
             },
+            .vec_ext => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_addp => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_umaxp => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_cmeq0 => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .vec_sshll => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .vec_ushll => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .vec_sqxtn => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .vec_sqxtun => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .vec_uqxtn => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .vec_fcvtl => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .vec_fcvtn => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .zip1 => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .zip2 => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .uzp1 => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .uzp2 => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .trn1 => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .trn2 => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_rev16 => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .vec_rev32 => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .vec_rev64 => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .vec_rrr_mod => |*i| {
+                try collector.regUse(i.ri);
+                try collector.regUse(i.rn);
+                try collector.regUse(i.rm);
+                try collector.regDef(i.dst);
+            },
+            .vec_rrr => |*i| {
+                try collector.regUse(i.rn);
+                try collector.regUse(i.rm);
+                try collector.regDef(i.dst);
+            },
+            .vec_misc => |*i| {
+                try collector.regUse(i.rn);
+                try collector.regDef(i.dst);
+            },
+            .vec_shift_imm => |*i| {
+                try collector.regUse(i.rn);
+                try collector.regDef(i.dst);
+            },
+            .vec_fmla_elem => |*i| {
+                try collector.regUse(i.ri);
+                try collector.regUse(i.rn);
+                try collector.regUse(i.rm);
+                try collector.regDef(i.dst);
+            },
             .ret => {
                 // No operands to collect (implicit use of X30/LR handled by ABI)
             },
