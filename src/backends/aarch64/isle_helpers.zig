@@ -192,20 +192,36 @@ pub fn valid_rotl_imm(width: u32, k: u64) ?u32 {
 }
 
 /// Extractor: Check if offset is valid for load immediate addressing.
-/// Accepts offsets 0-32760 (max for I64 8-byte aligned access).
-/// Returns the offset if valid, null otherwise.
+/// AArch64 LDR has 12-bit unsigned immediate scaled by access size.
+/// Returns the offset if valid (0-4095 scaled), null otherwise.
 pub fn valid_ldr_imm_offset(ty: types.Type, offset: u64) ?u64 {
-    _ = ty; // Type used for alignment checking in full implementation
-    if (offset <= 32760) return offset;
-    return null;
+    // LDR immediate encoding: offset = imm12 * size
+    // imm12 is 12-bit unsigned (0-4095)
+    const size = ty.bytes();
+    const max_offset = 4095 * size;
+
+    // Offset must be aligned to access size
+    if (offset % size != 0) return null;
+    if (offset > max_offset) return null;
+
+    return offset;
 }
 
 /// Extractor: Check if offset is valid for store immediate addressing.
-/// Returns the offset if valid, null otherwise.
+/// AArch64 STR has 12-bit unsigned immediate scaled by access size.
+/// Returns the offset if valid (0-4095 scaled), null otherwise.
 pub fn valid_str_imm_offset(val: lower_mod.Value, offset: u64) ?u64 {
-    _ = val; // Value type used for alignment checking in full implementation
-    if (offset <= 32760) return offset;
-    return null;
+    // STR immediate encoding: offset = imm12 * size
+    // imm12 is 12-bit unsigned (0-4095)
+    const ty = val.type;
+    const size = ty.bytes();
+    const max_offset = 4095 * size;
+
+    // Offset must be aligned to access size
+    if (offset % size != 0) return null;
+    if (offset > max_offset) return null;
+
+    return offset;
 }
 
 /// Extractor: Check if shift is valid for load (must be 0-3).
