@@ -681,6 +681,9 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 try builder.emit(Inst{
                     .brk = .{ .imm = 0xF000 },
                 });
+            } else if (data.opcode == .fence) {
+                // Memory fence - DMB (data memory barrier)
+                try builder.emit(Inst.fence);
             } else {
                 try builder.emit(Inst.nop);
             }
