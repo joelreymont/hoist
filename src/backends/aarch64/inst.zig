@@ -2840,11 +2840,41 @@ pub const Inst = union(enum) {
             .call_indirect => |*i| {
                 try collector.regUse(i.target);
             },
+            .fmadd => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regUse(i.addend);
+                try collector.regDef(i.dst);
+            },
+            .fmsub => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regUse(i.addend);
+                try collector.regDef(i.dst);
+            },
+            .fcmp_zero => |*i| {
+                try collector.regUse(i.src);
+            },
+            .adrp_symbol => |*i| {
+                try collector.regDef(i.dst);
+            },
+            .cmn_rr => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+            },
+            .cls => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .ctz => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
             .ret => {
                 // No operands to collect (implicit use of X30/LR handled by ABI)
             },
-            .call, .b, .b_cond, .bl, .nop => {
-                // No register operands (labels/immediates only)
+            .call, .b, .b_cond, .bl, .nop, .dmb, .dsb, .fence, .epilogue_placeholder, .data => {
+                // No register operands (labels/immediates/special only)
             },
             else => {
                 // TODO: Implement for all instruction variants

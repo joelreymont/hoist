@@ -1176,6 +1176,36 @@ pub const Aarch64ISA = struct {
             .call_indirect => |*call| {
                 call.target = replaceReg(call.target, result);
             },
+            .fmadd => |*fmadd| {
+                fmadd.src1 = replaceReg(fmadd.src1, result);
+                fmadd.src2 = replaceReg(fmadd.src2, result);
+                fmadd.addend = replaceReg(fmadd.addend, result);
+                fmadd.dst = replaceWritableReg(fmadd.dst, result);
+            },
+            .fmsub => |*fmsub| {
+                fmsub.src1 = replaceReg(fmsub.src1, result);
+                fmsub.src2 = replaceReg(fmsub.src2, result);
+                fmsub.addend = replaceReg(fmsub.addend, result);
+                fmsub.dst = replaceWritableReg(fmsub.dst, result);
+            },
+            .fcmp_zero => |*fcmp| {
+                fcmp.src = replaceReg(fcmp.src, result);
+            },
+            .adrp_symbol => |*adrp| {
+                adrp.dst = replaceWritableReg(adrp.dst, result);
+            },
+            .cmn_rr => |*cmn| {
+                cmn.src1 = replaceReg(cmn.src1, result);
+                cmn.src2 = replaceReg(cmn.src2, result);
+            },
+            .cls => |*cls| {
+                cls.src = replaceReg(cls.src, result);
+                cls.dst = replaceWritableReg(cls.dst, result);
+            },
+            .ctz => |*ctz| {
+                ctz.src = replaceReg(ctz.src, result);
+                ctz.dst = replaceWritableReg(ctz.dst, result);
+            },
             // TODO: Add more instruction types as needed
             else => {
                 // For unimplemented instructions, do nothing
