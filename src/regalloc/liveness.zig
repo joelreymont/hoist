@@ -272,3 +272,166 @@ test "LivenessInfo basic operations" {
 
     try std.testing.expect(info.interfere(vreg0, vreg1));
 }
+
+// Mock instruction type for testing computeLiveness
+const MockInst = struct {
+    defs: []const machinst.VReg,
+    uses: []const machinst.VReg,
+
+    pub fn getDefs(self: MockInst, allocator: std.mem.Allocator) ![]machinst.VReg {
+        return try allocator.dupe(machinst.VReg, self.defs);
+    }
+
+    pub fn getUses(self: MockInst, allocator: std.mem.Allocator) ![]machinst.VReg {
+        return try allocator.dupe(machinst.VReg, self.uses);
+    }
+};
+
+test "computeLiveness simple def-use pattern" {
+    const allocator = std.testing.allocator;
+
+    const v0 = machinst.VReg.new(0, .int);
+    const v1 = machinst.VReg.new(1, .int);
+
+    // Instruction 0: v0 = ...
+    // Instruction 1: v1 = ... v0
+    // Instruction 2: ... v1
+    const insns = [_]MockInst{
+        .{ .defs = &[_]machinst.VReg{v0}, .uses = &[_]machinst.VReg{} },
+        .{ .defs = &[_]machinst.VReg{v1}, .uses = &[_]machinst.VReg{v0} },
+        .{ .defs = &[_]machinst.VReg{}, .uses = &[_]machinst.VReg{v1} },
+    };
+
+    var info = try computeLiveness(MockInst, &insns, allocator);
+    defer info.deinit();
+
+    // v0 should be live from 0 to 1
+    const r0 = info.getRange(v0);
+    try std.testing.expect(r0 != null);
+    try std.testing.expectEqual(@as(u32, 0), r0.?.start_inst);
+    try std.testing.expectEqual(@as(u32, 1), r0.?.end_inst);
+
+    // v1 should be live from 1 to 2
+    const r1 = info.getRange(v1);
+    try std.testing.expect(r1 != null);
+    try std.testing.expectEqual(@as(u32, 1), r1.?.start_inst);
+    try std.testing.expectEqual(@as(u32, 2), r1.?.end_inst);
+
+    // v0 and v1 should overlap at instruction 1
+    try std.testing.expect(r0.?.overlaps(r1.?.*));
+}
+
+test "computeLiveness non-overlapping ranges" {
+    const allocator = std.testing.allocator;
+
+    const v0 = machinst.VReg.new(0, .int);
+    const v1 = machinst.VReg.new(1, .int);
+
+    // Instruction 0: v0 = ...
+    // Instruction 1: ... v0
+    // Instruction 2: v1 = ...
+    // Instruction 3: ... v1
+    const insns = [_]MockInst{
+        .{ .defs = &[_]machinst.VReg{v0}, .uses = &[_]machinst.VReg{} },
+        .{ .defs = &[_]machinst.VReg{}, .uses = &[_]machinst.VReg{v0} },
+        .{ .defs = &[_]machinst.VReg{v1}, .uses = &[_]machinst.VReg{} },
+        .{ .defs = &[_]machinst.VReg{}, .uses = &[_]machinst.VReg{v1} },
+    };
+
+    var info = try computeLiveness(MockInst, &insns, allocator);
+    defer info.deinit();
+
+    // v0 should be live from 0 to 1
+    const r0 = info.getRange(v0);
+    try std.testing.expect(r0 != null);
+    try std.testing.expectEqual(@as(u32, 0), r0.?.start_inst);
+    try std.testing.expectEqual(@as(u32, 1), r0.?.end_inst);
+
+    // v1 should be live from 2 to 3
+    const r1 = info.getRange(v1);
+    try std.testing.expect(r1 != null);
+    try std.testing.expectEqual(@as(u32, 2), r1.?.start_inst);
+    try std.testing.expectEqual(@as(u32, 3), r1.?.end_inst);
+
+    // v0 and v1 should NOT overlap
+    try std.testing.expect(!r0.?.overlaps(r1.?.*));
+    try std.testing.expect(!info.interfere(v0, v1));
+}
+
+test "computeLiveness multiple uses extend range" {
+    const allocator = std.testing.allocator;
+
+    const v0 = machinst.VReg.new(0, .int);
+
+    // Instruction 0: v0 = ...
+    // Instruction 1: ... v0
+    // Instruction 2: nop
+    // Instruction 3: ... v0
+    const insns = [_]MockInst{
+        .{ .defs = &[_]machinst.VReg{v0}, .uses = &[_]machinst.VReg{} },
+        .{ .defs = &[_]machinst.VReg{}, .uses = &[_]machinst.VReg{v0} },
+        .{ .defs = &[_]machinst.VReg{}, .uses = &[_]machinst.VReg{} },
+        .{ .defs = &[_]machinst.VReg{}, .uses = &[_]machinst.VReg{v0} },
+    };
+
+    var info = try computeLiveness(MockInst, &insns, allocator);
+    defer info.deinit();
+
+    // v0 should be live from 0 to 3 (extended by later use)
+    const r0 = info.getRange(v0);
+    try std.testing.expect(r0 != null);
+    try std.testing.expectEqual(@as(u32, 0), r0.?.start_inst);
+    try std.testing.expectEqual(@as(u32, 3), r0.?.end_inst);
+}
+
+test "computeLiveness use before def (parameters)" {
+    const allocator = std.testing.allocator;
+
+    const v0 = machinst.VReg.new(0, .int);
+
+    // Instruction 0: ... v0  (use before def - parameter)
+    // Instruction 1: v0 = ... (definition comes later)
+    const insns = [_]MockInst{
+        .{ .defs = &[_]machinst.VReg{}, .uses = &[_]machinst.VReg{v0} },
+        .{ .defs = &[_]machinst.VReg{v0}, .uses = &[_]machinst.VReg{} },
+    };
+
+    var info = try computeLiveness(MockInst, &insns, allocator);
+    defer info.deinit();
+
+    // v0 should be live from 0 (first use) to 1 (last use = def)
+    const r0 = info.getRange(v0);
+    try std.testing.expect(r0 != null);
+    try std.testing.expectEqual(@as(u32, 0), r0.?.start_inst);
+    try std.testing.expectEqual(@as(u32, 1), r0.?.end_inst);
+}
+
+test "computeLiveness different register classes" {
+    const allocator = std.testing.allocator;
+
+    const v0 = machinst.VReg.new(0, .int);
+    const v1 = machinst.VReg.new(1, .float);
+    const v2 = machinst.VReg.new(2, .vector);
+
+    // All defined and used at same time
+    const insns = [_]MockInst{
+        .{ .defs = &[_]machinst.VReg{ v0, v1, v2 }, .uses = &[_]machinst.VReg{} },
+        .{ .defs = &[_]machinst.VReg{}, .uses = &[_]machinst.VReg{ v0, v1, v2 } },
+    };
+
+    var info = try computeLiveness(MockInst, &insns, allocator);
+    defer info.deinit();
+
+    // Check all have correct register classes
+    const r0 = info.getRange(v0);
+    const r1 = info.getRange(v1);
+    const r2 = info.getRange(v2);
+
+    try std.testing.expect(r0 != null);
+    try std.testing.expect(r1 != null);
+    try std.testing.expect(r2 != null);
+
+    try std.testing.expectEqual(machinst.RegClass.int, r0.?.reg_class);
+    try std.testing.expectEqual(machinst.RegClass.float, r1.?.reg_class);
+    try std.testing.expectEqual(machinst.RegClass.vector, r2.?.reg_class);
+}
