@@ -1107,3 +1107,33 @@ pub fn aarch64_uadd_overflow_trap(
     _ = ctx;
     @panic("TODO: Implement uadd_overflow_trap - needs ADDS + B.VS + BRK");
 }
+
+/// Constructor: return_call - direct tail call.
+/// Emits epilogue followed by direct branch instead of call+return.
+pub fn aarch64_return_call(
+    ctx: *IsleContext,
+    sig_ref: u32,
+    name: u32,
+    args: []const Value,
+) !void {
+    _ = sig_ref;
+    _ = name;
+    _ = args;
+    _ = ctx;
+    @panic("TODO: Implement return_call - needs epilogue + B instruction");
+}
+
+/// Constructor: return_call_indirect - indirect tail call.
+/// Emits epilogue followed by indirect branch instead of call+return.
+pub fn aarch64_return_call_indirect(
+    ctx: *IsleContext,
+    sig_ref: u32,
+    ptr: Value,
+    args: []const Value,
+) !void {
+    _ = sig_ref;
+    _ = ptr;
+    _ = args;
+    _ = ctx;
+    @panic("TODO: Implement return_call_indirect - needs epilogue + BR instruction");
+}
