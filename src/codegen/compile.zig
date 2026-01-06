@@ -1283,6 +1283,61 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .size = size,
                     },
                 });
+            } else if (data.opcode == .sadd_overflow_cin) {
+                // Add with carry in and overflow out: (sum, c_out) = x + y + c_in
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const PReg = @import("../machinst/reg.zig").PReg;
+                const CondCode = @import("../backends/aarch64/inst.zig").CondCode;
+
+                // Get inputs: x, y, c_in
+                const x_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const y_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
+                const c_in_vreg = VReg.new(@intCast(data.args[2].index + Reg.PINNED_VREGS), RegClass.int);
+
+                // Get outputs: sum, c_out
+                const results = ctx.func.dfg.instResults(inst);
+                if (results.len != 2) return error.LoweringFailed;
+
+                const sum_vreg = VReg.new(@intCast(results[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const c_out_vreg = VReg.new(@intCast(results[1].index + Reg.PINNED_VREGS), RegClass.int);
+
+                const value_type = ctx.func.dfg.valueType(results[0]) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                // Set carry flag from c_in: SUBS xzr, c_in, #1
+                // This sets C = (c_in >= 1) = (c_in != 0)
+                const xzr = Reg.fromPReg(PReg.new(RegClass.int, 31));
+                const xzr_writable = WritableReg.fromReg(xzr);
+                try builder.emit(Inst{
+                    .subs_imm = .{
+                        .dst = xzr_writable,
+                        .src = Reg.fromVReg(c_in_vreg),
+                        .imm = 1,
+                        .size = .size32,
+                    },
+                });
+
+                // ADCS: sum = x + y + carry
+                try builder.emit(Inst{
+                    .adcs = .{
+                        .dst = WritableReg.fromVReg(sum_vreg),
+                        .src1 = Reg.fromVReg(x_vreg),
+                        .src2 = Reg.fromVReg(y_vreg),
+                        .size = size,
+                    },
+                });
+
+                // Extract carry flag to c_out
+                try builder.emit(Inst{
+                    .cset = .{
+                        .dst = WritableReg.fromVReg(c_out_vreg),
+                        .cond = CondCode.cs, // carry set
+                        .size = .size32,
+                    },
+                });
             } else {
                 try builder.emit(Inst.nop);
             }
