@@ -1101,6 +1101,81 @@ pub const Aarch64ISA = struct {
                 umulh.src2 = replaceReg(umulh.src2, result);
                 umulh.dst = replaceWritableReg(umulh.dst, result);
             },
+            .orn_rr => |*orn| {
+                orn.src1 = replaceReg(orn.src1, result);
+                orn.src2 = replaceReg(orn.src2, result);
+                orn.dst = replaceWritableReg(orn.dst, result);
+            },
+            .tst_imm => |*tst| {
+                tst.src = replaceReg(tst.src, result);
+            },
+            .tst_rr => |*tst| {
+                tst.src1 = replaceReg(tst.src1, result);
+                tst.src2 = replaceReg(tst.src2, result);
+            },
+            .eon_rr => |*eon| {
+                eon.src1 = replaceReg(eon.src1, result);
+                eon.src2 = replaceReg(eon.src2, result);
+                eon.dst = replaceWritableReg(eon.dst, result);
+            },
+            .cinc => |*cinc| {
+                cinc.src = replaceReg(cinc.src, result);
+                cinc.dst = replaceWritableReg(cinc.dst, result);
+            },
+            .cset => |*cset| {
+                cset.dst = replaceWritableReg(cset.dst, result);
+            },
+            .fmax => |*fmax| {
+                fmax.src1 = replaceReg(fmax.src1, result);
+                fmax.src2 = replaceReg(fmax.src2, result);
+                fmax.dst = replaceWritableReg(fmax.dst, result);
+            },
+            .fmin => |*fmin| {
+                fmin.src1 = replaceReg(fmin.src1, result);
+                fmin.src2 = replaceReg(fmin.src2, result);
+                fmin.dst = replaceWritableReg(fmin.dst, result);
+            },
+            .fcsel => |*fcsel| {
+                fcsel.src1 = replaceReg(fcsel.src1, result);
+                fcsel.src2 = replaceReg(fcsel.src2, result);
+                fcsel.dst = replaceWritableReg(fcsel.dst, result);
+            },
+            .fmov_imm => |*fmov| {
+                fmov.dst = replaceWritableReg(fmov.dst, result);
+            },
+            .fmov_from_gpr => |*fmov| {
+                fmov.src = replaceReg(fmov.src, result);
+                fmov.dst = replaceWritableReg(fmov.dst, result);
+            },
+            .fmov_to_gpr => |*fmov| {
+                fmov.src = replaceReg(fmov.src, result);
+                fmov.dst = replaceWritableReg(fmov.dst, result);
+            },
+            .frintm => |*frint| {
+                frint.src = replaceReg(frint.src, result);
+                frint.dst = replaceWritableReg(frint.dst, result);
+            },
+            .frintn => |*frint| {
+                frint.src = replaceReg(frint.src, result);
+                frint.dst = replaceWritableReg(frint.dst, result);
+            },
+            .frintp => |*frint| {
+                frint.src = replaceReg(frint.src, result);
+                frint.dst = replaceWritableReg(frint.dst, result);
+            },
+            .frintz => |*frint| {
+                frint.src = replaceReg(frint.src, result);
+                frint.dst = replaceWritableReg(frint.dst, result);
+            },
+            .adr => |*adr| {
+                adr.dst = replaceWritableReg(adr.dst, result);
+            },
+            .adrp => |*adrp| {
+                adrp.dst = replaceWritableReg(adrp.dst, result);
+            },
+            .call_indirect => |*call| {
+                call.target = replaceReg(call.target, result);
+            },
             // TODO: Add more instruction types as needed
             else => {
                 // For unimplemented instructions, do nothing

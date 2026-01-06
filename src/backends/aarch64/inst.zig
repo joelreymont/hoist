@@ -2765,8 +2765,86 @@ pub const Inst = union(enum) {
                 try collector.regUse(i.src2);
                 try collector.regDef(i.dst);
             },
+            .orn_rr => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .tst_imm => |*i| {
+                try collector.regUse(i.src);
+            },
+            .tst_rr => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+            },
+            .eon_rr => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .cinc => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .cset => |*i| {
+                try collector.regDef(i.dst);
+            },
+            .fmax => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .fmin => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .fcsel => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .fmov_imm => |*i| {
+                try collector.regDef(i.dst);
+            },
+            .fmov_from_gpr => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .fmov_to_gpr => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .frintm => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .frintn => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .frintp => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .frintz => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .adr => |*i| {
+                try collector.regDef(i.dst);
+            },
+            .adrp => |*i| {
+                try collector.regDef(i.dst);
+            },
+            .call_indirect => |*i| {
+                try collector.regUse(i.target);
+            },
             .ret => {
                 // No operands to collect (implicit use of X30/LR handled by ABI)
+            },
+            .call, .b, .b_cond, .bl, .nop => {
+                // No register operands (labels/immediates only)
             },
             else => {
                 // TODO: Implement for all instruction variants
