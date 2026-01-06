@@ -4609,3 +4609,99 @@ pub fn aarch64_vec_fdiv(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
         .size = elem_size,
     } };
 }
+
+pub fn aarch64_vec_smin(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+    const elem_size = try vectorSizeToElemSize(size);
+
+    return Inst{ .vec_smin = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}
+
+pub fn aarch64_vec_smax(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+    const elem_size = try vectorSizeToElemSize(size);
+
+    return Inst{ .vec_smax = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}
+
+pub fn aarch64_vec_umin(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+    const elem_size = try vectorSizeToElemSize(size);
+
+    return Inst{ .vec_umin = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}
+
+pub fn aarch64_vec_umax(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+    const elem_size = try vectorSizeToElemSize(size);
+
+    return Inst{ .vec_umax = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}
+
+pub fn aarch64_vec_fmin(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+
+    const elem_size: Inst.VecElemSize = switch (size) {
+        .V2S => .size32x2,
+        .V4S => .size32x4,
+        .V2D => .size64x2,
+        else => return error.InvalidVectorSize,
+    };
+
+    return Inst{ .vec_fmin = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}
+
+pub fn aarch64_vec_fmax(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+
+    const elem_size: Inst.VecElemSize = switch (size) {
+        .V2S => .size32x2,
+        .V4S => .size32x4,
+        .V2D => .size64x2,
+        else => return error.InvalidVectorSize,
+    };
+
+    return Inst{ .vec_fmax = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}

@@ -1472,6 +1472,60 @@ pub const Inst = union(enum) {
         size: VecElemSize,
     },
 
+    /// Vector signed minimum (SMIN Vd, Vn, Vm).
+    /// Computes dst = min(src1, src2) element-wise (signed).
+    vec_smin: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// Vector signed maximum (SMAX Vd, Vn, Vm).
+    /// Computes dst = max(src1, src2) element-wise (signed).
+    vec_smax: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// Vector unsigned minimum (UMIN Vd, Vn, Vm).
+    /// Computes dst = min(src1, src2) element-wise (unsigned).
+    vec_umin: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// Vector unsigned maximum (UMAX Vd, Vn, Vm).
+    /// Computes dst = max(src1, src2) element-wise (unsigned).
+    vec_umax: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// Vector floating-point minimum (FMIN Vd, Vn, Vm).
+    /// Computes dst = min(src1, src2) element-wise (FP).
+    vec_fmin: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// Vector floating-point maximum (FMAX Vd, Vn, Vm).
+    /// Computes dst = max(src1, src2) element-wise (FP).
+    vec_fmax: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
     /// Vector add across lanes (ADDV).
     /// Reduces vector to scalar by adding all lanes: dst = sum(src[i]).
     vec_addv: struct {
@@ -2047,6 +2101,12 @@ pub const Inst = union(enum) {
             .vec_add => |i| try writer.print("vec_add.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_sub => |i| try writer.print("vec_sub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_mul => |i| try writer.print("vec_mul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_smin => |i| try writer.print("vec_smin.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_smax => |i| try writer.print("vec_smax.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_umin => |i| try writer.print("vec_umin.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_umax => |i| try writer.print("vec_umax.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fmin => |i| try writer.print("vec_fmin.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fmax => |i| try writer.print("vec_fmax.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_addv => |i| try writer.print("vec_addv.{} {}, {}", .{ i.size, i.dst, i.src }),
             .vec_sminv => |i| try writer.print("vec_sminv.{} {}, {}", .{ i.size, i.dst, i.src }),
             .vec_smaxv => |i| try writer.print("vec_smaxv.{} {}, {}", .{ i.size, i.dst, i.src }),

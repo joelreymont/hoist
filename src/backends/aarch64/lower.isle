@@ -1042,6 +1042,30 @@
 (rule (lower (umax ty x y))
       (aarch64_umax ty x y))
 
+;; Vector smin: Signed minimum (element-wise)
+(rule 1 (lower (has_type (ty_vec ty) (smin x y)))
+      (aarch64_vec_smin (vector_size ty) x y))
+
+;; Vector umin: Unsigned minimum (element-wise)
+(rule 1 (lower (has_type (ty_vec ty) (umin x y)))
+      (aarch64_vec_umin (vector_size ty) x y))
+
+;; Vector smax: Signed maximum (element-wise)
+(rule 1 (lower (has_type (ty_vec ty) (smax x y)))
+      (aarch64_vec_smax (vector_size ty) x y))
+
+;; Vector umax: Unsigned maximum (element-wise)
+(rule 1 (lower (has_type (ty_vec ty) (umax x y)))
+      (aarch64_vec_umax (vector_size ty) x y))
+
+;; Vector fmin: FP minimum (element-wise)
+(rule 1 (lower (has_type (ty_vec ty) (fmin x y)))
+      (aarch64_vec_fmin (vector_size ty) x y))
+
+;; Vector fmax: FP maximum (element-wise)
+(rule 1 (lower (has_type (ty_vec ty) (fmax x y)))
+      (aarch64_vec_fmax (vector_size ty) x y))
+
 ;; sadd_sat: Signed saturating add (SQADD)
 (rule (lower (has_type $I8 (sadd_sat x y)))
       (aarch64_sqadd_8 x y))
