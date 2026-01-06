@@ -1789,7 +1789,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
             }
         },
         .store => |data| {
-            // Handle store instructions
+            // Handle store instructions (store, istore8, istore16, istore32)
             const VReg = @import("../machinst/reg.zig").VReg;
             const RegClass = @import("../machinst/reg.zig").RegClass;
             const Reg = @import("../machinst/reg.zig").Reg;
@@ -1805,9 +1805,38 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
             const src_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), reg_class);
             const src = Reg.fromVReg(src_vreg);
 
-            // Emit store instruction based on size
             const offset_i16: i16 = @intCast(data.offset);
-            if (value_type.bits() == 64) {
+
+            // Handle explicit sub-word stores (istore8/16/32)
+            if (data.opcode == .istore8) {
+                // Store low 8 bits
+                try builder.emit(Inst{
+                    .strb = .{
+                        .src = src,
+                        .base = base,
+                        .offset = offset_i16,
+                    },
+                });
+            } else if (data.opcode == .istore16) {
+                // Store low 16 bits
+                try builder.emit(Inst{
+                    .strh = .{
+                        .src = src,
+                        .base = base,
+                        .offset = offset_i16,
+                    },
+                });
+            } else if (data.opcode == .istore32) {
+                // Store low 32 bits
+                try builder.emit(Inst{
+                    .str = .{
+                        .src = src,
+                        .base = base,
+                        .offset = offset_i16,
+                        .size = .size32,
+                    },
+                });
+            } else if (value_type.bits() == 64) {
                 try builder.emit(Inst{
                     .str = .{
                         .src = src,
