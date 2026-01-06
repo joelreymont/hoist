@@ -594,6 +594,92 @@ pub const Aarch64ISA = struct {
             .cmp_imm => |*cmp| {
                 cmp.src = replaceReg(cmp.src, result);
             },
+            .add_shifted => |*add| {
+                add.src1 = replaceReg(add.src1, result);
+                add.src2 = replaceReg(add.src2, result);
+                add.dst = replaceWritableReg(add.dst, result);
+            },
+            .sub_shifted => |*sub| {
+                sub.src1 = replaceReg(sub.src1, result);
+                sub.src2 = replaceReg(sub.src2, result);
+                sub.dst = replaceWritableReg(sub.dst, result);
+            },
+            .bic_rr => |*bic| {
+                bic.src1 = replaceReg(bic.src1, result);
+                bic.src2 = replaceReg(bic.src2, result);
+                bic.dst = replaceWritableReg(bic.dst, result);
+            },
+            .mvn_rr => |*mvn| {
+                mvn.src = replaceReg(mvn.src, result);
+                mvn.dst = replaceWritableReg(mvn.dst, result);
+            },
+            .ror_rr => |*ror| {
+                ror.src = replaceReg(ror.src, result);
+                ror.shift = replaceReg(ror.shift, result);
+                ror.dst = replaceWritableReg(ror.dst, result);
+            },
+            .ror_imm => |*ror| {
+                ror.src = replaceReg(ror.src, result);
+                ror.dst = replaceWritableReg(ror.dst, result);
+            },
+            .fadd => |*fadd| {
+                fadd.src1 = replaceReg(fadd.src1, result);
+                fadd.src2 = replaceReg(fadd.src2, result);
+                fadd.dst = replaceWritableReg(fadd.dst, result);
+            },
+            .fsub => |*fsub| {
+                fsub.src1 = replaceReg(fsub.src1, result);
+                fsub.src2 = replaceReg(fsub.src2, result);
+                fsub.dst = replaceWritableReg(fsub.dst, result);
+            },
+            .fmul => |*fmul| {
+                fmul.src1 = replaceReg(fmul.src1, result);
+                fmul.src2 = replaceReg(fmul.src2, result);
+                fmul.dst = replaceWritableReg(fmul.dst, result);
+            },
+            .fdiv => |*fdiv| {
+                fdiv.src1 = replaceReg(fdiv.src1, result);
+                fdiv.src2 = replaceReg(fdiv.src2, result);
+                fdiv.dst = replaceWritableReg(fdiv.dst, result);
+            },
+            .fmov_rr => |*fmov| {
+                fmov.src = replaceReg(fmov.src, result);
+                fmov.dst = replaceWritableReg(fmov.dst, result);
+            },
+            .fcmp => |*fcmp| {
+                fcmp.src1 = replaceReg(fcmp.src1, result);
+                fcmp.src2 = replaceReg(fcmp.src2, result);
+            },
+            .vec_add => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_sub => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_mul => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_and => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_orr => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
+            .vec_eor => |*vec| {
+                vec.src1 = replaceReg(vec.src1, result);
+                vec.src2 = replaceReg(vec.src2, result);
+                vec.dst = replaceWritableReg(vec.dst, result);
+            },
             // TODO: Add more instruction types as needed
             else => {
                 // For unimplemented instructions, do nothing
