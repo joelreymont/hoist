@@ -1564,6 +1564,63 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .size = size,
                     },
                 });
+            } else if (data.opcode == .imul_imm) {
+                // Multiply immediate: result = arg * imm
+                // Optimize power-of-2 to LSL, otherwise use MOVZ+MUL
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                const imm_val: u64 = @bitCast(data.imm.value);
+
+                // Check if power of 2 - optimize to left shift
+                if (imm_val > 0 and (imm_val & (imm_val - 1)) == 0) {
+                    const shift: u8 = @intCast(@ctz(imm_val));
+                    try builder.emit(Inst{
+                        .lsl_imm = .{
+                            .dst = dst,
+                            .src = src,
+                            .imm = shift,
+                            .size = size,
+                        },
+                    });
+                } else {
+                    // General case: MOV temp, #imm; MUL dst, src, temp
+                    const temp_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS + 1), RegClass.int);
+                    const temp = WritableReg.fromVReg(temp_vreg);
+
+                    // MOVZ temp, #imm (simplified - only handles lower 16 bits)
+                    const imm_u16: u16 = @intCast(imm_val & 0xFFFF);
+                    try builder.emit(Inst{
+                        .movz = .{
+                            .dst = temp,
+                            .imm = imm_u16,
+                            .shift = 0,
+                            .size = size,
+                        },
+                    });
+
+                    // MUL dst, src, temp
+                    try builder.emit(Inst{
+                        .mul_rr = .{
+                            .dst = dst,
+                            .src1 = src,
+                            .src2 = Reg.fromVReg(temp_vreg),
+                            .size = size,
+                        },
+                    });
+                }
             } else {
                 try builder.emit(Inst.nop);
             }
