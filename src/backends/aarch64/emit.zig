@@ -14,6 +14,8 @@ const PReg = inst_mod.PReg;
 const ExtendOp = inst_mod.ExtendOp;
 const ShiftOp = inst_mod.ShiftOp;
 const buffer_mod = @import("../../machinst/buffer.zig");
+const machinst = @import("../../machinst/machinst.zig");
+const MachLabel = machinst.MachLabel;
 
 /// Emit aarch64 instruction to binary.
 /// This is a minimal bootstrap - full aarch64 emission needs:
@@ -106,12 +108,12 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .b => |i| try emitB(i.target.label, buffer),
         .b_cond => |i| try emitBCond(@intFromEnum(i.cond), i.target.label, buffer),
         .bl => |i| switch (i.target) {
-            .direct => |_| @panic("External function calls not yet implemented"),
-            .indirect => |reg| try emitBLR(reg, buffer),
+            .external_name => |_| @panic("External function calls not yet implemented"),
+            .label => |label| try emitBL(label, buffer),
         },
         .br => |i| try emitBR(i.target, buffer),
         .blr => |i| try emitBLR(i.target, buffer),
-        .ret => |i| try emitRet(i.reg, buffer),
+        .ret => try emitRet(null, buffer),
         .nop => try emitNop(buffer),
         .fsqrt => |i| try emitFsqrt(i.dst.toReg(), i.src, i.size, buffer),
         .vec_add => |i| try emitVecAdd(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -2674,7 +2676,7 @@ fn emitB(label: u32, buffer: *buffer_mod.MachBuffer) !void {
 
     // Add label use for fixup
     try buffer.useLabel(
-        buffer_mod.MachLabel.new(label),
+        MachLabel.new(label),
         buffer_mod.LabelUseKind.branch26,
     );
 }
@@ -2688,7 +2690,7 @@ fn emitBCond(cond: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void {
 
     // Add label use for fixup
     try buffer.useLabel(
-        buffer_mod.MachLabel.new(label),
+        MachLabel.new(label),
         buffer_mod.LabelUseKind.branch19,
     );
 }
@@ -2702,7 +2704,7 @@ fn emitBL(label: u32, buffer: *buffer_mod.MachBuffer) !void {
 
     // Add label use for fixup
     try buffer.useLabel(
-        buffer_mod.MachLabel.new(label),
+        MachLabel.new(label),
         buffer_mod.LabelUseKind.branch26,
     );
 }
