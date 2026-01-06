@@ -282,3 +282,240 @@ test "RegAllocResult basic operations" {
     try std.testing.expectEqual(preg0.index, assigned.?.index);
     try std.testing.expectEqual(preg0.class, assigned.?.class);
 }
+
+test "LinearScanAllocator non-overlapping ranges" {
+    const allocator = std.testing.allocator;
+
+    var lsa = try LinearScanAllocator.init(allocator, 31, 32, 32);
+    defer lsa.deinit();
+
+    var info = liveness.LivenessInfo.init(allocator);
+    defer info.deinit();
+
+    const v0 = machinst.VReg.new(0, .int);
+    const v1 = machinst.VReg.new(1, .int);
+
+    // Two non-overlapping ranges
+    try info.addRange(.{
+        .vreg = v0,
+        .start_inst = 0,
+        .end_inst = 5,
+        .reg_class = .int,
+    });
+
+    try info.addRange(.{
+        .vreg = v1,
+        .start_inst = 10,
+        .end_inst = 15,
+        .reg_class = .int,
+    });
+
+    var result = try lsa.allocate(&info);
+    defer result.deinit();
+
+    // Both should be allocated (can reuse same register)
+    const p0 = result.getPhysReg(v0);
+    const p1 = result.getPhysReg(v1);
+
+    try std.testing.expect(p0 != null);
+    try std.testing.expect(p1 != null);
+
+    // Both should be int registers
+    try std.testing.expectEqual(machinst.RegClass.int, p0.?.class);
+    try std.testing.expectEqual(machinst.RegClass.int, p1.?.class);
+}
+
+test "LinearScanAllocator overlapping ranges get different registers" {
+    const allocator = std.testing.allocator;
+
+    var lsa = try LinearScanAllocator.init(allocator, 31, 32, 32);
+    defer lsa.deinit();
+
+    var info = liveness.LivenessInfo.init(allocator);
+    defer info.deinit();
+
+    const v0 = machinst.VReg.new(0, .int);
+    const v1 = machinst.VReg.new(1, .int);
+
+    // Two overlapping ranges
+    try info.addRange(.{
+        .vreg = v0,
+        .start_inst = 0,
+        .end_inst = 10,
+        .reg_class = .int,
+    });
+
+    try info.addRange(.{
+        .vreg = v1,
+        .start_inst = 5,
+        .end_inst = 15,
+        .reg_class = .int,
+    });
+
+    var result = try lsa.allocate(&info);
+    defer result.deinit();
+
+    // Both should be allocated
+    const p0 = result.getPhysReg(v0);
+    const p1 = result.getPhysReg(v1);
+
+    try std.testing.expect(p0 != null);
+    try std.testing.expect(p1 != null);
+
+    // They should have different register indices (can't share)
+    try std.testing.expect(p0.?.index != p1.?.index);
+}
+
+test "LinearScanAllocator register reuse after expiry" {
+    const allocator = std.testing.allocator;
+
+    var lsa = try LinearScanAllocator.init(allocator, 2, 2, 2); // Only 2 int regs
+    defer lsa.deinit();
+
+    var info = liveness.LivenessInfo.init(allocator);
+    defer info.deinit();
+
+    const v0 = machinst.VReg.new(0, .int);
+    const v1 = machinst.VReg.new(1, .int);
+    const v2 = machinst.VReg.new(2, .int);
+
+    // v0: [0, 5]
+    // v1: [0, 5] (overlaps v0)
+    // v2: [10, 15] (after both expire)
+    try info.addRange(.{
+        .vreg = v0,
+        .start_inst = 0,
+        .end_inst = 5,
+        .reg_class = .int,
+    });
+
+    try info.addRange(.{
+        .vreg = v1,
+        .start_inst = 0,
+        .end_inst = 5,
+        .reg_class = .int,
+    });
+
+    try info.addRange(.{
+        .vreg = v2,
+        .start_inst = 10,
+        .end_inst = 15,
+        .reg_class = .int,
+    });
+
+    var result = try lsa.allocate(&info);
+    defer result.deinit();
+
+    // All three should be allocated
+    const p0 = result.getPhysReg(v0);
+    const p1 = result.getPhysReg(v1);
+    const p2 = result.getPhysReg(v2);
+
+    try std.testing.expect(p0 != null);
+    try std.testing.expect(p1 != null);
+    try std.testing.expect(p2 != null);
+
+    // v0 and v1 must be different (overlapping)
+    try std.testing.expect(p0.?.index != p1.?.index);
+
+    // v2 should reuse one of the registers from v0 or v1
+    try std.testing.expect(p2.?.index == p0.?.index or p2.?.index == p1.?.index);
+}
+
+test "LinearScanAllocator different register classes independent" {
+    const allocator = std.testing.allocator;
+
+    var lsa = try LinearScanAllocator.init(allocator, 31, 32, 32);
+    defer lsa.deinit();
+
+    var info = liveness.LivenessInfo.init(allocator);
+    defer info.deinit();
+
+    const v0 = machinst.VReg.new(0, .int);
+    const v1 = machinst.VReg.new(1, .float);
+    const v2 = machinst.VReg.new(2, .vector);
+
+    // All overlapping but different classes
+    try info.addRange(.{
+        .vreg = v0,
+        .start_inst = 0,
+        .end_inst = 10,
+        .reg_class = .int,
+    });
+
+    try info.addRange(.{
+        .vreg = v1,
+        .start_inst = 0,
+        .end_inst = 10,
+        .reg_class = .float,
+    });
+
+    try info.addRange(.{
+        .vreg = v2,
+        .start_inst = 0,
+        .end_inst = 10,
+        .reg_class = .vector,
+    });
+
+    var result = try lsa.allocate(&info);
+    defer result.deinit();
+
+    // All should be allocated
+    const p0 = result.getPhysReg(v0);
+    const p1 = result.getPhysReg(v1);
+    const p2 = result.getPhysReg(v2);
+
+    try std.testing.expect(p0 != null);
+    try std.testing.expect(p1 != null);
+    try std.testing.expect(p2 != null);
+
+    // Should have correct classes
+    try std.testing.expectEqual(machinst.RegClass.int, p0.?.class);
+    try std.testing.expectEqual(machinst.RegClass.float, p1.?.class);
+    try std.testing.expectEqual(machinst.RegClass.vector, p2.?.class);
+
+    // Can all use index 0 (different register files)
+    try std.testing.expectEqual(@as(u32, 0), p0.?.index);
+    try std.testing.expectEqual(@as(u32, 0), p1.?.index);
+    try std.testing.expectEqual(@as(u32, 0), p2.?.index);
+}
+
+test "LinearScanAllocator out of registers error" {
+    const allocator = std.testing.allocator;
+
+    var lsa = try LinearScanAllocator.init(allocator, 2, 2, 2); // Only 2 int regs
+    defer lsa.deinit();
+
+    var info = liveness.LivenessInfo.init(allocator);
+    defer info.deinit();
+
+    const v0 = machinst.VReg.new(0, .int);
+    const v1 = machinst.VReg.new(1, .int);
+    const v2 = machinst.VReg.new(2, .int);
+
+    // Three overlapping int ranges - more than 2 available regs
+    try info.addRange(.{
+        .vreg = v0,
+        .start_inst = 0,
+        .end_inst = 10,
+        .reg_class = .int,
+    });
+
+    try info.addRange(.{
+        .vreg = v1,
+        .start_inst = 0,
+        .end_inst = 10,
+        .reg_class = .int,
+    });
+
+    try info.addRange(.{
+        .vreg = v2,
+        .start_inst = 0,
+        .end_inst = 10,
+        .reg_class = .int,
+    });
+
+    // Should return OutOfRegisters error
+    const result_or_err = lsa.allocate(&info);
+    try std.testing.expectError(error.OutOfRegisters, result_or_err);
+}
