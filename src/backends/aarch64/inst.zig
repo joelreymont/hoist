@@ -2584,6 +2584,58 @@ pub const Inst = union(enum) {
                 try collector.regUse(i.base);
                 try collector.regDef(i.dst);
             },
+            .madd => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regUse(i.addend);
+                try collector.regDef(i.dst);
+            },
+            .msub => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regUse(i.addend);
+                try collector.regDef(i.dst);
+            },
+            .smull => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .umull => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .sdiv => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .udiv => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .clz => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .rbit => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .rev16 => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .rev32 => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .rev64 => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
             .ret => {
                 // No operands to collect (implicit use of X30/LR handled by ABI)
             },

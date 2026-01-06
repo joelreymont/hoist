@@ -921,6 +921,58 @@ pub const Aarch64ISA = struct {
                 cas.base = replaceReg(cas.base, result);
                 cas.dst = replaceWritableReg(cas.dst, result);
             },
+            .madd => |*madd| {
+                madd.src1 = replaceReg(madd.src1, result);
+                madd.src2 = replaceReg(madd.src2, result);
+                madd.addend = replaceReg(madd.addend, result);
+                madd.dst = replaceWritableReg(madd.dst, result);
+            },
+            .msub => |*msub| {
+                msub.src1 = replaceReg(msub.src1, result);
+                msub.src2 = replaceReg(msub.src2, result);
+                msub.addend = replaceReg(msub.addend, result);
+                msub.dst = replaceWritableReg(msub.dst, result);
+            },
+            .smull => |*smull| {
+                smull.src1 = replaceReg(smull.src1, result);
+                smull.src2 = replaceReg(smull.src2, result);
+                smull.dst = replaceWritableReg(smull.dst, result);
+            },
+            .umull => |*umull| {
+                umull.src1 = replaceReg(umull.src1, result);
+                umull.src2 = replaceReg(umull.src2, result);
+                umull.dst = replaceWritableReg(umull.dst, result);
+            },
+            .sdiv => |*sdiv| {
+                sdiv.src1 = replaceReg(sdiv.src1, result);
+                sdiv.src2 = replaceReg(sdiv.src2, result);
+                sdiv.dst = replaceWritableReg(sdiv.dst, result);
+            },
+            .udiv => |*udiv| {
+                udiv.src1 = replaceReg(udiv.src1, result);
+                udiv.src2 = replaceReg(udiv.src2, result);
+                udiv.dst = replaceWritableReg(udiv.dst, result);
+            },
+            .clz => |*clz| {
+                clz.src = replaceReg(clz.src, result);
+                clz.dst = replaceWritableReg(clz.dst, result);
+            },
+            .rbit => |*rbit| {
+                rbit.src = replaceReg(rbit.src, result);
+                rbit.dst = replaceWritableReg(rbit.dst, result);
+            },
+            .rev16 => |*rev| {
+                rev.src = replaceReg(rev.src, result);
+                rev.dst = replaceWritableReg(rev.dst, result);
+            },
+            .rev32 => |*rev| {
+                rev.src = replaceReg(rev.src, result);
+                rev.dst = replaceWritableReg(rev.dst, result);
+            },
+            .rev64 => |*rev| {
+                rev.src = replaceReg(rev.src, result);
+                rev.dst = replaceWritableReg(rev.dst, result);
+            },
             // TODO: Add more instruction types as needed
             else => {
                 // For unimplemented instructions, do nothing
