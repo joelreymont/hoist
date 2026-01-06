@@ -1796,6 +1796,24 @@
       (if-let shift_amt (valid_str_shift val shift))
       (aarch64_str_shifted val base index shift_amt))
 
+;; istore8: Store 8-bit value (STRB)
+(decl aarch64_istore8 (Value Value) Aarch64Inst)
+(extern constructor aarch64_istore8 aarch64_istore8)
+(rule 2 (lower (istore8 val addr _flags _offset))
+      (aarch64_istore8 val addr))
+
+;; istore16: Store 16-bit value (STRH)
+(decl aarch64_istore16 (Value Value) Aarch64Inst)
+(extern constructor aarch64_istore16 aarch64_istore16)
+(rule 2 (lower (istore16 val addr _flags _offset))
+      (aarch64_istore16 val addr))
+
+;; istore32: Store 32-bit value (STR Wd)
+(decl aarch64_istore32 (Value Value) Aarch64Inst)
+(extern constructor aarch64_istore32 aarch64_istore32)
+(rule 2 (lower (istore32 val addr _flags _offset))
+      (aarch64_istore32 val addr))
+
 ;; store vector: Use VSTR Vt (vector store)
 (decl aarch64_vstr (Value Value) Aarch64Inst)
 (extern constructor aarch64_vstr aarch64_vstr)

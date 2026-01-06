@@ -3560,6 +3560,61 @@ pub fn aarch64_sload32x2(
 }
 
 /// Constructor: Store with base register only (STR Xt, [Xn])
+/// Constructor: istore8 - Store 8-bit value (STRB)
+pub fn aarch64_istore8(
+    val: lower_mod.Value,
+    addr: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(addr, .int);
+    const src = try ctx.getValueReg(val, .int);
+
+    return Inst{
+        .strb = .{
+            .src = src,
+            .base = base,
+            .offset = 0,
+        },
+    };
+}
+
+/// Constructor: istore16 - Store 16-bit value (STRH)
+pub fn aarch64_istore16(
+    val: lower_mod.Value,
+    addr: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(addr, .int);
+    const src = try ctx.getValueReg(val, .int);
+
+    return Inst{
+        .strh = .{
+            .src = src,
+            .base = base,
+            .offset = 0,
+        },
+    };
+}
+
+/// Constructor: istore32 - Store 32-bit value (STR Wd)
+pub fn aarch64_istore32(
+    val: lower_mod.Value,
+    addr: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    const base = try ctx.getValueReg(addr, .int);
+    const src = try ctx.getValueReg(val, .int);
+
+    return Inst{
+        .str = .{
+            .src = src,
+            .base = base,
+            .offset = 0,
+            .size = .size32, // 32-bit store
+        },
+    };
+}
+
 pub fn aarch64_str(
     val: lower_mod.Value,
     addr: lower_mod.Value,
