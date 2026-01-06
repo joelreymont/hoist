@@ -3564,6 +3564,45 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 },
             });
         },
+        .extract_lane => |data| {
+            const VReg = @import("../machinst/reg.zig").VReg;
+            const WritableReg = @import("../machinst/reg.zig").WritableReg;
+            const RegClass = @import("../machinst/reg.zig").RegClass;
+            const Reg = @import("../machinst/reg.zig").Reg;
+            const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+
+            if (data.lane != 0) return error.LoweringFailed;
+
+            const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), .float);
+            const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+            const result_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+
+            const is_float = result_type.isFloat();
+            const dst_class: RegClass = if (is_float) .float else .int;
+            const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), dst_class);
+
+            const src = Reg.fromVReg(arg_vreg);
+            const dst = WritableReg.fromVReg(result_vreg);
+            const size: FpuOperandSize = if (result_type.bits() == 64) .size64 else .size32;
+
+            if (is_float) {
+                try builder.emit(Inst{
+                    .fmov = .{
+                        .dst = dst,
+                        .src = src,
+                        .size = size,
+                    },
+                });
+            } else {
+                try builder.emit(Inst{
+                    .fmov_to_gpr = .{
+                        .dst = dst,
+                        .src = src,
+                        .size = size,
+                    },
+                });
+            }
+        },
         else => {
             // Unimplemented instruction - emit NOP placeholder
             try builder.emit(Inst.nop);
