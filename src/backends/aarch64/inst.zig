@@ -2343,6 +2343,92 @@ pub const Inst = union(enum) {
                 try collector.regUse(i.src2);
                 try collector.regDef(i.dst);
             },
+            .ldr => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .ldr_ext => |*i| {
+                try collector.regUse(i.base);
+                try collector.regUse(i.offset);
+                try collector.regDef(i.dst);
+            },
+            .ldr_shifted => |*i| {
+                try collector.regUse(i.base);
+                try collector.regUse(i.offset);
+                try collector.regDef(i.dst);
+            },
+            .str => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+            },
+            .str_ext => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+                try collector.regUse(i.offset);
+            },
+            .str_shifted => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+                try collector.regUse(i.offset);
+            },
+            .ldrb => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .ldrh => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .ldrsb => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .ldrsh => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .ldrsw => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .strb => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+            },
+            .strh => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+            },
+            .stp => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regUse(i.base);
+            },
+            .ldp => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst1);
+                try collector.regDef(i.dst2);
+            },
+            .ldr_pre => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+                try collector.regDef(i.base); // base is modified
+            },
+            .ldr_post => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+                try collector.regDef(i.base); // base is modified
+            },
+            .str_pre => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+                try collector.regDef(i.base); // base is modified
+            },
+            .str_post => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+                try collector.regDef(i.base); // base is modified
+            },
             .ret => {
                 // No operands to collect (implicit use of X30/LR handled by ABI)
             },

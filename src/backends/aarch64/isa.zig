@@ -680,6 +680,92 @@ pub const Aarch64ISA = struct {
                 vec.src2 = replaceReg(vec.src2, result);
                 vec.dst = replaceWritableReg(vec.dst, result);
             },
+            .ldr => |*ldr| {
+                ldr.base = replaceReg(ldr.base, result);
+                ldr.dst = replaceWritableReg(ldr.dst, result);
+            },
+            .ldr_ext => |*ldr| {
+                ldr.base = replaceReg(ldr.base, result);
+                ldr.offset = replaceReg(ldr.offset, result);
+                ldr.dst = replaceWritableReg(ldr.dst, result);
+            },
+            .ldr_shifted => |*ldr| {
+                ldr.base = replaceReg(ldr.base, result);
+                ldr.offset = replaceReg(ldr.offset, result);
+                ldr.dst = replaceWritableReg(ldr.dst, result);
+            },
+            .str => |*str| {
+                str.src = replaceReg(str.src, result);
+                str.base = replaceReg(str.base, result);
+            },
+            .str_ext => |*str| {
+                str.src = replaceReg(str.src, result);
+                str.base = replaceReg(str.base, result);
+                str.offset = replaceReg(str.offset, result);
+            },
+            .str_shifted => |*str| {
+                str.src = replaceReg(str.src, result);
+                str.base = replaceReg(str.base, result);
+                str.offset = replaceReg(str.offset, result);
+            },
+            .ldrb => |*ldrb| {
+                ldrb.base = replaceReg(ldrb.base, result);
+                ldrb.dst = replaceWritableReg(ldrb.dst, result);
+            },
+            .ldrh => |*ldrh| {
+                ldrh.base = replaceReg(ldrh.base, result);
+                ldrh.dst = replaceWritableReg(ldrh.dst, result);
+            },
+            .ldrsb => |*ldrsb| {
+                ldrsb.base = replaceReg(ldrsb.base, result);
+                ldrsb.dst = replaceWritableReg(ldrsb.dst, result);
+            },
+            .ldrsh => |*ldrsh| {
+                ldrsh.base = replaceReg(ldrsh.base, result);
+                ldrsh.dst = replaceWritableReg(ldrsh.dst, result);
+            },
+            .ldrsw => |*ldrsw| {
+                ldrsw.base = replaceReg(ldrsw.base, result);
+                ldrsw.dst = replaceWritableReg(ldrsw.dst, result);
+            },
+            .strb => |*strb| {
+                strb.src = replaceReg(strb.src, result);
+                strb.base = replaceReg(strb.base, result);
+            },
+            .strh => |*strh| {
+                strh.src = replaceReg(strh.src, result);
+                strh.base = replaceReg(strh.base, result);
+            },
+            .stp => |*stp| {
+                stp.src1 = replaceReg(stp.src1, result);
+                stp.src2 = replaceReg(stp.src2, result);
+                stp.base = replaceReg(stp.base, result);
+            },
+            .ldp => |*ldp| {
+                ldp.base = replaceReg(ldp.base, result);
+                ldp.dst1 = replaceWritableReg(ldp.dst1, result);
+                ldp.dst2 = replaceWritableReg(ldp.dst2, result);
+            },
+            .ldr_pre => |*ldr| {
+                ldr.base = replaceReg(ldr.base, result);
+                ldr.dst = replaceWritableReg(ldr.dst, result);
+                ldr.base = replaceWritableReg(ldr.base, result);
+            },
+            .ldr_post => |*ldr| {
+                ldr.base = replaceReg(ldr.base, result);
+                ldr.dst = replaceWritableReg(ldr.dst, result);
+                ldr.base = replaceWritableReg(ldr.base, result);
+            },
+            .str_pre => |*str| {
+                str.src = replaceReg(str.src, result);
+                str.base = replaceReg(str.base, result);
+                str.base = replaceWritableReg(str.base, result);
+            },
+            .str_post => |*str| {
+                str.src = replaceReg(str.src, result);
+                str.base = replaceReg(str.base, result);
+                str.base = replaceWritableReg(str.base, result);
+            },
             // TODO: Add more instruction types as needed
             else => {
                 // For unimplemented instructions, do nothing
