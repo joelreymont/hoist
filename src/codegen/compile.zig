@@ -1783,6 +1783,61 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .imm = ImmLogic{ .value = imm_val, .size = size },
                     },
                 });
+            } else if (data.opcode == .rotr_imm) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                const shift_amt: u8 = @intCast(data.imm.value & 63);
+
+                try builder.emit(Inst{
+                    .ror_imm = .{
+                        .dst = dst,
+                        .src = src,
+                        .imm = shift_amt,
+                        .size = size,
+                    },
+                });
+            } else if (data.opcode == .rotl_imm) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+                const src = Reg.fromVReg(arg_vreg);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                // ARM64 has no ROL, compute as: rotr bitwidth - amt
+                const bitwidth: u64 = if (size == .size64) 64 else 32;
+                const shift_amt: u8 = @intCast(data.imm.value & 63);
+                const ror_amt: u8 = @intCast((bitwidth - shift_amt) & 63);
+
+                try builder.emit(Inst{
+                    .ror_imm = .{
+                        .dst = dst,
+                        .src = src,
+                        .imm = ror_amt,
+                        .size = size,
+                    },
+                });
             } else {
                 try builder.emit(Inst.nop);
             }
