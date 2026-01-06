@@ -2230,31 +2230,21 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
             const VReg = @import("../machinst/reg.zig").VReg;
             const RegClass = @import("../machinst/reg.zig").RegClass;
             const Reg = @import("../machinst/reg.zig").Reg;
-            const PReg = @import("../machinst/reg.zig").PReg;
             const inst_module = @import("../backends/aarch64/inst.zig");
             const BranchTarget = inst_module.BranchTarget;
-            const CondCode = inst_module.CondCode;
 
             // Get condition value (i1)
             const cond_vreg = VReg.new(@intCast(data.condition.index + Reg.PINNED_VREGS), RegClass.int);
             const cond_reg = Reg.fromVReg(cond_vreg);
 
-            // Compare condition with zero
-            const zero = Reg.fromPReg(PReg.new(RegClass.int, 31)); // XZR/WZR
-            try builder.emit(Inst{
-                .cmp_rr = .{
-                    .src1 = cond_reg,
-                    .src2 = zero,
-                    .size = .size32,
-                },
-            });
-
-            // Emit conditional branch to then_dest if condition != 0
+            // Optimize: Use CBNZ (compare and branch if non-zero) instead of CMP+B.ne
+            // This is more efficient for the common case of branching on a boolean condition
             if (data.then_dest) |then_block| {
                 try builder.emit(Inst{
-                    .b_cond = .{
-                        .cond = CondCode.ne, // branch if not equal to zero
+                    .cbnz = .{
+                        .reg = cond_reg,
                         .target = BranchTarget{ .label = then_block.index },
+                        .size = .size32,
                     },
                 });
             }
