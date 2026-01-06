@@ -116,8 +116,8 @@ pub const LinearScanAllocator = struct {
     /// Takes liveness information and produces a mapping from virtual registers
     /// to physical registers.
     ///
-    /// This is currently a stub - the full implementation will be added in
-    /// subsequent commits.
+    /// The main allocation loop processes live ranges in order of their start
+    /// position, maintaining the active list and allocating registers greedily.
     pub fn allocate(
         self: *LinearScanAllocator,
         liveness_info: *liveness.LivenessInfo,
@@ -129,15 +129,22 @@ pub const LinearScanAllocator = struct {
         const sorted_ranges = try liveness_info.getRangesSortedByStart();
         defer self.allocator.free(sorted_ranges);
 
-        // TODO: Implement the actual linear scan algorithm:
-        // 1. For each live range in order:
-        //    a. Expire old intervals (remove from active if they've ended)
-        //    b. Try to allocate a free register
-        //    c. If no free register, spill something
-        // 2. Update result with allocations
+        // Main allocation loop: process each live range in order
+        for (sorted_ranges) |range| {
+            // Expire old intervals that have ended before this range starts
+            try self.expireOldIntervals(range.start_inst, &result);
 
-        // For now, just return empty result
-        _ = sorted_ranges;
+            // Try to allocate a free register for this range
+            const maybe_preg = try self.tryAllocateReg(range, &result);
+
+            if (maybe_preg == null) {
+                // No free register available - spilling needed
+                // TODO: Implement spilling heuristic
+                // For now, just fail - this will be handled in a future commit
+                return error.OutOfRegisters;
+            }
+        }
+
         return result;
     }
 
