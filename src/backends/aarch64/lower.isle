@@ -953,6 +953,11 @@
       (if-let amt (valid_shift_imm k))
       (aarch64_lsr_imm ty x amt))
 
+;; ushr_imm: Unsigned shift right with immediate operand
+(rule (lower (ushr_imm ty x k))
+      (if-let amt (valid_shift_imm k))
+      (aarch64_lsr_imm ty x amt))
+
 ;; ushr: Vector unsigned shift right by immediate (ty_vec128)
 (rule -3 (lower (has_type (ty_vec128 ty) (ushr x (iconst (u64_from_imm64 n)))))
       (ushr_vec_imm x (shift_masked_imm ty n) (vector_size ty)))
@@ -998,6 +1003,11 @@
 
 ;; sshr: Signed shift right (immediate form)
 (rule (lower (sshr ty x (iconst k)))
+      (if-let amt (valid_shift_imm k))
+      (aarch64_asr_imm ty x amt))
+
+;; sshr_imm: Signed shift right with immediate operand
+(rule (lower (sshr_imm ty x k))
       (if-let amt (valid_shift_imm k))
       (aarch64_asr_imm ty x amt))
 
