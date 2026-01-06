@@ -3034,6 +3034,24 @@
 (rule (lower (stack_store val stack_slot offset))
       (aarch64_stack_store (value_type val) val stack_slot offset))
 
+;; get_frame_pointer: Get frame pointer (X29/FP)
+(decl aarch64_get_frame_pointer () Aarch64Inst)
+(extern constructor aarch64_get_frame_pointer aarch64_get_frame_pointer)
+(rule (lower (get_frame_pointer))
+      (aarch64_get_frame_pointer))
+
+;; get_stack_pointer: Get stack pointer (SP)
+(decl aarch64_get_stack_pointer () Aarch64Inst)
+(extern constructor aarch64_get_stack_pointer aarch64_get_stack_pointer)
+(rule (lower (get_stack_pointer))
+      (aarch64_get_stack_pointer))
+
+;; get_return_address: Get return address (X30/LR)
+(decl aarch64_get_return_address () Aarch64Inst)
+(extern constructor aarch64_get_return_address aarch64_get_return_address)
+(rule (lower (get_return_address))
+      (aarch64_get_return_address))
+
 ;; global_value: Load address of global value
 (decl aarch64_global_value (GlobalValue) Aarch64Inst)
 (rule (lower (global_value gv))

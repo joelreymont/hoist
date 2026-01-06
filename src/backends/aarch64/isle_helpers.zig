@@ -4,6 +4,7 @@ const std = @import("std");
 const root = @import("root");
 const Inst = root.aarch64_inst.Inst;
 const Reg = root.aarch64_inst.Reg;
+const PReg = root.machinst.PReg;
 const Imm12 = root.aarch64_inst.Imm12;
 const ImmShift = root.aarch64_inst.ImmShift;
 const ImmLogic = root.aarch64_inst.ImmLogic;
@@ -4789,5 +4790,41 @@ pub fn aarch64_uunarrow(size: VectorSize, x: lower_mod.Value, ctx: *lower_mod.Lo
         .src = x_reg,
         .size = elem_size,
         .high = false,
+    } };
+}
+
+/// Constructor: get_frame_pointer - Get frame pointer (X29/FP)
+pub fn aarch64_get_frame_pointer(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    const fp = Reg.fromPReg(PReg.new(.int, 29)); // X29 (FP)
+
+    return Inst{ .mov_rr = .{
+        .dst = dst,
+        .src = fp,
+        .size = .size64,
+    } };
+}
+
+/// Constructor: get_stack_pointer - Get stack pointer (SP)
+pub fn aarch64_get_stack_pointer(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    const sp = Reg.fromPReg(PReg.new(.int, 31)); // SP
+
+    return Inst{ .mov_rr = .{
+        .dst = dst,
+        .src = sp,
+        .size = .size64,
+    } };
+}
+
+/// Constructor: get_return_address - Get return address (X30/LR)
+pub fn aarch64_get_return_address(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    const lr = Reg.fromPReg(PReg.new(.int, 30)); // X30 (LR)
+
+    return Inst{ .mov_rr = .{
+        .dst = dst,
+        .src = lr,
+        .size = .size64,
     } };
 }
