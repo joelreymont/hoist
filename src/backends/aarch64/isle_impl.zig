@@ -1139,109 +1139,443 @@ pub fn aarch64_return_call_indirect(
 }
 
 /// Constructor: ldadd - atomic add (LSE).
+/// Constructor: ldadd - atomic add using LL/SC fallback.
+/// Emits LDXR/ADD/STXR loop for atomicity.
 pub fn aarch64_ldadd(
     ctx: *IsleContext,
     addr: Value,
     val: Value,
 ) !WritableReg {
-    _ = addr;
-    _ = val;
-    _ = ctx;
-    @panic("TODO: Implement ldadd - needs LSE LDADD instruction");
+    const addr_reg = try ctx.getValueReg(addr, .int);
+    const val_reg = try ctx.getValueReg(val, .int);
+    const old = ctx.allocOutputReg(.int);
+    const new = ctx.allocInputReg(.int);
+    const status = ctx.allocInputReg(.int);
+
+    // Allocate retry label
+    const retry_label = ctx.lower_ctx.allocLabel();
+
+    // Bind retry label
+    ctx.lower_ctx.bindLabel(retry_label);
+
+    // LDXR old, [addr]
+    try ctx.emit(.{ .ldxr = .{
+        .dst = old,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    // ADD new, old, val
+    try ctx.emit(.{ .add_rr = .{
+        .dst = WritableReg.fromReg(new),
+        .src1 = old.toReg(),
+        .src2 = val_reg,
+        .size = .size64,
+    } });
+
+    // STXR status, new, [addr]
+    try ctx.emit(.{ .stxr = .{
+        .status = WritableReg.fromReg(status),
+        .src = new,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    // CBNZ status, retry
+    try ctx.emit(.{ .cbnz = .{
+        .reg = status,
+        .target = .{ .label = retry_label },
+        .size = .size32,
+    } });
+
+    return old;
 }
 
-/// Constructor: ldclr - atomic clear (LSE).
+/// Constructor: ldclr - atomic clear using LL/SC fallback.
+/// Emits LDXR/BIC/STXR loop. val is already inverted by caller.
 pub fn aarch64_ldclr(
     ctx: *IsleContext,
     addr: Value,
     val: Value,
 ) !WritableReg {
-    _ = addr;
-    _ = val;
-    _ = ctx;
-    @panic("TODO: Implement ldclr - needs LSE LDCLR instruction");
+    const addr_reg = try ctx.getValueReg(addr, .int);
+    const val_reg = try ctx.getValueReg(val, .int);
+    const old = ctx.allocOutputReg(.int);
+    const new = ctx.allocInputReg(.int);
+    const status = ctx.allocInputReg(.int);
+
+    const retry_label = ctx.lower_ctx.allocLabel();
+    ctx.lower_ctx.bindLabel(retry_label);
+
+    try ctx.emit(.{ .ldxr = .{
+        .dst = old,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    // BIC new, old, val (clear bits)
+    try ctx.emit(.{ .bic_rr = .{
+        .dst = WritableReg.fromReg(new),
+        .src1 = old.toReg(),
+        .src2 = val_reg,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .stxr = .{
+        .status = WritableReg.fromReg(status),
+        .src = new,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .cbnz = .{
+        .reg = status,
+        .target = .{ .label = retry_label },
+        .size = .size32,
+    } });
+
+    return old;
 }
 
-/// Constructor: ldset - atomic set (LSE).
+/// Constructor: ldset - atomic set using LL/SC fallback.
+/// Emits LDXR/ORR/STXR loop.
 pub fn aarch64_ldset(
     ctx: *IsleContext,
     addr: Value,
     val: Value,
 ) !WritableReg {
-    _ = addr;
-    _ = val;
-    _ = ctx;
-    @panic("TODO: Implement ldset - needs LSE LDSET instruction");
+    const addr_reg = try ctx.getValueReg(addr, .int);
+    const val_reg = try ctx.getValueReg(val, .int);
+    const old = ctx.allocOutputReg(.int);
+    const new = ctx.allocInputReg(.int);
+    const status = ctx.allocInputReg(.int);
+
+    const retry_label = ctx.lower_ctx.allocLabel();
+    ctx.lower_ctx.bindLabel(retry_label);
+
+    try ctx.emit(.{ .ldxr = .{
+        .dst = old,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .orr_rr = .{
+        .dst = WritableReg.fromReg(new),
+        .src1 = old.toReg(),
+        .src2 = val_reg,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .stxr = .{
+        .status = WritableReg.fromReg(status),
+        .src = new,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .cbnz = .{
+        .reg = status,
+        .target = .{ .label = retry_label },
+        .size = .size32,
+    } });
+
+    return old;
 }
 
-/// Constructor: ldeor - atomic XOR (LSE).
+/// Constructor: ldeor - atomic XOR using LL/SC fallback.
+/// Emits LDXR/EOR/STXR loop.
 pub fn aarch64_ldeor(
     ctx: *IsleContext,
     addr: Value,
     val: Value,
 ) !WritableReg {
-    _ = addr;
-    _ = val;
-    _ = ctx;
-    @panic("TODO: Implement ldeor - needs LSE LDEOR instruction");
+    const addr_reg = try ctx.getValueReg(addr, .int);
+    const val_reg = try ctx.getValueReg(val, .int);
+    const old = ctx.allocOutputReg(.int);
+    const new = ctx.allocInputReg(.int);
+    const status = ctx.allocInputReg(.int);
+
+    const retry_label = ctx.lower_ctx.allocLabel();
+    ctx.lower_ctx.bindLabel(retry_label);
+
+    try ctx.emit(.{ .ldxr = .{
+        .dst = old,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .eor_rr = .{
+        .dst = WritableReg.fromReg(new),
+        .src1 = old.toReg(),
+        .src2 = val_reg,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .stxr = .{
+        .status = WritableReg.fromReg(status),
+        .src = new,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .cbnz = .{
+        .reg = status,
+        .target = .{ .label = retry_label },
+        .size = .size32,
+    } });
+
+    return old;
 }
 
-/// Constructor: swpal - atomic exchange (LSE).
+/// Constructor: swpal - atomic exchange using LL/SC fallback.
+/// Emits LDXR/STXR loop with no operation (just exchange).
 pub fn aarch64_swpal(
     ctx: *IsleContext,
     addr: Value,
     val: Value,
 ) !WritableReg {
-    _ = addr;
-    _ = val;
-    _ = ctx;
-    @panic("TODO: Implement swpal - needs LSE SWPAL instruction");
+    const addr_reg = try ctx.getValueReg(addr, .int);
+    const val_reg = try ctx.getValueReg(val, .int);
+    const old = ctx.allocOutputReg(.int);
+    const status = ctx.allocInputReg(.int);
+
+    const retry_label = ctx.lower_ctx.allocLabel();
+    ctx.lower_ctx.bindLabel(retry_label);
+
+    try ctx.emit(.{ .ldxr = .{
+        .dst = old,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .stxr = .{
+        .status = WritableReg.fromReg(status),
+        .src = val_reg,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .cbnz = .{
+        .reg = status,
+        .target = .{ .label = retry_label },
+        .size = .size32,
+    } });
+
+    return old;
 }
 
-/// Constructor: ldsmax - atomic signed max (LSE).
+/// Constructor: ldsmax - atomic signed max using LL/SC fallback.
+/// Emits LDXR/CMP/CSEL/STXR loop.
 pub fn aarch64_ldsmax(
     ctx: *IsleContext,
     addr: Value,
     val: Value,
 ) !WritableReg {
-    _ = addr;
-    _ = val;
-    _ = ctx;
-    @panic("TODO: Implement ldsmax - needs LSE LDSMAX instruction");
+    const addr_reg = try ctx.getValueReg(addr, .int);
+    const val_reg = try ctx.getValueReg(val, .int);
+    const old = ctx.allocOutputReg(.int);
+    const new = ctx.allocInputReg(.int);
+    const status = ctx.allocInputReg(.int);
+
+    const retry_label = ctx.lower_ctx.allocLabel();
+    ctx.lower_ctx.bindLabel(retry_label);
+
+    try ctx.emit(.{ .ldxr = .{
+        .dst = old,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    // CMP old, val
+    try ctx.emit(.{ .cmp_rr = .{
+        .rn = old.toReg(),
+        .rm = val_reg,
+        .size = .size64,
+    } });
+
+    // CSEL new, old, val, GT (if old > val, keep old, else use val)
+    try ctx.emit(.{ .csel = .{
+        .dst = WritableReg.fromReg(new),
+        .true_reg = old.toReg(),
+        .false_reg = val_reg,
+        .cond = .gt,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .stxr = .{
+        .status = WritableReg.fromReg(status),
+        .src = new,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .cbnz = .{
+        .reg = status,
+        .target = .{ .label = retry_label },
+        .size = .size32,
+    } });
+
+    return old;
 }
 
-/// Constructor: ldsmin - atomic signed min (LSE).
+/// Constructor: ldsmin - atomic signed min using LL/SC fallback.
+/// Emits LDXR/CMP/CSEL/STXR loop.
 pub fn aarch64_ldsmin(
     ctx: *IsleContext,
     addr: Value,
     val: Value,
 ) !WritableReg {
-    _ = addr;
-    _ = val;
-    _ = ctx;
-    @panic("TODO: Implement ldsmin - needs LSE LDSMIN instruction");
+    const addr_reg = try ctx.getValueReg(addr, .int);
+    const val_reg = try ctx.getValueReg(val, .int);
+    const old = ctx.allocOutputReg(.int);
+    const new = ctx.allocInputReg(.int);
+    const status = ctx.allocInputReg(.int);
+
+    const retry_label = ctx.lower_ctx.allocLabel();
+    ctx.lower_ctx.bindLabel(retry_label);
+
+    try ctx.emit(.{ .ldxr = .{
+        .dst = old,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    // CMP old, val
+    try ctx.emit(.{ .cmp_rr = .{
+        .rn = old.toReg(),
+        .rm = val_reg,
+        .size = .size64,
+    } });
+
+    // CSEL new, old, val, LT (if old < val, keep old, else use val)
+    try ctx.emit(.{ .csel = .{
+        .dst = WritableReg.fromReg(new),
+        .true_reg = old.toReg(),
+        .false_reg = val_reg,
+        .cond = .lt,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .stxr = .{
+        .status = WritableReg.fromReg(status),
+        .src = new,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .cbnz = .{
+        .reg = status,
+        .target = .{ .label = retry_label },
+        .size = .size32,
+    } });
+
+    return old;
 }
 
-/// Constructor: ldumax - atomic unsigned max (LSE).
+/// Constructor: ldumax - atomic unsigned max using LL/SC fallback.
+/// Emits LDXR/CMP/CSEL/STXR loop.
 pub fn aarch64_ldumax(
     ctx: *IsleContext,
     addr: Value,
     val: Value,
 ) !WritableReg {
-    _ = addr;
-    _ = val;
-    _ = ctx;
-    @panic("TODO: Implement ldumax - needs LSE LDUMAX instruction");
+    const addr_reg = try ctx.getValueReg(addr, .int);
+    const val_reg = try ctx.getValueReg(val, .int);
+    const old = ctx.allocOutputReg(.int);
+    const new = ctx.allocInputReg(.int);
+    const status = ctx.allocInputReg(.int);
+
+    const retry_label = ctx.lower_ctx.allocLabel();
+    ctx.lower_ctx.bindLabel(retry_label);
+
+    try ctx.emit(.{ .ldxr = .{
+        .dst = old,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    // CMP old, val
+    try ctx.emit(.{ .cmp_rr = .{
+        .rn = old.toReg(),
+        .rm = val_reg,
+        .size = .size64,
+    } });
+
+    // CSEL new, old, val, HI (unsigned >)
+    try ctx.emit(.{ .csel = .{
+        .dst = WritableReg.fromReg(new),
+        .true_reg = old.toReg(),
+        .false_reg = val_reg,
+        .cond = .hi,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .stxr = .{
+        .status = WritableReg.fromReg(status),
+        .src = new,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .cbnz = .{
+        .reg = status,
+        .target = .{ .label = retry_label },
+        .size = .size32,
+    } });
+
+    return old;
 }
 
-/// Constructor: ldumin - atomic unsigned min (LSE).
+/// Constructor: ldumin - atomic unsigned min using LL/SC fallback.
+/// Emits LDXR/CMP/CSEL/STXR loop.
 pub fn aarch64_ldumin(
     ctx: *IsleContext,
     addr: Value,
     val: Value,
 ) !WritableReg {
-    _ = addr;
-    _ = val;
-    _ = ctx;
-    @panic("TODO: Implement ldumin - needs LSE LDUMIN instruction");
+    const addr_reg = try ctx.getValueReg(addr, .int);
+    const val_reg = try ctx.getValueReg(val, .int);
+    const old = ctx.allocOutputReg(.int);
+    const new = ctx.allocInputReg(.int);
+    const status = ctx.allocInputReg(.int);
+
+    const retry_label = ctx.lower_ctx.allocLabel();
+    ctx.lower_ctx.bindLabel(retry_label);
+
+    try ctx.emit(.{ .ldxr = .{
+        .dst = old,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    // CMP old, val
+    try ctx.emit(.{ .cmp_rr = .{
+        .rn = old.toReg(),
+        .rm = val_reg,
+        .size = .size64,
+    } });
+
+    // CSEL new, old, val, LO (unsigned <)
+    try ctx.emit(.{ .csel = .{
+        .dst = WritableReg.fromReg(new),
+        .true_reg = old.toReg(),
+        .false_reg = val_reg,
+        .cond = .lo,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .stxr = .{
+        .status = WritableReg.fromReg(status),
+        .src = new,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+
+    try ctx.emit(.{ .cbnz = .{
+        .reg = status,
+        .target = .{ .label = retry_label },
+        .size = .size32,
+    } });
+
+    return old;
 }
