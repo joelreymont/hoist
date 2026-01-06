@@ -639,7 +639,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
             };
 
             if (data.opcode == .iconst) {
-                // Integer constant
+                // Integer constant - use MOVZ/MOVN/MOVK for full immediate construction
                 const vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
                 const writable = WritableReg.fromVReg(vreg);
 
@@ -649,14 +649,316 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     .size32;
 
                 const imm_value = data.imm.bits();
+                const is_64bit = size == .size64;
+                const value: u64 = @bitCast(imm_value);
 
-                try builder.emit(Inst{
-                    .mov_imm = .{
-                        .dst = writable,
-                        .imm = @bitCast(imm_value),
-                        .size = size,
-                    },
-                });
+                // Strategy: Use MOVZ/MOVN + MOVK for large constants
+                // 1. Check if can use simple MOV (logical immediate)
+                // 2. Otherwise, use MOVZ or MOVN (inverted) for base, then MOVK for remaining halfwords
+
+                // For now, implement the MOVZ + MOVK approach
+                // Count non-zero 16-bit chunks
+                const hw0 = value & 0xFFFF;
+                const hw1 = (value >> 16) & 0xFFFF;
+                const hw2 = (value >> 32) & 0xFFFF;
+                const hw3 = (value >> 48) & 0xFFFF;
+
+                // Determine if we should use MOVN (all bits set except one halfword)
+                const inverted = ~value;
+                const inv_hw0 = inverted & 0xFFFF;
+                const inv_hw1 = (inverted >> 16) & 0xFFFF;
+                const inv_hw2 = (inverted >> 32) & 0xFFFF;
+                const inv_hw3 = (inverted >> 48) & 0xFFFF;
+
+                // Count zero halfwords in original vs inverted
+                var zero_count: u32 = 0;
+                if (hw0 == 0) zero_count += 1;
+                if (hw1 == 0) zero_count += 1;
+                if (hw2 == 0) zero_count += 1;
+                if (hw3 == 0) zero_count += 1;
+
+                var inv_zero_count: u32 = 0;
+                if (inv_hw0 == 0) inv_zero_count += 1;
+                if (inv_hw1 == 0) inv_zero_count += 1;
+                if (inv_hw2 == 0) inv_zero_count += 1;
+                if (inv_hw3 == 0) inv_zero_count += 1;
+
+                const use_movn = inv_zero_count > zero_count;
+
+                if (use_movn) {
+                    // Use MOVN (move inverted)
+                    // Find first non-zero inverted halfword
+                    if (inv_hw0 != 0) {
+                        try builder.emit(Inst{
+                            .movn = .{
+                                .dst = writable,
+                                .imm = @intCast(inv_hw0),
+                                .shift = 0,
+                                .size = size,
+                            },
+                        });
+                        // Add MOVK for other non-zero original halfwords
+                        if (hw1 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw1),
+                                    .shift = 16,
+                                    .size = size,
+                                },
+                            });
+                        }
+                        if (is_64bit and hw2 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw2),
+                                    .shift = 32,
+                                    .size = size,
+                                },
+                            });
+                        }
+                        if (is_64bit and hw3 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw3),
+                                    .shift = 48,
+                                    .size = size,
+                                },
+                            });
+                        }
+                    } else if (inv_hw1 != 0) {
+                        try builder.emit(Inst{
+                            .movn = .{
+                                .dst = writable,
+                                .imm = @intCast(inv_hw1),
+                                .shift = 16,
+                                .size = size,
+                            },
+                        });
+                        if (hw0 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw0),
+                                    .shift = 0,
+                                    .size = size,
+                                },
+                            });
+                        }
+                        if (is_64bit and hw2 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw2),
+                                    .shift = 32,
+                                    .size = size,
+                                },
+                            });
+                        }
+                        if (is_64bit and hw3 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw3),
+                                    .shift = 48,
+                                    .size = size,
+                                },
+                            });
+                        }
+                    } else if (is_64bit and inv_hw2 != 0) {
+                        try builder.emit(Inst{
+                            .movn = .{
+                                .dst = writable,
+                                .imm = @intCast(inv_hw2),
+                                .shift = 32,
+                                .size = size,
+                            },
+                        });
+                        if (hw0 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw0),
+                                    .shift = 0,
+                                    .size = size,
+                                },
+                            });
+                        }
+                        if (hw1 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw1),
+                                    .shift = 16,
+                                    .size = size,
+                                },
+                            });
+                        }
+                        if (hw3 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw3),
+                                    .shift = 48,
+                                    .size = size,
+                                },
+                            });
+                        }
+                    } else {
+                        // inv_hw3 must be non-zero
+                        try builder.emit(Inst{
+                            .movn = .{
+                                .dst = writable,
+                                .imm = @intCast(inv_hw3),
+                                .shift = 48,
+                                .size = size,
+                            },
+                        });
+                        if (hw0 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw0),
+                                    .shift = 0,
+                                    .size = size,
+                                },
+                            });
+                        }
+                        if (hw1 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw1),
+                                    .shift = 16,
+                                    .size = size,
+                                },
+                            });
+                        }
+                        if (hw2 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw2),
+                                    .shift = 32,
+                                    .size = size,
+                                },
+                            });
+                        }
+                    }
+                } else {
+                    // Use MOVZ (move zero)
+                    // Find first non-zero halfword
+                    if (hw0 != 0) {
+                        try builder.emit(Inst{
+                            .movz = .{
+                                .dst = writable,
+                                .imm = @intCast(hw0),
+                                .shift = 0,
+                                .size = size,
+                            },
+                        });
+                        // Add MOVK for other non-zero halfwords
+                        if (hw1 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw1),
+                                    .shift = 16,
+                                    .size = size,
+                                },
+                            });
+                        }
+                        if (is_64bit and hw2 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw2),
+                                    .shift = 32,
+                                    .size = size,
+                                },
+                            });
+                        }
+                        if (is_64bit and hw3 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw3),
+                                    .shift = 48,
+                                    .size = size,
+                                },
+                            });
+                        }
+                    } else if (hw1 != 0) {
+                        try builder.emit(Inst{
+                            .movz = .{
+                                .dst = writable,
+                                .imm = @intCast(hw1),
+                                .shift = 16,
+                                .size = size,
+                            },
+                        });
+                        if (is_64bit and hw2 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw2),
+                                    .shift = 32,
+                                    .size = size,
+                                },
+                            });
+                        }
+                        if (is_64bit and hw3 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw3),
+                                    .shift = 48,
+                                    .size = size,
+                                },
+                            });
+                        }
+                    } else if (is_64bit and hw2 != 0) {
+                        try builder.emit(Inst{
+                            .movz = .{
+                                .dst = writable,
+                                .imm = @intCast(hw2),
+                                .shift = 32,
+                                .size = size,
+                            },
+                        });
+                        if (hw3 != 0) {
+                            try builder.emit(Inst{
+                                .movk = .{
+                                    .dst = writable,
+                                    .imm = @intCast(hw3),
+                                    .shift = 48,
+                                    .size = size,
+                                },
+                            });
+                        }
+                    } else if (is_64bit and hw3 != 0) {
+                        try builder.emit(Inst{
+                            .movz = .{
+                                .dst = writable,
+                                .imm = @intCast(hw3),
+                                .shift = 48,
+                                .size = size,
+                            },
+                        });
+                    } else {
+                        // Value is 0
+                        try builder.emit(Inst{
+                            .movz = .{
+                                .dst = writable,
+                                .imm = 0,
+                                .shift = 0,
+                                .size = size,
+                            },
+                        });
+                    }
+                }
             } else if (data.opcode == .f32const or data.opcode == .f64const) {
                 // Floating-point constant
                 const vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.float);
