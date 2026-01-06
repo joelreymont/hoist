@@ -120,6 +120,16 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Add with carry and set flags (ADCS Xd, Xn, Xm).
+    /// Adds two registers plus carry flag, sets condition flags.
+    /// Used for multi-word arithmetic.
+    adcs: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
     /// Subtract register from register with flags (SUBS Xd, Xn, Xm).
     /// Sets condition flags (NZCV).
     subs_rr: struct {
