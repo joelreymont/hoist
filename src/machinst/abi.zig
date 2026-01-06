@@ -804,3 +804,161 @@ test "vector return value allocation in float registers" {
     try testing.expectEqual(PReg.new(.float, 0), ret_locs[0].slots[0].reg.preg);
     try testing.expectEqual(RegClass.vector, ret_locs[0].slots[0].reg.ty.regClass());
 }
+// ARM64 AAPCS ABI tests
+
+test "AAPCS64 float argument allocation" {
+    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+    const abi = aarch64_abi.aapcs64();
+
+    const args = [_]Type{ .f32, .f64, .f32 };
+    const sig = ABISignature.init(&args, &.{}, .aapcs64);
+
+    const arg_locs = try abi.computeArgLocs(sig, testing.allocator);
+    defer {
+        for (arg_locs) |arg| {
+            testing.allocator.free(arg.slots);
+        }
+        testing.allocator.free(arg_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 3), arg_locs.len);
+
+    // First float arg in V0
+    try testing.expect(arg_locs[0].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 0), arg_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(Type.f32, arg_locs[0].slots[0].reg.ty);
+
+    // Second float arg in V1
+    try testing.expect(arg_locs[1].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 1), arg_locs[1].slots[0].reg.preg);
+    try testing.expectEqual(Type.f64, arg_locs[1].slots[0].reg.ty);
+
+    // Third float arg in V2
+    try testing.expect(arg_locs[2].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 2), arg_locs[2].slots[0].reg.preg);
+    try testing.expectEqual(Type.f32, arg_locs[2].slots[0].reg.ty);
+}
+
+test "AAPCS64 mixed int and float arguments" {
+    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+    const abi = aarch64_abi.aapcs64();
+
+    // Mix of int and float args: int, float, int, float
+    const args = [_]Type{ .i64, .f32, .i32, .f64 };
+    const sig = ABISignature.init(&args, &.{}, .aapcs64);
+
+    const arg_locs = try abi.computeArgLocs(sig, testing.allocator);
+    defer {
+        for (arg_locs) |arg| {
+            testing.allocator.free(arg.slots);
+        }
+        testing.allocator.free(arg_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 4), arg_locs.len);
+
+    // First int arg in X0
+    try testing.expect(arg_locs[0].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.int, 0), arg_locs[0].slots[0].reg.preg);
+
+    // First float arg in V0
+    try testing.expect(arg_locs[1].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 0), arg_locs[1].slots[0].reg.preg);
+
+    // Second int arg in X1
+    try testing.expect(arg_locs[2].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.int, 1), arg_locs[2].slots[0].reg.preg);
+
+    // Second float arg in V1
+    try testing.expect(arg_locs[3].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 1), arg_locs[3].slots[0].reg.preg);
+}
+
+test "AAPCS64 float register exhaustion" {
+    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+    const abi = aarch64_abi.aapcs64();
+
+    // 9 float args - first 8 in V0-V7, 9th on stack
+    const args = [_]Type{ .f64, .f32, .f64, .f32, .f64, .f32, .f64, .f32, .f64 };
+    const sig = ABISignature.init(&args, &.{}, .aapcs64);
+
+    const arg_locs = try abi.computeArgLocs(sig, testing.allocator);
+    defer {
+        for (arg_locs) |arg| {
+            testing.allocator.free(arg.slots);
+        }
+        testing.allocator.free(arg_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 9), arg_locs.len);
+
+    // First 8 in float registers
+    for (0..8) |i| {
+        try testing.expect(arg_locs[i].slots[0] == .reg);
+        try testing.expectEqual(PReg.new(.float, @intCast(i)), arg_locs[i].slots[0].reg.preg);
+    }
+
+    // 9th on stack
+    try testing.expect(arg_locs[8].slots[0] == .stack);
+    try testing.expectEqual(@as(i64, 0), arg_locs[8].slots[0].stack.offset);
+}
+
+test "AAPCS64 float return values" {
+    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+    const abi = aarch64_abi.aapcs64();
+
+    const rets = [_]Type{ .f32, .f64 };
+    const sig = ABISignature.init(&.{}, &rets, .aapcs64);
+
+    const ret_locs = try abi.computeRetLocs(sig, testing.allocator);
+    defer {
+        for (ret_locs) |ret| {
+            testing.allocator.free(ret.slots);
+        }
+        testing.allocator.free(ret_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 2), ret_locs.len);
+
+    // First return in V0
+    try testing.expect(ret_locs[0].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 0), ret_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(Type.f32, ret_locs[0].slots[0].reg.ty);
+
+    // Second return in V1
+    try testing.expect(ret_locs[1].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 1), ret_locs[1].slots[0].reg.preg);
+    try testing.expectEqual(Type.f64, ret_locs[1].slots[0].reg.ty);
+}
+
+test "AAPCS64 vector arguments in float registers" {
+    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+    const abi = aarch64_abi.aapcs64();
+
+    const vec_ty = Type{ .v128 = .{ .elem_type = .f32, .lane_count = 4 } };
+    const args = [_]Type{ vec_ty, .f64, vec_ty };
+    const sig = ABISignature.init(&args, &.{}, .aapcs64);
+
+    const arg_locs = try abi.computeArgLocs(sig, testing.allocator);
+    defer {
+        for (arg_locs) |arg| {
+            testing.allocator.free(arg.slots);
+        }
+        testing.allocator.free(arg_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 3), arg_locs.len);
+
+    // All should be in float registers (V0, V1, V2)
+    try testing.expect(arg_locs[0].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 0), arg_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(RegClass.vector, arg_locs[0].slots[0].reg.ty.regClass());
+
+    try testing.expect(arg_locs[1].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 1), arg_locs[1].slots[0].reg.preg);
+    try testing.expectEqual(RegClass.float, arg_locs[1].slots[0].reg.ty.regClass());
+
+    try testing.expect(arg_locs[2].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 2), arg_locs[2].slots[0].reg.preg);
+    try testing.expectEqual(RegClass.vector, arg_locs[2].slots[0].reg.ty.regClass());
+}
