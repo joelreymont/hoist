@@ -1153,6 +1153,10 @@
 
 ;; Comparison operations lowering
 
+;; icmp_imm: Integer comparison with immediate (all conditions)
+(rule 1 (lower (icmp_imm cond ty x k))
+      (aarch64_cmp_imm ty x k cond))
+
 ;; icmp: Integer comparison with Equal condition
 (rule (lower (icmp IntCC.Equal ty x y))
       (aarch64_cmp_rr ty x y IntCC.Equal))
