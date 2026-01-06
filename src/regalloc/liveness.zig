@@ -103,6 +103,103 @@ pub const LivenessInfo = struct {
     }
 };
 
+/// Helper to track per-vreg information during liveness computation
+const VRegInfo = struct {
+    first_def: ?u32,
+    last_use: u32,
+    reg_class: machinst.RegClass,
+};
+
+/// Compute liveness information for all virtual registers in a function.
+///
+/// This performs a simple intra-block forward scan:
+/// - On first definition of a vreg, record start_inst
+/// - On each use, update end_inst
+///
+/// The Inst type must have methods:
+/// - getDefs(allocator) ![]machinst.VReg - returns defined vregs
+/// - getUses(allocator) ![]machinst.VReg - returns used vregs
+///
+/// Note: This is a simplified version that doesn't handle control flow.
+/// A full implementation would need CFG-aware dataflow analysis.
+pub fn computeLiveness(
+    comptime Inst: type,
+    insns: []const Inst,
+    allocator: std.mem.Allocator,
+) !LivenessInfo {
+    var info = LivenessInfo.init(allocator);
+    errdefer info.deinit();
+
+    // Track per-vreg information during the scan
+    var vreg_info = std.AutoHashMap(u32, VRegInfo).init(allocator);
+    defer vreg_info.deinit();
+
+    // Forward scan through instructions
+    for (insns, 0..) |inst, idx| {
+        const inst_idx: u32 = @intCast(idx);
+
+        // Process definitions - mark start of live range
+        const defs = try inst.getDefs(allocator);
+        defer allocator.free(defs);
+
+        for (defs) |vreg| {
+            const entry = try vreg_info.getOrPut(vreg.index);
+            if (!entry.found_existing) {
+                entry.value_ptr.* = .{
+                    .first_def = inst_idx,
+                    .last_use = inst_idx,
+                    .reg_class = vreg.class,
+                };
+            } else {
+                // Multiple definitions - this is unusual but possible with phi nodes
+                // Keep the first definition
+                if (entry.value_ptr.first_def == null) {
+                    entry.value_ptr.first_def = inst_idx;
+                }
+            }
+        }
+
+        // Process uses - extend live range
+        const uses = try inst.getUses(allocator);
+        defer allocator.free(uses);
+
+        for (uses) |vreg| {
+            const entry = try vreg_info.getOrPut(vreg.index);
+            if (!entry.found_existing) {
+                // Use before def - this can happen with function parameters
+                // Treat the use as both the start and current end
+                entry.value_ptr.* = .{
+                    .first_def = null, // No definition yet
+                    .last_use = inst_idx,
+                    .reg_class = vreg.class,
+                };
+            } else {
+                // Update last use
+                entry.value_ptr.last_use = inst_idx;
+            }
+        }
+    }
+
+    // Convert vreg_info to live ranges
+    var iter = vreg_info.iterator();
+    while (iter.next()) |entry| {
+        const vreg_idx = entry.key_ptr.*;
+        const vinfo = entry.value_ptr.*;
+
+        // Start is either first definition or first use (for parameters)
+        const start = vinfo.first_def orelse 0;
+
+        try info.addRange(.{
+            .vreg = machinst.VReg.new(vreg_idx, vinfo.reg_class),
+            .start_inst = start,
+            .end_inst = vinfo.last_use,
+            .reg_class = vinfo.reg_class,
+        });
+    }
+
+    return info;
+}
+
 test "LiveRange.overlaps" {
     const range1 = LiveRange{
         .vreg = machinst.VReg.new(0, .int),
