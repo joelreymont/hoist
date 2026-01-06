@@ -148,6 +148,16 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Subtract with carry and set flags (SBCS Xd, Xn, Xm).
+    /// Subtracts src2 and borrow from src1, sets condition flags.
+    /// Used for multi-word subtraction.
+    sbcs: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: OperandSize,
+    },
+
     /// Signed saturating add (SQADD Xd, Xn, Xm).
     /// Saturates to signed min/max on overflow.
     sqadd: struct {
