@@ -183,6 +183,47 @@ pub const LinearScanAllocator = struct {
         }
     }
 
+    /// Try to allocate a physical register for the given live range.
+    ///
+    /// Searches for a free register of the appropriate class. If one is found:
+    /// - Allocates it to the vreg
+    /// - Marks the register as used
+    /// - Adds the range to the active list
+    /// - Returns the allocated register
+    ///
+    /// If no register is available, returns null (caller should spill).
+    fn tryAllocateReg(
+        self: *LinearScanAllocator,
+        range: liveness.LiveRange,
+        result: *RegAllocResult,
+    ) !?machinst.PReg {
+        const free_regs = self.getFreeRegs(range.reg_class);
+
+        // Find first free register
+        var reg_idx: u32 = 0;
+        const num_regs = self.getNumRegs(range.reg_class);
+        while (reg_idx < num_regs) : (reg_idx += 1) {
+            if (free_regs.isSet(reg_idx)) {
+                // Found a free register!
+                const preg = machinst.PReg.new(range.reg_class, reg_idx);
+
+                // Assign it to the vreg
+                try result.assign(range.vreg, preg);
+
+                // Mark as used
+                free_regs.unset(reg_idx);
+
+                // Add to active list
+                try self.active.append(self.allocator, range);
+
+                return preg;
+            }
+        }
+
+        // No free register available
+        return null;
+    }
+
     /// Get the bitset for free registers of a given class
     fn getFreeRegs(self: *LinearScanAllocator, class: machinst.RegClass) *std.DynamicBitSet {
         return switch (class) {
