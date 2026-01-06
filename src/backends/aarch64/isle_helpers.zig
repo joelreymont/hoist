@@ -2086,7 +2086,7 @@ pub fn link_reg(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(30)), .src = Reg.gpr(30) } };
 }
 
-pub fn pinned_reg(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_get_pinned_reg(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     _ = ctx;
     // Return pinned register (x28 - typically used for VM context)
     return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(28)), .src = Reg.gpr(28) } };

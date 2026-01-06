@@ -3052,6 +3052,18 @@
 (rule (lower (get_return_address))
       (aarch64_get_return_address))
 
+;; get_pinned_reg: Get platform pinned register (X18 on Darwin, X28 elsewhere)
+(decl aarch64_get_pinned_reg () Aarch64Inst)
+(extern constructor aarch64_get_pinned_reg aarch64_get_pinned_reg)
+(rule (lower (get_pinned_reg))
+      (aarch64_get_pinned_reg))
+
+;; set_pinned_reg: Set platform pinned register
+(decl aarch64_set_pinned_reg (Value) Aarch64Inst)
+(extern constructor aarch64_set_pinned_reg aarch64_set_pinned_reg)
+(rule (lower (set_pinned_reg val))
+      (aarch64_set_pinned_reg val))
+
 ;; global_value: Load address of global value
 (decl aarch64_global_value (GlobalValue) Aarch64Inst)
 (rule (lower (global_value gv))
