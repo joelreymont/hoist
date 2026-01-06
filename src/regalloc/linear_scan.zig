@@ -141,6 +141,48 @@ pub const LinearScanAllocator = struct {
         return result;
     }
 
+    /// Expire old intervals that are no longer active.
+    ///
+    /// This removes intervals from the active list that have ended before
+    /// the current position, freeing up their physical registers for reuse.
+    ///
+    /// Must be called before processing each new interval to maintain
+    /// the invariant that all intervals in the active list overlap the
+    /// current position.
+    fn expireOldIntervals(
+        self: *LinearScanAllocator,
+        current_pos: u32,
+        result: *RegAllocResult,
+    ) !void {
+        // Iterate through active intervals in order
+        // Remove those that have ended before current_pos
+        var i: usize = 0;
+        while (i < self.active.items.len) {
+            const range = self.active.items[i];
+
+            if (range.end_inst < current_pos) {
+                // This interval has ended - free its register
+                const preg = result.getPhysReg(range.vreg) orelse {
+                    // No register was assigned (shouldn't happen)
+                    i += 1;
+                    continue;
+                };
+
+                // Mark the register as free
+                const free_regs = self.getFreeRegs(range.reg_class);
+                free_regs.set(preg.index);
+
+                // Remove from active list (swap with last element for O(1) removal)
+                _ = self.active.swapRemove(i);
+                // Don't increment i - we need to check the element that was swapped here
+            } else {
+                // Still active - intervals are sorted by end time, so we can stop
+                // Actually, they're sorted by start time, so we need to check all
+                i += 1;
+            }
+        }
+    }
+
     /// Get the bitset for free registers of a given class
     fn getFreeRegs(self: *LinearScanAllocator, class: machinst.RegClass) *std.DynamicBitSet {
         return switch (class) {
