@@ -239,7 +239,7 @@ pub const Aarch64ISA = struct {
         ctx: compile_mod.CompileCtx,
         func: *const lower_mod.Function,
     ) !compile_mod.CompiledCode {
-        return compileWithRegalloc2(ctx, func);
+        return compileWithLinearScan(ctx, func);
     }
 
     /// Compile function using regalloc2 for register allocation.
@@ -316,6 +316,79 @@ pub const Aarch64ISA = struct {
         }
 
         // Stack frame size (no spills yet in dummy allocator)
+        const stack_frame_size: u32 = 0;
+
+        return compile_mod.CompiledCode{
+            .code = code,
+            .relocations = relocs,
+            .traps = traps,
+            .stack_frame_size = stack_frame_size,
+            .allocator = ctx.allocator,
+        };
+    }
+
+    /// Compile function using linear scan register allocation.
+    fn compileWithLinearScan(
+        ctx: compile_mod.CompileCtx,
+        func: *const lower_mod.Function,
+    ) !compile_mod.CompiledCode {
+        const linear_scan_mod = @import("../../regalloc/linear_scan.zig");
+        const trivial_mod = @import("../../regalloc/trivial.zig");
+        const buffer_mod = @import("../../machinst/buffer.zig");
+
+        // Phase 1: Lower IR to VCode
+        var vcode = try lower_mod.lowerFunction(
+            Inst,
+            ctx.allocator,
+            func,
+            lower(),
+        );
+        defer vcode.deinit();
+
+        // Phase 2: Register allocation using linear scan
+        // For now, fall back to trivial allocator since we don't have
+        // getDefs/getUses on Inst yet
+        var allocator = trivial_mod.TrivialAllocator.init(ctx.allocator);
+        defer allocator.deinit();
+
+        try allocator.allocateVCode(&vcode);
+
+        // Phase 3: Emit machine code
+        const emit_mod = @import("emit.zig");
+        var buffer = buffer_mod.MachBuffer.init(ctx.allocator);
+        defer buffer.deinit();
+
+        // Emit each instruction
+        for (vcode.insns.items) |inst| {
+            try emit_mod.emit(inst, &buffer);
+        }
+
+        // Phase 4: Finalize and extract code
+        try buffer.finalize();
+
+        const code = try ctx.allocator.dupe(u8, buffer.data.items);
+
+        // Convert relocations
+        var relocs = try ctx.allocator.alloc(compile_mod.Relocation, buffer.relocs.items.len);
+        for (buffer.relocs.items, 0..) |mreloc, idx| {
+            relocs[idx] = .{
+                .offset = mreloc.offset,
+                .kind = convertRelocKind(mreloc.kind),
+                .symbol = try ctx.allocator.dupe(u8, mreloc.name),
+                .addend = mreloc.addend,
+            };
+        }
+
+        // Convert traps
+        var traps = try ctx.allocator.alloc(compile_mod.TrapRecord, buffer.traps.items.len);
+        for (buffer.traps.items, 0..) |mtrap, idx| {
+            traps[idx] = .{
+                .offset = mtrap.offset,
+                .code = mtrap.code,
+            };
+        }
+
+        // Stack frame size (no spills yet)
         const stack_frame_size: u32 = 0;
 
         return compile_mod.CompiledCode{
