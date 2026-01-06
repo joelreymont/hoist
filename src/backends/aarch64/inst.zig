@@ -2429,6 +2429,110 @@ pub const Inst = union(enum) {
                 try collector.regUse(i.base);
                 try collector.regDef(i.base); // base is modified
             },
+            .ldarb => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .ldarh => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .ldar_w => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .ldar => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .stlrb => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+            },
+            .stlrh => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+            },
+            .stlr_w => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+            },
+            .stlr => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+            },
+            .ldxrb => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .ldxrh => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .ldxr_w => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .ldxr => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .stxrb => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+                try collector.regDef(i.status);
+            },
+            .stxrh => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+                try collector.regDef(i.status);
+            },
+            .stxr_w => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+                try collector.regDef(i.status);
+            },
+            .stxr => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+                try collector.regDef(i.status);
+            },
+            .ldaxrb => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .ldaxrh => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .ldaxr_w => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .ldaxr => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .stlxrb => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+                try collector.regDef(i.status);
+            },
+            .stlxrh => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+                try collector.regDef(i.status);
+            },
+            .stlxr_w => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+                try collector.regDef(i.status);
+            },
+            .stlxr => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+                try collector.regDef(i.status);
+            },
             .ret => {
                 // No operands to collect (implicit use of X30/LR handled by ABI)
             },

@@ -766,6 +766,110 @@ pub const Aarch64ISA = struct {
                 str.base = replaceReg(str.base, result);
                 str.base = replaceWritableReg(str.base, result);
             },
+            .ldarb => |*ldarb| {
+                ldarb.base = replaceReg(ldarb.base, result);
+                ldarb.dst = replaceWritableReg(ldarb.dst, result);
+            },
+            .ldarh => |*ldarh| {
+                ldarh.base = replaceReg(ldarh.base, result);
+                ldarh.dst = replaceWritableReg(ldarh.dst, result);
+            },
+            .ldar_w => |*ldar| {
+                ldar.base = replaceReg(ldar.base, result);
+                ldar.dst = replaceWritableReg(ldar.dst, result);
+            },
+            .ldar => |*ldar| {
+                ldar.base = replaceReg(ldar.base, result);
+                ldar.dst = replaceWritableReg(ldar.dst, result);
+            },
+            .stlrb => |*stlrb| {
+                stlrb.src = replaceReg(stlrb.src, result);
+                stlrb.base = replaceReg(stlrb.base, result);
+            },
+            .stlrh => |*stlrh| {
+                stlrh.src = replaceReg(stlrh.src, result);
+                stlrh.base = replaceReg(stlrh.base, result);
+            },
+            .stlr_w => |*stlr| {
+                stlr.src = replaceReg(stlr.src, result);
+                stlr.base = replaceReg(stlr.base, result);
+            },
+            .stlr => |*stlr| {
+                stlr.src = replaceReg(stlr.src, result);
+                stlr.base = replaceReg(stlr.base, result);
+            },
+            .ldxrb => |*ldxrb| {
+                ldxrb.base = replaceReg(ldxrb.base, result);
+                ldxrb.dst = replaceWritableReg(ldxrb.dst, result);
+            },
+            .ldxrh => |*ldxrh| {
+                ldxrh.base = replaceReg(ldxrh.base, result);
+                ldxrh.dst = replaceWritableReg(ldxrh.dst, result);
+            },
+            .ldxr_w => |*ldxr| {
+                ldxr.base = replaceReg(ldxr.base, result);
+                ldxr.dst = replaceWritableReg(ldxr.dst, result);
+            },
+            .ldxr => |*ldxr| {
+                ldxr.base = replaceReg(ldxr.base, result);
+                ldxr.dst = replaceWritableReg(ldxr.dst, result);
+            },
+            .stxrb => |*stxrb| {
+                stxrb.src = replaceReg(stxrb.src, result);
+                stxrb.base = replaceReg(stxrb.base, result);
+                stxrb.status = replaceWritableReg(stxrb.status, result);
+            },
+            .stxrh => |*stxrh| {
+                stxrh.src = replaceReg(stxrh.src, result);
+                stxrh.base = replaceReg(stxrh.base, result);
+                stxrh.status = replaceWritableReg(stxrh.status, result);
+            },
+            .stxr_w => |*stxr| {
+                stxr.src = replaceReg(stxr.src, result);
+                stxr.base = replaceReg(stxr.base, result);
+                stxr.status = replaceWritableReg(stxr.status, result);
+            },
+            .stxr => |*stxr| {
+                stxr.src = replaceReg(stxr.src, result);
+                stxr.base = replaceReg(stxr.base, result);
+                stxr.status = replaceWritableReg(stxr.status, result);
+            },
+            .ldaxrb => |*ldaxrb| {
+                ldaxrb.base = replaceReg(ldaxrb.base, result);
+                ldaxrb.dst = replaceWritableReg(ldaxrb.dst, result);
+            },
+            .ldaxrh => |*ldaxrh| {
+                ldaxrh.base = replaceReg(ldaxrh.base, result);
+                ldaxrh.dst = replaceWritableReg(ldaxrh.dst, result);
+            },
+            .ldaxr_w => |*ldaxr| {
+                ldaxr.base = replaceReg(ldaxr.base, result);
+                ldaxr.dst = replaceWritableReg(ldaxr.dst, result);
+            },
+            .ldaxr => |*ldaxr| {
+                ldaxr.base = replaceReg(ldaxr.base, result);
+                ldaxr.dst = replaceWritableReg(ldaxr.dst, result);
+            },
+            .stlxrb => |*stlxrb| {
+                stlxrb.src = replaceReg(stlxrb.src, result);
+                stlxrb.base = replaceReg(stlxrb.base, result);
+                stlxrb.status = replaceWritableReg(stlxrb.status, result);
+            },
+            .stlxrh => |*stlxrh| {
+                stlxrh.src = replaceReg(stlxrh.src, result);
+                stlxrh.base = replaceReg(stlxrh.base, result);
+                stlxrh.status = replaceWritableReg(stlxrh.status, result);
+            },
+            .stlxr_w => |*stlxr| {
+                stlxr.src = replaceReg(stlxr.src, result);
+                stlxr.base = replaceReg(stlxr.base, result);
+                stlxr.status = replaceWritableReg(stlxr.status, result);
+            },
+            .stlxr => |*stlxr| {
+                stlxr.src = replaceReg(stlxr.src, result);
+                stlxr.base = replaceReg(stlxr.base, result);
+                stlxr.status = replaceWritableReg(stlxr.status, result);
+            },
             // TODO: Add more instruction types as needed
             else => {
                 // For unimplemented instructions, do nothing
