@@ -131,6 +131,10 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .fsqrt => |i| try emitFsqrt(i.dst.toReg(), i.src, i.size, buffer),
         .vec_add => |i| try emitVecAdd(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_sub => |i| try emitVecSub(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_fadd => |i| try emitVecFadd(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_fsub => |i| try emitVecFsub(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_fmul => |i| try emitVecFmul(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_fdiv => |i| try emitVecFdiv(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_addp => |i| try emitVecAddp(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_ext => |i| try emitVecExt(i.dst.toReg(), i.src1, i.src2, i.index, i.size, buffer),
         .vec_mul => |i| try emitVecMul(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -10497,8 +10501,8 @@ fn emitVecFadd(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
 
     // sz bit: 0 for single, 1 for double
     const sz: u1 = switch (vec_size) {
-        .s2, .s4 => 0,
-        .d2 => 1,
+        .size32x2, .size32x4 => 0,
+        .size64x2 => 1,
         else => unreachable, // Only .2s/.4s/.2d valid for FP
     };
 
@@ -10525,8 +10529,8 @@ fn emitVecFsub(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
     const q = vec_size.qBit();
 
     const sz: u1 = switch (vec_size) {
-        .s2, .s4 => 0,
-        .d2 => 1,
+        .size32x2, .size32x4 => 0,
+        .size64x2 => 1,
         else => unreachable,
     };
 
@@ -10553,8 +10557,8 @@ fn emitVecFmul(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
     const q = vec_size.qBit();
 
     const sz: u1 = switch (vec_size) {
-        .s2, .s4 => 0,
-        .d2 => 1,
+        .size32x2, .size32x4 => 0,
+        .size64x2 => 1,
         else => unreachable,
     };
 
@@ -10581,8 +10585,8 @@ fn emitVecFdiv(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
     const q = vec_size.qBit();
 
     const sz: u1 = switch (vec_size) {
-        .s2, .s4 => 0,
-        .d2 => 1,
+        .size32x2, .size32x4 => 0,
+        .size64x2 => 1,
         else => unreachable,
     };
 
@@ -11009,10 +11013,10 @@ fn emitIns(dst: Reg, src: Reg, index: u4, vec_size: VecElemSize, buffer: *buffer
 
     // imm5: index << (size_bits + 1) | (1 << size_bits)
     const size_bits: u3 = switch (vec_size) {
-        .b8, .b16 => 0,
-        .h4, .h8 => 1,
-        .s2, .s4 => 2,
-        .d2 => 3,
+        .size8x8, .size8x16 => 0,
+        .size16x4, .size16x8 => 1,
+        .size32x2, .size32x4 => 2,
+        .size64x2 => 3,
     };
     const imm5 = (@as(u5, index) << (@as(u3, size_bits) + 1)) | (@as(u5, 1) << size_bits);
 
@@ -11063,10 +11067,10 @@ fn emitDupElem(dst: Reg, src: Reg, index: u4, vec_size: VecElemSize, buffer: *bu
 
     // imm5: index << (size_bits + 1) | (1 << size_bits)
     const size_bits: u3 = switch (vec_size) {
-        .b8, .b16 => 0,
-        .h4, .h8 => 1,
-        .s2, .s4 => 2,
-        .d2 => 3,
+        .size8x8, .size8x16 => 0,
+        .size16x4, .size16x8 => 1,
+        .size32x2, .size32x4 => 2,
+        .size64x2 => 3,
     };
     const imm5 = (@as(u5, index) << (@as(u3, size_bits) + 1)) | (@as(u5, 1) << size_bits);
 
@@ -11092,9 +11096,9 @@ fn emitSxtl(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachB
 
     // immh encodes destination element size
     const immh: u4 = switch (vec_size) {
-        .h8 => 0b0001, // 8b -> 8h
-        .s4 => 0b0010, // 4h -> 4s
-        .d2 => 0b0100, // 2s -> 2d
+        .size16x8 => 0b0001, // 8b -> 8h
+        .size32x4 => 0b0010, // 4h -> 4s
+        .size64x2 => 0b0100, // 2s -> 2d
         else => unreachable,
     };
 
@@ -11118,9 +11122,9 @@ fn emitUxtl(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachB
     const rn = hwEnc(src);
 
     const immh: u4 = switch (vec_size) {
-        .h8 => 0b0001,
-        .s4 => 0b0010,
-        .d2 => 0b0100,
+        .size16x8 => 0b0001,
+        .size32x4 => 0b0010,
+        .size64x2 => 0b0100,
         else => unreachable,
     };
 
@@ -11147,9 +11151,9 @@ fn emitSaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buf
 
     // size encodes source element size
     const size: u2 = switch (vec_size) {
-        .h8 => 0b00, // 8b + 8b -> 8h
-        .s4 => 0b01, // 4h + 4h -> 4s
-        .d2 => 0b10, // 2s + 2s -> 2d
+        .size16x8 => 0b00, // 8b + 8b -> 8h
+        .size32x4 => 0b01, // 4h + 4h -> 4s
+        .size64x2 => 0b10, // 2s + 2s -> 2d
         else => unreachable,
     };
 
@@ -11175,9 +11179,9 @@ fn emitUaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buf
     const rm = hwEnc(src2);
 
     const size: u2 = switch (vec_size) {
-        .h8 => 0b00,
-        .s4 => 0b01,
-        .d2 => 0b10,
+        .size16x8 => 0b00,
+        .size32x4 => 0b01,
+        .size64x2 => 0b10,
         else => unreachable,
     };
 
@@ -11203,9 +11207,9 @@ fn emitXtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBu
     const rn = hwEnc(src);
 
     const size: u2 = switch (vec_size) {
-        .h8 => 0b00, // 8h -> 8b
-        .s4 => 0b01, // 4s -> 4h
-        .d2 => 0b10, // 2d -> 2s
+        .size16x8 => 0b00, // 8h -> 8b
+        .size32x4 => 0b01, // 4s -> 4h
+        .size64x2 => 0b10, // 2d -> 2s
         else => unreachable,
     };
 
@@ -11229,9 +11233,9 @@ fn emitSqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mach
     const rn = hwEnc(src);
 
     const size: u2 = switch (vec_size) {
-        .h8 => 0b00,
-        .s4 => 0b01,
-        .d2 => 0b10,
+        .size16x8 => 0b00,
+        .size32x4 => 0b01,
+        .size64x2 => 0b10,
         else => unreachable,
     };
 
@@ -11255,9 +11259,9 @@ fn emitUqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mach
     const rn = hwEnc(src);
 
     const size: u2 = switch (vec_size) {
-        .h8 => 0b00,
-        .s4 => 0b01,
-        .d2 => 0b10,
+        .size16x8 => 0b00,
+        .size32x4 => 0b01,
+        .size64x2 => 0b10,
         else => unreachable,
     };
 
@@ -11502,10 +11506,10 @@ fn emitDupScalar(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.
 
     // imm5: 1 << size_bits
     const size_bits: u3 = switch (vec_size) {
-        .b8, .b16 => 0,
-        .h4, .h8 => 1,
-        .s2, .s4 => 2,
-        .d2 => 3,
+        .size8x8, .size8x16 => 0,
+        .size16x4, .size16x8 => 1,
+        .size32x2, .size32x4 => 2,
+        .size64x2 => 3,
     };
     const imm5 = @as(u5, 1) << size_bits;
 
@@ -11713,8 +11717,8 @@ fn emitVecFcmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *
     const rm = hwEnc(src2);
     const q = vec_size.qBit();
     const sz: u1 = switch (vec_size) {
-        .s2, .s4 => 0,
-        .d2 => 1,
+        .size32x2, .size32x4 => 0,
+        .size64x2 => 1,
         else => unreachable,
     };
 
@@ -11738,8 +11742,8 @@ fn emitVecFcmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *
     const rm = hwEnc(src2);
     const q = vec_size.qBit();
     const sz: u1 = switch (vec_size) {
-        .s2, .s4 => 0,
-        .d2 => 1,
+        .size32x2, .size32x4 => 0,
+        .size64x2 => 1,
         else => unreachable,
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111001 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
@@ -11751,8 +11755,8 @@ fn emitVecFcmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *
     const rm = hwEnc(src2);
     const q = vec_size.qBit();
     const sz: u1 = switch (vec_size) {
-        .s2, .s4 => 0,
-        .d2 => 1,
+        .size32x2, .size32x4 => 0,
+        .size64x2 => 1,
         else => unreachable,
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b0 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111001 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
@@ -11764,8 +11768,8 @@ fn emitVecFmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
     const rm = hwEnc(src2);
     const q = vec_size.qBit();
     const sz: u1 = switch (vec_size) {
-        .s2, .s4 => 0,
-        .d2 => 1,
+        .size32x2, .size32x4 => 0,
+        .size64x2 => 1,
         else => unreachable,
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111101 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
@@ -11777,8 +11781,8 @@ fn emitVecFmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
     const rm = hwEnc(src2);
     const q = vec_size.qBit();
     const sz: u1 = switch (vec_size) {
-        .s2, .s4 => 0,
-        .d2 => 1,
+        .size32x2, .size32x4 => 0,
+        .size64x2 => 1,
         else => unreachable,
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b0 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111101 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
@@ -11789,8 +11793,8 @@ fn emitVecFabs(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Ma
     const rn = hwEnc(src);
     const q = vec_size.qBit();
     const sz: u1 = switch (vec_size) {
-        .s2, .s4 => 0,
-        .d2 => 1,
+        .size32x2, .size32x4 => 0,
+        .size64x2 => 1,
         else => unreachable,
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b10000 << 17) | (0b011110 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
@@ -11801,8 +11805,8 @@ fn emitVecFneg(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Ma
     const rn = hwEnc(src);
     const q = vec_size.qBit();
     const sz: u1 = switch (vec_size) {
-        .s2, .s4 => 0,
-        .d2 => 1,
+        .size32x2, .size32x4 => 0,
+        .size64x2 => 1,
         else => unreachable,
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b10000 << 17) | (0b011110 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);

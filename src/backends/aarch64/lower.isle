@@ -696,6 +696,22 @@
 (rule (lower (ireduce dst_ty src_ty x))
       (aarch64_ireduce dst_ty x))
 
+;; Vector fadd: Floating-point vector addition
+(rule 1 (lower (has_type (ty_vec ty) (fadd x y)))
+      (aarch64_vec_fadd (vector_size ty) x y))
+
+;; Vector fsub: Floating-point vector subtraction
+(rule 1 (lower (has_type (ty_vec ty) (fsub x y)))
+      (aarch64_vec_fsub (vector_size ty) x y))
+
+;; Vector fmul: Floating-point vector multiplication
+(rule 1 (lower (has_type (ty_vec ty) (fmul x y)))
+      (aarch64_vec_fmul (vector_size ty) x y))
+
+;; Vector fdiv: Floating-point vector division
+(rule 1 (lower (has_type (ty_vec ty) (fdiv x y)))
+      (aarch64_vec_fdiv (vector_size ty) x y))
+
 ;; fadd: Floating-point addition (FADD)
 (rule (lower (fadd ty x y))
       (aarch64_fadd ty x y))

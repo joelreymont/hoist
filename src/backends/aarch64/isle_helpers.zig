@@ -4333,3 +4333,87 @@ pub fn aarch64_vec_mul(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value,
         .size = elem_size,
     } };
 }
+
+/// Vector FADD: element-wise FP addition
+pub fn aarch64_vec_fadd(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+
+    const elem_size: Inst.VecElemSize = switch (size) {
+        .V2S => .size32x2,
+        .V4S => .size32x4,
+        .V2D => .size64x2,
+        else => return error.InvalidVectorSize,
+    };
+
+    return Inst{ .vec_fadd = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}
+
+/// Vector FSUB: element-wise FP subtraction
+pub fn aarch64_vec_fsub(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+
+    const elem_size: Inst.VecElemSize = switch (size) {
+        .V2S => .size32x2,
+        .V4S => .size32x4,
+        .V2D => .size64x2,
+        else => return error.InvalidVectorSize,
+    };
+
+    return Inst{ .vec_fsub = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}
+
+/// Vector FMUL: element-wise FP multiplication
+pub fn aarch64_vec_fmul(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+
+    const elem_size: Inst.VecElemSize = switch (size) {
+        .V2S => .size32x2,
+        .V4S => .size32x4,
+        .V2D => .size64x2,
+        else => return error.InvalidVectorSize,
+    };
+
+    return Inst{ .vec_fmul = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}
+
+/// Vector FDIV: element-wise FP division
+pub fn aarch64_vec_fdiv(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+
+    const elem_size: Inst.VecElemSize = switch (size) {
+        .V2S => .size32x2,
+        .V4S => .size32x4,
+        .V2D => .size64x2,
+        else => return error.InvalidVectorSize,
+    };
+
+    return Inst{ .vec_fdiv = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}

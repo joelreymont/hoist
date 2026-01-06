@@ -1436,6 +1436,42 @@ pub const Inst = union(enum) {
         size: VecElemSize,
     },
 
+    /// Vector floating-point addition (FADD Vd, Vn, Vm).
+    /// Computes dst = src1 + src2 (element-wise FP addition).
+    vec_fadd: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// Vector floating-point subtraction (FSUB Vd, Vn, Vm).
+    /// Computes dst = src1 - src2 (element-wise FP subtraction).
+    vec_fsub: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// Vector floating-point multiplication (FMUL Vd, Vn, Vm).
+    /// Computes dst = src1 * src2 (element-wise FP multiplication).
+    vec_fmul: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
+    /// Vector floating-point division (FDIV Vd, Vn, Vm).
+    /// Computes dst = src1 / src2 (element-wise FP division).
+    vec_fdiv: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: VecElemSize,
+    },
+
     /// Vector add across lanes (ADDV).
     /// Reduces vector to scalar by adding all lanes: dst = sum(src[i]).
     vec_addv: struct {
