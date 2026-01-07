@@ -872,7 +872,7 @@ pub fn lower(
                 try ctx.emit(Inst{ .ldrb = .{
                     .dst = dst,
                     .base = addr_reg,
-                    .offset = @intCast(data.offset.value),
+                    .offset = @intCast(data.offset),
                     .size = size,
                 } });
 
@@ -889,7 +889,7 @@ pub fn lower(
                 try ctx.emit(Inst{ .ldrsb = .{
                     .dst = dst,
                     .base = addr_reg,
-                    .offset = @intCast(data.offset.value),
+                    .offset = @intCast(data.offset),
                     .size = size,
                 } });
 
@@ -906,7 +906,7 @@ pub fn lower(
                 try ctx.emit(Inst{ .ldrh = .{
                     .dst = dst,
                     .base = addr_reg,
-                    .offset = @intCast(data.offset.value),
+                    .offset = @intCast(data.offset),
                     .size = size,
                 } });
 
@@ -923,7 +923,7 @@ pub fn lower(
                 try ctx.emit(Inst{ .ldrsh = .{
                     .dst = dst,
                     .base = addr_reg,
-                    .offset = @intCast(data.offset.value),
+                    .offset = @intCast(data.offset),
                     .size = size,
                 } });
 
@@ -938,7 +938,7 @@ pub fn lower(
                 try ctx.emit(Inst{ .ldr = .{
                     .dst = dst,
                     .base = addr_reg,
-                    .offset = @intCast(data.offset.value),
+                    .offset = @intCast(data.offset),
                     .size = .size32,
                 } });
 
@@ -952,7 +952,7 @@ pub fn lower(
                 try ctx.emit(Inst{ .ldrsw = .{
                     .dst = dst,
                     .base = addr_reg,
-                    .offset = @intCast(data.offset.value),
+                    .offset = @intCast(data.offset),
                 } });
 
                 return true;
@@ -961,8 +961,8 @@ pub fn lower(
         .store => |data| {
             if (data.opcode == .store) {
                 // Get value and address operands
-                const value = data.arg;
-                const addr = data.addr;
+                const addr = data.args[0];
+                const value = data.args[1];
 
                 // Get registers
                 const value_reg = Reg.fromVReg(try ctx.getValueReg(value, .int));
@@ -976,7 +976,7 @@ pub fn lower(
                 try ctx.emit(Inst{ .str = .{
                     .src = value_reg,
                     .base = addr_reg,
-                    .offset = @intCast(data.offset.value),
+                    .offset = @intCast(data.offset),
                     .size = size,
                 } });
 
@@ -992,7 +992,7 @@ pub fn lower(
                 try ctx.emit(Inst{ .strb = .{
                     .src = value_reg,
                     .base = addr_reg,
-                    .offset = @intCast(data.offset.value),
+                    .offset = @intCast(data.offset),
                 } });
 
                 return true;
@@ -1007,7 +1007,7 @@ pub fn lower(
                 try ctx.emit(Inst{ .strh = .{
                     .src = value_reg,
                     .base = addr_reg,
-                    .offset = @intCast(data.offset.value),
+                    .offset = @intCast(data.offset),
                 } });
 
                 return true;
@@ -1022,7 +1022,7 @@ pub fn lower(
                 try ctx.emit(Inst{ .str = .{
                     .src = value_reg,
                     .base = addr_reg,
-                    .offset = @intCast(data.offset.value),
+                    .offset = @intCast(data.offset),
                     .size = .size32,
                 } });
 

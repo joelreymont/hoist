@@ -298,7 +298,7 @@ pub fn LowerBackend(comptime MachInst: type) type {
 /// Compute reverse postorder traversal of blocks.
 fn computeRPO(allocator: Allocator, func: *const Function) !std.ArrayList(Block) {
     var rpo = std.ArrayList(Block){};
-    errdefer rpo.deinit();
+    errdefer rpo.deinit(allocator);
 
     var visited = std.AutoHashMap(Block, void).init(allocator);
     defer visited.deinit();
@@ -360,15 +360,17 @@ pub fn lowerFunction(
 
     // Lower each block in reverse postorder
     var rpo = try computeRPO(allocator, func);
-    defer rpo.deinit();
+    defer rpo.deinit(allocator);
 
     for (rpo.items) |ir_block| {
         // Start new machine block
         _ = try ctx.startBlock(ir_block);
 
-        // Lower each instruction in the block
+        // Lower each instruction in the block, tracking last instruction
         var inst_iter = func.layout.blockInsts(ir_block);
+        var last_inst: ?Inst = null;
         while (inst_iter.next()) |ir_inst| {
+            last_inst = ir_inst;
             // Try to lower the instruction
             const handled = try backend.lowerInstFn(&ctx, ir_inst);
             if (!handled) {
@@ -378,8 +380,8 @@ pub fn lowerFunction(
             }
         }
 
-        // Handle block terminator (branch)
-        if (func.layout.lastInst(ir_block)) |term_inst| {
+        // Handle block terminator (branch) - last instruction in block
+        if (last_inst) |term_inst| {
             _ = try backend.lowerBranchFn(&ctx, term_inst);
         }
 
