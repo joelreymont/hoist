@@ -2798,39 +2798,76 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
 
     // AAPCS64 calling convention:
     // - First 8 integer args in X0-X7
-    // - First 8 FP args in V0-V7
+    // - First 8 FP/SIMD args in V0-V7
     // - Remaining args on stack (8-byte aligned, pushed in order)
 
     // Marshal arguments to ABI registers and stack
-    // For now, assume all arguments are integers
+    var int_count: u32 = 0;
+    var fp_count: u32 = 0;
     var stack_offset: u32 = 0;
 
-    for (args, 0..) |arg_value, i| {
-        const arg_reg = try ctx.getValueReg(arg_value, .int);
+    for (args) |arg_value| {
+        const arg_type = ctx.func.dfg.valueType(arg_value);
+        const is_fp = arg_type.isFloat() or arg_type.isVector();
 
-        if (i < 8) {
-            // First 8 args go in X0-X7
-            const abi_reg_num: u8 = @intCast(i);
-            const abi_reg = Reg.gpr(abi_reg_num);
+        if (is_fp) {
+            if (fp_count < 8) {
+                // FP/SIMD args in V0-V7
+                const arg_reg = try ctx.getValueReg(arg_value, .float);
+                const abi_reg_num: u8 = @intCast(fp_count);
+                const abi_reg = Reg.fpr(abi_reg_num);
 
-            // Emit move to ABI register if not already there
-            if (!arg_reg.toReg().eq(abi_reg)) {
-                try ctx.emit(Inst{ .mov_rr = .{
-                    .dst = lower_mod.WritableReg.fromReg(abi_reg),
-                    .src = arg_reg.toReg(),
-                    .size = .size64,
-                } });
+                // Emit move to ABI register if not already there
+                if (!arg_reg.toReg().eq(abi_reg)) {
+                    try ctx.emit(Inst{ .fmov_rr = .{
+                        .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                        .src = arg_reg.toReg(),
+                        .size = typeToFPSize(arg_type),
+                    } });
+                }
+                fp_count += 1;
+            } else {
+                // FP args beyond V7 go on stack
+                const arg_reg = try ctx.getValueReg(arg_value, .float);
+                try ctx.emit(Inst{
+                    .str_fp = .{
+                        .src = arg_reg.toReg(),
+                        .base = Reg.gpr(31), // SP
+                        .offset = @intCast(stack_offset),
+                        .size = typeToFPSize(arg_type),
+                    },
+                });
+                stack_offset += 8;
             }
         } else {
-            // Args 9+ go on stack
-            // AAPCS64: Stack arguments are 8-byte aligned
-            try ctx.emit(Inst{ .str = .{
-                .src = arg_reg.toReg(),
-                .base = Reg.gpr(31), // SP
-                .offset = @intCast(stack_offset),
-                .size = .size64,
-            } });
-            stack_offset += 8;
+            if (int_count < 8) {
+                // Integer args in X0-X7
+                const arg_reg = try ctx.getValueReg(arg_value, .int);
+                const abi_reg_num: u8 = @intCast(int_count);
+                const abi_reg = Reg.gpr(abi_reg_num);
+
+                // Emit move to ABI register if not already there
+                if (!arg_reg.toReg().eq(abi_reg)) {
+                    try ctx.emit(Inst{ .mov_rr = .{
+                        .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                        .src = arg_reg.toReg(),
+                        .size = .size64,
+                    } });
+                }
+                int_count += 1;
+            } else {
+                // Integer args beyond X7 go on stack
+                const arg_reg = try ctx.getValueReg(arg_value, .int);
+                try ctx.emit(Inst{
+                    .str = .{
+                        .src = arg_reg.toReg(),
+                        .base = Reg.gpr(31), // SP
+                        .offset = @intCast(stack_offset),
+                        .size = .size64,
+                    },
+                });
+                stack_offset += 8;
+            }
         }
     }
 
@@ -2873,35 +2910,72 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
     }
 
     // Marshal arguments to ABI registers and stack
-    // For now, assume all arguments are integers
+    var int_count: u32 = 0;
+    var fp_count: u32 = 0;
     var stack_offset: u32 = 0;
 
-    for (args, 0..) |arg_value, i| {
-        const arg_reg = try ctx.getValueReg(arg_value, .int);
+    for (args) |arg_value| {
+        const arg_type = ctx.func.dfg.valueType(arg_value);
+        const is_fp = arg_type.isFloat() or arg_type.isVector();
 
-        if (i < 8) {
-            // First 8 args go in X0-X7
-            const abi_reg_num: u8 = @intCast(i);
-            const abi_reg = Reg.gpr(abi_reg_num);
+        if (is_fp) {
+            if (fp_count < 8) {
+                // FP/SIMD args in V0-V7
+                const arg_reg = try ctx.getValueReg(arg_value, .float);
+                const abi_reg_num: u8 = @intCast(fp_count);
+                const abi_reg = Reg.fpr(abi_reg_num);
 
-            // Emit move to ABI register if not already there
-            if (!arg_reg.toReg().eq(abi_reg)) {
-                try ctx.emit(Inst{ .mov_rr = .{
-                    .dst = lower_mod.WritableReg.fromReg(abi_reg),
-                    .src = arg_reg.toReg(),
-                    .size = .size64,
-                } });
+                // Emit move to ABI register if not already there
+                if (!arg_reg.toReg().eq(abi_reg)) {
+                    try ctx.emit(Inst{ .fmov_rr = .{
+                        .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                        .src = arg_reg.toReg(),
+                        .size = typeToFPSize(arg_type),
+                    } });
+                }
+                fp_count += 1;
+            } else {
+                // FP args beyond V7 go on stack
+                const arg_reg = try ctx.getValueReg(arg_value, .float);
+                try ctx.emit(Inst{
+                    .str_fp = .{
+                        .src = arg_reg.toReg(),
+                        .base = Reg.gpr(31), // SP
+                        .offset = @intCast(stack_offset),
+                        .size = typeToFPSize(arg_type),
+                    },
+                });
+                stack_offset += 8;
             }
         } else {
-            // Args 9+ go on stack
-            // AAPCS64: Stack arguments are 8-byte aligned
-            try ctx.emit(Inst{ .str = .{
-                .src = arg_reg.toReg(),
-                .base = Reg.gpr(31), // SP
-                .offset = @intCast(stack_offset),
-                .size = .size64,
-            } });
-            stack_offset += 8;
+            if (int_count < 8) {
+                // Integer args in X0-X7
+                const arg_reg = try ctx.getValueReg(arg_value, .int);
+                const abi_reg_num: u8 = @intCast(int_count);
+                const abi_reg = Reg.gpr(abi_reg_num);
+
+                // Emit move to ABI register if not already there
+                if (!arg_reg.toReg().eq(abi_reg)) {
+                    try ctx.emit(Inst{ .mov_rr = .{
+                        .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                        .src = arg_reg.toReg(),
+                        .size = .size64,
+                    } });
+                }
+                int_count += 1;
+            } else {
+                // Integer args beyond X7 go on stack
+                const arg_reg = try ctx.getValueReg(arg_value, .int);
+                try ctx.emit(Inst{
+                    .str = .{
+                        .src = arg_reg.toReg(),
+                        .base = Reg.gpr(31), // SP
+                        .offset = @intCast(stack_offset),
+                        .size = .size64,
+                    },
+                });
+                stack_offset += 8;
+            }
         }
     }
 
