@@ -1523,6 +1523,89 @@ pub fn lower(
                 return true;
             }
         },
+        .binary => |data| {
+            if (data.opcode == .rotr) {
+                // Rotate right with register
+                const src = data.args[0];
+                const shift = data.args[1];
+
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const shift_reg = Reg.fromVReg(try ctx.getValueReg(shift, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .ror_rr = .{
+                    .dst = dst,
+                    .src1 = src_reg,
+                    .src2 = shift_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .rotl) {
+                // Rotate left - negate shift then ror
+                const src = data.args[0];
+                const shift = data.args[1];
+
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const shift_reg = Reg.fromVReg(try ctx.getValueReg(shift, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Negate shift amount
+                const neg_shift = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(Inst{ .neg_rr = .{
+                    .dst = neg_shift,
+                    .src = shift_reg,
+                    .size = size,
+                } });
+
+                // Rotate right by negated shift
+                try ctx.emit(Inst{ .ror_rr = .{
+                    .dst = dst,
+                    .src1 = src_reg,
+                    .src2 = neg_shift.toReg(),
+                    .size = size,
+                } });
+                return true;
+            }
+        },
+        .binary_imm64 => |data| {
+            if (data.opcode == .rotr_imm) {
+                // Rotate right with immediate
+                const src = data.arg;
+                const shift = @as(u8, @intCast(data.imm.value & 0x3F));
+
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(inst_mod.aarch64_ror(dst, src_reg, shift, size));
+                return true;
+            } else if (data.opcode == .rotl_imm) {
+                // Rotate left with immediate - ror with (width - shift)
+                const src = data.arg;
+                const shift_left = data.imm.value;
+
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Convert left shift to right shift: ror by (width - shift)
+                const width: i64 = if (ty.bits() <= 32) 32 else 64;
+                const shift_right = @as(u8, @intCast((width - shift_left) & 0x3F));
+
+                try ctx.emit(inst_mod.aarch64_ror(dst, src_reg, shift_right, size));
+                return true;
+            }
+        },
         .stack_load => |data| {
             if (data.opcode == .stack_load) {
                 // Load from stack slot at FP + offset
