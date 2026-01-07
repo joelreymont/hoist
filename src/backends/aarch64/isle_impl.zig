@@ -1198,11 +1198,74 @@ pub fn aarch64_br_table(
     jt: u32,
     default_target: Block,
 ) !void {
-    _ = index;
-    _ = jt;
-    _ = default_target;
-    _ = ctx;
-    @panic("TODO: Implement br_table - needs jump table data structure and constant pool");
+    // Get the jump table from function data
+    // Note: jt is an index into the function's jump table array
+    _ = jt; // TODO: Need to wire up jump table lookup from function context
+
+    // Get index register (should be i32 or i64)
+    const index_reg = try ctx.lower_ctx.getValueReg(index, .int);
+
+    // Get the table size (TODO: need to get this from jump table metadata)
+    // For now, we'll assume it's passed separately or stored with the table
+    const table_size: u32 = 10; // Placeholder
+
+    // Allocate temporary registers
+    const table_base = try ctx.lower_ctx.allocVReg(.int);
+    const offset_reg = try ctx.lower_ctx.allocVReg(.int);
+    const target_offset_reg = try ctx.lower_ctx.allocVReg(.int);
+
+    // 1. Bounds check: if (index >= table_size) goto default
+    try ctx.emit(Inst{
+        .cmp_imm = .{
+            .src = index_reg,
+            .imm = Imm12.fromU32(table_size) orelse {
+                // If immediate too large, use register compare
+                const size_reg = try ctx.lower_ctx.allocVReg(.int);
+                try ctx.emit(Inst{
+                    .mov_imm = .{
+                        .dst = WritableReg.fromVReg(size_reg),
+                        .imm = table_size,
+                        .size = .size32,
+                    },
+                });
+                try ctx.emit(Inst{
+                    .cmp_rr = .{
+                        .src1 = index_reg,
+                        .src2 = Reg.fromVReg(size_reg),
+                        .size = .size32,
+                    },
+                });
+                return;
+            },
+            .size = .size32,
+        },
+    });
+
+    // Branch to default if index >= size (unsigned HS = higher or same)
+    try ctx.emit(Inst{
+        .b_cond = .{
+            .cond = .hs, // Higher or Same (unsigned >=)
+            .target = default_target,
+        },
+    });
+
+    // 2. Load table base address
+    // TODO: Use ADR or ADRP+ADD to get table address
+    // For now, use placeholder
+    _ = table_base;
+    _ = offset_reg;
+    _ = target_offset_reg;
+
+    // 3. Compute byte offset: offset = index * 4 (for 32-bit entries)
+    // LSL index, #2
+
+    // 4. Load target offset from table: LDR offset_reg, [table_base, offset]
+
+    // 5. Compute target address: ADD target, table_base, offset_reg
+
+    // 6. Branch to target: BR target_reg
+
+    @panic("TODO: Complete br_table implementation - need label/table infrastructure");
 }
 
 /// Constructor: uadd_overflow_cin - unsigned add with carry-in and overflow.
@@ -2368,7 +2431,7 @@ pub fn aarch64_istore8(
 ) !Inst {
     const val_reg = ctx.getValueReg(val);
     const addr_reg = ctx.getValueReg(addr);
-    
+
     return Inst{ .strb = .{
         .src = val_reg,
         .base = addr_reg,
@@ -2384,7 +2447,7 @@ pub fn aarch64_istore16(
 ) !Inst {
     const val_reg = ctx.getValueReg(val);
     const addr_reg = ctx.getValueReg(addr);
-    
+
     return Inst{ .strh = .{
         .src = val_reg,
         .base = addr_reg,
@@ -2400,7 +2463,7 @@ pub fn aarch64_istore32(
 ) !Inst {
     const val_reg = ctx.getValueReg(val);
     const addr_reg = ctx.getValueReg(addr);
-    
+
     return Inst{ .str_w = .{
         .src = val_reg,
         .base = addr_reg,
@@ -2416,7 +2479,7 @@ pub fn aarch64_vstr(
 ) !Inst {
     const val_reg = ctx.getValueReg(val);
     const addr_reg = ctx.getValueReg(addr);
-    
+
     return Inst{ .str_q = .{
         .src = val_reg,
         .base = addr_reg,
@@ -2433,24 +2496,24 @@ pub fn aarch64_snarrow(
 ) !Inst {
     const src_reg = ctx.getValueReg(src);
     const dst = try ctx.allocOutputReg(.float);
-    
+
     // Map VectorSize to VecElemSize for output
     const elem_size: Inst.VecElemSize = switch (size) {
-        .V8B => .size8x8,   // 16x8b -> 8x8b
+        .V8B => .size8x8, // 16x8b -> 8x8b
         .V16B => .size8x16, // 16x8b -> 8x16b (SQXTN2)
-        .V4H => .size16x4,  // 8x16b -> 4x16b
-        .V8H => .size16x8,  // 8x16b -> 8x16b (SQXTN2)
-        .V2S => .size32x2,  // 4x32b -> 2x32b
-        .V4S => .size32x4,  // 4x32b -> 4x32b (SQXTN2)
+        .V4H => .size16x4, // 8x16b -> 4x16b
+        .V8H => .size16x8, // 8x16b -> 8x16b (SQXTN2)
+        .V2S => .size32x2, // 4x32b -> 2x32b
+        .V4S => .size32x4, // 4x32b -> 4x32b (SQXTN2)
         .V2D => unreachable, // No 64->32 narrow with 2D output
     };
-    
+
     const high = switch (size) {
         .V16B, .V8H, .V4S => true, // SQXTN2 (write high half)
         .V8B, .V4H, .V2S => false, // SQXTN (write low half)
         .V2D => unreachable,
     };
-    
+
     return Inst{ .vec_sqxtn = .{
         .dst = dst,
         .src = src_reg,
@@ -2468,7 +2531,7 @@ pub fn aarch64_unarrow(
 ) !Inst {
     const src_reg = ctx.getValueReg(src);
     const dst = try ctx.allocOutputReg(.float);
-    
+
     const elem_size: Inst.VecElemSize = switch (size) {
         .V8B => .size8x8,
         .V16B => .size8x16,
@@ -2478,13 +2541,13 @@ pub fn aarch64_unarrow(
         .V4S => .size32x4,
         .V2D => unreachable,
     };
-    
+
     const high = switch (size) {
         .V16B, .V8H, .V4S => true,
         .V8B, .V4H, .V2S => false,
         .V2D => unreachable,
     };
-    
+
     return Inst{ .vec_sqxtun = .{
         .dst = dst,
         .src = src_reg,
@@ -2502,7 +2565,7 @@ pub fn aarch64_uunarrow(
 ) !Inst {
     const src_reg = ctx.getValueReg(src);
     const dst = try ctx.allocOutputReg(.float);
-    
+
     const elem_size: Inst.VecElemSize = switch (size) {
         .V8B => .size8x8,
         .V16B => .size8x16,
@@ -2512,13 +2575,13 @@ pub fn aarch64_uunarrow(
         .V4S => .size32x4,
         .V2D => unreachable,
     };
-    
+
     const high = switch (size) {
         .V16B, .V8H, .V4S => true,
         .V8B, .V4H, .V2S => false,
         .V2D => unreachable,
     };
-    
+
     return Inst{ .vec_uqxtn = .{
         .dst = dst,
         .src = src_reg,
@@ -2535,7 +2598,7 @@ pub fn aarch64_vldr(
 ) !Inst {
     const addr_reg = ctx.getValueReg(addr);
     const dst = try ctx.allocOutputReg(.float);
-    
+
     // Determine size from type
     const bits = ty.bits();
     if (bits == 128) {
@@ -2561,7 +2624,7 @@ pub fn aarch64_get_frame_pointer(
 ) !Inst {
     const dst = try ctx.allocOutputReg(.int);
     const fp = Reg.gpr(29); // X29 is the frame pointer
-    
+
     return Inst{ .mov = .{
         .dst = dst,
         .src = fp,
@@ -2574,7 +2637,7 @@ pub fn aarch64_get_stack_pointer(
 ) !Inst {
     const dst = try ctx.allocOutputReg(.int);
     const sp = Reg.gpr(31); // X31/SP is the stack pointer
-    
+
     return Inst{ .mov = .{
         .dst = dst,
         .src = sp,
@@ -2587,7 +2650,7 @@ pub fn aarch64_get_return_address(
 ) !Inst {
     const dst = try ctx.allocOutputReg(.int);
     const lr = Reg.gpr(30); // X30 is the link register
-    
+
     return Inst{ .mov = .{
         .dst = dst,
         .src = lr,
@@ -2602,7 +2665,7 @@ pub fn aarch64_get_pinned_reg(
     const dst = try ctx.allocOutputReg(.int);
     // TODO: Platform detection - for now use X28
     const pinned = Reg.gpr(28);
-    
+
     return Inst{ .mov = .{
         .dst = dst,
         .src = pinned,
@@ -2617,7 +2680,7 @@ pub fn aarch64_set_pinned_reg(
     const val_reg = ctx.getValueReg(val);
     // TODO: Platform detection - for now use X28
     const pinned = Reg.gpr(28);
-    
+
     return Inst{ .mov = .{
         .dst = WritableReg.fromReg(pinned),
         .src = val_reg,
