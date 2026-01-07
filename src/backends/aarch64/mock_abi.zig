@@ -7,7 +7,7 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
-const root = @import("root");
+const root = @import("../../root.zig");
 const abi_mod = root.abi;
 const PReg = root.aarch64_inst.PReg;
 

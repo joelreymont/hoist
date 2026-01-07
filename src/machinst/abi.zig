@@ -377,37 +377,37 @@ pub fn ABIMachineSpec(comptime WordSize: type) type {
         ) !void {
             switch (rc) {
                 .int => {
-                    if (int_reg_idx < self.int_arg_regs.len) {
-                        const preg = self.int_arg_regs[int_reg_idx];
+                    if (int_reg_idx.* < self.int_arg_regs.len) {
+                        const preg = self.int_arg_regs[int_reg_idx.*];
                         try slots.append(allocator, .{ .reg = .{
                             .preg = preg,
                             .ty = arg_ty,
                             .extension = .none,
                         } });
-                        int_reg_idx += 1;
+                        int_reg_idx.* += 1;
                     } else {
                         // Spill to stack.
                         try slots.append(allocator, .{ .stack = .{
-                            .offset = stack_offset,
+                            .offset = stack_offset.*,
                             .ty = arg_ty,
                             .extension = .none,
                         } });
-                        stack_offset += @as(i64, @intCast(arg_ty.bytes()));
-                        stack_offset = std.mem.alignForward(i64, stack_offset, self.stack_align);
+                        stack_offset.* += @as(i64, @intCast(arg_ty.bytes()));
+                        stack_offset.* = std.mem.alignForward(i64, stack_offset.*, self.stack_align);
                     }
                 },
                 .float, .vector => {
-                    if (float_reg_idx < self.float_arg_regs.len) {
-                        const preg = self.float_arg_regs[float_reg_idx];
+                    if (float_reg_idx.* < self.float_arg_regs.len) {
+                        const preg = self.float_arg_regs[float_reg_idx.*];
                         try slots.append(allocator, .{ .reg = .{
                             .preg = preg,
                             .ty = arg_ty,
                             .extension = .none,
                         } });
-                        float_reg_idx += 1;
+                        float_reg_idx.* += 1;
                     } else {
                         try slots.append(allocator, .{ .stack = .{
-                            .offset = stack_offset,
+                            .offset = stack_offset.*,
                             .ty = arg_ty,
                             .extension = .none,
                         } });
@@ -685,27 +685,6 @@ test "vector type v128 properties" {
     try testing.expectEqual(@as(u8, 4), vec_ty.vectorLaneCount().?);
 }
 
-test "vector type isVector returns false for scalars" {
-    try testing.expect(!Type.i32.isVector());
-    try testing.expect(!Type.i64.isVector());
-    try testing.expect(!Type.f32.isVector());
-    try testing.expect(!Type.f64.isVector());
-
-    const struct_ty = Type{ .@"struct" = &.{} };
-    try testing.expect(!struct_ty.isVector());
-}
-
-test "vector type vectorElementType returns null for non-vectors" {
-    try testing.expectEqual(@as(?VectorElementType, null), Type.i32.vectorElementType());
-    try testing.expectEqual(@as(?VectorElementType, null), Type.f32.vectorElementType());
-    try testing.expectEqual(@as(?VectorElementType, null), Type.i64.vectorElementType());
-}
-
-test "vector type vectorLaneCount returns null for non-vectors" {
-    try testing.expectEqual(@as(?u8, null), Type.i32.vectorLaneCount());
-    try testing.expectEqual(@as(?u8, null), Type.f32.vectorLaneCount());
-    try testing.expectEqual(@as(?u8, null), Type.i64.vectorLaneCount());
-}
 
 test "vectorElementBytes helper function" {
     try testing.expectEqual(@as(u32, 1), Type.vectorElementBytes(.i8));

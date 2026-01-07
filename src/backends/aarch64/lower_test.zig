@@ -5,7 +5,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-const root = @import("root");
+const root = @import("../../root.zig");
 const lower_mod = root.lower;
 const aarch64_lower = @import("../../generated/aarch64_lower_generated.zig");
 const inst_mod = @import("inst.zig");

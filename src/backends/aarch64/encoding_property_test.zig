@@ -144,9 +144,9 @@ test "property: register numbers preserved in encoding" {
 
         // Test ADD instruction: ADD X0, Xn, Xm
         const inst = Inst{ .add_rr = .{
-            .dst = WritableReg.from(dst),
-            .src1 = src1.toReg(),
-            .src2 = src2.toReg(),
+            .dst = WritableReg.fromReg(Reg.fromPReg(dst)),
+            .src1 = Reg.fromPReg(src1),
+            .src2 = Reg.fromPReg(src2),
             .size = .size64,
         } };
 
@@ -167,9 +167,9 @@ test "property: destination register encoding" {
         const src = PReg.new(.int, 0);
 
         const inst = Inst{ .add_rr = .{
-            .dst = WritableReg.from(dst),
-            .src1 = src.toReg(),
-            .src2 = src.toReg(),
+            .dst = WritableReg.fromReg(Reg.fromPReg(dst)),
+            .src1 = Reg.fromPReg(src),
+            .src2 = Reg.fromPReg(src),
             .size = .size64,
         } };
 
@@ -187,8 +187,8 @@ test "property: immediate bounds checking" {
     // Valid 12-bit immediate (0-4095)
     {
         const inst = Inst{ .add_imm = .{
-            .dst = WritableReg.from(x0),
-            .src = x1.toReg(),
+            .dst = WritableReg.fromReg(Reg.fromPReg(x0)),
+            .src = Reg.fromPReg(x1),
             .imm = 4095,
             .size = .size64,
         } };
@@ -202,8 +202,8 @@ test "property: immediate bounds checking" {
     // Immediate at boundary
     {
         const inst = Inst{ .add_imm = .{
-            .dst = WritableReg.from(x0),
-            .src = x1.toReg(),
+            .dst = WritableReg.fromReg(Reg.fromPReg(x0)),
+            .src = Reg.fromPReg(x1),
             .imm = 0,
             .size = .size64,
         } };
@@ -225,9 +225,9 @@ test "property: paired load/store offset alignment" {
 
     for (valid_offsets) |offset| {
         const inst = Inst{ .stp = .{
-            .src1 = x0.toReg(),
-            .src2 = x1.toReg(),
-            .base = sp.toReg(),
+            .src1 = Reg.fromPReg(x0),
+            .src2 = Reg.fromPReg(x1),
+            .base = Reg.fromPReg(sp),
             .offset = offset,
             .size = .size64,
         } };
@@ -249,9 +249,9 @@ test "property: size bit consistency" {
 
     for (sizes) |size| {
         const inst = Inst{ .add_rr = .{
-            .dst = WritableReg.from(x0),
-            .src1 = x1.toReg(),
-            .src2 = x1.toReg(),
+            .dst = WritableReg.fromReg(Reg.fromPReg(x0)),
+            .src1 = Reg.fromPReg(x1),
+            .src2 = Reg.fromPReg(x1),
             .size = size,
         } };
 
@@ -282,8 +282,8 @@ test "property: move instructions preserve register class" {
         const x1 = PReg.new(.int, 1);
 
         const inst = Inst{ .mov_rr = .{
-            .dst = WritableReg.from(x0),
-            .src = x1.toReg(),
+            .dst = WritableReg.fromReg(Reg.fromPReg(x0)),
+            .src = Reg.fromPReg(x1),
             .size = .size64,
         } };
 
@@ -300,8 +300,8 @@ test "property: move instructions preserve register class" {
         const v1 = PReg.new(.float, 1);
 
         const inst = Inst{ .fmov = .{
-            .dst = WritableReg.from(v0),
-            .src = v1.toReg(),
+            .dst = WritableReg.fromReg(Reg.fromPReg(v0)),
+            .src = Reg.fromPReg(v1),
             .size = .size64,
         } };
 
@@ -315,7 +315,7 @@ test "property: move instructions preserve register class" {
 test "property: conditional branch encoding" {
     const cond_codes = [_]inst_mod.CondCode{
         .eq, .ne, .cs, .cc, .mi, .pl, .vs, .vc,
-        .hi, .ls, .ge, .lt, .gt, .le, .al, .nv,
+        .hi, .ls, .ge, .lt, .gt, .le, .al,
     };
 
     for (cond_codes) |cond| {

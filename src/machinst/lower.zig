@@ -2,7 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
-const root = @import("root");
+const root = @import("../root.zig");
 const vcode_mod = @import("vcode.zig");
 const reg_mod = @import("reg.zig");
 
