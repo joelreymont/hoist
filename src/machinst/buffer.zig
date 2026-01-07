@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 
 const machinst = @import("machinst.zig");
 const MachLabel = machinst.MachLabel;
+const Block = @import("../ir/entities.zig").Block;
 
 /// Code offset in bytes from the start of the function.
 pub const CodeOffset = u32;
@@ -136,6 +137,53 @@ const ConstPoolEntry = struct {
     label: MachLabel,
 };
 
+/// Jump table entry for br_table implementation.
+pub const JumpTableEntry = struct {
+    /// Target block for this table entry.
+    target: Block,
+    /// Label for the target block (resolved during emission).
+    label: MachLabel,
+};
+
+/// Jump table for br_table instruction.
+pub const JumpTable = struct {
+    /// Table of branch targets.
+    targets: std.ArrayList(JumpTableEntry),
+    /// Default target when index is out of bounds.
+    default_target: Block,
+    /// Label for default target.
+    default_label: MachLabel,
+    /// Label for the jump table data itself.
+    table_label: MachLabel,
+    /// Alignment requirement (4 or 8 bytes).
+    alignment: u32,
+
+    pub fn init(allocator: Allocator, default_target: Block, alignment: u32) JumpTable {
+        return .{
+            .targets = std.ArrayList(JumpTableEntry).init(allocator),
+            .default_target = default_target,
+            .default_label = 0, // Set during emission
+            .table_label = 0, // Set during emission
+            .alignment = alignment,
+        };
+    }
+
+    pub fn deinit(self: *JumpTable, allocator: Allocator) void {
+        self.targets.deinit(allocator);
+    }
+
+    pub fn addTarget(self: *JumpTable, target: Block, label: MachLabel) !void {
+        try self.targets.append(.{
+            .target = target,
+            .label = label,
+        });
+    }
+
+    pub fn len(self: *const JumpTable) usize {
+        return self.targets.items.len;
+    }
+};
+
 /// Machine code buffer with label resolution and fixups.
 pub const MachBuffer = struct {
     /// Raw bytes of emitted code.
@@ -152,6 +200,8 @@ pub const MachBuffer = struct {
     const_pool: std.ArrayList(ConstPoolEntry),
     /// Map from constant value to pool index (for deduplication).
     const_pool_map: std.AutoHashMap(u64, u32),
+    /// Jump tables for br_table instructions.
+    jump_tables: std.ArrayList(JumpTable),
     /// Allocator for dynamic allocations.
     allocator: Allocator,
 
@@ -166,6 +216,7 @@ pub const MachBuffer = struct {
             .label_offsets = std.ArrayList(CodeOffset){},
             .const_pool = std.ArrayList(ConstPoolEntry){},
             .const_pool_map = std.AutoHashMap(u64, u32).init(allocator),
+            .jump_tables = std.ArrayList(JumpTable){},
             .allocator = allocator,
         };
     }
@@ -178,6 +229,10 @@ pub const MachBuffer = struct {
         self.label_offsets.deinit(self.allocator);
         self.const_pool.deinit(self.allocator);
         self.const_pool_map.deinit();
+        for (self.jump_tables.items) |*jt| {
+            jt.deinit(self.allocator);
+        }
+        self.jump_tables.deinit(self.allocator);
     }
 
     /// Get current code offset.
