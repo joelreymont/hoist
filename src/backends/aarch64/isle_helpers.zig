@@ -2376,7 +2376,18 @@ pub fn aarch64_debugtrap(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
 
 /// Float constant constructors (ISLE constructors)
 pub fn constant_f32(bits: u32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    // Load 32-bit constant via GPR, then FMOV to FPU
+    const dst_fpr = lower_mod.WritableVReg.allocVReg(.float, ctx);
+
+    // Check for special values that can be encoded directly with FMOV immediate
+    // ARM64 FMOV immediate can encode some FP constants in the instruction
+    // TODO: Check if bits can be encoded as FMOV immediate (abcdefgh pattern)
+
+    // For now, use GPR + FMOV approach (works but not optimal)
+    // TODO: Optimize by loading from constant pool for large constants:
+    //   1. Add constant to pool: pool_id = addConstantToPool(bits)
+    //   2. Load address: ADRP + ADD for constant pool base
+    //   3. Load value: LDR dst_fpr, [pool_base, offset]
+
     const tmp_gpr = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{ .mov_imm = .{
         .dst = tmp_gpr,
@@ -2384,7 +2395,6 @@ pub fn constant_f32(bits: u32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
         .is_64 = false,
     } });
 
-    const dst_fpr = lower_mod.WritableVReg.allocVReg(.float, ctx);
     return Inst{ .fmov_from_gpr = .{
         .dst = dst_fpr,
         .src = tmp_gpr.toReg(),
@@ -2393,7 +2403,17 @@ pub fn constant_f32(bits: u32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
 }
 
 pub fn constant_f64(bits: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    // Load 64-bit constant via GPR, then FMOV to FPU
+    const dst_fpr = lower_mod.WritableVReg.allocVReg(.float, ctx);
+
+    // Check for special values that can be encoded directly with FMOV immediate
+    // TODO: Check if bits can be encoded as FMOV immediate (abcdefgh pattern)
+
+    // For now, use GPR + FMOV approach (works but not optimal)
+    // TODO: Optimize by loading from constant pool for large constants:
+    //   1. Add constant to pool: pool_id = addConstantToPool(bits)
+    //   2. Load address: ADRP + ADD for constant pool base
+    //   3. Load value: LDR dst_fpr, [pool_base, offset]
+
     const tmp_gpr = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{ .mov_imm = .{
         .dst = tmp_gpr,
@@ -2401,7 +2421,6 @@ pub fn constant_f64(bits: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
         .is_64 = true,
     } });
 
-    const dst_fpr = lower_mod.WritableVReg.allocVReg(.float, ctx);
     return Inst{ .fmov_from_gpr = .{
         .dst = dst_fpr,
         .src = tmp_gpr.toReg(),
