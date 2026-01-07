@@ -151,7 +151,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
 
         /// Get the type of an IR value.
         pub fn getValueType(self: *const Self, value: Value) root.types.Type {
-            return self.func.dfg.valueType(value);
+            return self.func.dfg.valueType(value) orelse unreachable; // Value must have type
         }
 
         /// Compute value use counts for dead code elimination.
@@ -226,7 +226,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
                 while (inst_iter.next()) |inst| {
                     const results = self.func.dfg.instResults(inst);
                     for (results) |result_value| {
-                        const result_type = self.func.dfg.valueType(result_value);
+                        const result_type = self.func.dfg.valueType(result_value) orelse continue;
                         const reg_class = regClassForType(result_type);
                         const vreg = VReg.new(self.next_vreg, reg_class);
                         self.next_vreg += 1;
@@ -238,7 +238,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
 
         /// Determine register class from IR type.
         fn regClassForType(ty: root.types.Type) RegClass {
-            return if (ty.isInt() or ty.isBool()) .int else .float;
+            return if (ty.isInt()) .int else .float;
         }
 
         /// Get the offset of a stack slot within the locals area.
@@ -304,7 +304,7 @@ fn computeRPO(allocator: Allocator, func: *const Function) !std.ArrayList(Block)
     defer visited.deinit();
 
     // Get entry block (first block in layout)
-    var block_iter = func.layout.blocks();
+    var block_iter = func.layout.blockIter();
     const entry = block_iter.next() orelse return rpo;
 
     // DFS postorder traversal
@@ -327,9 +327,11 @@ fn dfsPostorder(
     try visited.put(block, {});
 
     // Visit successors by examining block terminator
-    if (func.layout.lastInst(block)) |_| {
-        // For this stub, we don't have actual CFG analysis
-        // In real implementation, would traverse CFG successors here
+    // TODO: Implement proper CFG successor traversal
+    // For now, just iterate through instructions (stub implementation)
+    var inst_iter = func.layout.blockInsts(block);
+    while (inst_iter.next()) |_| {
+        // TODO: analyze terminator to get CFG successors
     }
 
     // Add block to postorder after visiting successors
