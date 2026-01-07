@@ -3298,6 +3298,24 @@
 (rule (lower (call_indirect sig_ref ptr args))
       (aarch64_call_indirect sig_ref ptr args))
 
+;; try_call: Function call with exception handling
+;; Same as regular call but with landing pad for exceptions
+(decl aarch64_try_call (SigRef ExternalName ValueSlice) ValueRegs)
+(extern constructor aarch64_try_call aarch64_try_call)
+
+(rule 1 (lower (try_call (func_ref_data sig_ref name (RelocDistance.Near) _) args))
+      (aarch64_try_call sig_ref name args))
+
+(rule (lower (try_call (func_ref_data sig_ref name dist _) args))
+      (aarch64_try_call sig_ref name args))
+
+;; try_call_indirect: Indirect call with exception handling
+(decl aarch64_try_call_indirect (SigRef Value ValueSlice) ValueRegs)
+(extern constructor aarch64_try_call_indirect aarch64_try_call_indirect)
+
+(rule (lower (try_call_indirect sig_ref ptr args))
+      (aarch64_try_call_indirect sig_ref ptr args))
+
 ;; Shuffle pattern extractors
 ;; Extract lane index if shuffle duplicates a single 8-bit lane
 (decl shuffle_dup8_from_imm (Immediate) u8)

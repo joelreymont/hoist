@@ -2776,6 +2776,36 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
     return lower_mod.ValueRegs.one(Reg.gpr(0));
 }
 
+pub fn aarch64_try_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    // Function call with exception handling support
+    // For now, identical to regular call - exception handling requires landing pad infrastructure
+    // TODO: Wire exception edge to landing pad block when available
+    _ = sig_ref;
+    _ = args;
+
+    // Direct call: BL (branch with link)
+    try ctx.emit(Inst{ .bl = .{ .target = .{ .symbol = name } } });
+
+    // Return value in x0 (simplified)
+    return lower_mod.ValueRegs.one(Reg.gpr(0));
+}
+
+pub fn aarch64_try_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    // Indirect call with exception handling support
+    // For now, identical to regular indirect call
+    // TODO: Wire exception edge to landing pad block when available
+    _ = sig_ref;
+    _ = args;
+
+    const ptr_reg = try ctx.getValueReg(ptr, .int);
+
+    // Indirect call: BLR (branch with link to register)
+    try ctx.emit(Inst{ .blr = .{ .rn = ptr_reg } });
+
+    // Return value in x0 (simplified)
+    return lower_mod.ValueRegs.one(Reg.gpr(0));
+}
+
 /// Shuffle pattern extractors (ISLE extern extractors)
 /// Check if 128-bit immediate represents duplication of a single 8-bit lane
 pub fn shuffle_dup8_from_imm(imm: u128) ?u8 {
