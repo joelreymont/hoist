@@ -723,6 +723,9 @@ pub const Aarch64ABICallee = struct {
     locals_size: u32,
     /// Total aligned stack frame size (including FP, LR, callee-saves).
     frame_size: u32,
+    /// Whether this function requires a frame pointer.
+    /// Set to true for large frames or functions with dynamic allocations.
+    uses_frame_pointer: bool,
 
     pub fn init(
         _allocator: std.mem.Allocator,
@@ -741,6 +744,7 @@ pub const Aarch64ABICallee = struct {
             .clobbered_callee_saves = std.ArrayList(PReg){},
             .locals_size = 0,
             .frame_size = 0,
+            .uses_frame_pointer = false,
         };
     }
 
@@ -752,6 +756,13 @@ pub const Aarch64ABICallee = struct {
             self.locals_size,
             @intCast(self.clobbered_callee_saves.items.len),
         );
+
+        // Require frame pointer for large frames (>4KB threshold)
+        // Large frames need FP for stack unwinding and debugging
+        const fp_threshold = 4096;
+        if (self.frame_size > fp_threshold) {
+            self.uses_frame_pointer = true;
+        }
     }
 
     pub fn deinit(self: *Aarch64ABICallee) void {
@@ -3186,4 +3197,27 @@ test "classifyReturn - float types" {
     const f64_ret = classifyReturn(Type.F64);
     try testing.expect(f64_ret == .single_reg);
     try testing.expectEqual(PReg.new(.float, 0), f64_ret.single_reg);
+}
+
+test "frame pointer enforced for large frames" {
+    const allocator = testing.allocator;
+
+    var sig = abi_mod.ABISignature.init(allocator, .aapcs64);
+    defer sig.deinit();
+
+    var callee = Aarch64ABICallee.init(allocator, sig);
+    defer callee.deinit();
+
+    // Small frame - no FP required
+    callee.setLocalsSize(1024);
+    try testing.expect(!callee.uses_frame_pointer);
+
+    // Large frame (>4KB) - FP required
+    callee.setLocalsSize(5000);
+    try testing.expect(callee.uses_frame_pointer);
+    try testing.expect(callee.frame_size > 4096);
+
+    // Very large frame - FP required
+    callee.setLocalsSize(65000);
+    try testing.expect(callee.uses_frame_pointer);
 }
