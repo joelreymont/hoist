@@ -178,6 +178,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_dup_lane => |i| try emitVecDupLane(i.dst.toReg(), i.src, i.lane, i.size, buffer),
         .vec_extract_lane => |i| try emitVecExtractLane(i.dst.toReg(), i.src, i.lane, i.size, buffer),
         .vec_insert_lane => |i| try emitVecInsertLane(i.dst.toReg(), i.vec, i.src, i.lane, i.size, buffer),
+        .tbl => |i| try emitTbl(i.dst.toReg(), i.table, i.indices, i.table_regs, buffer),
+        .tbx => |i| try emitTbx(i.dst.toReg(), i.table, i.indices, i.table_regs, buffer),
         .zip1 => |i| try emitZip1(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .zip2 => |i| try emitZip2(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .uzp1 => |i| try emitUzp1(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -10791,6 +10793,50 @@ fn emitUmaxv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mach
     try buffer.put4(insn);
 }
 
+/// TBL (table lookup): TBL Vd.16B, {Vn.16B-Vn+len.16B}, Vm.16B
+/// Encoding: Q|0|001110|000|Rm|0|len|00|Rn|Rd
+/// len = number of consecutive table registers - 1 (0-3 for 1-4 regs)
+fn emitTbl(dst: Reg, table: Reg, indices: Reg, table_regs: u2, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(table);
+    const rm = hwEnc(indices);
+    const len: u32 = table_regs; // 0=1reg, 1=2regs, 2=3regs, 3=4regs
+
+    const insn: u32 = (1 << 30) | // Q=1 (always 128-bit)
+        (0b0001110000 << 20) |
+        (@as(u32, rm) << 16) |
+        (0b0 << 15) |
+        (len << 13) |
+        (0b00 << 11) |
+        (0b00 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    try buffer.put4(insn);
+}
+
+/// TBX (table lookup extension): TBX Vd.16B, {Vn.16B-Vn+len.16B}, Vm.16B
+/// Encoding: Q|0|001110|000|Rm|0|len|10|Rn|Rd
+/// Like TBL but preserves dst bytes when index out of range
+fn emitTbx(dst: Reg, table: Reg, indices: Reg, table_regs: u2, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(table);
+    const rm = hwEnc(indices);
+    const len: u32 = table_regs; // 0=1reg, 1=2regs, 2=3regs, 3=4regs
+
+    const insn: u32 = (1 << 30) | // Q=1 (always 128-bit)
+        (0b0001110000 << 20) |
+        (@as(u32, rm) << 16) |
+        (0b0 << 15) |
+        (len << 13) |
+        (0b10 << 11) | // op=10 for TBX
+        (0b00 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    try buffer.put4(insn);
+}
+
 /// ZIP1 (zip vectors, primary): ZIP1 Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|0|Rm|001110|Rn|Rd
 fn emitZip1(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
@@ -11363,66 +11409,6 @@ fn emitUqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mach
 /// TBL (table lookup, 1 register): TBL Vd.16B, {Vn.16B}, Vm.16B
 /// Encoding: 0|Q|001110000|Rm|0|len|000|Rn|Rd
 /// Q=1 for 128-bit, len=00 for 1 register
-fn emitTbl(dst: Reg, table: Reg, index: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(table);
-    const rm = hwEnc(index);
-
-    const insn: u32 = (0b0 << 31) |
-        (0b1 << 30) | // Q=1 for 128-bit
-        (0b001110000 << 21) |
-        (@as(u32, rm) << 16) |
-        (0b0 << 15) |
-        (0b00 << 13) | // len=00 for 1 register
-        (0b000 << 10) |
-        (@as(u32, rn) << 5) |
-        @as(u32, rd);
-
-    try buffer.put4(insn);
-}
-
-/// TBL2 (table lookup, 2 registers): TBL Vd.16B, {Vn.16B, Vn+1.16B}, Vm.16B
-/// Encoding: 0|Q|001110000|Rm|0|len|000|Rn|Rd
-/// len=01 for 2 registers
-fn emitTbl2(dst: Reg, table: Reg, index: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(table);
-    const rm = hwEnc(index);
-
-    const insn: u32 = (0b0 << 31) |
-        (0b1 << 30) | // Q=1 for 128-bit
-        (0b001110000 << 21) |
-        (@as(u32, rm) << 16) |
-        (0b0 << 15) |
-        (0b01 << 13) | // len=01 for 2 registers
-        (0b000 << 10) |
-        (@as(u32, rn) << 5) |
-        @as(u32, rd);
-
-    try buffer.put4(insn);
-}
-
-/// TBX (table extension): TBX Vd.16B, {Vn.16B}, Vm.16B
-/// Encoding: 0|Q|001110000|Rm|0|len|100|Rn|Rd
-/// Like TBL but leaves dst unchanged for out-of-range indices
-fn emitTbx(dst: Reg, table: Reg, index: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(table);
-    const rm = hwEnc(index);
-
-    const insn: u32 = (0b0 << 31) |
-        (0b1 << 30) | // Q=1 for 128-bit
-        (0b001110000 << 21) |
-        (@as(u32, rm) << 16) |
-        (0b0 << 15) |
-        (0b00 << 13) | // len=00 for 1 register
-        (0b100 << 10) | // opcode for TBX (vs TBL 000)
-        (@as(u32, rn) << 5) |
-        @as(u32, rd);
-
-    try buffer.put4(insn);
-}
-
 /// LDAXR (load-acquire exclusive register): LDAXR Xt, [Xn]
 /// Encoding: size|001000|0|1|0|11111|0|11111|Rn|Rt
 /// size: 11 for 64-bit, 10 for 32-bit

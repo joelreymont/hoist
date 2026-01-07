@@ -1007,10 +1007,10 @@ pub const Inst = union(enum) {
 
     /// Compare and swap pair (CASP) - 128-bit atomic.
     casp: struct {
-        compare_lo: Reg,  // Must be even register (e.g., X0, X2, X4...)
-        compare_hi: Reg,  // Must be odd register (compare_lo + 1)
-        swap_lo: Reg,     // Must be even register
-        swap_hi: Reg,     // Must be odd register (swap_lo + 1)
+        compare_lo: Reg, // Must be even register (e.g., X0, X2, X4...)
+        compare_hi: Reg, // Must be odd register (compare_lo + 1)
+        swap_lo: Reg, // Must be even register
+        swap_hi: Reg, // Must be odd register (swap_lo + 1)
         dst_lo: WritableReg,
         dst_hi: WritableReg,
         base: Reg,
@@ -1640,6 +1640,25 @@ pub const Inst = union(enum) {
         size: VecElemSize,
     },
 
+    /// Table lookup (TBL).
+    /// Lookup bytes in table using indices: dst[i] = table[indices[i]].
+    /// If index >= table size, result byte is 0.
+    tbl: struct {
+        dst: WritableReg,
+        table: Reg,
+        indices: Reg,
+        table_regs: u2, // 1-4 table registers (TBL can use 1-4 consecutive regs)
+    },
+
+    /// Table lookup extension (TBX).
+    /// Like TBL but preserves destination bytes when index out of range.
+    tbx: struct {
+        dst: WritableReg,
+        table: Reg,
+        indices: Reg,
+        table_regs: u2, // 1-4 table registers
+    },
+
     /// Extract bytes and concatenate (EXT).
     /// Extract bytes from concatenated pair: dst = (src1:src2)[index..index+bytes].
     vec_ext: struct {
@@ -2157,6 +2176,8 @@ pub const Inst = union(enum) {
             .vec_dup => |i| try writer.print("vec_dup.{} {}, {}", .{ i.size, i.dst, i.src }),
             .vec_extract_lane => |i| try writer.print("vec_extract_lane.{} {}, {}[{}]", .{ i.size, i.dst, i.src, i.lane }),
             .vec_insert_lane => |i| try writer.print("vec_insert_lane.{} {}[{}], {}", .{ i.size, i.dst, i.lane, i.src }),
+            .tbl => |i| try writer.print("tbl {}, {{{}}}, {}", .{ i.dst, i.table, i.indices }),
+            .tbx => |i| try writer.print("tbx {}, {{{}}}, {}", .{ i.dst, i.table, i.indices }),
             .vec_ext => |i| try writer.print("vec_ext.{} {}, {}, {}, #{}", .{ i.size, i.dst, i.src1, i.src2, i.index }),
             .vec_addp => |i| try writer.print("vec_addp.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_umaxp => |i| try writer.print("vec_umaxp.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
@@ -2432,6 +2453,16 @@ pub const Inst = union(enum) {
             .vec_insert_lane => |*i| {
                 try collector.regUse(i.vec);
                 try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .tbl => |*i| {
+                try collector.regUse(i.table);
+                try collector.regUse(i.indices);
+                try collector.regDef(i.dst);
+            },
+            .tbx => |*i| {
+                try collector.regUse(i.table);
+                try collector.regUse(i.indices);
                 try collector.regDef(i.dst);
             },
             .ldr => |*i| {
