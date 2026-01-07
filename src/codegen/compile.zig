@@ -2122,6 +2122,1030 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
                     },
                 }
             },
+            // Priority 7: Floating point operations
+            .fmov => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fmov_imm => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+            },
+            .fmov_from_gpr => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fmov_to_gpr => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fadd => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src1 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src2 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fsub => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src1 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src2 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fmul => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src1 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src2 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fdiv => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src1 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src2 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fmadd => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src1 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src2 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.addend.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.addend = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fmsub => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src1 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src2 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.addend.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.addend = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fneg => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fabs => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fsqrt => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .frintn => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .frintz => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .frintp => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .frintm => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fmin => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src1 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src2 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fmax => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src1 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src2 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fcmp => |*i| {
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src1 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src2 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fcmp_zero => |*i| {
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fcsel => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src1 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src2 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .scvtf => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .ucvtf => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fcvtzs => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fcvtzu => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fcvt_f32_to_f64 => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .fcvt_f64_to_f32 => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .vldr => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.base.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.base = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .vstr => |*i| {
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.base.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.base = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            // Priority 8: Advanced load/store & special operations
+            .ldr_pre => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.base.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.base = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+            },
+            .ldr_post => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.base.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.base = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+            },
+            .str_pre => |*i| {
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.base.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.base = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+            },
+            .str_post => |*i| {
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.base.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.base = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+            },
+            .vldp => |*i| {
+                if (i.dst1.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst1 = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.dst2.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst2 = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.base.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.base = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .vstp => |*i| {
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src1 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src2 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.base.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.base = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .popcnt => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .rev16 => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .rev32 => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .rev64 => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            // Priority 9: Saturating arithmetic
+            .sqadd => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src1 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src2 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .sqsub => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src1 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src2 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .uqadd => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src1 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src2 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .uqsub => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src1 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src2 = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            // Priority 11: Sign extension
+            .sxtb => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .uxtb => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .sxth => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .uxth => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .sxtw => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .uxtw => |*i| {
+                if (i.dst.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.dst = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.src = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
             .b_cond, .bl, .b => {
                 // No register operands - use labels/immediate offsets
             },
