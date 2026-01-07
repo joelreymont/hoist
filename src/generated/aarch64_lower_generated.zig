@@ -1916,6 +1916,69 @@ pub fn lower(
 
                 try ctx.emit(inst_mod.aarch64_fdiv(dst, lhs_reg, rhs_reg, size));
                 return true;
+            } else if (data.opcode == .fmin) {
+                // Floating-point minimum
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .float));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .fmin = .{
+                    .dst = dst,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .fmax) {
+                // Floating-point maximum
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .float));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .fmax = .{
+                    .dst = dst,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+                return true;
+            }
+        },
+        .unary => |data| {
+            if (data.opcode == .fabs) {
+                // Floating-point absolute value
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(inst_mod.aarch64_fabs(dst, src_reg, size));
+                return true;
+            } else if (data.opcode == .fneg) {
+                // Floating-point negate
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(inst_mod.aarch64_fneg(dst, src_reg, size));
+                return true;
             }
         },
         .binary_imm64 => |data| {
