@@ -8790,7 +8790,7 @@ test "emit extend instructions - verify against ARM manual examples" {
     try emit(.{ .sxth = .{
         .dst = wr0,
         .src = r1,
-        .size = .size64,
+        .dst_size = .size64,
     } }, &buffer);
     insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x93403C20), insn);
@@ -8809,7 +8809,7 @@ test "emit extend instructions - verify against ARM manual examples" {
     try emit(.{ .uxtb = .{
         .dst = wr0,
         .src = r1,
-        .size = .size32,
+        .dst_size = .size32,
     } }, &buffer);
     insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x53001C20), insn);
@@ -8819,7 +8819,7 @@ test "emit extend instructions - verify against ARM manual examples" {
     try emit(.{ .uxtb = .{
         .dst = wr0,
         .src = r1,
-        .size = .size64,
+        .dst_size = .size64,
     } }, &buffer);
     insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0xD3401C20), insn);
@@ -8829,7 +8829,7 @@ test "emit extend instructions - verify against ARM manual examples" {
     try emit(.{ .uxth = .{
         .dst = wr0,
         .src = r1,
-        .size = .size32,
+        .dst_size = .size32,
     } }, &buffer);
     insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x53003C20), insn);
@@ -8839,7 +8839,7 @@ test "emit extend instructions - verify against ARM manual examples" {
     try emit(.{ .uxth = .{
         .dst = wr0,
         .src = r1,
-        .size = .size64,
+        .dst_size = .size64,
     } }, &buffer);
     insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0xD3403C20), insn);
@@ -9777,6 +9777,7 @@ test "emit fsub and fmul" {
         .dst = wr0,
         .src1 = r1,
         .src2 = r2,
+        .size = .size64,
     } }, &buffer);
     const fdiv_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0b000110), (fdiv_insn >> 10) & 0b111111);
@@ -9807,6 +9808,7 @@ test "emit fmov register and immediate" {
     try emit(.{ .fmov_imm = .{
         .dst = wr0,
         .imm = 0.0,
+        .size = .size32,
     } }, &buffer);
     const fmov_imm_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x1E201000), fmov_imm_insn);
@@ -9826,13 +9828,14 @@ test "emit fcmp and fcvt" {
     try emit(.{ .fcmp = .{
         .src1 = r0,
         .src2 = r1,
+        .size = .size32,
     } }, &buffer);
     const fcmp_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x1E212000), fcmp_insn);
 
     // FCVT D0, S1
     buffer.data.clearRetainingCapacity();
-    try emit(.{ .fcvt_s_to_d = .{
+    try emit(.{ .fcvt_f32_to_f64 = .{
         .dst = wr0,
         .src = r1,
     } }, &buffer);
@@ -9866,6 +9869,8 @@ test "emit scvtf and fcvtzs conversions" {
     try emit(.{ .fcvtzs = .{
         .dst = wr0,
         .src = r1,
+        .src_size = .size32,
+        .dst_size = .size32,
     } }, &buffer);
     const fcvtzs_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x1E380020), fcvtzs_insn);
@@ -9897,26 +9902,29 @@ test "emit fneg fabs fmax fmin" {
     try emit(.{ .fabs = .{
         .dst = wr0,
         .src = r1,
+        .size = .size64,
     } }, &buffer);
     const fabs_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x1E60C020), fabs_insn);
 
     // FMAX S0, S1, S2
     buffer.data.clearRetainingCapacity();
-    try emit(.{ .fmax_s = .{
+    try emit(.{ .fmax = .{
         .dst = wr0,
         .src1 = r1,
         .src2 = r2,
+        .size = .size32,
     } }, &buffer);
     const fmax_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x1E224820), fmax_insn);
 
     // FMIN D0, D1, D2
     buffer.data.clearRetainingCapacity();
-    try emit(.{ .fmin_d = .{
+    try emit(.{ .fmin = .{
         .dst = wr0,
         .src1 = r1,
         .src2 = r2,
+        .size = .size64,
     } }, &buffer);
     const fmin_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x1E625820), fmin_insn);
@@ -9975,6 +9983,7 @@ test "emit ldxr and stxr doubleword" {
     try emit(.{ .ldxr = .{
         .dst = wr0,
         .base = r1,
+        .size = .size64,
     } }, &buffer);
     const ldxr_x_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     // size=11 (doubleword) + rest same as word
@@ -9982,10 +9991,11 @@ test "emit ldxr and stxr doubleword" {
 
     // STXR W2, X0, [X1] - 64-bit
     buffer.data.clearRetainingCapacity();
-    try emit(.{ .stxr_x = .{
+    try emit(.{ .stxr = .{
         .status = wr2,
         .src = r0,
         .base = r1,
+        .size = .size64,
     } }, &buffer);
     const stxr_x_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0xC8027C20), stxr_x_insn);
@@ -10070,6 +10080,7 @@ test "emit ldaxr and stlxr with acquire/release" {
     try emit(.{ .ldaxr = .{
         .dst = wr0,
         .base = r1,
+        .size = .size64,
     } }, &buffer);
     const ldaxr_x_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0xC85FFC20), ldaxr_x_insn);
@@ -10086,10 +10097,11 @@ test "emit ldaxr and stlxr with acquire/release" {
 
     // STLXR W2, X0, [X1] - release 64-bit (o0=1)
     buffer.data.clearRetainingCapacity();
-    try emit(.{ .stlxr_x = .{
+    try emit(.{ .stlxr = .{
         .status = wr2,
         .src = r0,
         .base = r1,
+        .size = .size64,
     } }, &buffer);
     const stlxr_x_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0xC802FC20), stlxr_x_insn);
