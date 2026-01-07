@@ -16,6 +16,7 @@ const Opcode = root.opcodes.Opcode;
 const InstructionData = root.instruction_data.InstructionData;
 const Type = root.types.Type;
 const IntCC = root.condcodes.IntCC;
+const FloatCC = root.condcodes.FloatCC;
 
 // Manual lowering function until ISLE compiler is fully functional
 pub fn lower(
@@ -2259,6 +2260,55 @@ pub fn lower(
                     .src1 = tmp1.toReg(),
                     .src2 = tmp2.toReg(),
                     .size = size,
+                } });
+
+                return true;
+            }
+        },
+        .float_compare => |data| {
+            if (data.opcode == .fcmp) {
+                // Float comparison: compare two float registers
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .float));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                // Map FloatCC to ARM64 CondCode
+                // ARM64 FCMP sets NZCV flags that we test with conditional codes
+                const cond: CondCode = switch (data.cond) {
+                    .eq => .eq, // equal
+                    .ne => .ne, // not equal (handles unordered)
+                    .lt => .mi, // less than (N set, no unordered)
+                    .le => .ls, // less or equal (C clear or Z set)
+                    .gt => .gt, // greater than
+                    .ge => .ge, // greater or equal
+                    .uno => .vs, // unordered (V set - at least one NaN)
+                    .ord => .vc, // ordered (V clear - neither is NaN)
+                    .ueq => .eq, // unordered or equal
+                    .one => .mi, // ordered not equal (use mi for now, complex)
+                    .ult => .lt, // unordered or less
+                    .ule => .le, // unordered or less/equal
+                    .ugt => .hi, // unordered or greater
+                    .uge => .cs, // unordered or greater/equal
+                };
+
+                // Emit fcmp instruction
+                try ctx.emit(Inst{ .fcmp = .{
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                // Emit cset instruction to materialize result in register
+                try ctx.emit(Inst{ .cset = .{
+                    .dst = dst,
+                    .cond = cond,
+                    .size = .size64,
                 } });
 
                 return true;
