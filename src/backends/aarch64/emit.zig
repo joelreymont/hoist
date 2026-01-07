@@ -136,6 +136,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .swp => |i| try emitSwp(i.dst.toReg(), i.src, i.base, i.size, buffer),
         .b => |i| try emitB(i.target.label, buffer),
         .b_cond => |i| try emitBCond(@intFromEnum(i.cond), i.target.label, buffer),
+        .cbz => |i| try emitCbz(i.reg, i.target.label, i.size, buffer),
+        .cbnz => |i| try emitCbnz(i.reg, i.target.label, i.size, buffer),
         .bl => |i| switch (i.target) {
             .external_name => |name| try emitBLExternal(name, buffer),
             .label => |label| try emitBL(label, buffer),
@@ -2964,6 +2966,38 @@ fn emitB(label: u32, buffer: *buffer_mod.MachBuffer) !void {
 fn emitBCond(cond: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void {
     // B.cond: 01010100|imm19|0|cond
     const insn: u32 = (0b01010100 << 24) | @as(u32, cond);
+
+    try buffer.put4(insn);
+
+    // Add label use for fixup
+    try buffer.useLabel(
+        MachLabel.new(label),
+        buffer_mod.LabelUseKind.branch19,
+    );
+}
+
+/// CBZ (compare and branch if zero)
+fn emitCbz(reg: Reg, label: u32, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    // CBZ: sf|011010|0|imm19|Rt
+    const sf_bit: u32 = @intCast(sf(size));
+    const rt = hwEnc(reg);
+    const insn: u32 = (sf_bit << 31) | (0b011010 << 25) | rt;
+
+    try buffer.put4(insn);
+
+    // Add label use for fixup
+    try buffer.useLabel(
+        MachLabel.new(label),
+        buffer_mod.LabelUseKind.branch19,
+    );
+}
+
+/// CBNZ (compare and branch if non-zero)
+fn emitCbnz(reg: Reg, label: u32, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    // CBNZ: sf|011010|1|imm19|Rt
+    const sf_bit: u32 = @intCast(sf(size));
+    const rt = hwEnc(reg);
+    const insn: u32 = (sf_bit << 31) | (0b011010 << 25) | (1 << 24) | rt;
 
     try buffer.put4(insn);
 
