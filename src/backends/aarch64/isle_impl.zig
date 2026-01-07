@@ -2359,3 +2359,67 @@ pub fn aarch64_ldumin(
 
     return old;
 }
+
+/// Constructor: aarch64_istore8 - Store 8-bit value (STRB).
+pub fn aarch64_istore8(
+    ctx: *IsleContext,
+    val: Value,
+    addr: Value,
+) !Inst {
+    const val_reg = ctx.getValueReg(val);
+    const addr_reg = ctx.getValueReg(addr);
+    
+    return Inst{ .strb = .{
+        .src = val_reg,
+        .base = addr_reg,
+        .offset = 0,
+    } };
+}
+
+/// Constructor: aarch64_istore16 - Store 16-bit value (STRH).
+pub fn aarch64_istore16(
+    ctx: *IsleContext,
+    val: Value,
+    addr: Value,
+) !Inst {
+    const val_reg = ctx.getValueReg(val);
+    const addr_reg = ctx.getValueReg(addr);
+    
+    return Inst{ .strh = .{
+        .src = val_reg,
+        .base = addr_reg,
+        .offset = 0,
+    } };
+}
+
+/// Constructor: aarch64_istore32 - Store 32-bit value (STR Wd).
+pub fn aarch64_istore32(
+    ctx: *IsleContext,
+    val: Value,
+    addr: Value,
+) !Inst {
+    const val_reg = ctx.getValueReg(val);
+    const addr_reg = ctx.getValueReg(addr);
+    
+    return Inst{ .str_w = .{
+        .src = val_reg,
+        .base = addr_reg,
+        .offset = 0,
+    } };
+}
+
+/// Constructor: aarch64_vstr - Store vector value (STR Qt/Dt).
+pub fn aarch64_vstr(
+    ctx: *IsleContext,
+    val: Value,
+    addr: Value,
+) !Inst {
+    const val_reg = ctx.getValueReg(val);
+    const addr_reg = ctx.getValueReg(addr);
+    
+    return Inst{ .str_q = .{
+        .src = val_reg,
+        .base = addr_reg,
+        .offset = 0,
+    } };
+}
