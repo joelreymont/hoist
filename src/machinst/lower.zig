@@ -100,6 +100,16 @@ pub fn LowerCtx(comptime MachInst: type) type {
         pub fn endBlock(self: *Self) void {
             self.current_block = null;
         }
+
+        /// Get instruction data for an IR instruction.
+        pub fn getInstData(self: *const Self, inst: Inst) *const root.instruction_data.InstructionData {
+            return self.func.dfg.insts.get(inst).?;
+        }
+
+        /// Get the type of an IR value.
+        pub fn getValueType(self: *const Self, value: Value) root.types.Type {
+            return self.func.dfg.valueType(value);
+        }
     };
 }
 

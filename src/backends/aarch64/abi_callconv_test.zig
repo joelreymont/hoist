@@ -114,7 +114,6 @@ test "cold calling convention: same ABI as standard" {
 }
 
 test "darwin platform: X18 never allocated" {
-    const Platform = abi_mod.Platform;
     const CallerSavedTracker = abi_mod.CallerSavedTracker;
 
     // On Darwin, X18 is platform-reserved and never marked as caller-saved
