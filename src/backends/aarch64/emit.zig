@@ -249,17 +249,46 @@ pub fn emitMovRR(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.Mach
 
 /// MOV Xd, #imm (using MOVZ for low 16 bits)
 pub fn emitMovImm(dst: Reg, imm: u64, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const imm16: u16 = @truncate(imm);
+    // Materialize immediate using MOVZ/MOVK sequence
+    // Strategy: MOVZ for first non-zero halfword, MOVK for remaining non-zero halfwords
 
-    // MOVZ Xd, #imm: sf|10100101|hw|imm16|Rd
-    const insn: u32 = (sf_bit << 31) |
-        (0b10100101 << 23) |
-        (@as(u32, imm16) << 5) |
-        rd;
+    const is_64bit = size == .size64;
+    const mask: u64 = if (is_64bit) 0xFFFFFFFFFFFFFFFF else 0xFFFFFFFF;
+    const value = imm & mask;
 
-    try buffer.put4(insn);
+    // Extract 16-bit chunks
+    const hw0: u16 = @truncate(value);
+    const hw1: u16 = @truncate(value >> 16);
+    const hw2: u16 = if (is_64bit) @truncate(value >> 32) else 0;
+    const hw3: u16 = if (is_64bit) @truncate(value >> 48) else 0;
+
+    // Find first non-zero halfword for MOVZ
+    var first_hw: u8 = 0;
+    if (hw3 != 0) {
+        first_hw = 3;
+        try emitMovz(dst, hw3, 48, size, buffer);
+    } else if (hw2 != 0) {
+        first_hw = 2;
+        try emitMovz(dst, hw2, 32, size, buffer);
+    } else if (hw1 != 0) {
+        first_hw = 1;
+        try emitMovz(dst, hw1, 16, size, buffer);
+    } else {
+        // hw0 is the first (or all zeros)
+        try emitMovz(dst, hw0, 0, size, buffer);
+        return;
+    }
+
+    // Emit MOVK for remaining non-zero halfwords
+    if (first_hw > 0 and hw0 != 0) {
+        try emitMovk(dst, hw0, 0, size, buffer);
+    }
+    if (first_hw > 1 and hw1 != 0) {
+        try emitMovk(dst, hw1, 16, size, buffer);
+    }
+    if (first_hw > 2 and hw2 != 0) {
+        try emitMovk(dst, hw2, 32, size, buffer);
+    }
 }
 
 /// MOVZ - Move wide with zero
