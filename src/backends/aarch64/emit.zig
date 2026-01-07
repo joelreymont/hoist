@@ -6387,12 +6387,12 @@ test "emit csinc 32-bit" {
     const r22 = Reg.fromVReg(v22);
     const wr20 = inst_mod.WritableReg.fromReg(r20);
 
-    // CSINC W20, W21, W22, HS (higher or same, unsigned >=)
+    // CSINC W20, W21, W22, CS (carry set, unsigned >=, alias for HS)
     try emit(.{ .csel = .{
         .dst = wr20,
         .src1 = r21,
         .src2 = r22,
-        .cond = .hs,
+        .cond = .cs,
         .size = .size32,
     } }, &buffer);
 
@@ -7439,8 +7439,9 @@ test "emit ret with explicit register" {
     const v15 = inst_mod.VReg.new(15, .int);
     const r15 = Reg.fromVReg(v15);
 
-    // RET X15
-    try emit(.{ .ret = .{ .reg = r15 } }, &buffer);
+    // RET (always uses X30/LR)
+    _ = r15; // unused in this test
+    try emit(.{ .ret = {} }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
     const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
@@ -7471,7 +7472,7 @@ test "cmp is alias for subs with xzr" {
     } }, &buffer1);
 
     // Emit SUBS XZR, X1, X2
-    const xzr = Reg.fromPReg(inst_mod.PReg.xzr);
+    const xzr = Reg.fromPReg(inst_mod.PReg.new(.int, 31));
     const wxzr = inst_mod.WritableReg.fromReg(xzr);
     try emit(.{ .subs_rr = .{
         .dst = wxzr,
@@ -7882,7 +7883,7 @@ test "cmn is alias for adds with xzr" {
     } }, &buffer1);
 
     // Emit ADDS XZR, X3, X4
-    const xzr = Reg.fromPReg(inst_mod.PReg.xzr);
+    const xzr = Reg.fromPReg(inst_mod.PReg.new(.int, 31));
     const wxzr = inst_mod.WritableReg.fromReg(xzr);
     try emit(.{ .adds_rr = .{
         .dst = wxzr,
@@ -7973,9 +7974,10 @@ test "emit ldar_x - verify correct encoding" {
     const wr6 = inst_mod.WritableReg.fromReg(r6);
 
     // LDAR X6, [X7] - encoding: 0xc8dffce6
-    try emit(.{ .ldar_x = .{
+    try emit(.{ .ldar = .{
         .dst = wr6,
         .base = r7,
+        .size = .size64,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8053,9 +8055,10 @@ test "emit stlr_x - verify correct encoding" {
     const r15 = Reg.fromVReg(v15);
 
     // STLR X14, [X15] - encoding: 0xc89ffdee
-    try emit(.{ .stlr_x = .{
+    try emit(.{ .stlr = .{
         .src = r14,
         .base = r15,
+        .size = .size64,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8263,7 +8266,7 @@ test "emit vec_add 4s" {
         .dst = wr0,
         .src1 = r1,
         .src2 = r2,
-        .size = .v4s,
+        .size = .size32x4,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8325,7 +8328,7 @@ test "emit vec_add 8b" {
         .dst = wr10,
         .src1 = r11,
         .src2 = r12,
-        .size = .v8b,
+        .size = .size8x8,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8360,7 +8363,7 @@ test "emit vec_sub 8h" {
         .dst = wr5,
         .src1 = r6,
         .src2 = r7,
-        .size = .v8h,
+        .size = .size16x8,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8411,7 +8414,7 @@ test "emit vec_mul 2s" {
         .dst = wr3,
         .src1 = r4,
         .src2 = r5,
-        .size = .v2s,
+        .size = .size32x2,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8459,7 +8462,7 @@ test "emit vec_mul 16b" {
         .dst = wr15,
         .src1 = r16,
         .src2 = r17,
-        .size = .v16b,
+        .size = .size8x16,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8494,7 +8497,7 @@ test "emit vec_add 2d" {
         .dst = wr20,
         .src1 = r21,
         .src2 = r22,
-        .size = .v2d,
+        .size = .size64x2,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8523,7 +8526,7 @@ test "emit sxtb 32-bit" {
     try emit(.{ .sxtb = .{
         .dst = wr0,
         .src = r1,
-        .size = .size32,
+        .dst_size = .size32,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8549,7 +8552,7 @@ test "emit sxtb 64-bit" {
     try emit(.{ .sxtb = .{
         .dst = wr2,
         .src = r3,
-        .size = .size64,
+        .dst_size = .size64,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
