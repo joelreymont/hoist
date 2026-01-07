@@ -2272,6 +2272,13 @@
 (rule (lower (f64const (u64_from_ieee64 n)))
       (constant_f64 n))
 
+;; vconst: 128-bit vector constant
+(decl constant_v128 (Immediate) Aarch64Inst)
+(extern constructor constant_v128 constant_v128)
+
+(rule (lower (vconst imm))
+      (constant_v128 imm))
+
 ;; Helper extractors
 
 ;; Immediate value extractors (extern - implemented in isle_helpers.zig)

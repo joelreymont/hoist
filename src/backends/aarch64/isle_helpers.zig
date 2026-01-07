@@ -2140,6 +2140,89 @@ pub fn constant_f64(bits: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     } };
 }
 
+pub fn constant_v128(imm: u128, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+
+    // Strategy: try optimized encodings first, fall back to load from constant pool
+
+    // 1. Check if all zeros - use EOR Vd, Vd, Vd
+    if (imm == 0) {
+        // EOR (vector XOR) with self produces zero
+        return Inst{ .vec_eor = .{
+            .dst = dst,
+            .src1 = dst.toReg(),
+            .src2 = dst.toReg(),
+            .size = Inst.FpuOperandSize.size128,
+        } };
+    }
+
+    // 2. Check if splat of single byte
+    const first_byte: u8 = @truncate(imm);
+    var is_splat_byte = true;
+    var i: u7 = 1;
+    while (i < 16) : (i += 1) {
+        const byte: u8 = @truncate(imm >> (i * 8));
+        if (byte != first_byte) {
+            is_splat_byte = false;
+            break;
+        }
+    }
+
+    if (is_splat_byte) {
+        // Use DUP to splat the byte value
+        const tmp_gpr = lower_mod.WritableReg.allocReg(.int, ctx);
+        try ctx.emit(Inst{ .mov_imm = .{
+            .dst = tmp_gpr,
+            .imm = first_byte,
+            .is_64 = false,
+        } });
+
+        return Inst{ .vec_dup = .{
+            .dst = dst,
+            .src = tmp_gpr.toReg(),
+            .size = Inst.VecElemSize.size8x16,
+        } };
+    }
+
+    // 4. Fall back to constant pool load
+    // TODO: Need constant pool infrastructure
+    // For now, load two 64-bit halves
+    const lo: u64 = @truncate(imm);
+    const hi: u64 = @truncate(imm >> 64);
+
+    // Load low 64 bits
+    const tmp_gpr_lo = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .mov_imm = .{
+        .dst = tmp_gpr_lo,
+        .imm = lo,
+        .is_64 = true,
+    } });
+
+    // Load high 64 bits
+    const tmp_gpr_hi = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .mov_imm = .{
+        .dst = tmp_gpr_hi,
+        .imm = hi,
+        .is_64 = true,
+    } });
+
+    // Move to vector register (low half)
+    try ctx.emit(Inst{ .fmov_from_gpr = .{
+        .dst = dst,
+        .src = tmp_gpr_lo.toReg(),
+        .size = .size64,
+    } });
+
+    // Insert high 64 bits into lane 1
+    return Inst{ .vec_insert_lane = .{
+        .dst = dst,
+        .vec = dst.toReg(),
+        .src = tmp_gpr_hi.toReg(),
+        .lane = 1,
+        .size = Inst.VecElemSize.size64x2,
+    } };
+}
+
 /// Stack address computation (ISLE constructor)
 pub fn aarch64_stack_addr(stack_slot: StackSlot, offset: i32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Compute: SP + slot_offset + offset
