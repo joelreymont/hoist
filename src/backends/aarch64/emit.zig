@@ -193,7 +193,14 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .mrs => |i| try emitMrs(i.dst.toReg(), i.sysreg, buffer),
         .msr => |i| try emitMsr(i.sysreg, i.src, buffer),
 
-        else => @panic("Unimplemented instruction in emit"),
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     }
 }
 
@@ -10610,7 +10617,14 @@ fn emitVecFadd(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
         .size64x2 => 1,
-        else => unreachable, // Only .2s/.4s/.2d valid for FP
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (@as(u32, q) << 30) |
@@ -10638,7 +10652,14 @@ fn emitVecFsub(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
         .size64x2 => 1,
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (@as(u32, q) << 30) |
@@ -10666,7 +10687,14 @@ fn emitVecFmul(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
         .size64x2 => 1,
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (@as(u32, q) << 30) |
@@ -10694,7 +10722,14 @@ fn emitVecFdiv(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
         .size64x2 => 1,
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (@as(u32, q) << 30) |
@@ -11256,7 +11291,14 @@ fn emitSxtl(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachB
         .size16x8 => 0b0001, // 8b -> 8h
         .size32x4 => 0b0010, // 4h -> 4s
         .size64x2 => 0b0100, // 2s -> 2d
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (0b0 << 31) |
@@ -11282,7 +11324,14 @@ fn emitUxtl(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachB
         .size16x8 => 0b0001,
         .size32x4 => 0b0010,
         .size64x2 => 0b0100,
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (0b0 << 31) |
@@ -11311,7 +11360,14 @@ fn emitSaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buf
         .size16x8 => 0b00, // 8b + 8b -> 8h
         .size32x4 => 0b01, // 4h + 4h -> 4s
         .size64x2 => 0b10, // 2s + 2s -> 2d
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (0b0 << 31) |
@@ -11339,7 +11395,14 @@ fn emitUaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buf
         .size16x8 => 0b00,
         .size32x4 => 0b01,
         .size64x2 => 0b10,
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (0b0 << 31) |
@@ -11367,7 +11430,14 @@ fn emitXtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBu
         .size16x8 => 0b00, // 8h -> 8b
         .size32x4 => 0b01, // 4s -> 4h
         .size64x2 => 0b10, // 2d -> 2s
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (0b0 << 31) |
@@ -11393,7 +11463,14 @@ fn emitSqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mach
         .size16x8 => 0b00,
         .size32x4 => 0b01,
         .size64x2 => 0b10,
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (0b0 << 31) |
@@ -11419,7 +11496,14 @@ fn emitUqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mach
         .size16x8 => 0b00,
         .size32x4 => 0b01,
         .size64x2 => 0b10,
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (0b0 << 31) |
@@ -11914,7 +11998,14 @@ fn emitVecFcmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
         .size64x2 => 1,
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (0b0 << 31) |
@@ -11939,7 +12030,14 @@ fn emitVecFcmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
         .size64x2 => 1,
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111001 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
     try buffer.put4(insn);
@@ -11952,7 +12050,14 @@ fn emitVecFcmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
         .size64x2 => 1,
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b0 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111001 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
     try buffer.put4(insn);
@@ -11965,7 +12070,14 @@ fn emitVecFmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
         .size64x2 => 1,
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111101 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
     try buffer.put4(insn);
@@ -11978,7 +12090,14 @@ fn emitVecFmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
         .size64x2 => 1,
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b0 << 23) | (@as(u32, sz) << 22) | (0b1 << 21) | (@as(u32, rm) << 16) | (0b111101 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
     try buffer.put4(insn);
@@ -11990,7 +12109,14 @@ fn emitVecFabs(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Ma
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
         .size64x2 => 1,
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b0 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b10000 << 17) | (0b011110 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
     try buffer.put4(insn);
@@ -12002,7 +12128,14 @@ fn emitVecFneg(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Ma
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
         .size64x2 => 1,
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
     const insn: u32 = (0b0 << 31) | (@as(u32, q) << 30) | (0b1 << 29) | (0b01110 << 24) | (0b1 << 23) | (@as(u32, sz) << 22) | (0b10000 << 17) | (0b011110 << 10) | (@as(u32, rn) << 5) | @as(u32, rd);
     try buffer.put4(insn);
@@ -12133,7 +12266,14 @@ fn emitVecSshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VecElemSize, high: 
         .size16x8 => @as(u7, 0b0001 << 3) | @as(u7, @intCast(shift_amt & 0x7)), // 8->16
         .size32x4 => @as(u7, 0b0010 << 3) | @as(u7, @intCast(shift_amt & 0xF)), // 16->32
         .size64x2 => @as(u7, 0b0100 << 3) | @as(u7, @intCast(shift_amt & 0x1F)), // 32->64
-        else => unreachable, // Invalid for SSHLL
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (@as(u32, q) << 30) |
@@ -12158,7 +12298,14 @@ fn emitVecUshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VecElemSize, high: 
         .size16x8 => @as(u7, 0b0001 << 3) | @as(u7, @intCast(shift_amt & 0x7)), // 8->16
         .size32x4 => @as(u7, 0b0010 << 3) | @as(u7, @intCast(shift_amt & 0xF)), // 16->32
         .size64x2 => @as(u7, 0b0100 << 3) | @as(u7, @intCast(shift_amt & 0x1F)), // 32->64
-        else => unreachable, // Invalid for USHLL
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (@as(u32, q) << 30) |
@@ -12185,7 +12332,14 @@ fn emitVecSqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, high: bool, buffer: *
         .size8x8, .size8x16 => 0b0001, // 16->8
         .size16x4, .size16x8 => 0b0010, // 32->16
         .size32x2, .size32x4 => 0b0100, // 64->32
-        else => unreachable, // Invalid for SQXTN
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (@as(u32, q) << 30) |
@@ -12209,7 +12363,14 @@ fn emitVecSqxtun(dst: Reg, src: Reg, vec_size: VecElemSize, high: bool, buffer: 
         .size8x8, .size8x16 => 0b0001, // 16->8
         .size16x4, .size16x8 => 0b0010, // 32->16
         .size32x2, .size32x4 => 0b0100, // 64->32
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (@as(u32, q) << 30) |
@@ -12233,7 +12394,14 @@ fn emitVecUqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, high: bool, buffer: *
         .size8x8, .size8x16 => 0b0001, // 16->8
         .size16x4, .size16x8 => 0b0010, // 32->16
         .size32x2, .size32x4 => 0b0100, // 64->32
-        else => unreachable,
+        // Placeholders/pseudo-instructions
+        .epilogue_placeholder => {}, // No-op placeholder
+        .data => |i| try buffer.data.appendSlice(buffer.allocator, i.bytes),
+
+        else => |tag| {
+            std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
+            @panic("Unimplemented instruction in emit");
+        },
     };
 
     const insn: u32 = (@as(u32, q) << 30) |
