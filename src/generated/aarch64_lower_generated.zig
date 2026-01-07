@@ -2135,6 +2135,28 @@ pub fn lower(
                     .dst_size = dst_size,
                 } });
                 return true;
+            } else if (data.opcode == .fpromote) {
+                // Promote F32 to F64
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                try ctx.emit(Inst{ .fcvt_f32_to_f64 = .{
+                    .dst = dst,
+                    .src = src_reg,
+                } });
+                return true;
+            } else if (data.opcode == .fdemote) {
+                // Demote F64 to F32
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                try ctx.emit(Inst{ .fcvt_f64_to_f32 = .{
+                    .dst = dst,
+                    .src = src_reg,
+                } });
+                return true;
             }
         },
         .binary_imm64 => |data| {
