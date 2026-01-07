@@ -529,35 +529,6 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
     var buffer = buffer_mod.MachBuffer.init(ctx.allocator);
     defer buffer.deinit();
 
-    // Helper to rewrite a register operand
-    const rewriteReg = struct {
-        fn call(reg: *Reg, alloc: anytype) void {
-            if (reg.toVReg()) |vreg| {
-                if (alloc.getAllocation(vreg)) |allocation| {
-                    const preg = switch (allocation) {
-                        .reg => |r| r,
-                        .spill => @panic("Spilling not yet implemented in emission"),
-                    };
-                    reg.* = Reg.fromPReg(preg);
-                }
-            }
-        }
-    }.call;
-
-    const rewriteWritableReg = struct {
-        fn call(wreg: *WritableReg, alloc: anytype) void {
-            if (wreg.toReg().toVReg()) |vreg| {
-                if (alloc.getAllocation(vreg)) |allocation| {
-                    const preg = switch (allocation) {
-                        .reg => |r| r,
-                        .spill => @panic("Spilling not yet implemented in emission"),
-                    };
-                    wreg.* = WritableReg.fromReg(Reg.fromPReg(preg));
-                }
-            }
-        }
-    }.call;
-
     // Emit each instruction with vregs rewritten to pregs
     for (vcode.insns.items) |inst| {
         var rewritten_inst = inst;
