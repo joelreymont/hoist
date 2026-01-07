@@ -1652,6 +1652,20 @@
       (let ((cmp_inst Aarch64Inst (aarch64_cmp_rr cmp_ty x y cc)))
             (aarch64_csel ty true_val false_val cmp_inst cc)))
 
+;; TODO: Add CCMP patterns for chained comparisons
+;; Pattern: select with AND of two icmp conditions
+;; Example: select((a < b) && (c < d), true_val, false_val)
+;; Lower to: CMP a, b; CCMP c, d, #nzcv, cond; CSEL
+;;
+;; (rule (lower (select ty (band (icmp cc1 cmp_ty1 x1 y1) (icmp cc2 cmp_ty2 x2 y2)) true_val false_val))
+;;       ;; First comparison sets flags normally
+;;       ;; Second comparison only executes if first succeeded (conditional on cc1)
+;;       ;; Need to determine nzcv value to set if condition fails
+;;       (let ((cmp1 Aarch64Inst (aarch64_cmp_rr cmp_ty1 x1 y1 cc1))
+;;             (ccmp2 Aarch64Inst (aarch64_ccmp_rr cmp_ty2 x2 y2 0 cc1))  ;; nzcv=0 means all flags clear
+;;             (result (aarch64_csel ty true_val false_val ccmp2 cc2))))
+;;       result))
+
 ;;;; Rules for `select_spectre_guard` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; I64 condition with Spectre mitigation

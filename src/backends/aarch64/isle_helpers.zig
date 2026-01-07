@@ -298,6 +298,35 @@ pub fn aarch64_cmn_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Valu
     } };
 }
 
+/// Constructor: Create CCMP instruction (register, register).
+/// Conditional compare - compares if condition holds, else sets flags to nzcv.
+pub fn aarch64_ccmp_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Value, nzcv: u4, cond: root.aarch64_inst.CondCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const size = typeToOperandSize(ty);
+    const reg_x = try getValueReg(ctx, x);
+    const reg_y = try getValueReg(ctx, y);
+    return Inst{ .ccmp = .{
+        .src1 = reg_x,
+        .src2 = reg_y,
+        .nzcv = nzcv,
+        .cond = cond,
+        .size = size,
+    } };
+}
+
+/// Constructor: Create CCMP instruction (register, immediate).
+/// Conditional compare with 5-bit immediate.
+pub fn aarch64_ccmp_imm(ty: root.types.Type, x: lower_mod.Value, imm: u5, nzcv: u4, cond: root.aarch64_inst.CondCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const size = typeToOperandSize(ty);
+    const reg_x = try getValueReg(ctx, x);
+    return Inst{ .ccmp_imm = .{
+        .src = reg_x,
+        .imm = imm,
+        .nzcv = nzcv,
+        .cond = cond,
+        .size = size,
+    } };
+}
+
 /// Constructor: Create CMN instruction (register, immediate).
 /// CMN is an alias for ADDS with XZR as destination.
 pub fn aarch64_cmn_imm(ty: root.types.Type, x: lower_mod.Value, imm: i64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
