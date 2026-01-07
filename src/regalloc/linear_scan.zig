@@ -94,6 +94,10 @@ pub const LinearScanAllocator = struct {
     /// Next available spill slot offset (in bytes)
     next_spill_offset: u32,
 
+    /// Register allocation hints: preferred physical register for each virtual register
+    /// Used to improve allocation quality by preferring certain registers when available
+    hints: std.AutoHashMap(u32, machinst.PReg),
+
     allocator: std.mem.Allocator,
 
     /// Initialize the allocator with the number of physical registers available
@@ -128,6 +132,7 @@ pub const LinearScanAllocator = struct {
             .num_float_regs = num_float_regs,
             .num_vector_regs = num_vector_regs,
             .next_spill_offset = 0,
+            .hints = std.AutoHashMap(u32, machinst.PReg).init(allocator),
             .allocator = allocator,
         };
     }
@@ -138,6 +143,7 @@ pub const LinearScanAllocator = struct {
         self.free_int_regs.deinit();
         self.free_float_regs.deinit();
         self.free_vector_regs.deinit();
+        self.hints.deinit();
     }
 
     /// Perform linear scan register allocation.
@@ -244,7 +250,19 @@ pub const LinearScanAllocator = struct {
     ) !?machinst.PReg {
         const free_regs = self.getFreeRegs(range.reg_class);
 
-        // Find first free register
+        // Check hint first if one exists
+        if (self.hints.get(range.vreg.index)) |hint| {
+            // Hint must be the same register class
+            if (hint.class == range.reg_class and free_regs.isSet(hint.index)) {
+                // Hint is available! Use it
+                try result.assign(range.vreg, hint);
+                free_regs.unset(hint.index);
+                try self.active.append(self.allocator, range);
+                return hint;
+            }
+        }
+
+        // No hint or hint unavailable - find first free register
         var reg_idx: u32 = 0;
         const num_regs = self.getNumRegs(range.reg_class);
         while (reg_idx < num_regs) : (reg_idx += 1) {
@@ -345,6 +363,17 @@ pub const LinearScanAllocator = struct {
             .float => self.num_float_regs,
             .vector => self.num_vector_regs,
         };
+    }
+
+    /// Set a register allocation hint for a virtual register.
+    /// The allocator will prefer the hinted physical register if it's available.
+    pub fn setHint(self: *LinearScanAllocator, vreg: machinst.VReg, preg: machinst.PReg) !void {
+        try self.hints.put(vreg.index, preg);
+    }
+
+    /// Get the hint for a virtual register, if one exists.
+    pub fn getHint(self: *LinearScanAllocator, vreg: machinst.VReg) ?machinst.PReg {
+        return self.hints.get(vreg.index);
     }
 };
 
@@ -616,4 +645,51 @@ test "LinearScanAllocator out of registers error" {
     // Should return OutOfRegisters error
     const result_or_err = lsa.allocate(&info);
     try std.testing.expectError(error.OutOfRegisters, result_or_err);
+}
+
+test "LinearScanAllocator register hints" {
+    const allocator = std.testing.allocator;
+
+    var lsa = try LinearScanAllocator.init(allocator, 31, 32, 32);
+    defer lsa.deinit();
+
+    var info = liveness.LivenessInfo.init(allocator);
+    defer info.deinit();
+
+    const v0 = machinst.VReg.new(0, .int);
+    const v1 = machinst.VReg.new(1, .int);
+
+    // Non-overlapping ranges
+    try info.addRange(.{
+        .vreg = v0,
+        .start_inst = 0,
+        .end_inst = 10,
+        .reg_class = .int,
+    });
+
+    try info.addRange(.{
+        .vreg = v1,
+        .start_inst = 15,
+        .end_inst = 25,
+        .reg_class = .int,
+    });
+
+    // Set hint for v1 to use register X5
+    const hint_preg = machinst.PReg.new(.int, 5);
+    try lsa.setHint(v1, hint_preg);
+
+    // Verify hint was set
+    const retrieved_hint = lsa.getHint(v1);
+    try std.testing.expect(retrieved_hint != null);
+    try std.testing.expectEqual(hint_preg.index, retrieved_hint.?.index);
+    try std.testing.expectEqual(hint_preg.class, retrieved_hint.?.class);
+
+    // Allocate - v1 should get hint register X5
+    var result = try lsa.allocate(&info);
+    defer result.deinit();
+
+    const v1_preg = result.getPhysReg(v1);
+    try std.testing.expect(v1_preg != null);
+    try std.testing.expectEqual(@as(u32, 5), v1_preg.?.index);
+    try std.testing.expectEqual(machinst.RegClass.int, v1_preg.?.class);
 }
