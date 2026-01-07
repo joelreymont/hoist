@@ -2794,61 +2794,109 @@ fn vectorSizeFromType(ty: types.Type) emit.VectorSize {
 
 /// Call operations (ISLE constructors)
 pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
-    // Marshal arguments according to ABI
-    // TODO: Full ABI argument marshaling
-    _ = sig_ref;
-    _ = args;
+    _ = sig_ref; // TODO: Use to validate argument count and types
+
+    // AAPCS64 calling convention:
+    // - First 8 integer args in X0-X7
+    // - First 8 FP args in V0-V7
+    // - Remaining args on stack (not yet supported)
+
+    // TODO: Stack arguments for calls with >8 args
+    // For now, only support up to 8 integer arguments
+    if (args.len > 8) {
+        return error.TooManyCallArguments;
+    }
+
+    // Marshal arguments to ABI registers
+    // For now, assume all arguments are integers and place them in X0-X7
+    for (args, 0..) |arg_value, i| {
+        const arg_reg = try ctx.getValueReg(arg_value, .int);
+        const abi_reg_num: u8 = @intCast(i);
+        const abi_reg = Reg.gpr(abi_reg_num);
+
+        // Emit move to ABI register if not already there
+        if (!arg_reg.toReg().eq(abi_reg)) {
+            try ctx.emit(Inst{ .mov_rr = .{
+                .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                .src = arg_reg.toReg(),
+                .size = .size64,
+            } });
+        }
+    }
 
     // Direct call: BL (branch with link)
     try ctx.emit(Inst{ .bl = .{ .target = .{ .symbol = name } } });
 
-    // Return value in x0 (simplified - should handle multi-return)
+    // Return value in X0 (AAPCS64 convention)
     return lower_mod.ValueRegs.one(Reg.gpr(0));
 }
 
 pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
-    // Marshal arguments according to ABI
-    // TODO: Full ABI argument marshaling
-    _ = sig_ref;
-    _ = args;
+    _ = sig_ref; // TODO: Use to validate argument count and types
 
+    // AAPCS64 calling convention:
+    // - First 8 integer args in X0-X7
+    // - First 8 FP args in V0-V7
+    // - Remaining args on stack (not yet supported)
+
+    // TODO: Stack arguments for calls with >8 args
+    // For now, only support up to 8 integer arguments
+    if (args.len > 8) {
+        return error.TooManyCallArguments;
+    }
+
+    // Get function pointer into a temporary register (not X0-X7 to avoid conflicts)
+    // Use X9 as temp (caller-saved, safe to use)
     const ptr_reg = try ctx.getValueReg(ptr, .int);
+    const temp_ptr = Reg.gpr(9); // X9
+    if (!ptr_reg.toReg().eq(temp_ptr)) {
+        try ctx.emit(Inst{ .mov_rr = .{
+            .dst = lower_mod.WritableReg.fromReg(temp_ptr),
+            .src = ptr_reg.toReg(),
+            .size = .size64,
+        } });
+    }
+
+    // Marshal arguments to ABI registers
+    // For now, assume all arguments are integers and place them in X0-X7
+    for (args, 0..) |arg_value, i| {
+        const arg_reg = try ctx.getValueReg(arg_value, .int);
+        const abi_reg_num: u8 = @intCast(i);
+        const abi_reg = Reg.gpr(abi_reg_num);
+
+        // Emit move to ABI register if not already there
+        if (!arg_reg.toReg().eq(abi_reg)) {
+            try ctx.emit(Inst{ .mov_rr = .{
+                .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                .src = arg_reg.toReg(),
+                .size = .size64,
+            } });
+        }
+    }
 
     // Indirect call: BLR (branch with link to register)
-    try ctx.emit(Inst{ .blr = .{ .target = ptr_reg } });
+    try ctx.emit(Inst{ .blr = .{ .target = temp_ptr } });
 
-    // Return value in x0 (simplified - should handle multi-return)
+    // Return value in X0 (AAPCS64 convention)
     return lower_mod.ValueRegs.one(Reg.gpr(0));
 }
 
 pub fn aarch64_try_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
     // Function call with exception handling support
-    // For now, identical to regular call - exception handling requires landing pad infrastructure
+    // For now, uses same ABI marshaling as regular call
     // TODO: Wire exception edge to landing pad block when available
-    _ = sig_ref;
-    _ = args;
 
-    // Direct call: BL (branch with link)
-    try ctx.emit(Inst{ .bl = .{ .target = .{ .symbol = name } } });
-
-    // Return value in x0 (simplified)
-    return lower_mod.ValueRegs.one(Reg.gpr(0));
+    // Delegate to regular call implementation
+    return aarch64_call(sig_ref, name, args, ctx);
 }
 
 pub fn aarch64_try_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
     // Indirect call with exception handling support
-    // For now, identical to regular indirect call
+    // For now, uses same ABI marshaling as regular indirect call
     // TODO: Wire exception edge to landing pad block when available
-    _ = sig_ref;
-    _ = args;
 
-    const ptr_reg = try ctx.getValueReg(ptr, .int);
-
-    // Indirect call: BLR (branch with link to register)
-    try ctx.emit(Inst{ .blr = .{ .target = ptr_reg } });
-
-    // Return value in x0 (simplified)
-    return lower_mod.ValueRegs.one(Reg.gpr(0));
+    // Delegate to regular indirect call implementation
+    return aarch64_call_indirect(sig_ref, ptr, args, ctx);
 }
 
 /// Shuffle pattern extractors (ISLE extern extractors)
