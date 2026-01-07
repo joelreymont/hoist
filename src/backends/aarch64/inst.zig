@@ -969,13 +969,51 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
-    /// Compare and swap (CAS).
+    /// Compare and swap (CAS) - no ordering.
     cas: struct {
         compare: Reg,
         swap: Reg,
         dst: WritableReg,
         base: Reg,
         size: OperandSize,
+    },
+
+    /// Compare and swap acquire (CASA).
+    casa: struct {
+        compare: Reg,
+        swap: Reg,
+        dst: WritableReg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// Compare and swap release (CASL).
+    casl: struct {
+        compare: Reg,
+        swap: Reg,
+        dst: WritableReg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// Compare and swap acquire+release (CASAL).
+    casal: struct {
+        compare: Reg,
+        swap: Reg,
+        dst: WritableReg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// Compare and swap pair (CASP) - 128-bit atomic.
+    casp: struct {
+        compare_lo: Reg,  // Must be even register (e.g., X0, X2, X4...)
+        compare_hi: Reg,  // Must be odd register (compare_lo + 1)
+        swap_lo: Reg,     // Must be even register
+        swap_hi: Reg,     // Must be odd register (swap_lo + 1)
+        dst_lo: WritableReg,
+        dst_hi: WritableReg,
+        base: Reg,
     },
 
     /// Data memory barrier (DMB).
@@ -2029,6 +2067,10 @@ pub const Inst = union(enum) {
             .ldumin => |i| try writer.print("ldumin.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
             .swp => |i| try writer.print("swp.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
             .cas => |i| try writer.print("cas.{} {}, {}, {}, [{}]", .{ i.size, i.compare, i.swap, i.dst, i.base }),
+            .casa => |i| try writer.print("casa.{} {}, {}, {}, [{}]", .{ i.size, i.compare, i.swap, i.dst, i.base }),
+            .casl => |i| try writer.print("casl.{} {}, {}, {}, [{}]", .{ i.size, i.compare, i.swap, i.dst, i.base }),
+            .casal => |i| try writer.print("casal.{} {}, {}, {}, [{}]", .{ i.size, i.compare, i.swap, i.dst, i.base }),
+            .casp => |i| try writer.print("casp {}, {}, {}, {}, [{}]", .{ i.compare_lo, i.compare_hi, i.swap_lo, i.swap_hi, i.base }),
             .dmb => |i| try writer.print("dmb {}", .{i.option}),
             .dsb => |i| try writer.print("dsb {}", .{i.option}),
             .isb => try writer.print("isb", .{}),
@@ -2632,6 +2674,33 @@ pub const Inst = union(enum) {
                 try collector.regUse(i.swap);
                 try collector.regUse(i.base);
                 try collector.regDef(i.dst);
+            },
+            .casa => |*i| {
+                try collector.regUse(i.compare);
+                try collector.regUse(i.swap);
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .casl => |*i| {
+                try collector.regUse(i.compare);
+                try collector.regUse(i.swap);
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .casal => |*i| {
+                try collector.regUse(i.compare);
+                try collector.regUse(i.swap);
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .casp => |*i| {
+                try collector.regUse(i.compare_lo);
+                try collector.regUse(i.compare_hi);
+                try collector.regUse(i.swap_lo);
+                try collector.regUse(i.swap_hi);
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst_lo);
+                try collector.regDef(i.dst_hi);
             },
             .madd => |*i| {
                 try collector.regUse(i.src1);
