@@ -230,6 +230,40 @@ pub fn lower(
                 return true;
             }
         },
+        .unary => |data| {
+            if (data.opcode == .@"return") {
+                // Return with value - move to X0 return register
+                const ret_val = data.arg;
+                const ret_reg = Reg.fromVReg(try ctx.getValueReg(ret_val, .int));
+
+                // Move return value to X0
+                const x0 = Reg.fromPReg(inst_mod.PReg.new(.int, 0));
+                const dst_x0 = WritableReg.fromReg(x0);
+
+                // Get type for size
+                const ty = ctx.getValueType(ret_val);
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Emit mov to X0 if not already there
+                try ctx.emit(Inst{ .mov_rr = .{
+                    .dst = dst_x0,
+                    .src = ret_reg,
+                    .size = size,
+                } });
+
+                // Emit ret instruction
+                try ctx.emit(Inst.ret);
+
+                return true;
+            }
+        },
+        .nullary => |data| {
+            if (data.opcode == .@"return") {
+                // Void return - just emit ret instruction
+                try ctx.emit(Inst.ret);
+                return true;
+            }
+        },
         else => {},
     }
 
