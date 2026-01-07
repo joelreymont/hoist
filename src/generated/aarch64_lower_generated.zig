@@ -959,6 +959,186 @@ pub fn lower(
                 } });
 
                 return true;
+            } else if (data.opcode == .iadd_imm) {
+                // Integer add with immediate
+                const src = data.arg;
+                const imm = data.imm.value;
+
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Check if immediate fits in 12-bit encoding (0-4095)
+                if (imm >= 0 and imm <= 4095) {
+                    try ctx.emit(Inst{ .add_imm = .{
+                        .dst = dst,
+                        .src = src_reg,
+                        .imm = @intCast(imm),
+                        .size = size,
+                    } });
+                } else {
+                    // Materialize immediate in register and use add_rr
+                    const imm_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
+                    const imm_abs = if (imm < 0) @as(u64, @bitCast(-imm)) else @as(u64, @intCast(imm));
+
+                    if (imm_abs <= 0xFFFF) {
+                        try ctx.emit(Inst{ .movz = .{
+                            .dst = imm_reg,
+                            .imm = @truncate(imm_abs),
+                            .shift = 0,
+                            .size = size,
+                        } });
+                        if (imm < 0) {
+                            const neg_dst = WritableReg.fromReg(imm_reg.toReg());
+                            try ctx.emit(Inst{ .neg_rr = .{
+                                .dst = neg_dst,
+                                .src = imm_reg.toReg(),
+                                .size = size,
+                            } });
+                        }
+                    } else {
+                        // Multi-chunk materialization
+                        const chunks = [_]u16{
+                            @truncate(imm_abs),
+                            @truncate(imm_abs >> 16),
+                            @truncate(imm_abs >> 32),
+                            @truncate(imm_abs >> 48),
+                        };
+
+                        var first = true;
+                        for (chunks, 0..) |chunk, i| {
+                            if (chunk != 0 or first) {
+                                if (first) {
+                                    try ctx.emit(Inst{ .movz = .{
+                                        .dst = imm_reg,
+                                        .imm = chunk,
+                                        .shift = @intCast(i * 16),
+                                        .size = size,
+                                    } });
+                                    first = false;
+                                } else {
+                                    try ctx.emit(Inst{ .movk = .{
+                                        .dst = imm_reg,
+                                        .imm = chunk,
+                                        .shift = @intCast(i * 16),
+                                        .size = size,
+                                    } });
+                                }
+                            }
+                        }
+
+                        if (imm < 0) {
+                            const neg_dst = WritableReg.fromReg(imm_reg.toReg());
+                            try ctx.emit(Inst{ .neg_rr = .{
+                                .dst = neg_dst,
+                                .src = imm_reg.toReg(),
+                                .size = size,
+                            } });
+                        }
+                    }
+
+                    // Emit add with register
+                    try ctx.emit(Inst{ .add_rr = .{
+                        .dst = dst,
+                        .src1 = src_reg,
+                        .src2 = imm_reg.toReg(),
+                        .size = size,
+                    } });
+                }
+
+                return true;
+            } else if (data.opcode == .isub_imm) {
+                // Integer subtract with immediate
+                const src = data.arg;
+                const imm = data.imm.value;
+
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Check if immediate fits in 12-bit encoding (0-4095)
+                if (imm >= 0 and imm <= 4095) {
+                    try ctx.emit(Inst{ .sub_imm = .{
+                        .dst = dst,
+                        .src = src_reg,
+                        .imm = @intCast(imm),
+                        .size = size,
+                    } });
+                } else {
+                    // Materialize immediate and use sub_rr
+                    const imm_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
+                    const imm_abs = if (imm < 0) @as(u64, @bitCast(-imm)) else @as(u64, @intCast(imm));
+
+                    if (imm_abs <= 0xFFFF) {
+                        try ctx.emit(Inst{ .movz = .{
+                            .dst = imm_reg,
+                            .imm = @truncate(imm_abs),
+                            .shift = 0,
+                            .size = size,
+                        } });
+                        if (imm < 0) {
+                            const neg_dst = WritableReg.fromReg(imm_reg.toReg());
+                            try ctx.emit(Inst{ .neg_rr = .{
+                                .dst = neg_dst,
+                                .src = imm_reg.toReg(),
+                                .size = size,
+                            } });
+                        }
+                    } else {
+                        // Multi-chunk materialization
+                        const chunks = [_]u16{
+                            @truncate(imm_abs),
+                            @truncate(imm_abs >> 16),
+                            @truncate(imm_abs >> 32),
+                            @truncate(imm_abs >> 48),
+                        };
+
+                        var first = true;
+                        for (chunks, 0..) |chunk, i| {
+                            if (chunk != 0 or first) {
+                                if (first) {
+                                    try ctx.emit(Inst{ .movz = .{
+                                        .dst = imm_reg,
+                                        .imm = chunk,
+                                        .shift = @intCast(i * 16),
+                                        .size = size,
+                                    } });
+                                    first = false;
+                                } else {
+                                    try ctx.emit(Inst{ .movk = .{
+                                        .dst = imm_reg,
+                                        .imm = chunk,
+                                        .shift = @intCast(i * 16),
+                                        .size = size,
+                                    } });
+                                }
+                            }
+                        }
+
+                        if (imm < 0) {
+                            const neg_dst = WritableReg.fromReg(imm_reg.toReg());
+                            try ctx.emit(Inst{ .neg_rr = .{
+                                .dst = neg_dst,
+                                .src = imm_reg.toReg(),
+                                .size = size,
+                            } });
+                        }
+                    }
+
+                    // Emit sub with register
+                    try ctx.emit(Inst{ .sub_rr = .{
+                        .dst = dst,
+                        .src1 = src_reg,
+                        .src2 = imm_reg.toReg(),
+                        .size = size,
+                    } });
+                }
+
+                return true;
             }
         },
         .stack_load => |data| {
