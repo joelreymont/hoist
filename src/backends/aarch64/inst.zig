@@ -1456,6 +1456,14 @@ pub const Inst = union(enum) {
         size: FpuOperandSize,
     },
 
+    /// Load single element and replicate to all lanes (LD1R {Vt.<T>}, [Xn]).
+    /// Loads a single element from memory and replicates it across all vector lanes.
+    ld1r: struct {
+        dst: WritableReg,
+        base: Reg,
+        size: VecElemSize,
+    },
+
     /// Store FP/SIMD pair (STP Vt1, Vt2, [Xn, #offset]).
     vstp: struct {
         src1: Reg,
@@ -2203,6 +2211,7 @@ pub const Inst = union(enum) {
             .vstr => |i| try writer.print("vstr.{} {}, [{}, #{d}]", .{ i.size, i.src, i.base, i.offset }),
             .vldp => |i| try writer.print("vldp.{} {}, {}, [{}, #{d}]", .{ i.size, i.dst1, i.dst2, i.base, i.offset }),
             .vstp => |i| try writer.print("vstp.{} {}, {}, [{}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
+            .ld1r => |i| try writer.print("ld1r.{} {}, [{}]", .{ i.size, i.dst, i.base }),
             .vec_and => |i| try writer.print("vec_and.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_orr => |i| try writer.print("vec_orr.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_eor => |i| try writer.print("vec_eor.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
@@ -2425,6 +2434,10 @@ pub const Inst = union(enum) {
             .vec_mul => |*i| {
                 try collector.regUse(i.src1);
                 try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .ld1r => |*i| {
+                try collector.regUse(i.base);
                 try collector.regDef(i.dst);
             },
             .vec_and => |*i| {

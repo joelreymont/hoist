@@ -83,6 +83,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .ldr_ext => |i| try emitLdrExt(i.dst.toReg(), i.base, i.offset, i.extend, i.size, buffer),
         .ldr_shifted => |i| try emitLdrShifted(i.dst.toReg(), i.base, i.offset, i.shift_op, i.shift_amt, i.size, buffer),
         .vldr => |i| try emitVldr(i.dst.toReg(), i.base, i.offset, i.size, buffer),
+        .ld1r => |i| try emitLd1r(i.dst.toReg(), i.base, i.size, buffer),
         .str => |i| try emitStr(i.src, i.base, i.offset, i.size, buffer),
         .vstr => |i| try emitVstr(i.src, i.base, i.offset, i.size, buffer),
         .str_reg => |i| try emitStrReg(i.src, i.base, i.offset, i.size, buffer),
@@ -1576,6 +1577,40 @@ fn emitVldr(dst: Reg, base: Reg, offset: i16, fp_size: FpuOperandSize, buffer: *
         (@as(u32, rn) << 5) |
         rt |
         (q_bit << 22);
+
+    try buffer.put4(insn);
+}
+
+/// LD1R {Vt.<T>}, [Xn] (Load single element and replicate)
+/// Encoding: 0Q|001101|1|L=1|0|00000|110|0|size|Rn|Rt
+/// Q=0 for 64-bit (8B,4H,2S), Q=1 for 128-bit (16B,8H,4S,2D)
+fn emitLd1r(dst: Reg, base: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(dst);
+    const rn = hwEnc(base);
+
+    // Determine Q bit and size field from VecElemSize
+    const q_bit: u32 = switch (vec_size) {
+        .size8x8, .size16x4, .size32x2 => 0, // 64-bit
+        .size8x16, .size16x8, .size32x4, .size64x2 => 1, // 128-bit
+    };
+
+    const size: u32 = switch (vec_size) {
+        .size8x8, .size8x16 => 0b00, // 8-bit elements
+        .size16x4, .size16x8 => 0b01, // 16-bit elements
+        .size32x2, .size32x4 => 0b10, // 32-bit elements
+        .size64x2 => 0b11, // 64-bit elements
+    };
+
+    // LD1R encoding: 0Q|001101|1|L=1|0|00000|110|0|size|Rn|Rt
+    // opcode = 0b110 for LD1R (replicate single element to all lanes)
+    const insn: u32 = (q_bit << 30) |
+        (0b001101 << 24) |
+        (0b1 << 23) | // L=1 for load
+        (0b00000 << 16) |
+        (0b110 << 13) | // opcode for LD1R
+        (size << 10) |
+        (@as(u32, rn) << 5) |
+        rt;
 
     try buffer.put4(insn);
 }
