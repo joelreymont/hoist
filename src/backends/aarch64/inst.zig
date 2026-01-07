@@ -913,6 +913,14 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Atomic add with release (LDADDL).
+    ldaddl: struct {
+        src: Reg,
+        dst: WritableReg,
+        base: Reg,
+        size: OperandSize,
+    },
+
     /// Atomic add with acquire-release (LDADDAL).
     ldaddal: struct {
         src: Reg,

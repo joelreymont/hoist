@@ -8770,7 +8770,7 @@ test "emit extend instructions - verify against ARM manual examples" {
     try emit(.{ .sxtb = .{
         .dst = wr0,
         .src = r1,
-.dst_size = .size64,
+        .dst_size = .size64,
     } }, &buffer);
     insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x93401C20), insn);
@@ -8780,7 +8780,7 @@ test "emit extend instructions - verify against ARM manual examples" {
     try emit(.{ .sxth = .{
         .dst = wr0,
         .src = r1,
-        .size = .size32,
+        .dst_size = .size32,
     } }, &buffer);
     insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x13003C20), insn);
@@ -9773,7 +9773,7 @@ test "emit fsub and fmul" {
 
     // FDIV D0, D1, D2
     buffer.data.clearRetainingCapacity();
-    try emit(.{ .fdiv_d = .{
+    try emit(.{ .fdiv = .{
         .dst = wr0,
         .src1 = r1,
         .src2 = r2,
@@ -9804,7 +9804,7 @@ test "emit fmov register and immediate" {
 
     // FMOV S0, #0.0
     buffer.data.clearRetainingCapacity();
-    try emit(.{ .fmov_imm_s = .{
+    try emit(.{ .fmov_imm = .{
         .dst = wr0,
         .imm = 0.0,
     } }, &buffer);
@@ -9863,7 +9863,7 @@ test "emit scvtf and fcvtzs conversions" {
 
     // FCVTZS W0, S1
     buffer.data.clearRetainingCapacity();
-    try emit(.{ .fcvtzs_s_to_w = .{
+    try emit(.{ .fcvtzs = .{
         .dst = wr0,
         .src = r1,
     } }, &buffer);
@@ -9894,7 +9894,7 @@ test "emit fneg fabs fmax fmin" {
 
     // FABS D0, D1
     buffer.data.clearRetainingCapacity();
-    try emit(.{ .fabs_d = .{
+    try emit(.{ .fabs = .{
         .dst = wr0,
         .src = r1,
     } }, &buffer);
@@ -10227,11 +10227,13 @@ test "emit cas compare and swap" {
     const r0 = Reg.fromVReg(v0);
     const r1 = Reg.fromVReg(v1);
     const r2 = Reg.fromVReg(v2);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // CAS W0, W1, [X2] - 32-bit no ordering
     try emit(.{ .cas = .{
         .compare = r0,
-        .src = r1,
+        .swap = r1,
+        .dst = wr0,
         .base = r2,
         .size = .size32,
     } }, &buffer);
@@ -10243,7 +10245,8 @@ test "emit cas compare and swap" {
     buffer.data.clearRetainingCapacity();
     try emit(.{ .cas = .{
         .compare = r0,
-        .src = r1,
+        .swap = r1,
+        .dst = wr0,
         .base = r2,
         .size = .size64,
     } }, &buffer);
@@ -10255,7 +10258,8 @@ test "emit cas compare and swap" {
     buffer.data.clearRetainingCapacity();
     try emit(.{ .casa = .{
         .compare = r0,
-        .src = r1,
+        .swap = r1,
+        .dst = wr0,
         .base = r2,
         .size = .size32,
     } }, &buffer);
@@ -10267,7 +10271,8 @@ test "emit cas compare and swap" {
     buffer.data.clearRetainingCapacity();
     try emit(.{ .casal = .{
         .compare = r0,
-        .src = r1,
+        .swap = r1,
+        .dst = wr0,
         .base = r2,
         .size = .size64,
     } }, &buffer);
@@ -10279,7 +10284,8 @@ test "emit cas compare and swap" {
     buffer.data.clearRetainingCapacity();
     try emit(.{ .casl = .{
         .compare = r0,
-        .src = r1,
+        .swap = r1,
+        .dst = wr0,
         .base = r2,
         .size = .size32,
     } }, &buffer);
