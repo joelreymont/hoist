@@ -11263,7 +11263,7 @@ fn emitSxtl(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachB
         .size16x8 => 0b0001, // 8b -> 8h
         .size32x4 => 0b0010, // 4h -> 4s
         .size64x2 => 0b0100, // 2s -> 2d
-        // Placeholders/pseudo-instructions
+        else => unreachable,
     };
 
     const insn: u32 = (0b0 << 31) |
@@ -11289,7 +11289,7 @@ fn emitUxtl(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachB
         .size16x8 => 0b0001,
         .size32x4 => 0b0010,
         .size64x2 => 0b0100,
-        // Placeholders/pseudo-instructions
+        else => unreachable,
     };
 
     const insn: u32 = (0b0 << 31) |
@@ -11318,7 +11318,7 @@ fn emitSaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buf
         .size16x8 => 0b00, // 8b + 8b -> 8h
         .size32x4 => 0b01, // 4h + 4h -> 4s
         .size64x2 => 0b10, // 2s + 2s -> 2d
-        // Placeholders/pseudo-instructions
+        else => unreachable,
     };
 
     const insn: u32 = (0b0 << 31) |
@@ -11346,7 +11346,7 @@ fn emitUaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buf
         .size16x8 => 0b00,
         .size32x4 => 0b01,
         .size64x2 => 0b10,
-        // Placeholders/pseudo-instructions
+        else => unreachable,
     };
 
     const insn: u32 = (0b0 << 31) |
@@ -11374,7 +11374,7 @@ fn emitXtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBu
         .size16x8 => 0b00, // 8h -> 8b
         .size32x4 => 0b01, // 4s -> 4h
         .size64x2 => 0b10, // 2d -> 2s
-        // Placeholders/pseudo-instructions
+        else => unreachable,
     };
 
     const insn: u32 = (0b0 << 31) |
@@ -11400,7 +11400,7 @@ fn emitSqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mach
         .size16x8 => 0b00,
         .size32x4 => 0b01,
         .size64x2 => 0b10,
-        // Placeholders/pseudo-instructions
+        else => unreachable,
     };
 
     const insn: u32 = (0b0 << 31) |
@@ -11426,7 +11426,7 @@ fn emitUqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mach
         .size16x8 => 0b00,
         .size32x4 => 0b01,
         .size64x2 => 0b10,
-        // Placeholders/pseudo-instructions
+        else => unreachable,
     };
 
     const insn: u32 = (0b0 << 31) |
@@ -12192,7 +12192,7 @@ fn emitVecSqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, high: bool, buffer: *
         .size8x8, .size8x16 => 0b0001, // 16->8
         .size16x4, .size16x8 => 0b0010, // 32->16
         .size32x2, .size32x4 => 0b0100, // 64->32
-        // Placeholders/pseudo-instructions
+        else => unreachable,
     };
 
     const insn: u32 = (@as(u32, q) << 30) |
@@ -12216,7 +12216,7 @@ fn emitVecSqxtun(dst: Reg, src: Reg, vec_size: VecElemSize, high: bool, buffer: 
         .size8x8, .size8x16 => 0b0001, // 16->8
         .size16x4, .size16x8 => 0b0010, // 32->16
         .size32x2, .size32x4 => 0b0100, // 64->32
-        // Placeholders/pseudo-instructions
+        else => unreachable,
     };
 
     const insn: u32 = (@as(u32, q) << 30) |
@@ -12240,7 +12240,7 @@ fn emitVecUqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, high: bool, buffer: *
         .size8x8, .size8x16 => 0b0001, // 16->8
         .size16x4, .size16x8 => 0b0010, // 32->16
         .size32x2, .size32x4 => 0b0100, // 64->32
-        // Placeholders/pseudo-instructions
+        else => unreachable,
     };
 
     const insn: u32 = (@as(u32, q) << 30) |

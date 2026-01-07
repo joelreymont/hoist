@@ -754,6 +754,426 @@ pub fn lower(
                 } });
 
                 return true;
+            } else if (data.opcode == .clz) {
+                // Count leading zeros
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .clz = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .ctz) {
+                // Count trailing zeros - rbit then clz
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .ctz = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .popcnt) {
+                // Population count
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .popcnt = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .bitrev) {
+                // Reverse bits
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .rbit = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .bswap) {
+                // Byte swap
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+
+                // Choose rev instruction based on type width
+                if (ty.bits() == 16) {
+                    try ctx.emit(Inst{ .rev16 = .{
+                        .dst = dst,
+                        .src = src_reg,
+                        .size = .size32,
+                    } });
+                } else if (ty.bits() == 32) {
+                    try ctx.emit(Inst{ .rev32 = .{
+                        .dst = dst,
+                        .src = src_reg,
+                        .size = .size64,
+                    } });
+                } else if (ty.bits() == 64) {
+                    try ctx.emit(Inst{ .rev64 = .{
+                        .dst = dst,
+                        .src = src_reg,
+                    } });
+                } else {
+                    return false;
+                }
+                return true;
+            } else if (data.opcode == .fabs) {
+            } else if (data.opcode == .fabs) {
+                // Floating-point absolute value
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(inst_mod.aarch64_fabs(dst, src_reg, size));
+                return true;
+            } else if (data.opcode == .fneg) {
+                // Floating-point negate
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(inst_mod.aarch64_fneg(dst, src_reg, size));
+                return true;
+            } else if (data.opcode == .sqrt) {
+                // Floating-point square root
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(inst_mod.aarch64_fsqrt(dst, src_reg, size));
+                return true;
+            } else if (data.opcode == .ceil) {
+                // Floating-point round toward positive infinity
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .frintp = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .floor) {
+                // Floating-point round toward negative infinity
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .frintm = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .trunc) {
+                // Floating-point round toward zero
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .frintz = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .nearest) {
+                // Floating-point round to nearest, ties to even
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .frintn = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .fcvt_to_sint) {
+                // Convert float to signed integer
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                // Get source float type
+                const src_ty = ctx.getValueType(src);
+                const src_size: FpuOperandSize = if (src_ty.bits() == 32) .size32 else .size64;
+
+                // Get destination integer type
+                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const dst_size: OperandSize = if (dst_ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .fcvtzs = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .src_size = src_size,
+                    .dst_size = dst_size,
+                } });
+                return true;
+            } else if (data.opcode == .fcvt_to_uint) {
+                // Convert float to unsigned integer
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                // Get source float type
+                const src_ty = ctx.getValueType(src);
+                const src_size: FpuOperandSize = if (src_ty.bits() == 32) .size32 else .size64;
+
+                // Get destination integer type
+                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const dst_size: OperandSize = if (dst_ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .fcvtzu = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .src_size = src_size,
+                    .dst_size = dst_size,
+                } });
+                return true;
+            } else if (data.opcode == .fcvt_from_sint) {
+                // Convert signed integer to float
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                // Get source integer type
+                const src_ty = ctx.getValueType(src);
+                const src_size: OperandSize = if (src_ty.bits() <= 32) .size32 else .size64;
+
+                // Get destination float type
+                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const dst_size: FpuOperandSize = if (dst_ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .scvtf = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .src_size = src_size,
+                    .dst_size = dst_size,
+                } });
+                return true;
+            } else if (data.opcode == .fcvt_from_uint) {
+                // Convert unsigned integer to float
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                // Get source integer type
+                const src_ty = ctx.getValueType(src);
+                const src_size: OperandSize = if (src_ty.bits() <= 32) .size32 else .size64;
+
+                // Get destination float type
+                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const dst_size: FpuOperandSize = if (dst_ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .ucvtf = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .src_size = src_size,
+                    .dst_size = dst_size,
+                } });
+                return true;
+            } else if (data.opcode == .fcvt_to_sint_sat) {
+                // Convert float to signed integer with saturation
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+
+                // Get source float type
+                const src_ty = ctx.getValueType(src);
+                const src_size: FpuOperandSize = if (src_ty.bits() == 32) .size32 else .size64;
+
+                // Get destination integer type
+                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const dst_size: OperandSize = if (dst_ty.bits() <= 32) .size32 else .size64;
+
+                // Do initial conversion
+                const result = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(Inst{ .fcvtzs = .{
+                    .dst = result,
+                    .src = src_reg,
+                    .src_size = src_size,
+                    .dst_size = dst_size,
+                } });
+
+                // For I32/I64, ARM64 fcvtzs already saturates - we're done
+                if (dst_ty.bits() >= 32) {
+                    return true;
+                }
+
+                // For I8/I16, clamp to [signed_min, signed_max]
+                const result_reg = Reg.fromVReg(result.toVReg());
+
+                // Load max value for the target type
+                const max_val: u64 = if (dst_ty.bits() == 8) 0x7F else 0x7FFF;
+                const max_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(inst_mod.aarch64_movz(max_reg, max_val, 0, .size32));
+
+                // Load min value (sign-extended)
+                const min_val: u64 = if (dst_ty.bits() == 8) 0xFF80 else 0xFFFF8000;
+                const min_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(inst_mod.aarch64_movn(min_reg, ~min_val & 0xFFFF, 0, .size32));
+
+                // Clamp to max: if result > max, use max
+                const clamped1 = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(Inst{
+                    .subs = .{
+                        .dst = WritableReg.fromVReg(ctx.allocVReg(.int)), // discard flags
+                        .src1 = result_reg,
+                        .src2 = Reg.fromVReg(max_reg.toVReg()),
+                        .size = dst_size,
+                    },
+                });
+                try ctx.emit(Inst{ .csel = .{
+                    .dst = clamped1,
+                    .cond = CondCode.gt,
+                    .if_true = Reg.fromVReg(max_reg.toVReg()),
+                    .if_false = result_reg,
+                } });
+
+                // Clamp to min: if result < min, use min
+                const clamped2 = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(Inst{
+                    .subs = .{
+                        .dst = WritableReg.fromVReg(ctx.allocVReg(.int)), // discard flags
+                        .src1 = Reg.fromVReg(clamped1.toVReg()),
+                        .src2 = Reg.fromVReg(min_reg.toVReg()),
+                        .size = dst_size,
+                    },
+                });
+                try ctx.emit(Inst{ .csel = .{
+                    .dst = clamped2,
+                    .cond = CondCode.lt,
+                    .if_true = Reg.fromVReg(min_reg.toVReg()),
+                    .if_false = Reg.fromVReg(clamped1.toVReg()),
+                } });
+
+                return true;
+            } else if (data.opcode == .fcvt_to_uint_sat) {
+                // Convert float to unsigned integer with saturation
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+
+                // Get source float type
+                const src_ty = ctx.getValueType(src);
+                const src_size: FpuOperandSize = if (src_ty.bits() == 32) .size32 else .size64;
+
+                // Get destination integer type
+                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const dst_size: OperandSize = if (dst_ty.bits() <= 32) .size32 else .size64;
+
+                // Do initial conversion
+                const result = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(Inst{ .fcvtzu = .{
+                    .dst = result,
+                    .src = src_reg,
+                    .src_size = src_size,
+                    .dst_size = dst_size,
+                } });
+
+                // For I32/I64, ARM64 fcvtzu already saturates - we're done
+                if (dst_ty.bits() >= 32) {
+                    return true;
+                }
+
+                // For I8/I16, clamp to [0, unsigned_max]
+                const result_reg = Reg.fromVReg(result.toVReg());
+
+                // Load max value for the target type (zero-extend)
+                const max_val: u64 = if (dst_ty.bits() == 8) 0xFF else 0xFFFF;
+                const max_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(inst_mod.aarch64_movz(max_reg, max_val, 0, .size32));
+
+                // Clamp to max: if result > max, use max
+                const clamped = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(Inst{
+                    .subs = .{
+                        .dst = WritableReg.fromVReg(ctx.allocVReg(.int)), // discard flags
+                        .src1 = result_reg,
+                        .src2 = Reg.fromVReg(max_reg.toVReg()),
+                        .size = .size32,
+                    },
+                });
+                try ctx.emit(Inst{
+                    .csel = .{
+                        .dst = clamped,
+                        .cond = CondCode.hi, // unsigned higher
+                        .if_true = Reg.fromVReg(max_reg.toVReg()),
+                        .if_false = result_reg,
+                    },
+                });
+
+                return true;
+            } else if (data.opcode == .fpromote) {
+                // Promote F32 to F64
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                try ctx.emit(Inst{ .fcvt_f32_to_f64 = .{
+                    .dst = dst,
+                    .src = src_reg,
+                } });
+                return true;
+            } else if (data.opcode == .fdemote) {
+                // Demote F64 to F32
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                try ctx.emit(Inst{ .fcvt_f64_to_f32 = .{
+                    .dst = dst,
+                    .src = src_reg,
+                } });
+                return true;
             }
         },
         .nullary => |data| {
@@ -795,21 +1215,6 @@ pub fn lower(
                 try ctx.emit(Inst{ .mov_rr = .{
                     .dst = dst,
                     .src = pinned_reg,
-                    .size = .size64,
-                } });
-                return true;
-            }
-        },
-        .unary => |data| {
-            if (data.opcode == .set_pinned_reg) {
-                // Set pinned register (x18)
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
-                const pinned_reg = WritableReg.fromReg(Reg.fromPReg(Reg.fromInt(18))); // X18
-
-                try ctx.emit(Inst{ .mov_rr = .{
-                    .dst = pinned_reg,
-                    .src = src_reg,
                     .size = .size64,
                 } });
                 return true;
@@ -1539,99 +1944,6 @@ pub fn lower(
                 return true;
             }
         },
-        .unary => |data| {
-            if (data.opcode == .clz) {
-                // Count leading zeros
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
-
-                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
-
-                try ctx.emit(Inst{ .clz = .{
-                    .dst = dst,
-                    .src = src_reg,
-                    .size = size,
-                } });
-                return true;
-            } else if (data.opcode == .ctz) {
-                // Count trailing zeros - rbit then clz
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
-
-                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
-
-                try ctx.emit(Inst{ .ctz = .{
-                    .dst = dst,
-                    .src = src_reg,
-                    .size = size,
-                } });
-                return true;
-            } else if (data.opcode == .popcnt) {
-                // Population count
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
-
-                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
-
-                try ctx.emit(Inst{ .popcnt = .{
-                    .dst = dst,
-                    .src = src_reg,
-                    .size = size,
-                } });
-                return true;
-            } else if (data.opcode == .bitrev) {
-                // Reverse bits
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
-
-                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
-
-                try ctx.emit(Inst{ .rbit = .{
-                    .dst = dst,
-                    .src = src_reg,
-                    .size = size,
-                } });
-                return true;
-            } else if (data.opcode == .bswap) {
-                // Byte swap
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
-
-                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-
-                // Choose rev instruction based on type width
-                if (ty.bits() == 16) {
-                    try ctx.emit(Inst{ .rev16 = .{
-                        .dst = dst,
-                        .src = src_reg,
-                        .size = .size32,
-                    } });
-                } else if (ty.bits() == 32) {
-                    try ctx.emit(Inst{ .rev32 = .{
-                        .dst = dst,
-                        .src = src_reg,
-                        .size = .size64,
-                    } });
-                } else if (ty.bits() == 64) {
-                    try ctx.emit(Inst{ .rev64 = .{
-                        .dst = dst,
-                        .src = src_reg,
-                    } });
-                } else {
-                    return false;
-                }
-                return true;
-            }
-        },
         .binary => |data| {
             if (data.opcode == .rotr) {
                 // Rotate right with register
@@ -1953,338 +2265,6 @@ pub fn lower(
                     .src1 = lhs_reg,
                     .src2 = rhs_reg,
                     .size = size,
-                } });
-                return true;
-            }
-        },
-        .unary => |data| {
-            if (data.opcode == .fabs) {
-                // Floating-point absolute value
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
-
-                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
-
-                try ctx.emit(inst_mod.aarch64_fabs(dst, src_reg, size));
-                return true;
-            } else if (data.opcode == .fneg) {
-                // Floating-point negate
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
-
-                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
-
-                try ctx.emit(inst_mod.aarch64_fneg(dst, src_reg, size));
-                return true;
-            } else if (data.opcode == .sqrt) {
-                // Floating-point square root
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
-
-                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
-
-                try ctx.emit(inst_mod.aarch64_fsqrt(dst, src_reg, size));
-                return true;
-            } else if (data.opcode == .ceil) {
-                // Floating-point round toward positive infinity
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
-
-                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
-
-                try ctx.emit(Inst{ .frintp = .{
-                    .dst = dst,
-                    .src = src_reg,
-                    .size = size,
-                } });
-                return true;
-            } else if (data.opcode == .floor) {
-                // Floating-point round toward negative infinity
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
-
-                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
-
-                try ctx.emit(Inst{ .frintm = .{
-                    .dst = dst,
-                    .src = src_reg,
-                    .size = size,
-                } });
-                return true;
-            } else if (data.opcode == .trunc) {
-                // Floating-point round toward zero
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
-
-                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
-
-                try ctx.emit(Inst{ .frintz = .{
-                    .dst = dst,
-                    .src = src_reg,
-                    .size = size,
-                } });
-                return true;
-            } else if (data.opcode == .nearest) {
-                // Floating-point round to nearest, ties to even
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
-
-                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
-
-                try ctx.emit(Inst{ .frintn = .{
-                    .dst = dst,
-                    .src = src_reg,
-                    .size = size,
-                } });
-                return true;
-            } else if (data.opcode == .fcvt_to_sint) {
-                // Convert float to signed integer
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
-
-                // Get source float type
-                const src_ty = ctx.getValueType(src);
-                const src_size: FpuOperandSize = if (src_ty.bits() == 32) .size32 else .size64;
-
-                // Get destination integer type
-                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const dst_size: OperandSize = if (dst_ty.bits() <= 32) .size32 else .size64;
-
-                try ctx.emit(Inst{ .fcvtzs = .{
-                    .dst = dst,
-                    .src = src_reg,
-                    .src_size = src_size,
-                    .dst_size = dst_size,
-                } });
-                return true;
-            } else if (data.opcode == .fcvt_to_uint) {
-                // Convert float to unsigned integer
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
-
-                // Get source float type
-                const src_ty = ctx.getValueType(src);
-                const src_size: FpuOperandSize = if (src_ty.bits() == 32) .size32 else .size64;
-
-                // Get destination integer type
-                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const dst_size: OperandSize = if (dst_ty.bits() <= 32) .size32 else .size64;
-
-                try ctx.emit(Inst{ .fcvtzu = .{
-                    .dst = dst,
-                    .src = src_reg,
-                    .src_size = src_size,
-                    .dst_size = dst_size,
-                } });
-                return true;
-            } else if (data.opcode == .fcvt_from_sint) {
-                // Convert signed integer to float
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
-
-                // Get source integer type
-                const src_ty = ctx.getValueType(src);
-                const src_size: OperandSize = if (src_ty.bits() <= 32) .size32 else .size64;
-
-                // Get destination float type
-                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const dst_size: FpuOperandSize = if (dst_ty.bits() == 32) .size32 else .size64;
-
-                try ctx.emit(Inst{ .scvtf = .{
-                    .dst = dst,
-                    .src = src_reg,
-                    .src_size = src_size,
-                    .dst_size = dst_size,
-                } });
-                return true;
-            } else if (data.opcode == .fcvt_from_uint) {
-                // Convert unsigned integer to float
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
-
-                // Get source integer type
-                const src_ty = ctx.getValueType(src);
-                const src_size: OperandSize = if (src_ty.bits() <= 32) .size32 else .size64;
-
-                // Get destination float type
-                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const dst_size: FpuOperandSize = if (dst_ty.bits() == 32) .size32 else .size64;
-
-                try ctx.emit(Inst{ .ucvtf = .{
-                    .dst = dst,
-                    .src = src_reg,
-                    .src_size = src_size,
-                    .dst_size = dst_size,
-                } });
-                return true;
-            } else if (data.opcode == .fcvt_to_sint_sat) {
-                // Convert float to signed integer with saturation
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
-
-                // Get source float type
-                const src_ty = ctx.getValueType(src);
-                const src_size: FpuOperandSize = if (src_ty.bits() == 32) .size32 else .size64;
-
-                // Get destination integer type
-                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const dst_size: OperandSize = if (dst_ty.bits() <= 32) .size32 else .size64;
-
-                // Do initial conversion
-                const result = WritableReg.fromVReg(ctx.allocVReg(.int));
-                try ctx.emit(Inst{ .fcvtzs = .{
-                    .dst = result,
-                    .src = src_reg,
-                    .src_size = src_size,
-                    .dst_size = dst_size,
-                } });
-
-                // For I32/I64, ARM64 fcvtzs already saturates - we're done
-                if (dst_ty.bits() >= 32) {
-                    return true;
-                }
-
-                // For I8/I16, clamp to [signed_min, signed_max]
-                const result_reg = Reg.fromVReg(result.toVReg());
-
-                // Load max value for the target type
-                const max_val: u64 = if (dst_ty.bits() == 8) 0x7F else 0x7FFF;
-                const max_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
-                try ctx.emit(inst_mod.aarch64_movz(max_reg, max_val, 0, .size32));
-
-                // Load min value (sign-extended)
-                const min_val: u64 = if (dst_ty.bits() == 8) 0xFF80 else 0xFFFF8000;
-                const min_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
-                try ctx.emit(inst_mod.aarch64_movn(min_reg, ~min_val & 0xFFFF, 0, .size32));
-
-                // Clamp to max: if result > max, use max
-                const clamped1 = WritableReg.fromVReg(ctx.allocVReg(.int));
-                try ctx.emit(Inst{
-                    .subs = .{
-                        .dst = WritableReg.fromVReg(ctx.allocVReg(.int)), // discard flags
-                        .src1 = result_reg,
-                        .src2 = Reg.fromVReg(max_reg.toVReg()),
-                        .size = dst_size,
-                    },
-                });
-                try ctx.emit(Inst{ .csel = .{
-                    .dst = clamped1,
-                    .cond = CondCode.gt,
-                    .if_true = Reg.fromVReg(max_reg.toVReg()),
-                    .if_false = result_reg,
-                } });
-
-                // Clamp to min: if result < min, use min
-                const clamped2 = WritableReg.fromVReg(ctx.allocVReg(.int));
-                try ctx.emit(Inst{
-                    .subs = .{
-                        .dst = WritableReg.fromVReg(ctx.allocVReg(.int)), // discard flags
-                        .src1 = Reg.fromVReg(clamped1.toVReg()),
-                        .src2 = Reg.fromVReg(min_reg.toVReg()),
-                        .size = dst_size,
-                    },
-                });
-                try ctx.emit(Inst{ .csel = .{
-                    .dst = clamped2,
-                    .cond = CondCode.lt,
-                    .if_true = Reg.fromVReg(min_reg.toVReg()),
-                    .if_false = Reg.fromVReg(clamped1.toVReg()),
-                } });
-
-                return true;
-            } else if (data.opcode == .fcvt_to_uint_sat) {
-                // Convert float to unsigned integer with saturation
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
-
-                // Get source float type
-                const src_ty = ctx.getValueType(src);
-                const src_size: FpuOperandSize = if (src_ty.bits() == 32) .size32 else .size64;
-
-                // Get destination integer type
-                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
-                const dst_size: OperandSize = if (dst_ty.bits() <= 32) .size32 else .size64;
-
-                // Do initial conversion
-                const result = WritableReg.fromVReg(ctx.allocVReg(.int));
-                try ctx.emit(Inst{ .fcvtzu = .{
-                    .dst = result,
-                    .src = src_reg,
-                    .src_size = src_size,
-                    .dst_size = dst_size,
-                } });
-
-                // For I32/I64, ARM64 fcvtzu already saturates - we're done
-                if (dst_ty.bits() >= 32) {
-                    return true;
-                }
-
-                // For I8/I16, clamp to [0, unsigned_max]
-                const result_reg = Reg.fromVReg(result.toVReg());
-
-                // Load max value for the target type (zero-extend)
-                const max_val: u64 = if (dst_ty.bits() == 8) 0xFF else 0xFFFF;
-                const max_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
-                try ctx.emit(inst_mod.aarch64_movz(max_reg, max_val, 0, .size32));
-
-                // Clamp to max: if result > max, use max
-                const clamped = WritableReg.fromVReg(ctx.allocVReg(.int));
-                try ctx.emit(Inst{
-                    .subs = .{
-                        .dst = WritableReg.fromVReg(ctx.allocVReg(.int)), // discard flags
-                        .src1 = result_reg,
-                        .src2 = Reg.fromVReg(max_reg.toVReg()),
-                        .size = .size32,
-                    },
-                });
-                try ctx.emit(Inst{
-                    .csel = .{
-                        .dst = clamped,
-                        .cond = CondCode.hi, // unsigned higher
-                        .if_true = Reg.fromVReg(max_reg.toVReg()),
-                        .if_false = result_reg,
-                    },
-                });
-
-                return true;
-            } else if (data.opcode == .fpromote) {
-                // Promote F32 to F64
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
-
-                try ctx.emit(Inst{ .fcvt_f32_to_f64 = .{
-                    .dst = dst,
-                    .src = src_reg,
-                } });
-                return true;
-            } else if (data.opcode == .fdemote) {
-                // Demote F64 to F32
-                const src = data.arg;
-                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
-
-                try ctx.emit(Inst{ .fcvt_f64_to_f32 = .{
-                    .dst = dst,
-                    .src = src_reg,
                 } });
                 return true;
             }
