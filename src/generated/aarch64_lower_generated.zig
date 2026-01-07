@@ -177,6 +177,108 @@ pub fn lower(
                 } });
 
                 return true;
+            } else if (data.opcode == .udiv) {
+                // Unsigned division
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .udiv = .{
+                    .dst = dst,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                return true;
+            } else if (data.opcode == .sdiv) {
+                // Signed division
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .sdiv = .{
+                    .dst = dst,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                return true;
+            } else if (data.opcode == .urem) {
+                // Unsigned remainder: rem = dividend - divisor * quotient
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // quotient = udiv(lhs, rhs)
+                const quotient = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(Inst{ .udiv = .{
+                    .dst = quotient,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                // remainder = lhs - rhs * quotient
+                try ctx.emit(Inst{ .msub = .{
+                    .dst = dst,
+                    .src1 = rhs_reg,
+                    .src2 = quotient.toReg(),
+                    .minuend = lhs_reg,
+                    .size = size,
+                } });
+
+                return true;
+            } else if (data.opcode == .srem) {
+                // Signed remainder: rem = dividend - divisor * quotient
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // quotient = sdiv(lhs, rhs)
+                const quotient = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(Inst{ .sdiv = .{
+                    .dst = quotient,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                // remainder = lhs - rhs * quotient
+                try ctx.emit(Inst{ .msub = .{
+                    .dst = dst,
+                    .src1 = rhs_reg,
+                    .src2 = quotient.toReg(),
+                    .minuend = lhs_reg,
+                    .size = size,
+                } });
+
+                return true;
             }
         },
         .load => |data| {
