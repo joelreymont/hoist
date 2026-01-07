@@ -1430,6 +1430,99 @@ pub fn lower(
                 return true;
             }
         },
+        .unary => |data| {
+            if (data.opcode == .clz) {
+                // Count leading zeros
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .clz = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .ctz) {
+                // Count trailing zeros - rbit then clz
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .ctz = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .popcnt) {
+                // Population count
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .popcnt = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .bitrev) {
+                // Reverse bits
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .rbit = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .bswap) {
+                // Byte swap
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+
+                // Choose rev instruction based on type width
+                if (ty.bits() == 16) {
+                    try ctx.emit(Inst{ .rev16 = .{
+                        .dst = dst,
+                        .src = src_reg,
+                        .size = .size32,
+                    } });
+                } else if (ty.bits() == 32) {
+                    try ctx.emit(Inst{ .rev32 = .{
+                        .dst = dst,
+                        .src = src_reg,
+                        .size = .size64,
+                    } });
+                } else if (ty.bits() == 64) {
+                    try ctx.emit(Inst{ .rev64 = .{
+                        .dst = dst,
+                        .src = src_reg,
+                    } });
+                } else {
+                    return false;
+                }
+                return true;
+            }
+        },
         .stack_load => |data| {
             if (data.opcode == .stack_load) {
                 // Load from stack slot at FP + offset
