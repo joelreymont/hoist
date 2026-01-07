@@ -3226,6 +3226,31 @@
 (rule (lower (uadd_overflow_trap a b code))
       (aarch64_uadd_overflow_trap (value_type a) a b code))
 
+;; usub_overflow_trap: Unsigned subtract with overflow trap
+(decl aarch64_usub_overflow_trap (Type Value Value TrapCode) Aarch64Inst)
+(rule (lower (usub_overflow_trap a b code))
+      (aarch64_usub_overflow_trap (value_type a) a b code))
+
+;; umul_overflow_trap: Unsigned multiply with overflow trap
+(decl aarch64_umul_overflow_trap (Type Value Value TrapCode) Aarch64Inst)
+(rule (lower (umul_overflow_trap a b code))
+      (aarch64_umul_overflow_trap (value_type a) a b code))
+
+;; sadd_overflow_trap: Signed add with overflow trap
+(decl aarch64_sadd_overflow_trap (Type Value Value TrapCode) Aarch64Inst)
+(rule (lower (sadd_overflow_trap a b code))
+      (aarch64_sadd_overflow_trap (value_type a) a b code))
+
+;; ssub_overflow_trap: Signed subtract with overflow trap
+(decl aarch64_ssub_overflow_trap (Type Value Value TrapCode) Aarch64Inst)
+(rule (lower (ssub_overflow_trap a b code))
+      (aarch64_ssub_overflow_trap (value_type a) a b code))
+
+;; smul_overflow_trap: Signed multiply with overflow trap
+(decl aarch64_smul_overflow_trap (Type Value Value TrapCode) Aarch64Inst)
+(rule (lower (smul_overflow_trap a b code))
+      (aarch64_smul_overflow_trap (value_type a) a b code))
+
 ;; umul_overflow: Unsigned multiply with overflow detection
 (decl aarch64_umul_overflow_i16 (Type Value Value) ValueRegs)
 (decl aarch64_umul_overflow_i32 (Value Value) ValueRegs)

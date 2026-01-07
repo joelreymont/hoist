@@ -1188,35 +1188,146 @@ pub fn aarch64_br_table(
 }
 
 /// Constructor: uadd_overflow_cin - unsigned add with carry-in and overflow.
+/// Returns ValueRegs.two(result, overflow_out).
 pub fn aarch64_uadd_overflow_cin(
     ctx: *IsleContext,
     ty: Type,
     a: Value,
     b: Value,
     cin: Value,
-) !WritableReg {
-    _ = ty;
-    _ = a;
-    _ = b;
-    _ = cin;
-    _ = ctx;
-    @panic("TODO: Implement uadd_overflow_cin - needs ADCS and flag handling");
+) !lower_mod.ValueRegs {
+    const a_reg = try ctx.lower_ctx.getValueReg(a, .int);
+    const b_reg = try ctx.lower_ctx.getValueReg(b, .int);
+    const cin_reg = try ctx.lower_ctx.getValueReg(cin, .int);
+    const is_64 = ty.bits() == 64;
+
+    const size: OperandSize = if (is_64) .size64 else .size32;
+
+    // Set carry flag from carry-in value: CMP cin, #0 (sets carry if cin != 0)
+    // Actually, we need: SUBS XZR, cin, #1 (sets carry if cin >= 1, i.e., cin == 1)
+    try ctx.emit(Inst{
+        .subs_imm = .{
+            .dst = WritableReg.fromReg(Reg.gpr(31)), // XZR (discard result)
+            .rn = cin_reg,
+            .imm = 1,
+            .size = size,
+        },
+    });
+
+    // ADCS: Add with carry and set flags
+    const dst = WritableReg.allocReg(.int, ctx.lower_ctx);
+    try ctx.emit(Inst{ .adcs = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = size,
+    } });
+
+    // CSET: Extract carry flag as overflow
+    const overflow_reg = WritableReg.allocReg(.int, ctx.lower_ctx);
+    try ctx.emit(Inst{
+        .cset = .{
+            .dst = overflow_reg,
+            .cond = .hs, // HS = carry set (unsigned overflow)
+        },
+    });
+
+    return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
 }
 
 /// Constructor: sadd_overflow_cin - signed add with carry-in and overflow.
+/// Returns ValueRegs.two(result, overflow_out).
 pub fn aarch64_sadd_overflow_cin(
     ctx: *IsleContext,
     ty: Type,
     a: Value,
     b: Value,
     cin: Value,
-) !WritableReg {
-    _ = ty;
-    _ = a;
-    _ = b;
-    _ = cin;
-    _ = ctx;
-    @panic("TODO: Implement sadd_overflow_cin - needs ADCS and flag handling");
+) !lower_mod.ValueRegs {
+    const a_reg = try ctx.lower_ctx.getValueReg(a, .int);
+    const b_reg = try ctx.lower_ctx.getValueReg(b, .int);
+    const cin_reg = try ctx.lower_ctx.getValueReg(cin, .int);
+    const is_64 = ty.bits() == 64;
+
+    const size: OperandSize = if (is_64) .size64 else .size32;
+
+    // Set carry flag from carry-in value: SUBS XZR, cin, #1
+    try ctx.emit(Inst{
+        .subs_imm = .{
+            .dst = WritableReg.fromReg(Reg.gpr(31)), // XZR
+            .rn = cin_reg,
+            .imm = 1,
+            .size = size,
+        },
+    });
+
+    // ADCS: Add with carry and set flags
+    const dst = WritableReg.allocReg(.int, ctx.lower_ctx);
+    try ctx.emit(Inst{ .adcs = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = size,
+    } });
+
+    // CSET: Extract overflow flag (V flag for signed overflow)
+    const overflow_reg = WritableReg.allocReg(.int, ctx.lower_ctx);
+    try ctx.emit(Inst{
+        .cset = .{
+            .dst = overflow_reg,
+            .cond = .vs, // VS = overflow set (signed overflow)
+        },
+    });
+
+    return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
+}
+
+/// Constructor: usub_overflow_cin - unsigned subtract with carry-in and overflow detection.
+/// Returns (result, overflow) where overflow is 1 if borrow occurred.
+/// Uses SBCS for subtract with carry, CSET to extract borrow flag.
+pub fn aarch64_usub_overflow_cin(
+    ctx: *IsleContext,
+    ty: Type,
+    a: Value,
+    b: Value,
+    cin: Value,
+) !lower_mod.ValueRegs {
+    const size = ctx.typeToSize(ty);
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const cin_reg = try ctx.getValueReg(cin, .int);
+    const dst = ctx.allocOutputReg(.int);
+    const overflow_reg = ctx.allocOutputReg(.int);
+
+    // Set carry flag from carry-in (borrow): SUBS XZR, cin, #1
+    // If cin=0 (borrow in), carry flag=0 (borrow propagates)
+    // If cin=1 (no borrow), carry flag=1 (no borrow)
+    try ctx.emit(Inst{
+        .subs_imm = .{
+            .dst = WritableReg.fromReg(Reg.gpr(31)), // XZR (discard result)
+            .rn = cin_reg,
+            .imm = 1,
+            .size = size,
+        },
+    });
+
+    // SBCS: Subtract with carry - dst = a - b - !carry
+    try ctx.emit(Inst{ .sbcs = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = size,
+    } });
+
+    // CSET: Extract borrow flag (LO = borrow occurred)
+    try ctx.emit(Inst{
+        .cset = .{
+            .dst = overflow_reg,
+            .cond = .lo, // LO = borrow (unsigned underflow)
+        },
+    });
+
+    return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
 }
 
 /// Constructor: uadd_overflow_trap - unsigned add with overflow trap.
@@ -1248,6 +1359,258 @@ pub fn aarch64_uadd_overflow_trap(
     try ctx.emit(.{
         .b_cond = .{
             .cond = .lo, // LO = no carry (inverse of CS/HS)
+            .target = .{ .label = skip_label },
+        },
+    });
+
+    // UDF (trap on overflow)
+    try ctx.emit(.{ .udf = .{
+        .imm = @intCast(code),
+    } });
+
+    // Bind skip label
+    ctx.lower_ctx.bindLabel(skip_label);
+}
+
+/// Constructor: usub_overflow_trap - unsigned subtract with overflow trap.
+/// Emits SUBS to set carry flag, B.CS to skip trap, UDF to trap on borrow.
+pub fn aarch64_usub_overflow_trap(
+    ctx: *IsleContext,
+    ty: Type,
+    a: Value,
+    b: Value,
+    code: u32,
+) !void {
+    const size = ctx.typeToSize(ty);
+    const reg_a = try ctx.getValueReg(a, .int);
+    const reg_b = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    // SUBS dst, a, b (sets carry flag on unsigned underflow/borrow)
+    try ctx.emit(.{ .subs_rr = .{
+        .dst = dst,
+        .src1 = reg_a,
+        .src2 = reg_b,
+        .size = size,
+    } });
+
+    // Allocate skip label
+    const skip_label = ctx.lower_ctx.allocLabel();
+
+    // B.CS skip (branch if carry set - no borrow)
+    try ctx.emit(.{
+        .b_cond = .{
+            .cond = .hs, // HS = carry set (no borrow)
+            .target = .{ .label = skip_label },
+        },
+    });
+
+    // UDF (trap on underflow)
+    try ctx.emit(.{ .udf = .{
+        .imm = @intCast(code),
+    } });
+
+    // Bind skip label
+    ctx.lower_ctx.bindLabel(skip_label);
+}
+
+/// Constructor: umul_overflow_trap - unsigned multiply with overflow trap.
+/// Uses UMULH to get high bits, checks if non-zero for overflow.
+pub fn aarch64_umul_overflow_trap(
+    ctx: *IsleContext,
+    ty: Type,
+    a: Value,
+    b: Value,
+    code: u32,
+) !void {
+    const size = ctx.typeToSize(ty);
+    const reg_a = try ctx.getValueReg(a, .int);
+    const reg_b = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+    const high = WritableReg.allocReg(.int, ctx.lower_ctx);
+
+    // MUL dst, a, b (compute low bits)
+    try ctx.emit(.{ .mul = .{
+        .dst = dst,
+        .src1 = reg_a,
+        .src2 = reg_b,
+        .size = size,
+    } });
+
+    // UMULH high, a, b (compute high bits)
+    try ctx.emit(.{ .umulh = .{
+        .dst = high,
+        .src1 = reg_a,
+        .src2 = reg_b,
+        .size = size,
+    } });
+
+    // Allocate skip label
+    const skip_label = ctx.lower_ctx.allocLabel();
+
+    // CMP high, #0 (check if high bits are zero)
+    try ctx.emit(.{ .cmp_imm = .{
+        .rn = high.toReg(),
+        .imm = 0,
+        .size = size,
+    } });
+
+    // B.EQ skip (branch if high bits are zero - no overflow)
+    try ctx.emit(.{
+        .b_cond = .{
+            .cond = .eq,
+            .target = .{ .label = skip_label },
+        },
+    });
+
+    // UDF (trap on overflow)
+    try ctx.emit(.{ .udf = .{
+        .imm = @intCast(code),
+    } });
+
+    // Bind skip label
+    ctx.lower_ctx.bindLabel(skip_label);
+}
+
+/// Constructor: sadd_overflow_trap - signed add with overflow trap.
+/// Emits ADDS to set overflow flag, B.VC to skip trap, UDF to trap on overflow.
+pub fn aarch64_sadd_overflow_trap(
+    ctx: *IsleContext,
+    ty: Type,
+    a: Value,
+    b: Value,
+    code: u32,
+) !void {
+    const size = ctx.typeToSize(ty);
+    const reg_a = try ctx.getValueReg(a, .int);
+    const reg_b = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    // ADDS dst, a, b (sets overflow flag on signed overflow)
+    try ctx.emit(.{ .adds_rr = .{
+        .dst = dst,
+        .src1 = reg_a,
+        .src2 = reg_b,
+        .size = size,
+    } });
+
+    // Allocate skip label
+    const skip_label = ctx.lower_ctx.allocLabel();
+
+    // B.VC skip (branch if no overflow)
+    try ctx.emit(.{
+        .b_cond = .{
+            .cond = .vc, // VC = no overflow
+            .target = .{ .label = skip_label },
+        },
+    });
+
+    // UDF (trap on overflow)
+    try ctx.emit(.{ .udf = .{
+        .imm = @intCast(code),
+    } });
+
+    // Bind skip label
+    ctx.lower_ctx.bindLabel(skip_label);
+}
+
+/// Constructor: ssub_overflow_trap - signed subtract with overflow trap.
+/// Emits SUBS to set overflow flag, B.VC to skip trap, UDF to trap on overflow.
+pub fn aarch64_ssub_overflow_trap(
+    ctx: *IsleContext,
+    ty: Type,
+    a: Value,
+    b: Value,
+    code: u32,
+) !void {
+    const size = ctx.typeToSize(ty);
+    const reg_a = try ctx.getValueReg(a, .int);
+    const reg_b = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    // SUBS dst, a, b (sets overflow flag on signed overflow)
+    try ctx.emit(.{ .subs_rr = .{
+        .dst = dst,
+        .src1 = reg_a,
+        .src2 = reg_b,
+        .size = size,
+    } });
+
+    // Allocate skip label
+    const skip_label = ctx.lower_ctx.allocLabel();
+
+    // B.VC skip (branch if no overflow)
+    try ctx.emit(.{
+        .b_cond = .{
+            .cond = .vc, // VC = no overflow
+            .target = .{ .label = skip_label },
+        },
+    });
+
+    // UDF (trap on overflow)
+    try ctx.emit(.{ .udf = .{
+        .imm = @intCast(code),
+    } });
+
+    // Bind skip label
+    ctx.lower_ctx.bindLabel(skip_label);
+}
+
+/// Constructor: smul_overflow_trap - signed multiply with overflow trap.
+/// Uses SMULH to get high bits, checks if they match sign extension of low bits.
+pub fn aarch64_smul_overflow_trap(
+    ctx: *IsleContext,
+    ty: Type,
+    a: Value,
+    b: Value,
+    code: u32,
+) !void {
+    const size = ctx.typeToSize(ty);
+    const reg_a = try ctx.getValueReg(a, .int);
+    const reg_b = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+    const high = WritableReg.allocReg(.int, ctx.lower_ctx);
+    const sign_ext = WritableReg.allocReg(.int, ctx.lower_ctx);
+
+    // MUL dst, a, b (compute low bits)
+    try ctx.emit(.{ .mul = .{
+        .dst = dst,
+        .src1 = reg_a,
+        .src2 = reg_b,
+        .size = size,
+    } });
+
+    // SMULH high, a, b (compute high bits)
+    try ctx.emit(.{ .smulh = .{
+        .dst = high,
+        .src1 = reg_a,
+        .src2 = reg_b,
+        .size = size,
+    } });
+
+    // ASR sign_ext, dst, #63 or #31 (sign extend low bits to get expected high bits)
+    const shift = if (size == .size64) 63 else 31;
+    try ctx.emit(.{ .asr_imm = .{
+        .dst = sign_ext,
+        .src = dst.toReg(),
+        .shift = shift,
+        .size = size,
+    } });
+
+    // Allocate skip label
+    const skip_label = ctx.lower_ctx.allocLabel();
+
+    // CMP high, sign_ext (check if high bits match sign extension)
+    try ctx.emit(.{ .cmp_rr = .{
+        .rn = high.toReg(),
+        .rm = sign_ext.toReg(),
+        .size = size,
+    } });
+
+    // B.EQ skip (branch if they match - no overflow)
+    try ctx.emit(.{
+        .b_cond = .{
+            .cond = .eq,
             .target = .{ .label = skip_label },
         },
     });
