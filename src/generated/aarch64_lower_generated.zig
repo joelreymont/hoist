@@ -8,11 +8,13 @@ const Inst = inst_mod.Inst;
 const Reg = inst_mod.Reg;
 const WritableReg = inst_mod.WritableReg;
 const OperandSize = inst_mod.OperandSize;
+const CondCode = inst_mod.CondCode;
 const lower_mod = @import("../machinst/lower.zig");
 
 const Opcode = root.opcodes.Opcode;
 const InstructionData = root.instruction_data.InstructionData;
 const Type = root.types.Type;
+const IntCC = root.condcodes.IntCC;
 
 // Manual lowering function until ISLE compiler is fully functional
 pub fn lower(
@@ -538,6 +540,165 @@ pub fn lower(
                 // Fall through or jump to else block
                 try ctx.emit(Inst{ .b = .{
                     .target = .{ .label = else_label },
+                } });
+
+                return true;
+            }
+        },
+        .int_compare => |data| {
+            if (data.opcode == .icmp) {
+                // Integer comparison: compare two registers
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Map IntCC to ARM64 CondCode
+                const cond: CondCode = switch (data.cond) {
+                    .eq => .eq, // equal
+                    .ne => .ne, // not equal
+                    .slt => .lt, // signed less than
+                    .sge => .ge, // signed greater or equal
+                    .sgt => .gt, // signed greater than
+                    .sle => .le, // signed less or equal
+                    .ult => .cc, // unsigned less than (carry clear)
+                    .uge => .cs, // unsigned greater or equal (carry set)
+                    .ugt => .hi, // unsigned higher
+                    .ule => .ls, // unsigned lower or same
+                };
+
+                // Emit cmp instruction
+                try ctx.emit(Inst{ .cmp_rr = .{
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                // Emit cset instruction to materialize result in register
+                try ctx.emit(Inst{ .cset = .{
+                    .dst = dst,
+                    .cond = cond,
+                    .size = size,
+                } });
+
+                return true;
+            }
+        },
+        .int_compare_imm => |data| {
+            if (data.opcode == .icmp_imm) {
+                // Integer comparison with immediate
+                const lhs = data.arg;
+                const imm = data.imm.value;
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Map IntCC to ARM64 CondCode
+                const cond: CondCode = switch (data.cond) {
+                    .eq => .eq,
+                    .ne => .ne,
+                    .slt => .lt,
+                    .sge => .ge,
+                    .sgt => .gt,
+                    .sle => .le,
+                    .ult => .cc,
+                    .uge => .cs,
+                    .ugt => .hi,
+                    .ule => .ls,
+                };
+
+                // Check if immediate fits in 12-bit encoding
+                // ARM64 cmp_imm uses Imm12 which must be 0-4095
+                if (imm >= 0 and imm <= 4095) {
+                    // Emit cmp immediate instruction
+                    try ctx.emit(Inst{ .cmp_imm = .{
+                        .src = lhs_reg,
+                        .imm = @intCast(imm),
+                        .size = size,
+                    } });
+                } else {
+                    // Immediate doesn't fit - materialize in register first
+                    const imm_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
+                    const imm_abs = if (imm < 0) @as(u64, @bitCast(-imm)) else @as(u64, @intCast(imm));
+
+                    // Materialize immediate (simplified for now)
+                    if (imm_abs <= 0xFFFF) {
+                        try ctx.emit(Inst{ .movz = .{
+                            .dst = imm_reg,
+                            .imm = @truncate(imm_abs),
+                            .shift = 0,
+                            .size = size,
+                        } });
+                        if (imm < 0) {
+                            const neg_dst = WritableReg.fromReg(imm_reg.toReg());
+                            try ctx.emit(Inst{ .neg_rr = .{
+                                .dst = neg_dst,
+                                .src = imm_reg.toReg(),
+                                .size = size,
+                            } });
+                        }
+                    } else {
+                        // Full constant materialization
+                        const chunks = [_]u16{
+                            @truncate(imm_abs),
+                            @truncate(imm_abs >> 16),
+                            @truncate(imm_abs >> 32),
+                            @truncate(imm_abs >> 48),
+                        };
+
+                        var first = true;
+                        for (chunks, 0..) |chunk, i| {
+                            if (chunk != 0 or first) {
+                                if (first) {
+                                    try ctx.emit(Inst{ .movz = .{
+                                        .dst = imm_reg,
+                                        .imm = chunk,
+                                        .shift = @intCast(i * 16),
+                                        .size = size,
+                                    } });
+                                    first = false;
+                                } else {
+                                    try ctx.emit(Inst{ .movk = .{
+                                        .dst = imm_reg,
+                                        .imm = chunk,
+                                        .shift = @intCast(i * 16),
+                                        .size = size,
+                                    } });
+                                }
+                            }
+                        }
+
+                        if (imm < 0) {
+                            const neg_dst = WritableReg.fromReg(imm_reg.toReg());
+                            try ctx.emit(Inst{ .neg_rr = .{
+                                .dst = neg_dst,
+                                .src = imm_reg.toReg(),
+                                .size = size,
+                            } });
+                        }
+                    }
+
+                    // Now compare with register
+                    try ctx.emit(Inst{ .cmp_rr = .{
+                        .src1 = lhs_reg,
+                        .src2 = imm_reg.toReg(),
+                        .size = size,
+                    } });
+                }
+
+                // Emit cset instruction to materialize result
+                try ctx.emit(Inst{ .cset = .{
+                    .dst = dst,
+                    .cond = cond,
+                    .size = size,
                 } });
 
                 return true;
