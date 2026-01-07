@@ -1848,6 +1848,28 @@ pub fn aarch64_uqsub_64(ctx: *IsleContext, a: Value, b: Value) !void {
     } });
 }
 
+/// Constructor: casal - compare-and-swap with acquire-release semantics.
+/// Used for seq_cst atomic operations.
+pub fn aarch64_casal(
+    ctx: *IsleContext,
+    addr: Value,
+    expected: Value,
+    new_val: Value,
+) !void {
+    const addr_reg = try ctx.getValueReg(addr, .int);
+    const expected_reg = try ctx.getValueReg(expected, .int);
+    const new_val_reg = try ctx.getValueReg(new_val, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .casal = .{
+        .compare = expected_reg,
+        .swap = new_val_reg,
+        .dst = dst,
+        .base = addr_reg,
+        .size = .size64,
+    } });
+}
+
 /// Constructor: return_call - direct tail call.
 /// Emits epilogue followed by direct branch instead of call+return.
 pub fn aarch64_return_call(

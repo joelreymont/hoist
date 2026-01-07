@@ -114,6 +114,10 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .isb => try emitIsb(buffer),
         .ldaxr => |i| try emitLdaxr(i.dst.toReg(), i.base, i.size, buffer),
         .stlxr => |i| try emitStlxr(i.status.toReg(), i.src, i.base, i.size, buffer),
+        .cas => |i| try emitCas(i.compare, i.swap, i.dst.toReg(), i.base, i.size, buffer),
+        .casa => |i| try emitCasa(i.compare, i.swap, i.dst.toReg(), i.base, i.size, buffer),
+        .casl => |i| try emitCasl(i.compare, i.swap, i.dst.toReg(), i.base, i.size, buffer),
+        .casal => |i| try emitCasal(i.compare, i.swap, i.dst.toReg(), i.base, i.size, buffer),
         .b => |i| try emitB(i.target.label, buffer),
         .b_cond => |i| try emitBCond(@intFromEnum(i.cond), i.target.label, buffer),
         .bl => |i| switch (i.target) {
@@ -11462,6 +11466,99 @@ fn emitStlxr(status: Reg, src: Reg, addr: Reg, size: OperandSize, buffer: *buffe
         (0b11111 << 10) | // Rt2=11111 (single register)
         (@as(u32, rn) << 5) |
         @as(u32, rt);
+
+    try buffer.put4(insn);
+}
+
+/// CAS (compare and swap): CAS Xs, Xt, [Xn]
+/// Encoding: sz|001000|1|o2|1|Rs|o1|Rt2|Rn|Rt
+/// o2=0, o1=0 for CAS (no acquire/release)
+fn emitCas(compare: Reg, swap: Reg, dst: Reg, addr: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rs = hwEnc(compare);
+    const rt = hwEnc(swap);
+    const rd = hwEnc(dst);
+    const rn = hwEnc(addr);
+    const sz: u2 = if (size == .size64) 0b11 else 0b10;
+
+    const insn: u32 = (@as(u32, sz) << 30) |
+        (0b001000 << 24) |
+        (0b1 << 23) |
+        (0b0 << 22) | // o2=0
+        (0b1 << 21) |
+        (@as(u32, rs) << 16) |
+        (0b0 << 15) | // o1=0
+        (0b11111 << 10) | // Rt2=11111 (single register)
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    try buffer.put4(insn);
+}
+
+/// CASA (compare and swap acquire): CASA Xs, Xt, [Xn]
+/// o2=1, o1=0 for CASA
+fn emitCasa(compare: Reg, swap: Reg, dst: Reg, addr: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rs = hwEnc(compare);
+    const rt = hwEnc(swap);
+    const rd = hwEnc(dst);
+    const rn = hwEnc(addr);
+    const sz: u2 = if (size == .size64) 0b11 else 0b10;
+
+    const insn: u32 = (@as(u32, sz) << 30) |
+        (0b001000 << 24) |
+        (0b1 << 23) |
+        (0b1 << 22) | // o2=1
+        (0b1 << 21) |
+        (@as(u32, rs) << 16) |
+        (0b0 << 15) | // o1=0
+        (0b11111 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    try buffer.put4(insn);
+}
+
+/// CASL (compare and swap release): CASL Xs, Xt, [Xn]
+/// o2=0, o1=1 for CASL
+fn emitCasl(compare: Reg, swap: Reg, dst: Reg, addr: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rs = hwEnc(compare);
+    const rt = hwEnc(swap);
+    const rd = hwEnc(dst);
+    const rn = hwEnc(addr);
+    const sz: u2 = if (size == .size64) 0b11 else 0b10;
+
+    const insn: u32 = (@as(u32, sz) << 30) |
+        (0b001000 << 24) |
+        (0b1 << 23) |
+        (0b0 << 22) | // o2=0
+        (0b1 << 21) |
+        (@as(u32, rs) << 16) |
+        (0b1 << 15) | // o1=1
+        (0b11111 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    try buffer.put4(insn);
+}
+
+/// CASAL (compare and swap acquire-release): CASAL Xs, Xt, [Xn]
+/// o2=1, o1=1 for CASAL
+fn emitCasal(compare: Reg, swap: Reg, dst: Reg, addr: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rs = hwEnc(compare);
+    const rt = hwEnc(swap);
+    const rd = hwEnc(dst);
+    const rn = hwEnc(addr);
+    const sz: u2 = if (size == .size64) 0b11 else 0b10;
+
+    const insn: u32 = (@as(u32, sz) << 30) |
+        (0b001000 << 24) |
+        (0b1 << 23) |
+        (0b1 << 22) | // o2=1
+        (0b1 << 21) |
+        (@as(u32, rs) << 16) |
+        (0b1 << 15) | // o1=1
+        (0b11111 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
 
     try buffer.put4(insn);
 }
