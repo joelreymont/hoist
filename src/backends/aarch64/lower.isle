@@ -3115,6 +3115,24 @@
 (rule (lower (stack_store val stack_slot offset))
       (aarch64_stack_store (value_type val) val stack_slot offset))
 
+;; dynamic_stack_addr: Compute address in dynamic stack space (alloca)
+(decl dynamic_stack_addr (u64) Aarch64Inst)
+(extern constructor dynamic_stack_addr dynamic_stack_addr)
+(rule (lower (dynamic_stack_addr offset))
+      (dynamic_stack_addr offset))
+
+;; dynamic_stack_load: Load from dynamic stack space
+(decl dynamic_stack_load (Type u64) Aarch64Inst)
+(extern constructor dynamic_stack_load dynamic_stack_load)
+(rule (lower (has_type ty (dynamic_stack_load offset)))
+      (dynamic_stack_load ty offset))
+
+;; dynamic_stack_store: Store to dynamic stack space
+(decl dynamic_stack_store (Type Value u64) Aarch64Inst)
+(extern constructor dynamic_stack_store dynamic_stack_store)
+(rule (lower (dynamic_stack_store val offset))
+      (dynamic_stack_store (value_type val) val offset))
+
 ;; get_frame_pointer: Get frame pointer (X29/FP)
 (decl aarch64_get_frame_pointer () Aarch64Inst)
 (extern constructor aarch64_get_frame_pointer aarch64_get_frame_pointer)

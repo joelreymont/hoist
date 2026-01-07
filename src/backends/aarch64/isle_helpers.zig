@@ -2147,6 +2147,152 @@ pub fn tls_local_exec(offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     }
 }
 
+/// Dynamic stack operations (ISLE constructors)
+pub fn dynamic_stack_addr(offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Get dynamic stack pointer register (X19)
+    // This requires dynamic allocations to be enabled in the ABI
+    const dyn_sp = Reg.gpr(19); // X19 - dynamic stack pointer
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+
+    // Compute address: ADD Xd, X19, #offset
+    if (offset == 0) {
+        // Just move the dynamic SP
+        return Inst{ .mov_rr = .{
+            .dst = dst,
+            .src = dyn_sp,
+            .size = .size64,
+        } };
+    } else if (offset <= 0xFFF) {
+        // Small offset fits in ADD immediate
+        return Inst{ .add_imm = .{
+            .dst = dst,
+            .src = dyn_sp,
+            .imm = @intCast(offset),
+            .size = .size64,
+        } };
+    } else {
+        // Large offset - load into register first
+        const offset_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+        try ctx.emit(Inst{ .mov_imm = .{
+            .dst = offset_reg,
+            .imm = offset,
+            .size = .size64,
+        } });
+        return Inst{ .add_rr = .{
+            .dst = dst,
+            .src1 = dyn_sp,
+            .src2 = offset_reg.toReg(),
+            .size = .size64,
+        } };
+    }
+}
+
+pub fn dynamic_stack_load(ty: Type, offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Load from dynamic stack: LDR Xd/Vd, [X19, #offset]
+    const dyn_sp = Reg.gpr(19); // X19 - dynamic stack pointer
+
+    // Compute address first if offset doesn't fit in load immediate
+    const max_load_offset = 32760; // 12-bit scaled by 8 for 64-bit loads
+    if (offset > max_load_offset) {
+        // Compute address in temp register
+        const addr_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+        try ctx.emit(try dynamic_stack_addr(offset, ctx));
+        // Then load from [addr_reg, #0]
+        const load_base = addr_reg.toReg();
+        return switch (ty) {
+            .I8, .I16, .I32, .I64 => Inst{ .ldr = .{
+                .dst = lower_mod.WritableReg.allocReg(.int, ctx),
+                .base = load_base,
+                .offset = 0,
+                .size = typeToOperandSize(ty),
+            } },
+            .F32, .F64 => Inst{ .fldr = .{
+                .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
+                .base = load_base,
+                .offset = 0,
+                .size = typeToOperandSize(ty),
+            } },
+            else => unreachable,
+        };
+    } else {
+        // Direct load with offset
+        return switch (ty) {
+            .I8, .I16, .I32, .I64 => Inst{ .ldr = .{
+                .dst = lower_mod.WritableReg.allocReg(.int, ctx),
+                .base = dyn_sp,
+                .offset = @intCast(offset),
+                .size = typeToOperandSize(ty),
+            } },
+            .F32, .F64 => Inst{ .fldr = .{
+                .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
+                .base = dyn_sp,
+                .offset = @intCast(offset),
+                .size = typeToOperandSize(ty),
+            } },
+            else => unreachable,
+        };
+    }
+}
+
+pub fn dynamic_stack_store(ty: Type, val: lower_mod.Value, offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Store to dynamic stack: STR Xs/Vs, [X19, #offset]
+    const dyn_sp = Reg.gpr(19); // X19 - dynamic stack pointer
+
+    // Compute address first if offset doesn't fit in store immediate
+    const max_store_offset = 32760; // 12-bit scaled by 8 for 64-bit stores
+    if (offset > max_store_offset) {
+        // Compute address in temp register
+        const addr_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+        try ctx.emit(try dynamic_stack_addr(offset, ctx));
+        // Then store to [addr_reg, #0]
+        const store_base = addr_reg.toReg();
+        return switch (ty) {
+            .I8, .I16, .I32, .I64 => {
+                const src = try ctx.getValueReg(val, .int);
+                return Inst{ .str = .{
+                    .src = src,
+                    .base = store_base,
+                    .offset = 0,
+                    .size = typeToOperandSize(ty),
+                } };
+            },
+            .F32, .F64 => {
+                const src = try ctx.getValueVReg(val, .float);
+                return Inst{ .fstr = .{
+                    .src = src,
+                    .base = store_base,
+                    .offset = 0,
+                    .size = typeToOperandSize(ty),
+                } };
+            },
+            else => unreachable,
+        };
+    } else {
+        // Direct store with offset
+        return switch (ty) {
+            .I8, .I16, .I32, .I64 => {
+                const src = try ctx.getValueReg(val, .int);
+                return Inst{ .str = .{
+                    .src = src,
+                    .base = dyn_sp,
+                    .offset = @intCast(offset),
+                    .size = typeToOperandSize(ty),
+                } };
+            },
+            .F32, .F64 => {
+                const src = try ctx.getValueVReg(val, .float);
+                return Inst{ .fstr = .{
+                    .src = src,
+                    .base = dyn_sp,
+                    .offset = @intCast(offset),
+                    .size = typeToOperandSize(ty),
+                } };
+            },
+            else => unreachable,
+        };
+    }
+}
+
 /// Debug operations (ISLE constructors)
 pub fn aarch64_debugtrap(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     _ = ctx;
