@@ -69,6 +69,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .subs_imm => |i| try emitSubsImm(i.dst.toReg(), i.src, i.imm, i.size, buffer),
         .cmp_rr => |i| try emitCmpRR(i.src1, i.src2, i.size, buffer),
         .cmp_imm => |i| try emitCmpImm(i.src, i.imm, i.size, buffer),
+        .ccmp => |i| try emitCcmp(i.src1, i.src2, i.nzcv, i.cond, i.size, buffer),
+        .ccmp_imm => |i| try emitCcmpImm(i.src, i.imm, i.nzcv, i.cond, i.size, buffer),
         .tst_rr => |i| try emitTstRR(i.src1, i.src2, i.size, buffer),
         .tst_imm => |i| try emitTstImm(i.src, i.imm, buffer),
         .sxtb => |i| try emitSxtb(i.dst.toReg(), i.src, i.dst_size, buffer),

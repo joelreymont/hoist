@@ -715,6 +715,37 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
                     }
                 }
             },
+            .ccmp => |*i| {
+                if (i.src1.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        const preg = switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented in emission"),
+                        };
+                        i.src1 = Reg.fromPReg(preg);
+                    }
+                }
+                if (i.src2.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        const preg = switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented in emission"),
+                        };
+                        i.src2 = Reg.fromPReg(preg);
+                    }
+                }
+            },
+            .ccmp_imm => |*i| {
+                if (i.src.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        const preg = switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented in emission"),
+                        };
+                        i.src = Reg.fromPReg(preg);
+                    }
+                }
+            },
             // Priority 1: Critical arithmetic & logic
             .sub_rr => |*i| {
                 if (i.dst.toReg().toVReg()) |vreg| {

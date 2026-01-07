@@ -2349,6 +2349,13 @@ pub const Inst = union(enum) {
             .cmp_imm => |*i| {
                 try collector.regUse(i.src);
             },
+            .ccmp => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+            },
+            .ccmp_imm => |*i| {
+                try collector.regUse(i.src);
+            },
             .add_shifted => |*i| {
                 try collector.regUse(i.src1);
                 try collector.regUse(i.src2);
