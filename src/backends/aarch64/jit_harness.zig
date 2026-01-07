@@ -1,0 +1,230 @@
+//! JIT execution harness for testing code generation.
+//!
+//! Allocates executable memory, copies machine code, and executes it.
+//! Used for end-to-end testing of code generation.
+
+const std = @import("std");
+const builtin = @import("builtin");
+const testing = std.testing;
+
+/// Executable memory region for JIT-compiled code.
+pub const JitMemory = struct {
+    ptr: [*]align(std.mem.page_size) u8,
+    len: usize,
+    allocator: std.mem.Allocator,
+
+    const Self = @This();
+
+    /// Allocate executable memory region.
+    pub fn init(allocator: std.mem.Allocator, size: usize) !Self {
+        // Round up to page size
+        const page_size = std.mem.page_size;
+        const aligned_size = std.mem.alignForward(usize, size, page_size);
+
+        // Allocate memory with read+write+execute permissions
+        const ptr = switch (builtin.os.tag) {
+            .macos, .ios, .tvos, .watchos => blk: {
+                const mmap = std.c.mmap(
+                    null,
+                    aligned_size,
+                    std.c.PROT.READ | std.c.PROT.WRITE | std.c.PROT.EXEC,
+                    std.c.MAP{ .TYPE = .PRIVATE, .ANONYMOUS = true },
+                    -1,
+                    0,
+                );
+                if (mmap == std.c.MAP_FAILED) {
+                    return error.OutOfMemory;
+                }
+                break :blk @as([*]align(page_size) u8, @ptrCast(@alignCast(mmap)));
+            },
+            .linux => blk: {
+                const mmap = std.os.linux.mmap(
+                    null,
+                    aligned_size,
+                    std.os.linux.PROT.READ | std.os.linux.PROT.WRITE | std.os.linux.PROT.EXEC,
+                    .{ .TYPE = .PRIVATE, .ANONYMOUS = true },
+                    -1,
+                    0,
+                );
+                if (mmap < 0) {
+                    return error.OutOfMemory;
+                }
+                break :blk @as([*]align(page_size) u8, @ptrFromInt(@as(usize, @intCast(mmap))));
+            },
+            else => return error.UnsupportedPlatform,
+        };
+
+        return .{
+            .ptr = ptr,
+            .len = aligned_size,
+            .allocator = allocator,
+        };
+    }
+
+    /// Free executable memory.
+    pub fn deinit(self: *Self) void {
+        switch (builtin.os.tag) {
+            .macos, .ios, .tvos, .watchos => {
+                _ = std.c.munmap(self.ptr, self.len);
+            },
+            .linux => {
+                _ = std.os.linux.munmap(self.ptr, self.len);
+            },
+            else => {},
+        }
+    }
+
+    /// Copy machine code into executable memory.
+    pub fn write(self: *Self, code: []const u8) !void {
+        if (code.len > self.len) {
+            return error.CodeTooLarge;
+        }
+
+        @memcpy(self.ptr[0..code.len], code);
+
+        // Flush instruction cache (required on ARM)
+        if (builtin.cpu.arch == .aarch64 or builtin.cpu.arch == .arm) {
+            self.flushCache(code.len);
+        }
+    }
+
+    /// Flush instruction cache for ARM architectures.
+    fn flushCache(self: *Self, len: usize) void {
+        if (builtin.os.tag == .macos or builtin.os.tag == .ios) {
+            // Use sys_icache_invalidate on Darwin
+            const sys_icache_invalidate = struct {
+                extern "c" fn sys_icache_invalidate(addr: *anyopaque, size: usize) void;
+            }.sys_icache_invalidate;
+            sys_icache_invalidate(self.ptr, len);
+        } else if (builtin.os.tag == .linux) {
+            // Use __builtin___clear_cache on Linux
+            const clear_cache = struct {
+                extern "c" fn __clear_cache(begin: *anyopaque, end: *anyopaque) void;
+            }.__clear_cache;
+            clear_cache(self.ptr, self.ptr + len);
+        }
+    }
+
+    /// Get function pointer for i32 -> i32 signature.
+    pub fn getFnI32ToI32(self: *Self) *const fn (i32) callconv(.C) i32 {
+        return @ptrCast(@alignCast(self.ptr));
+    }
+
+    /// Get function pointer for i64 -> i64 signature.
+    pub fn getFnI64ToI64(self: *Self) *const fn (i64) callconv(.C) i64 {
+        return @ptrCast(@alignCast(self.ptr));
+    }
+
+    /// Get function pointer for () -> i32 signature.
+    pub fn getFnVoidToI32(self: *Self) *const fn () callconv(.C) i32 {
+        return @ptrCast(@alignCast(self.ptr));
+    }
+
+    /// Get function pointer for () -> i64 signature.
+    pub fn getFnVoidToI64(self: *Self) *const fn () callconv(.C) i64 {
+        return @ptrCast(@alignCast(self.ptr));
+    }
+
+    /// Get function pointer for (i32, i32) -> i32 signature.
+    pub fn getFnI32I32ToI32(self: *Self) *const fn (i32, i32) callconv(.C) i32 {
+        return @ptrCast(@alignCast(self.ptr));
+    }
+
+    /// Get function pointer for (i64, i64) -> i64 signature.
+    pub fn getFnI64I64ToI64(self: *Self) *const fn (i64, i64) callconv(.C) i64 {
+        return @ptrCast(@alignCast(self.ptr));
+    }
+};
+
+test "JitMemory allocate and free" {
+    if (builtin.os.tag != .macos and builtin.os.tag != .linux) {
+        return error.SkipZigTest;
+    }
+
+    var mem = try JitMemory.init(testing.allocator, 4096);
+    defer mem.deinit();
+
+    try testing.expect(mem.len >= 4096);
+    try testing.expect(@intFromPtr(mem.ptr) % std.mem.page_size == 0);
+}
+
+test "JitMemory write and execute - return constant" {
+    if (builtin.os.tag != .macos and builtin.os.tag != .linux) {
+        return error.SkipZigTest;
+    }
+    if (builtin.cpu.arch != .aarch64) {
+        return error.SkipZigTest;
+    }
+
+    var mem = try JitMemory.init(testing.allocator, 4096);
+    defer mem.deinit();
+
+    // ARM64 code to return 42:
+    // MOV W0, #42
+    // RET
+    const code = [_]u8{
+        0x40, 0x05, 0x80, 0x52, // MOV W0, #42 (0x2a)
+        0xC0, 0x03, 0x5F, 0xD6, // RET
+    };
+
+    try mem.write(&code);
+
+    const func = mem.getFnVoidToI32();
+    const result = func();
+
+    try testing.expectEqual(@as(i32, 42), result);
+}
+
+test "JitMemory write and execute - add function" {
+    if (builtin.os.tag != .macos and builtin.os.tag != .linux) {
+        return error.SkipZigTest;
+    }
+    if (builtin.cpu.arch != .aarch64) {
+        return error.SkipZigTest;
+    }
+
+    var mem = try JitMemory.init(testing.allocator, 4096);
+    defer mem.deinit();
+
+    // ARM64 code to add two i32 arguments (W0 + W1 -> W0):
+    // ADD W0, W0, W1
+    // RET
+    const code = [_]u8{
+        0x00, 0x00, 0x01, 0x0B, // ADD W0, W0, W1
+        0xC0, 0x03, 0x5F, 0xD6, // RET
+    };
+
+    try mem.write(&code);
+
+    const func = mem.getFnI32I32ToI32();
+    const result = func(10, 32);
+
+    try testing.expectEqual(@as(i32, 42), result);
+}
+
+test "JitMemory write and execute - i64 function" {
+    if (builtin.os.tag != .macos and builtin.os.tag != .linux) {
+        return error.SkipZigTest;
+    }
+    if (builtin.cpu.arch != .aarch64) {
+        return error.SkipZigTest;
+    }
+
+    var mem = try JitMemory.init(testing.allocator, 4096);
+    defer mem.deinit();
+
+    // ARM64 code to add two i64 arguments (X0 + X1 -> X0):
+    // ADD X0, X0, X1
+    // RET
+    const code = [_]u8{
+        0x00, 0x00, 0x01, 0x8B, // ADD X0, X0, X1
+        0xC0, 0x03, 0x5F, 0xD6, // RET
+    };
+
+    try mem.write(&code);
+
+    const func = mem.getFnI64I64ToI64();
+    const result = func(100, 200);
+
+    try testing.expectEqual(@as(i64, 300), result);
+}
