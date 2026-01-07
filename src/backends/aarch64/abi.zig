@@ -1,5 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
+const builtin = @import("builtin");
 
 const root = @import("root");
 const abi_mod = root.abi;
@@ -10,6 +11,25 @@ const WritableReg = root.aarch64_inst.WritableReg;
 const OperandSize = root.aarch64_inst.OperandSize;
 const buffer_mod = root.buffer;
 const vcode_mod = root.vcode;
+
+/// Platform-specific ABI variant.
+pub const Platform = enum {
+    /// Apple platforms (macOS, iOS, etc.) - X18 reserved, no red zone.
+    darwin,
+    /// Linux platforms - standard AAPCS64.
+    linux,
+    /// Other ARM64 platforms.
+    other,
+
+    /// Detect platform at compile time.
+    pub fn detect() Platform {
+        return switch (builtin.os.tag) {
+            .macos, .ios, .tvos, .watchos => .darwin,
+            .linux => .linux,
+            else => .other,
+        };
+    }
+};
 
 /// ARM64 AAPCS ABI machine spec.
 pub fn aapcs64() abi_mod.ABIMachineSpec(u64) {
@@ -732,6 +752,8 @@ pub const Aarch64ABICallee = struct {
     /// Register used to track dynamic stack pointer (X19 by convention).
     /// Only used when has_dynamic_alloc is true.
     dyn_sp_reg: ?PReg,
+    /// Platform for ABI-specific behavior.
+    platform: Platform,
 
     pub fn init(
         _allocator: std.mem.Allocator,
@@ -753,6 +775,7 @@ pub const Aarch64ABICallee = struct {
             .uses_frame_pointer = false,
             .has_dynamic_alloc = false,
             .dyn_sp_reg = null,
+            .platform = Platform.detect(),
         };
     }
 

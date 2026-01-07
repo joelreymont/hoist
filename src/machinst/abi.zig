@@ -114,6 +114,15 @@ pub const CallConv = enum {
     windows_fastcall,
     /// ARM64 AAPCS calling convention.
     aapcs64,
+    /// Fast calling convention - aggressive register usage, caller-save all volatiles.
+    /// Passes more arguments in registers than standard C convention.
+    fast,
+    /// PreserveAll calling convention - callee saves all GPRs and FPRs except arguments.
+    /// Used for statepoints/patchpoints in garbage collection.
+    preserve_all,
+    /// Cold calling convention - marks function as rarely executed.
+    /// Same register allocation as C, but hints for de-prioritizing optimization.
+    cold,
 };
 
 /// Argument extension mode.
