@@ -427,6 +427,75 @@ pub fn lower(
                 } });
 
                 return true;
+            } else if (data.opcode == .uload8) {
+                // Load unsigned byte (zero-extend)
+                const addr = data.arg;
+                const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                // Result type determines destination size
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .ldrb = .{
+                    .dst = dst,
+                    .base = addr_reg,
+                    .offset = @intCast(data.offset.value),
+                    .size = size,
+                } });
+
+                return true;
+            } else if (data.opcode == .sload8) {
+                // Load signed byte (sign-extend)
+                const addr = data.arg;
+                const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .ldrsb = .{
+                    .dst = dst,
+                    .base = addr_reg,
+                    .offset = @intCast(data.offset.value),
+                    .size = size,
+                } });
+
+                return true;
+            } else if (data.opcode == .uload16) {
+                // Load unsigned halfword (zero-extend)
+                const addr = data.arg;
+                const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .ldrh = .{
+                    .dst = dst,
+                    .base = addr_reg,
+                    .offset = @intCast(data.offset.value),
+                    .size = size,
+                } });
+
+                return true;
+            } else if (data.opcode == .sload16) {
+                // Load signed halfword (sign-extend)
+                const addr = data.arg;
+                const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .ldrsh = .{
+                    .dst = dst,
+                    .base = addr_reg,
+                    .offset = @intCast(data.offset.value),
+                    .size = size,
+                } });
+
+                return true;
             }
         },
         .store => |data| {
@@ -449,6 +518,36 @@ pub fn lower(
                     .base = addr_reg,
                     .offset = @intCast(data.offset.value),
                     .size = size,
+                } });
+
+                return true;
+            } else if (data.opcode == .istore8) {
+                // Store byte
+                const value = data.arg;
+                const addr = data.addr;
+
+                const value_reg = Reg.fromVReg(try ctx.getValueReg(value, .int));
+                const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
+
+                try ctx.emit(Inst{ .strb = .{
+                    .src = value_reg,
+                    .base = addr_reg,
+                    .offset = @intCast(data.offset.value),
+                } });
+
+                return true;
+            } else if (data.opcode == .istore16) {
+                // Store halfword
+                const value = data.arg;
+                const addr = data.addr;
+
+                const value_reg = Reg.fromVReg(try ctx.getValueReg(value, .int));
+                const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
+
+                try ctx.emit(Inst{ .strh = .{
+                    .src = value_reg,
+                    .base = addr_reg,
+                    .offset = @intCast(data.offset.value),
                 } });
 
                 return true;
