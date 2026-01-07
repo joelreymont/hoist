@@ -2051,6 +2051,48 @@ pub fn lower(
                     .size = size,
                 } });
                 return true;
+            } else if (data.opcode == .fcvt_to_sint) {
+                // Convert float to signed integer
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                // Get source float type
+                const src_ty = ctx.getValueType(src);
+                const src_size: FpuOperandSize = if (src_ty.bits() == 32) .size32 else .size64;
+
+                // Get destination integer type
+                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const dst_size: OperandSize = if (dst_ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .fcvtzs = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .src_size = src_size,
+                    .dst_size = dst_size,
+                } });
+                return true;
+            } else if (data.opcode == .fcvt_to_uint) {
+                // Convert float to unsigned integer
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                // Get source float type
+                const src_ty = ctx.getValueType(src);
+                const src_size: FpuOperandSize = if (src_ty.bits() == 32) .size32 else .size64;
+
+                // Get destination integer type
+                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const dst_size: OperandSize = if (dst_ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .fcvtzu = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .src_size = src_size,
+                    .dst_size = dst_size,
+                } });
+                return true;
             }
         },
         .binary_imm64 => |data| {
