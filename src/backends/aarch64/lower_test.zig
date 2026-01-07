@@ -13,6 +13,7 @@ const Inst = inst_mod.Inst;
 
 const Function = root.function.Function;
 const Signature = root.signature.Signature;
+const AbiParam = root.signature.AbiParam;
 const Type = root.types.Type;
 const Block = root.entities.Block;
 const Value = root.entities.Value;
@@ -24,12 +25,14 @@ test "lower simple iconst + return" {
     //   v0 = iconst 42
     //   return v0
 
-    const sig = Signature.init(&.{}, &.{Type.i64()});
+    var sig = Signature.init(testing.allocator, .fast);
+    defer sig.deinit();
+    try sig.returns.append(testing.allocator, AbiParam.new(Type.I64));
     var func = try Function.init(testing.allocator, "test_iconst", sig);
     defer func.deinit();
 
     // Create entry block
-    const block0 = func.dfg.makeBlock();
+    const block0 = try func.dfg.makeBlock();
     try func.layout.appendBlock(block0);
 
     // v0 = iconst 42
@@ -37,17 +40,16 @@ test "lower simple iconst + return" {
         .opcode = .iconst,
         .imm = .{ .value = 42 },
     } };
-    const v0_inst = func.dfg.makeInst(iconst_data);
+    const v0_inst = try func.dfg.makeInst(iconst_data);
     try func.layout.appendInst(v0_inst, block0);
-    const v0 = Value.fromInst(v0_inst);
-    try func.dfg.attachResult(v0_inst, Type.i64());
+    const v0 = func.dfg.firstResult(v0_inst).?;
 
     // return v0
     const return_data = InstructionData{ .unary = .{
         .opcode = .@"return",
         .arg = v0,
     } };
-    const ret_inst = func.dfg.makeInst(return_data);
+    const ret_inst = try func.dfg.makeInst(return_data);
     try func.layout.appendInst(ret_inst, block0);
 
     // Lower to VCode
@@ -72,36 +74,37 @@ test "lower iadd + return" {
     //   v2 = iadd v0, v1
     //   return v2
 
-    const params = [_]Type{ Type.i64(), Type.i64() };
-    const returns = [_]Type{Type.i64()};
-    const sig = Signature.init(&params, &returns);
+    var sig = Signature.init(testing.allocator, .fast);
+    defer sig.deinit();
+    try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
+    try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
+    try sig.returns.append(testing.allocator, AbiParam.new(Type.I64));
 
     var func = try Function.init(testing.allocator, "test_iadd", sig);
     defer func.deinit();
 
-    const block0 = func.dfg.makeBlock();
+    const block0 = try func.dfg.makeBlock();
     try func.layout.appendBlock(block0);
 
     // Block parameters v0, v1
-    const v0 = func.dfg.appendBlockParam(block0, Type.i64());
-    const v1 = func.dfg.appendBlockParam(block0, Type.i64());
+    const v0 = try func.dfg.appendBlockParam(block0, Type.I64);
+    const v1 = try func.dfg.appendBlockParam(block0, Type.I64);
 
     // v2 = iadd v0, v1
     const iadd_data = InstructionData{ .binary = .{
         .opcode = .iadd,
         .args = .{ v0, v1 },
     } };
-    const v2_inst = func.dfg.makeInst(iadd_data);
+    const v2_inst = try func.dfg.makeInst(iadd_data);
     try func.layout.appendInst(v2_inst, block0);
-    const v2 = Value.fromInst(v2_inst);
-    try func.dfg.attachResult(v2_inst, Type.i64());
+    const v2 = func.dfg.firstResult(v2_inst).?;
 
     // return v2
     const return_data = InstructionData{ .unary = .{
         .opcode = .@"return",
         .arg = v2,
     } };
-    const ret_inst = func.dfg.makeInst(return_data);
+    const ret_inst = try func.dfg.makeInst(return_data);
     try func.layout.appendInst(ret_inst, block0);
 
     // Lower to VCode
@@ -129,23 +132,23 @@ test "lower conditional branch" {
     //   return
     // block2:
     //   return
-
-    const params = [_]Type{Type.i64()};
-    const sig = Signature.init(&params, &.{});
+    var sig = Signature.init(testing.allocator, .fast);
+    defer sig.deinit();
+    try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
 
     var func = try Function.init(testing.allocator, "test_brif", sig);
     defer func.deinit();
 
-    const block0 = func.dfg.makeBlock();
-    const block1 = func.dfg.makeBlock();
-    const block2 = func.dfg.makeBlock();
+    const block0 = try func.dfg.makeBlock();
+    const block1 = try func.dfg.makeBlock();
+    const block2 = try func.dfg.makeBlock();
 
     try func.layout.appendBlock(block0);
     try func.layout.appendBlock(block1);
     try func.layout.appendBlock(block2);
 
     // block0(v0)
-    const v0 = func.dfg.appendBlockParam(block0, Type.i64());
+    const v0 = try func.dfg.appendBlockParam(block0, Type.I64);
 
     // brif v0, block1, block2
     const brif_data = InstructionData{ .branch = .{
@@ -154,17 +157,17 @@ test "lower conditional branch" {
         .then_dest = block1,
         .else_dest = block2,
     } };
-    const brif_inst = func.dfg.makeInst(brif_data);
+    const brif_inst = try func.dfg.makeInst(brif_data);
     try func.layout.appendInst(brif_inst, block0);
 
     // block1: return
     const ret1_data = InstructionData{ .nullary = .{ .opcode = .@"return" } };
-    const ret1_inst = func.dfg.makeInst(ret1_data);
+    const ret1_inst = try func.dfg.makeInst(ret1_data);
     try func.layout.appendInst(ret1_inst, block1);
 
     // block2: return
     const ret2_data = InstructionData{ .nullary = .{ .opcode = .@"return" } };
-    const ret2_inst = func.dfg.makeInst(ret2_data);
+    const ret2_inst = try func.dfg.makeInst(ret2_data);
     try func.layout.appendInst(ret2_inst, block2);
 
     // Lower to VCode
@@ -187,12 +190,13 @@ test "lower unconditional jump" {
     // block1:
     //   return
 
-    const sig = Signature.init(&.{}, &.{});
+    var sig = Signature.init(testing.allocator, .fast);
+    defer sig.deinit();
     var func = try Function.init(testing.allocator, "test_jump", sig);
     defer func.deinit();
 
-    const block0 = func.dfg.makeBlock();
-    const block1 = func.dfg.makeBlock();
+    const block0 = try func.dfg.makeBlock();
+    const block1 = try func.dfg.makeBlock();
 
     try func.layout.appendBlock(block0);
     try func.layout.appendBlock(block1);
@@ -202,12 +206,12 @@ test "lower unconditional jump" {
         .opcode = .jump,
         .destination = block1,
     } };
-    const jump_inst = func.dfg.makeInst(jump_data);
+    const jump_inst = try func.dfg.makeInst(jump_data);
     try func.layout.appendInst(jump_inst, block0);
 
     // return
     const ret_data = InstructionData{ .nullary = .{ .opcode = .@"return" } };
-    const ret_inst = func.dfg.makeInst(ret_data);
+    const ret_inst = try func.dfg.makeInst(ret_data);
     try func.layout.appendInst(ret_inst, block1);
 
     // Lower to VCode

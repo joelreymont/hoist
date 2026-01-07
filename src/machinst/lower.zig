@@ -158,7 +158,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
         /// Marks each SSA value as unused, used once, or used multiple times.
         pub fn computeValueUses(self: *Self) !void {
             // Initialize all values as unused
-            var block_iter = self.func.layout.blocks();
+            var block_iter = self.func.layout.blockIter();
             while (block_iter.next()) |block| {
                 // Mark block params as unused initially
                 const block_params = self.func.dfg.blockParams(block);
@@ -177,7 +177,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
             }
 
             // Scan all instruction operands to count uses
-            block_iter = self.func.layout.blocks();
+            block_iter = self.func.layout.blockIter();
             while (block_iter.next()) |block| {
                 var inst_iter = self.func.layout.blockInsts(block);
                 while (inst_iter.next()) |inst| {
@@ -210,7 +210,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
         /// Cranelift does this to enable vreg aliasing (ISLE temps → SSA vregs).
         pub fn allocateSSAVRegs(self: *Self) !void {
             // Allocate VRegs for all instruction results
-            var block_iter = self.func.layout.blocks();
+            var block_iter = self.func.layout.blockIter();
             while (block_iter.next()) |block| {
                 // Allocate VRegs for block parameters
                 const block_params = self.func.dfg.blockParams(block);
@@ -423,7 +423,7 @@ test "SSA VReg pre-allocation" {
     };
 
     const Signature = root.signature.Signature;
-//     const Type = root.types.Type;
+    //     const Type = root.types.Type;
     const InstructionData = root.instruction_data.InstructionData;
 
     // Create function with some instructions
@@ -443,7 +443,7 @@ test "SSA VReg pre-allocation" {
     const inst1 = try func.dfg.makeInst(iconst_data);
     try func.layout.appendInst(inst1, block0);
     const v1 = func.dfg.firstResult(inst1).?;
-//     try func.dfg.attachResult(inst1, Type.i64());
+    //     try func.dfg.attachResult(inst1, Type.i64());
 
     // Create LowerCtx and pre-allocate VRegs
     var vcode = vcode_mod.VCode(TestInst).init(testing.allocator);
@@ -471,7 +471,7 @@ test "Value use state computation" {
     };
 
     const Signature = root.signature.Signature;
-//     const Type = root.types.Type;
+    //     const Type = root.types.Type;
     const InstructionData = root.instruction_data.InstructionData;
 
     // Create function with dead and live values
@@ -497,7 +497,7 @@ test "Value use state computation" {
     } });
     try func.layout.appendInst(v0_inst, block0);
     const v0 = func.dfg.firstResult(v0_inst).?;
-//     try func.dfg.attachResult(v0_inst, Type.i64());
+    //     try func.dfg.attachResult(v0_inst, Type.i64());
 
     // v1 = iconst 20 (used once in v3)
     const v1_inst = try func.dfg.makeInst(InstructionData{ .unary_imm = .{
@@ -506,7 +506,7 @@ test "Value use state computation" {
     } });
     try func.layout.appendInst(v1_inst, block0);
     const v1 = func.dfg.firstResult(v1_inst).?;
-//     try func.dfg.attachResult(v1_inst, Type.i64());
+    //     try func.dfg.attachResult(v1_inst, Type.i64());
 
     // v2 = iconst 30 (used multiple times)
     const v2_inst = try func.dfg.makeInst(InstructionData{ .unary_imm = .{
@@ -515,7 +515,7 @@ test "Value use state computation" {
     } });
     try func.layout.appendInst(v2_inst, block0);
     const v2 = func.dfg.firstResult(v2_inst).?;
-//     try func.dfg.attachResult(v2_inst, Type.i64());
+    //     try func.dfg.attachResult(v2_inst, Type.i64());
 
     // v3 = iadd v1, v2
     const v3_inst = try func.dfg.makeInst(InstructionData{ .binary = .{
@@ -524,7 +524,7 @@ test "Value use state computation" {
     } });
     try func.layout.appendInst(v3_inst, block0);
     const v3 = func.dfg.firstResult(v3_inst).?;
-//     try func.dfg.attachResult(v3_inst, Type.i64());
+    //     try func.dfg.attachResult(v3_inst, Type.i64());
 
     // v4 = iadd v2, v2 (uses v2 again)
     const v4_inst = try func.dfg.makeInst(InstructionData{ .binary = .{
@@ -533,7 +533,7 @@ test "Value use state computation" {
     } });
     try func.layout.appendInst(v4_inst, block0);
     const v4 = func.dfg.firstResult(v4_inst).?;
-//     try func.dfg.attachResult(v4_inst, Type.i64());
+    //     try func.dfg.attachResult(v4_inst, Type.i64());
 
     // return v4
     const ret_inst = try func.dfg.makeInst(InstructionData{ .unary = .{
