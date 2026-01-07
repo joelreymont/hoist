@@ -349,6 +349,29 @@ pub const MachBuffer = struct {
         return label;
     }
 
+    /// Create a new jump table and return its index.
+    /// The table will be emitted at the end of the function.
+    pub fn createJumpTable(self: *MachBuffer, default_target: Block, alignment: u32) !u32 {
+        const table_label = try self.allocLabel();
+        const index: u32 = @intCast(self.jump_tables.items.len);
+
+        var jt = JumpTable.init(self.allocator, default_target, alignment);
+        jt.table_label = table_label;
+
+        try self.jump_tables.append(self.allocator, jt);
+        return index;
+    }
+
+    /// Add a target to an existing jump table.
+    pub fn addJumpTableTarget(self: *MachBuffer, jt_index: u32, target: Block, label: MachLabel) !void {
+        try self.jump_tables.items[jt_index].addTarget(target, label);
+    }
+
+    /// Get the label for a jump table (for PC-relative addressing).
+    pub fn getJumpTableLabel(self: *const MachBuffer, jt_index: u32) MachLabel {
+        return self.jump_tables.items[jt_index].table_label;
+    }
+
     /// Emit the constant pool at the current offset.
     /// Should be called at the end of function emission.
     pub fn emitConstPool(self: *MachBuffer) !void {
@@ -369,6 +392,37 @@ pub const MachBuffer = struct {
                 try self.put4(@intCast(entry.value & 0xFFFFFFFF));
             } else {
                 return error.InvalidConstantSize;
+            }
+        }
+    }
+
+    /// Emit all jump tables at the current offset.
+    /// Should be called at the end of function emission, after constant pool.
+    pub fn emitJumpTables(self: *MachBuffer) !void {
+        if (self.jump_tables.items.len == 0) {
+            return;
+        }
+
+        for (self.jump_tables.items) |*jt| {
+            // Align to the jump table's alignment requirement
+            try self.alignTo(@intCast(jt.alignment));
+
+            // Bind the jump table label (for PC-relative addressing)
+            try self.bindLabel(jt.table_label);
+
+            // Emit offsets to each target
+            // For ARM64: typically use 32-bit signed offsets from table base
+            for (jt.targets.items) |entry| {
+                // Get the offset of the target label
+                const target_offset = self.label_offsets.items[entry.label];
+                const table_offset = self.curOffset();
+
+                // Calculate PC-relative offset
+                const offset: i32 = @intCast(@as(i64, target_offset) - @as(i64, table_offset));
+
+                // Emit 4-byte offset
+                const offset_u32: u32 = @bitCast(offset);
+                try self.put4(offset_u32);
             }
         }
     }
