@@ -124,6 +124,43 @@ pub fn LowerCtx(comptime MachInst: type) type {
         pub fn getValueType(self: *const Self, value: Value) root.types.Type {
             return self.func.dfg.valueType(value);
         }
+
+        /// Pre-allocate VRegs for all SSA values in the function.
+        /// This must be called before lowering begins.
+        /// Cranelift does this to enable vreg aliasing (ISLE temps → SSA vregs).
+        pub fn allocateSSAVRegs(self: *Self) !void {
+            // Allocate VRegs for all instruction results
+            var block_iter = self.func.layout.blocks();
+            while (block_iter.next()) |block| {
+                // Allocate VRegs for block parameters
+                const block_params = self.func.dfg.blockParams(block);
+                for (block_params) |param_value| {
+                    const param_type = self.func.dfg.valueType(param_value);
+                    const reg_class = regClassForType(param_type);
+                    const vreg = VReg.new(self.next_vreg, reg_class);
+                    self.next_vreg += 1;
+                    try self.value_to_reg.put(param_value, vreg);
+                }
+
+                // Allocate VRegs for instruction results
+                var inst_iter = self.func.layout.blockInsts(block);
+                while (inst_iter.next()) |inst| {
+                    const results = self.func.dfg.instResults(inst);
+                    for (results) |result_value| {
+                        const result_type = self.func.dfg.valueType(result_value);
+                        const reg_class = regClassForType(result_type);
+                        const vreg = VReg.new(self.next_vreg, reg_class);
+                        self.next_vreg += 1;
+                        try self.value_to_reg.put(result_value, vreg);
+                    }
+                }
+            }
+        }
+
+        /// Determine register class from IR type.
+        fn regClassForType(ty: root.types.Type) RegClass {
+            return if (ty.isInt() or ty.isBool()) .int else .float;
+        }
     };
 }
 
@@ -201,6 +238,9 @@ pub fn lowerFunction(
     var ctx = LowerCtx(MachInst).init(allocator, func, &vcode);
     defer ctx.deinit();
 
+    // Pre-allocate VRegs for all SSA values
+    try ctx.allocateSSAVRegs();
+
     // Lower each block in reverse postorder
     var rpo = try computeRPO(allocator, func);
     defer rpo.deinit();
@@ -260,4 +300,52 @@ test "LowerCtx basic" {
     const v2 = Value.new(1);
     const r2 = try ctx.getValueReg(v2, .int);
     try testing.expect(!std.meta.eql(r1, r2));
+}
+
+test "SSA VReg pre-allocation" {
+    const TestInst = struct {
+        opcode: u32,
+    };
+
+    const Signature = root.signature.Signature;
+    const Type = root.types.Type;
+    const InstructionData = root.instruction_data.InstructionData;
+
+    // Create function with some instructions
+    const sig = Signature.init(&.{}, &.{Type.i64()});
+    var func = try Function.init(testing.allocator, "test_prealloc", sig);
+    defer func.deinit();
+
+    // Create block with instructions
+    const block0 = func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    // Add an instruction that produces a value
+    const iconst_data = InstructionData{ .unary_imm = .{
+        .opcode = .iconst,
+        .imm = .{ .value = 42 },
+    } };
+    const inst1 = func.dfg.makeInst(iconst_data);
+    try func.layout.appendInst(inst1, block0);
+    const v1 = Value.fromInst(inst1);
+    try func.dfg.attachResult(inst1, Type.i64());
+
+    // Create LowerCtx and pre-allocate VRegs
+    var vcode = vcode_mod.VCode(TestInst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = LowerCtx(TestInst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    // Pre-allocate VRegs
+    try ctx.allocateSSAVRegs();
+
+    // Verify that v1 already has a VReg allocated
+    const vreg = try ctx.getValueReg(v1, .int);
+    try testing.expectEqual(@as(u32, 0), vreg.index());
+    try testing.expectEqual(RegClass.int, vreg.class());
+
+    // Verify that calling getValueReg again returns the same VReg
+    const vreg_again = try ctx.getValueReg(v1, .int);
+    try testing.expectEqual(vreg, vreg_again);
 }
