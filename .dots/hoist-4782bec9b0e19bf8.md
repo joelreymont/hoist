@@ -1,0 +1,10 @@
+---
+title: Implement uadd_overflow for I32/I64
+status: closed
+priority: 2
+issue-type: task
+created-at: "2026-01-03T23:45:32.472743+02:00"
+closed-at: "2026-01-04T00:20:55.447545+02:00"
+---
+
+Implementing uadd_overflow for I32/I64

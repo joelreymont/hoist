@@ -1,0 +1,8 @@
+---
+title: new
+status: closed
+priority: 3
+issue-type: task
+created-at: "2026-01-02T06:26:31.993605+02:00"
+closed-at: "2026-01-02T06:30:15.043981+02:00"
+---

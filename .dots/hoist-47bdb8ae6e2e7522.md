@@ -1,0 +1,11 @@
+---
+title: Build and commit
+status: closed
+priority: 2
+issue-type: task
+created-at: "2026-01-06T22:07:13.093669+02:00"
+closed-at: "2026-01-06T22:08:16.913977+02:00"
+close-reason: Completed via TodoWrite
+---
+
+Building and committing

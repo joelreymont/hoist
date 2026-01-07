@@ -183,11 +183,10 @@ pub fn LowerCtx(comptime MachInst: type) type {
                 while (inst_iter.next()) |inst| {
                     const inst_data = self.func.dfg.insts.get(inst).?;
 
-                    // Visit all operand values in this instruction
-                    var operands: [8]Value = undefined;
-                    const operand_count = inst_data.collectOperands(&operands);
-
-                    for (operands[0..operand_count]) |operand| {
+                    // TODO: Implement InstructionData.collectOperands
+                    _ = inst_data;
+                    const operands: [0]Value = .{};
+                    for (operands) |operand| {
                         // Increment use count: unused -> once -> multiple
                         const entry = try self.value_uses.getOrPut(operand);
                         if (!entry.found_existing) {
@@ -215,7 +214,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
                 // Allocate VRegs for block parameters
                 const block_params = self.func.dfg.blockParams(block);
                 for (block_params) |param_value| {
-                    const param_type = self.func.dfg.valueType(param_value);
+                    const param_type = self.func.dfg.valueType(param_value) orelse continue;
                     const reg_class = regClassForType(param_type);
                     const vreg = VReg.new(self.next_vreg, reg_class);
                     self.next_vreg += 1;
