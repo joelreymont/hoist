@@ -503,26 +503,32 @@ fn calculateFrameSize(locals_and_spills: u32, num_callee_saves: u32) u32 {
 /// Per AAPCS64, caller-saved registers are:
 /// - x0-x18 (excluding x8 which is indirect result location)
 /// - v0-v7, v16-v31
+/// On Darwin: x18 is reserved and never allocated.
 pub const CallerSavedTracker = struct {
     /// Set of caller-saved integer registers that need saving.
     int_regs: std.bit_set.IntegerBitSet(32),
     /// Set of caller-saved float registers that need saving.
     float_regs: std.bit_set.IntegerBitSet(32),
+    /// Platform for platform-specific register constraints.
+    platform: Platform,
 
-    pub fn init() CallerSavedTracker {
+    pub fn init(platform: Platform) CallerSavedTracker {
         return .{
             .int_regs = std.bit_set.IntegerBitSet(32).initEmpty(),
             .float_regs = std.bit_set.IntegerBitSet(32).initEmpty(),
+            .platform = platform,
         };
     }
 
     /// Mark an integer register as caller-saved (needs saving across calls).
     /// Only marks registers x0-x18 (excluding x8).
+    /// On Darwin, x18 is reserved and never marked.
     pub fn markIntReg(self: *CallerSavedTracker, preg: PReg) void {
         std.debug.assert(preg.class == .int);
         const hw = preg.hw_enc;
         // x0-x18, excluding x8 (indirect result location)
-        if (hw <= 18 and hw != 8) {
+        // On Darwin, also exclude x18 (platform register)
+        if (hw <= 18 and hw != 8 and !(self.platform == .darwin and hw == 18)) {
             self.int_regs.set(hw);
         }
     }
@@ -2046,13 +2052,13 @@ test "all float callee-saves V8-V15" {
 }
 
 test "CallerSavedTracker init" {
-    const tracker = CallerSavedTracker.init();
+    const tracker = CallerSavedTracker.init(.linux);
     try testing.expectEqual(@as(usize, 0), tracker.intRegCount());
     try testing.expectEqual(@as(usize, 0), tracker.floatRegCount());
 }
 
 test "CallerSavedTracker mark integer registers" {
-    var tracker = CallerSavedTracker.init();
+    var tracker = CallerSavedTracker.init(.linux);
 
     // Mark x0-x7 (argument registers)
     var i: u5 = 0;
@@ -2076,7 +2082,7 @@ test "CallerSavedTracker mark integer registers" {
 }
 
 test "CallerSavedTracker excludes x8" {
-    var tracker = CallerSavedTracker.init();
+    var tracker = CallerSavedTracker.init(.linux);
 
     // x8 is the indirect result location and should be excluded
     tracker.markIntReg(PReg.new(.int, 8));
@@ -2084,7 +2090,7 @@ test "CallerSavedTracker excludes x8" {
 }
 
 test "CallerSavedTracker excludes callee-saved x19-x30" {
-    var tracker = CallerSavedTracker.init();
+    var tracker = CallerSavedTracker.init(.linux);
 
     // x19-x30 are callee-saved and should not be marked
     var i: u5 = 19;
@@ -2095,7 +2101,7 @@ test "CallerSavedTracker excludes callee-saved x19-x30" {
 }
 
 test "CallerSavedTracker mark float registers v0-v7" {
-    var tracker = CallerSavedTracker.init();
+    var tracker = CallerSavedTracker.init(.linux);
 
     // Mark v0-v7 (argument/return registers)
     var i: u5 = 0;
@@ -2106,7 +2112,7 @@ test "CallerSavedTracker mark float registers v0-v7" {
 }
 
 test "CallerSavedTracker mark float registers v16-v31" {
-    var tracker = CallerSavedTracker.init();
+    var tracker = CallerSavedTracker.init(.linux);
 
     // Mark v16-v31 (temporaries)
     var i: u5 = 16;
@@ -2117,7 +2123,7 @@ test "CallerSavedTracker mark float registers v16-v31" {
 }
 
 test "CallerSavedTracker excludes callee-saved v8-v15" {
-    var tracker = CallerSavedTracker.init();
+    var tracker = CallerSavedTracker.init(.linux);
 
     // v8-v15 are callee-saved and should not be marked
     var i: u5 = 8;
@@ -2128,7 +2134,7 @@ test "CallerSavedTracker excludes callee-saved v8-v15" {
 }
 
 test "CallerSavedTracker markReg dispatches by class" {
-    var tracker = CallerSavedTracker.init();
+    var tracker = CallerSavedTracker.init(.linux);
 
     // Mark mixed register classes
     tracker.markReg(PReg.new(.int, 0)); // x0
@@ -2141,7 +2147,7 @@ test "CallerSavedTracker markReg dispatches by class" {
 }
 
 test "CallerSavedTracker clear" {
-    var tracker = CallerSavedTracker.init();
+    var tracker = CallerSavedTracker.init(.linux);
 
     // Mark some registers
     tracker.markIntReg(PReg.new(.int, 0));
@@ -2159,7 +2165,7 @@ test "CallerSavedTracker clear" {
 }
 
 test "CallerSavedTracker emitSaves and emitRestores with int regs" {
-    var tracker = CallerSavedTracker.init();
+    var tracker = CallerSavedTracker.init(.linux);
 
     // Mark x0, x1 (will be saved as a pair)
     tracker.markIntReg(PReg.new(.int, 0));
@@ -2183,7 +2189,7 @@ test "CallerSavedTracker emitSaves and emitRestores with int regs" {
 }
 
 test "CallerSavedTracker emitSaves with odd number of int regs" {
-    var tracker = CallerSavedTracker.init();
+    var tracker = CallerSavedTracker.init(.linux);
 
     // Mark x0, x1, x2 (pair + single)
     tracker.markIntReg(PReg.new(.int, 0));
@@ -2201,7 +2207,7 @@ test "CallerSavedTracker emitSaves with odd number of int regs" {
 }
 
 test "CallerSavedTracker emitSaves and emitRestores with float regs" {
-    var tracker = CallerSavedTracker.init();
+    var tracker = CallerSavedTracker.init(.linux);
 
     // Mark v0, v1 (will be saved as a pair)
     tracker.markFloatReg(PReg.new(.float, 0));
@@ -2224,7 +2230,7 @@ test "CallerSavedTracker emitSaves and emitRestores with float regs" {
 }
 
 test "CallerSavedTracker emitSaves with mixed int and float regs" {
-    var tracker = CallerSavedTracker.init();
+    var tracker = CallerSavedTracker.init(.linux);
 
     // Mark x0, x1, v0, v1
     tracker.markIntReg(PReg.new(.int, 0));
@@ -2249,7 +2255,7 @@ test "CallerSavedTracker emitSaves with mixed int and float regs" {
 }
 
 test "CallerSavedTracker stack offset handling" {
-    var tracker = CallerSavedTracker.init();
+    var tracker = CallerSavedTracker.init(.linux);
 
     // Mark x0, x1
     tracker.markIntReg(PReg.new(.int, 0));
@@ -2267,7 +2273,7 @@ test "CallerSavedTracker stack offset handling" {
 }
 
 test "CallerSavedTracker comprehensive register coverage" {
-    var tracker = CallerSavedTracker.init();
+    var tracker = CallerSavedTracker.init(.linux);
 
     // Mark all caller-saved integer registers (x0-x7, x9-x18)
     var i: u5 = 0;
@@ -3383,4 +3389,22 @@ test "cold calling convention sets is_cold flag" {
     defer normal_callee.deinit();
 
     try testing.expect(!normal_callee.is_cold);
+}
+
+test "CallerSavedTracker: X18 reserved on Darwin" {
+    // On Linux, X18 is allocatable
+    var linux_tracker = CallerSavedTracker.init(.linux);
+    linux_tracker.markIntReg(PReg.new(.int, 18));
+    try testing.expect(linux_tracker.int_regs.isSet(18));
+
+    // On Darwin, X18 is reserved and never marked
+    var darwin_tracker = CallerSavedTracker.init(.darwin);
+    darwin_tracker.markIntReg(PReg.new(.int, 18));
+    try testing.expect(!darwin_tracker.int_regs.isSet(18));
+
+    // Other registers work normally on both platforms
+    linux_tracker.markIntReg(PReg.new(.int, 17));
+    darwin_tracker.markIntReg(PReg.new(.int, 17));
+    try testing.expect(linux_tracker.int_regs.isSet(17));
+    try testing.expect(darwin_tracker.int_regs.isSet(17));
 }
