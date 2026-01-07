@@ -473,7 +473,7 @@ pub const VaList = struct {
         const gr_offs = -@as(i32, @intCast((max_gp_regs - gp_used) * 8));
         try emit_fn(.{ .mov_imm = .{
             .dst = WritableReg.fromReg(scratch1),
-            .imm = @bitCast(gr_offs),
+            .imm = @as(u64, @bitCast(@as(i64, gr_offs))),
             .size = .size32,
         } }, buffer);
         try emit_fn(.{ .str = .{
@@ -488,7 +488,7 @@ pub const VaList = struct {
         const vr_offs = -@as(i32, @intCast((max_fp_regs - fp_used) * 16));
         try emit_fn(.{ .mov_imm = .{
             .dst = WritableReg.fromReg(scratch1),
-            .imm = @bitCast(vr_offs),
+            .imm = @as(u64, @bitCast(@as(i64, vr_offs))),
             .size = .size32,
         } }, buffer);
         try emit_fn(.{ .str = .{
@@ -520,16 +520,16 @@ fn isHFA(fields: []const abi_mod.StructField) ?abi_mod.Type {
 
     // Get the type of the first field
     const first_ty = switch (fields[0].ty) {
-        .f32 => abi_mod.Type.f32,
-        .f64 => abi_mod.Type.f64,
+        .f32 => abi_mod.Type{ .f32 = {} },
+        .f64 => abi_mod.Type{ .f64 = {} },
         else => return null,
     };
 
     // Verify all fields have the same floating-point type
     for (fields) |field| {
         const field_ty = switch (field.ty) {
-            .f32 => abi_mod.Type.f32,
-            .f64 => abi_mod.Type.f64,
+            .f32 => abi_mod.Type{ .f32 = {} },
+            .f64 => abi_mod.Type{ .f64 = {} },
             else => return null,
         };
         if (!std.meta.eql(field_ty, first_ty)) return null;
@@ -642,8 +642,8 @@ pub const CallerSavedTracker = struct {
     /// Only marks registers x0-x18 (excluding x8).
     /// On Darwin, x18 is reserved and never marked.
     pub fn markIntReg(self: *CallerSavedTracker, preg: PReg) void {
-        std.debug.assert(preg.class == .int);
-        const hw = preg.hw_enc;
+        std.debug.assert(preg.class() == .int);
+        const hw = preg.hwEnc();
         // x0-x18, excluding x8 (indirect result location)
         // On Darwin, also exclude x18 (platform register)
         if (hw <= 18 and hw != 8 and !(self.platform == .darwin and hw == 18)) {
@@ -654,8 +654,8 @@ pub const CallerSavedTracker = struct {
     /// Mark a float register as caller-saved (needs saving across calls).
     /// Only marks registers v0-v7 and v16-v31.
     pub fn markFloatReg(self: *CallerSavedTracker, preg: PReg) void {
-        std.debug.assert(preg.class == .float);
-        const hw = preg.hw_enc;
+        std.debug.assert(preg.class() == .float);
+        const hw = preg.hwEnc();
         // v0-v7 or v16-v31
         if (hw <= 7 or (hw >= 16 and hw <= 31)) {
             self.float_regs.set(hw);
@@ -664,9 +664,10 @@ pub const CallerSavedTracker = struct {
 
     /// Mark a register as caller-saved based on its class.
     pub fn markReg(self: *CallerSavedTracker, preg: PReg) void {
-        switch (preg.class) {
+        switch (preg.class()) {
             .int => self.markIntReg(preg),
             .float => self.markFloatReg(preg),
+            .vector => self.markFloatReg(preg), // vectors use float regs
         }
     }
 
@@ -1248,7 +1249,7 @@ pub const Aarch64ABICallee = struct {
         for (self.clobbered_callee_saves.items) |existing| {
             if (std.meta.eql(existing, preg)) return;
         }
-        try self.clobbered_callee_saves.append(preg);
+        try self.clobbered_callee_saves.append(self.allocator, preg);
     }
 };
 
@@ -2069,7 +2070,7 @@ test "16-byte alignment maintained with all callee-save combinations" {
         // Add callee-saves
         var i: u8 = 0;
         while (i < tc.num) : (i += 1) {
-            try callee.clobberCalleeSave(PReg.new(.int, 19 + i));
+            try callee.clobberCalleeSave(PReg.new(.int, @as(u6, @intCast(19 + i))));
         }
 
         callee.setLocalsSize(0);
@@ -3044,7 +3045,7 @@ pub const VarargsRegisterSaveArea = struct {
         while (i < 8) : (i += 2) {
             const reg1 = Reg.fromPReg(PReg.new(.float, i));
             const reg2 = Reg.fromPReg(PReg.new(.float, i + 1));
-            try emit_fn(.{ .stp = .{
+            try emit_fn(.{ .vstp = .{
                 .src1 = reg1,
                 .src2 = reg2,
                 .base = sp,
@@ -3439,8 +3440,7 @@ test "classifyReturn - float types" {
 test "frame pointer enforced for large frames" {
     const allocator = testing.allocator;
 
-    var sig = abi_mod.ABISignature.init(allocator, .aapcs64);
-    defer sig.deinit();
+    const sig = abi_mod.ABISignature.init(&.{}, &.{}, .aapcs64);
 
     var callee = Aarch64ABICallee.init(allocator, sig);
     defer callee.deinit();
@@ -3462,8 +3462,7 @@ test "frame pointer enforced for large frames" {
 test "dynamic stack pointer tracking" {
     const allocator = testing.allocator;
 
-    var sig = abi_mod.ABISignature.init(allocator, .aapcs64);
-    defer sig.deinit();
+    const sig = abi_mod.ABISignature.init(&.{}, &.{}, .aapcs64);
 
     var callee = Aarch64ABICallee.init(allocator, sig);
     defer callee.deinit();
@@ -3492,8 +3491,7 @@ test "cold calling convention sets is_cold flag" {
     const allocator = testing.allocator;
 
     // Test cold convention
-    var cold_sig = abi_mod.ABISignature.init(allocator, .cold);
-    defer cold_sig.deinit();
+    const cold_sig = abi_mod.ABISignature.init(&.{}, &.{}, .cold);
 
     var cold_callee = Aarch64ABICallee.init(allocator, cold_sig);
     defer cold_callee.deinit();
@@ -3501,8 +3499,7 @@ test "cold calling convention sets is_cold flag" {
     try testing.expect(cold_callee.is_cold);
 
     // Test non-cold convention
-    var normal_sig = abi_mod.ABISignature.init(allocator, .aapcs64);
-    defer normal_sig.deinit();
+    const normal_sig = abi_mod.ABISignature.init(&.{}, &.{}, .aapcs64);
 
     var normal_callee = Aarch64ABICallee.init(allocator, normal_sig);
     defer normal_callee.deinit();
