@@ -726,6 +726,12 @@ pub const Aarch64ABICallee = struct {
     /// Whether this function requires a frame pointer.
     /// Set to true for large frames or functions with dynamic allocations.
     uses_frame_pointer: bool,
+    /// Whether this function uses dynamic stack allocations (alloca).
+    /// When true, requires tracking dynamic SP in a callee-save register.
+    has_dynamic_alloc: bool,
+    /// Register used to track dynamic stack pointer (X19 by convention).
+    /// Only used when has_dynamic_alloc is true.
+    dyn_sp_reg: ?PReg,
 
     pub fn init(
         _allocator: std.mem.Allocator,
@@ -745,6 +751,8 @@ pub const Aarch64ABICallee = struct {
             .locals_size = 0,
             .frame_size = 0,
             .uses_frame_pointer = false,
+            .has_dynamic_alloc = false,
+            .dyn_sp_reg = null,
         };
     }
 
@@ -771,6 +779,23 @@ pub const Aarch64ABICallee = struct {
             cc_mut.deinit();
         }
         self.clobbered_callee_saves.deinit();
+    }
+
+    /// Enable dynamic stack allocations (alloca).
+    /// Allocates X19 as the dynamic stack pointer register and requires frame pointer.
+    pub fn enableDynamicAlloc(self: *Aarch64ABICallee) void {
+        if (!self.has_dynamic_alloc) {
+            self.has_dynamic_alloc = true;
+            // Use X19 (first callee-save) for dynamic SP tracking
+            self.dyn_sp_reg = PReg.new(.int, 19);
+            // Dynamic allocations require frame pointer for stack unwinding
+            self.uses_frame_pointer = true;
+        }
+    }
+
+    /// Get the dynamic stack pointer register, if dynamic allocations are enabled.
+    pub fn getDynStackPointer(self: *const Aarch64ABICallee) ?PReg {
+        return self.dyn_sp_reg;
     }
 
     /// Compute calling convention and setup frame.
@@ -899,6 +924,19 @@ pub const Aarch64ABICallee = struct {
                     } }, buffer);
                     remaining -= chunk;
                 }
+            }
+        }
+
+        // 2.5. Initialize dynamic stack pointer if enabled
+        if (self.has_dynamic_alloc) {
+            if (self.dyn_sp_reg) |dyn_sp_preg| {
+                const dyn_sp = WritableReg.fromReg(Reg.fromPReg(dyn_sp_preg));
+                // MOV X19, SP - initialize dynamic SP to current SP
+                try emit_fn(.{ .mov_rr = .{
+                    .dst = dyn_sp,
+                    .src = sp,
+                    .size = .size64,
+                } }, buffer);
             }
         }
 
@@ -3248,4 +3286,33 @@ test "frame pointer enforced for large frames" {
     // Very large frame - FP required
     callee.setLocalsSize(65000);
     try testing.expect(callee.uses_frame_pointer);
+}
+
+test "dynamic stack pointer tracking" {
+    const allocator = testing.allocator;
+
+    var sig = abi_mod.ABISignature.init(allocator, .aapcs64);
+    defer sig.deinit();
+
+    var callee = Aarch64ABICallee.init(allocator, sig);
+    defer callee.deinit();
+
+    // Initially no dynamic allocations
+    try testing.expect(!callee.has_dynamic_alloc);
+    try testing.expect(callee.getDynStackPointer() == null);
+
+    // Enable dynamic allocations
+    callee.enableDynamicAlloc();
+
+    // Should now have dynamic alloc enabled
+    try testing.expect(callee.has_dynamic_alloc);
+    try testing.expect(callee.uses_frame_pointer); // Requires FP
+
+    // Should have allocated X19 as dynamic SP register
+    const dyn_sp = callee.getDynStackPointer().?;
+    try testing.expectEqual(PReg.new(.int, 19), dyn_sp);
+
+    // Enabling again should be idempotent
+    callee.enableDynamicAlloc();
+    try testing.expectEqual(PReg.new(.int, 19), callee.getDynStackPointer().?);
 }
