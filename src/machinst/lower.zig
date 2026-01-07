@@ -375,7 +375,7 @@ pub fn lowerFunction(
             const handled = try backend.lowerInstFn(&ctx, ir_inst);
             if (!handled) {
                 // Instruction not handled - this is an error
-                std.debug.print("Unhandled instruction: {}\n", .{ir_inst});
+                std.debug.print("Unhandled instruction: {any}\n", .{ir_inst});
                 return error.UnhandledInstruction;
             }
         }

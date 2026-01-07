@@ -9,6 +9,11 @@ pub const PReg = reg_mod.PReg;
 pub const VReg = reg_mod.VReg;
 pub const WritableReg = reg_mod.WritableReg;
 
+// ARM64 physical register constants
+pub const fp = PReg.new(.int, 29); // X29 - Frame Pointer
+pub const lr = PReg.new(.int, 30); // X30 - Link Register
+pub const sp = PReg.new(.int, 31); // SP - Stack Pointer
+
 /// ARM64 machine instruction.
 /// Minimal bootstrap set - full aarch64 backend needs ~100+ variants.
 pub const Inst = union(enum) {
