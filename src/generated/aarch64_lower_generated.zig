@@ -1979,6 +1979,77 @@ pub fn lower(
 
                 try ctx.emit(inst_mod.aarch64_fneg(dst, src_reg, size));
                 return true;
+            } else if (data.opcode == .sqrt) {
+                // Floating-point square root
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(inst_mod.aarch64_fsqrt(dst, src_reg, size));
+                return true;
+            } else if (data.opcode == .ceil) {
+                // Floating-point round toward positive infinity
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .frintp = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .floor) {
+                // Floating-point round toward negative infinity
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .frintm = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .trunc) {
+                // Floating-point round toward zero
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .frintz = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .nearest) {
+                // Floating-point round to nearest, ties to even
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .frintn = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+                return true;
             }
         },
         .binary_imm64 => |data| {
