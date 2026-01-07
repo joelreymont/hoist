@@ -97,7 +97,18 @@ pub fn LowerCtx(comptime MachInst: type) type {
 
         /// Start lowering a new block.
         pub fn startBlock(self: *Self, ir_block: Block) !vcode_mod.BlockIndex {
-            const block_idx = try self.vcode.startBlock(&.{}); // No params for now
+            // Get block parameters from IR and look up their VRegs
+            const ir_params = self.func.dfg.blockParams(ir_block);
+            var vregs = try self.allocator.alloc(VReg, ir_params.len);
+            defer self.allocator.free(vregs);
+
+            for (ir_params, 0..) |param_value, i| {
+                // Look up the VReg that was pre-allocated for this parameter
+                const vreg = self.value_to_reg.get(param_value) orelse return error.UnallocatedBlockParam;
+                vregs[i] = vreg;
+            }
+
+            const block_idx = try self.vcode.startBlock(vregs);
             self.current_block = block_idx;
             try self.block_map.put(ir_block, block_idx);
             return block_idx;

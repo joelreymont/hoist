@@ -115,6 +115,10 @@ test "lower iadd + return" {
 
     try testing.expect(vcode.insns.items.len > 0);
     try testing.expectEqual(@as(usize, 1), vcode.blocks.items.len);
+
+    // Verify block parameters are tracked in VCode
+    const vcode_block = vcode.getBlock(0);
+    try testing.expectEqual(@as(usize, 2), vcode_block.params.len);
 }
 
 test "lower conditional branch" {
