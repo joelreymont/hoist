@@ -2,6 +2,35 @@
 - Cranelift source: `~/Work/wasmtime/cranelift/`
 - Zig 0.15 API changes: `docs/zig-0.15-io-api.md`
 
+### ISLE (Instruction Selection Lowering Expressions)
+
+**CRITICAL: ISLE is for IR→MachInst lowering ONLY, NOT for register allocation or rewriting.**
+
+Pipeline architecture:
+1. **ISLE lowering** (`src/backends/*/lower.isle`) - Pattern-match IR ops to MachInst with **virtual registers**
+2. **Register allocation** (`src/regalloc/`) - TrivialAllocator assigns physical registers to vregs
+3. **VReg→PReg rewriting** (`src/codegen/compile.zig`) - Explicit rewriting of all instruction operands
+4. **Emission** (`src/backends/*/emit.zig`) - Encode instructions to machine code
+
+**Never confuse ISLE with register allocation:**
+- ISLE helpers (e.g., `aarch64_lsl_rr` in `isle_impl.zig`) emit instructions with **virtual registers only**
+- `ctx.allocOutputReg()` and `ctx.getValueReg()` return virtual registers
+- Physical register assignment happens LATER in the pipeline
+- VReg→PReg rewriting is manual, per-instruction in `emitAArch64WithAllocation()`
+
+**When implementing new instructions:**
+1. Add ISLE constructor in `isle_impl.zig` - use vregs only
+2. Add instruction variant to `inst.zig` - fields are `Reg` (can be virtual or physical)
+3. Add operand collection to `inst.zig::getOperands()` - for register allocator
+4. Add vreg→preg rewriting to `compile.zig::emitAArch64WithAllocation()` - manual per instruction
+5. Add emission to `emit.zig` - expects physical registers only
+
+**Cranelift comparison:**
+- Cranelift uses regalloc2 which replaces vregs with "pinned vregs" (indices 0-191 = physical)
+- We use TrivialAllocator which returns `Allocation` (separate from instruction)
+- Cranelift queries allocation during `emit()`, we rewrite before `emit()`
+- Both approaches are correct; ours requires explicit rewriting for each instruction type
+
 ### Code Quality
 - No dead code
 - No `@panic` - use `!` error returns
