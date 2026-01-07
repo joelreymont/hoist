@@ -2468,7 +2468,7 @@ pub fn lower(
                 try ctx.emit(Inst{ .str = .{
                     .src = value_reg,
                     .base = fp_reg,
-                    .offset = fp_offset,
+                    .offset = @intCast(fp_offset),
                     .size = size,
                 } });
 
