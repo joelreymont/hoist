@@ -8,6 +8,7 @@ const Inst = inst_mod.Inst;
 const Reg = inst_mod.Reg;
 const WritableReg = inst_mod.WritableReg;
 const OperandSize = inst_mod.OperandSize;
+const FpuOperandSize = inst_mod.FpuOperandSize;
 const CondCode = inst_mod.CondCode;
 const lower_mod = @import("../machinst/lower.zig");
 
@@ -758,6 +759,113 @@ pub fn lower(
             if (data.opcode == .@"return") {
                 // Void return - just emit ret instruction
                 try ctx.emit(Inst.ret);
+                return true;
+            } else if (data.opcode == .trap) {
+                // Unconditional trap - emit udf instruction
+                try ctx.emit(Inst{ .udf = .{ .imm = 0 } });
+                return true;
+            } else if (data.opcode == .get_frame_pointer) {
+                // Get frame pointer (x29)
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+                const fp_reg = Reg.fromPReg(Reg.fromInt(29)); // X29 (FP)
+
+                try ctx.emit(Inst{ .mov_rr = .{
+                    .dst = dst,
+                    .src = fp_reg,
+                    .size = .size64,
+                } });
+                return true;
+            } else if (data.opcode == .get_stack_pointer) {
+                // Get stack pointer (sp/x31)
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+                const sp_reg = Reg.fromPReg(Reg.fromInt(31)); // SP
+
+                try ctx.emit(Inst{ .mov_rr = .{
+                    .dst = dst,
+                    .src = sp_reg,
+                    .size = .size64,
+                } });
+                return true;
+            } else if (data.opcode == .get_pinned_reg) {
+                // Get pinned register (x18 - platform register)
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+                const pinned_reg = Reg.fromPReg(Reg.fromInt(18)); // X18
+
+                try ctx.emit(Inst{ .mov_rr = .{
+                    .dst = dst,
+                    .src = pinned_reg,
+                    .size = .size64,
+                } });
+                return true;
+            }
+        },
+        .unary => |data| {
+            if (data.opcode == .set_pinned_reg) {
+                // Set pinned register (x18)
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const pinned_reg = WritableReg.fromReg(Reg.fromPReg(Reg.fromInt(18))); // X18
+
+                try ctx.emit(Inst{ .mov_rr = .{
+                    .dst = pinned_reg,
+                    .src = src_reg,
+                    .size = .size64,
+                } });
+                return true;
+            }
+        },
+        .unary_with_trap => |data| {
+            if (data.opcode == .trapz) {
+                // Trap if zero
+                const arg = data.arg;
+                const arg_reg = Reg.fromVReg(try ctx.getValueReg(arg, .int));
+
+                // Compare arg to zero
+                try ctx.emit(Inst{ .cmp_imm = .{
+                    .src = arg_reg,
+                    .imm = 0,
+                    .size = .size64,
+                } });
+
+                // Create trap block label
+                const trap_label = ctx.allocLabel();
+
+                // Branch to trap if equal (zero)
+                try ctx.emit(Inst{ .b_cond = .{
+                    .cond = .eq,
+                    .target = .{ .label = trap_label },
+                } });
+
+                // Emit trap code
+                try ctx.emitLabel(trap_label);
+                try ctx.emit(Inst{ .udf = .{ .imm = 0 } });
+
+                return true;
+            } else if (data.opcode == .trapnz) {
+                // Trap if not zero
+                const arg = data.arg;
+                const arg_reg = Reg.fromVReg(try ctx.getValueReg(arg, .int));
+
+                // Compare arg to zero
+                try ctx.emit(Inst{ .cmp_imm = .{
+                    .src = arg_reg,
+                    .imm = 0,
+                    .size = .size64,
+                } });
+
+                // Create trap block label
+                const trap_label = ctx.allocLabel();
+
+                // Branch to trap if not equal (not zero)
+                try ctx.emit(Inst{ .b_cond = .{
+                    .cond = .ne,
+                    .target = .{ .label = trap_label },
+                } });
+
+                // Emit trap code
+                try ctx.emitLabel(trap_label);
+                try ctx.emit(Inst{ .udf = .{ .imm = 0 } });
+
                 return true;
             }
         },
@@ -1627,6 +1735,186 @@ pub fn lower(
                     .src2 = src2_reg,
                     .size = size,
                 } });
+                return true;
+            } else if (data.opcode == .uadd_overflow) {
+                // Unsigned add with overflow check
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+                const overflow = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Emit adds to get result and set flags
+                try ctx.emit(Inst{ .adds_rr = .{
+                    .dst = dst,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                // Extract carry flag (overflow for unsigned)
+                try ctx.emit(Inst{
+                    .cset = .{
+                        .dst = overflow,
+                        .cond = .cs, // carry set
+                        .size = size,
+                    },
+                });
+
+                return true;
+            } else if (data.opcode == .sadd_overflow) {
+                // Signed add with overflow check
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+                const overflow = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Emit adds to get result and set flags
+                try ctx.emit(Inst{ .adds_rr = .{
+                    .dst = dst,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                // Extract overflow flag (signed overflow)
+                try ctx.emit(Inst{
+                    .cset = .{
+                        .dst = overflow,
+                        .cond = .vs, // overflow set
+                        .size = size,
+                    },
+                });
+
+                return true;
+            } else if (data.opcode == .usub_overflow) {
+                // Unsigned subtract with overflow check
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+                const overflow = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Emit subs to get result and set flags
+                try ctx.emit(Inst{ .subs_rr = .{
+                    .dst = dst,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                // Extract borrow flag (overflow for unsigned subtract)
+                try ctx.emit(Inst{
+                    .cset = .{
+                        .dst = overflow,
+                        .cond = .cc, // carry clear (borrow)
+                        .size = size,
+                    },
+                });
+
+                return true;
+            } else if (data.opcode == .ssub_overflow) {
+                // Signed subtract with overflow check
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+                const overflow = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Emit subs to get result and set flags
+                try ctx.emit(Inst{ .subs_rr = .{
+                    .dst = dst,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                // Extract overflow flag (signed overflow)
+                try ctx.emit(Inst{
+                    .cset = .{
+                        .dst = overflow,
+                        .cond = .vs, // overflow set
+                        .size = size,
+                    },
+                });
+
+                return true;
+            } else if (data.opcode == .fadd) {
+                // Floating-point add
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .float));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(inst_mod.aarch64_fadd(dst, lhs_reg, rhs_reg, size));
+                return true;
+            } else if (data.opcode == .fsub) {
+                // Floating-point subtract
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .float));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(inst_mod.aarch64_fsub(dst, lhs_reg, rhs_reg, size));
+                return true;
+            } else if (data.opcode == .fmul) {
+                // Floating-point multiply
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .float));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(inst_mod.aarch64_fmul(dst, lhs_reg, rhs_reg, size));
+                return true;
+            } else if (data.opcode == .fdiv) {
+                // Floating-point divide
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .float));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(inst_mod.aarch64_fdiv(dst, lhs_reg, rhs_reg, size));
                 return true;
             }
         },
