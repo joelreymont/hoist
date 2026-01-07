@@ -2,63 +2,15 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
+const root = @import("root");
 const vcode_mod = @import("vcode.zig");
 const reg_mod = @import("reg.zig");
 
-// Forward declarations for IR types (actual lowering will import from root)
-pub const Function = struct {
-    layout: Layout,
-
-    pub fn init(_: Allocator) @This() {
-        return .{ .layout = Layout{} };
-    }
-    pub fn deinit(_: *@This()) void {}
-};
-
-const Layout = struct {
-    pub fn blocks(_: *const @This()) BlockIterator {
-        return BlockIterator{};
-    }
-    pub fn blockInsts(_: *const @This(), _: Block) InstIterator {
-        return InstIterator{};
-    }
-    pub fn lastInst(_: *const @This(), _: Block) ?Inst {
-        return null;
-    }
-};
-
-const BlockIterator = struct {
-    pub fn next(_: *@This()) ?Block {
-        return null;
-    }
-};
-
-const InstIterator = struct {
-    pub fn next(_: *@This()) ?Inst {
-        return null;
-    }
-};
-
-pub const Block = struct {
-    index: u32,
-    pub fn new(idx: u32) Block {
-        return .{ .index = idx };
-    }
-};
-
-pub const Inst = struct {
-    index: u32,
-    pub fn new(idx: u32) Inst {
-        return .{ .index = idx };
-    }
-};
-
-pub const Value = struct {
-    index: u32,
-    pub fn new(idx: u32) Value {
-        return .{ .index = idx };
-    }
-};
+// Import real IR types
+pub const Function = root.function.Function;
+pub const Block = root.entities.Block;
+pub const Inst = root.entities.Inst;
+pub const Value = root.entities.Value;
 
 pub const VReg = reg_mod.VReg;
 pub const Reg = reg_mod.Reg;
@@ -262,8 +214,11 @@ test "LowerCtx basic" {
         opcode: u32,
     };
 
+    const Signature = root.signature.Signature;
+
     // Create minimal stub function
-    var func = Function.init(testing.allocator);
+    const sig = Signature.init(&.{}, &.{});
+    var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
     var vcode = vcode_mod.VCode(TestInst).init(testing.allocator);
