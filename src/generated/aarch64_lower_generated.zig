@@ -495,6 +495,120 @@ pub fn lower(
                 } });
 
                 return true;
+            } else if (data.opcode == .sextend) {
+                // Sign extension
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const src_ty = ctx.getValueType(src);
+                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+
+                const src_bits = src_ty.bits();
+                const dst_bits = dst_ty.bits();
+
+                // Determine destination size
+                const dst_size: OperandSize = if (dst_bits <= 32) .size32 else .size64;
+
+                // Select appropriate sign extension instruction based on source size
+                if (src_bits == 8) {
+                    // Sign extend byte
+                    try ctx.emit(Inst{ .sxtb = .{
+                        .dst = dst,
+                        .src = src_reg,
+                        .dst_size = dst_size,
+                    } });
+                } else if (src_bits == 16) {
+                    // Sign extend halfword
+                    try ctx.emit(Inst{ .sxth = .{
+                        .dst = dst,
+                        .src = src_reg,
+                        .dst_size = dst_size,
+                    } });
+                } else if (src_bits == 32) {
+                    // Sign extend word (only to 64-bit)
+                    try ctx.emit(Inst{ .sxtw = .{
+                        .dst = dst,
+                        .src = src_reg,
+                    } });
+                } else {
+                    // Already largest size or unsupported
+                    try ctx.emit(Inst{ .mov_rr = .{
+                        .dst = dst,
+                        .src = src_reg,
+                        .size = dst_size,
+                    } });
+                }
+
+                return true;
+            } else if (data.opcode == .uextend) {
+                // Zero/unsigned extension
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const src_ty = ctx.getValueType(src);
+                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+
+                const src_bits = src_ty.bits();
+                const dst_bits = dst_ty.bits();
+
+                const dst_size: OperandSize = if (dst_bits <= 32) .size32 else .size64;
+
+                // Select appropriate zero extension instruction based on source size
+                if (src_bits == 8) {
+                    // Zero extend byte
+                    try ctx.emit(Inst{ .uxtb = .{
+                        .dst = dst,
+                        .src = src_reg,
+                        .dst_size = dst_size,
+                    } });
+                } else if (src_bits == 16) {
+                    // Zero extend halfword
+                    try ctx.emit(Inst{ .uxth = .{
+                        .dst = dst,
+                        .src = src_reg,
+                        .dst_size = dst_size,
+                    } });
+                } else if (src_bits == 32 and dst_bits == 64) {
+                    // Zero extend word to 64-bit (32-bit ops auto zero-extend in ARM64)
+                    // Just use a 32-bit mov which zero-extends
+                    try ctx.emit(Inst{ .mov_rr = .{
+                        .dst = dst,
+                        .src = src_reg,
+                        .size = .size32,
+                    } });
+                } else {
+                    // No-op or unsupported
+                    try ctx.emit(Inst{ .mov_rr = .{
+                        .dst = dst,
+                        .src = src_reg,
+                        .size = dst_size,
+                    } });
+                }
+
+                return true;
+            } else if (data.opcode == .ireduce) {
+                // Integer reduce (truncate to smaller type)
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const dst_bits = dst_ty.bits();
+
+                // Determine size for move
+                const size: OperandSize = if (dst_bits <= 32) .size32 else .size64;
+
+                // For reduction, just move with appropriate size
+                // Lower bits are preserved, upper bits discarded
+                try ctx.emit(Inst{ .mov_rr = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
+
+                return true;
             }
         },
         .nullary => |data| {
