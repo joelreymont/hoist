@@ -8578,7 +8578,7 @@ test "emit sxth 32-bit" {
     try emit(.{ .sxth = .{
         .dst = wr4,
         .src = r5,
-        .size = .size32,
+        .dst_size = .size32,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8756,7 +8756,7 @@ test "emit extend instructions - verify against ARM manual examples" {
     const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // Test SXTB W0, W1 encoding: should be 0x13001C20
-    buffer.reset();
+    buffer.data.clearRetainingCapacity();
     try emit(.{ .sxtb = .{
         .dst = wr0,
         .src = r1,
@@ -8856,10 +8856,10 @@ test "emit adr positive offset" {
     const r0 = Reg.fromVReg(v0);
     const wr0 = WritableReg.fromReg(r0);
 
-    // ADR X0, #0x1234 (positive offset)
+    // ADR X0, #0x1234 (positive offset - use label index as offset)
     try emit(.{ .adr = .{
         .dst = wr0,
-        .offset = 0x1234,
+        .label = 0x1234,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -9683,10 +9683,11 @@ test "emit fadd single-precision" {
     const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // FADD S0, S1, S2
-    try emit(.{ .fadd_s = .{
+    try emit(.{ .fadd = .{
         .dst = wr0,
         .src1 = r1,
         .src2 = r2,
+        .size = .size32,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -9720,7 +9721,7 @@ test "emit fadd double-precision" {
     const wr3 = inst_mod.WritableReg.fromReg(r3);
 
     // FADD D3, D4, D5
-    try emit(.{ .fadd_d = .{
+    try emit(.{ .fadd = .{
         .dst = wr3,
         .src1 = r4,
         .src2 = r5,
@@ -9749,7 +9750,7 @@ test "emit fsub and fmul" {
     const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // FSUB S0, S1, S2
-    try emit(.{ .fsub_s = .{
+    try emit(.{ .fsub = .{
         .dst = wr0,
         .src1 = r1,
         .src2 = r2,
@@ -9759,7 +9760,7 @@ test "emit fsub and fmul" {
 
     // FMUL S0, S1, S2
     buffer.data.clearRetainingCapacity();
-    try emit(.{ .fmul_s = .{
+    try emit(.{ .fmul = .{
         .dst = wr0,
         .src1 = r1,
         .src2 = r2,
@@ -9790,7 +9791,7 @@ test "emit fmov register and immediate" {
     const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // FMOV S0, S1
-    try emit(.{ .fmov_rr_s = .{
+    try emit(.{ .fmov_rr = .{
         .dst = wr0,
         .src = r1,
     } }, &buffer);
@@ -9818,7 +9819,7 @@ test "emit fcmp and fcvt" {
     const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // FCMP S0, S1
-    try emit(.{ .fcmp_s = .{
+    try emit(.{ .fcmp = .{
         .src1 = r0,
         .src2 = r1,
     } }, &buffer);
@@ -9877,7 +9878,7 @@ test "emit fneg fabs fmax fmin" {
     const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // FNEG S0, S1
-    try emit(.{ .fneg_s = .{
+    try emit(.{ .fneg = .{
         .dst = wr0,
         .src = r1,
     } }, &buffer);
