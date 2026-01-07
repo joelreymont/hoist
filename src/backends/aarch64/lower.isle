@@ -781,6 +781,13 @@
 ;; splat: Duplicate scalar to all vector lanes (DUP)
 ;; splat: Optimized patterns for specific cases
 
+;; splat: Load and replicate - use LD1R (highest priority)
+;; Pattern: splat(load(addr)) -> LD1R {Vt.<T>}, [Xn]
+;; This is much more efficient than LDR + DUP
+(rule 10 (lower (has_type ty @ (ty_vec_fits_in_register _) (splat (load elem_ty addr _flags _offset))))
+      (if-let 0 _offset) ;; LD1R doesn't support offset, only base register
+      (aarch64_ld1r ty addr))
+
 ;; splat: Float constant - use immediate splat
 (rule (lower (has_type ty (splat (f32const k)))))
       (aarch64_splat_const ty k))

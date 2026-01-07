@@ -5389,3 +5389,25 @@ pub fn aarch64_get_return_address(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
         .size = .size64,
     } };
 }
+
+/// Constructor: aarch64_ld1r - Load single element and replicate to all lanes
+/// Pattern: splat(load(addr)) -> LD1R {Vt.<T>}, [Xn]
+/// This is more efficient than LDR + DUP (one instruction vs two)
+pub fn aarch64_ld1r(ty: types.Type, addr: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const base_reg = try getValueReg(ctx, addr);
+
+    // Map Type to VecElemSize for LD1R instruction
+    const size: Inst.VecElemSize = switch (ty) {
+        types.Type.V8x16 => .size8x16, // 16 × 8-bit elements
+        types.Type.V16x8 => .size16x8, // 8 × 16-bit elements
+        types.Type.V32x4 => .size32x4, // 4 × 32-bit elements
+        types.Type.V64x2 => .size64x2, // 2 × 64-bit elements
+        else => return error.UnsupportedType,
+    };
+
+    return Inst{ .ld1r = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
+        .base = base_reg,
+        .size = size,
+    } };
+}
