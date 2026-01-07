@@ -8,6 +8,7 @@ const root = @import("root");
 
 const Inst = root.aarch64_inst.Inst;
 const Reg = root.aarch64_inst.Reg;
+const PReg = root.aarch64_inst.PReg;
 const WritableReg = root.aarch64_inst.WritableReg;
 const OperandSize = root.aarch64_inst.OperandSize;
 const CondCode = root.aarch64_inst.CondCode;
@@ -1965,12 +1966,51 @@ pub fn aarch64_return_call(
     sig_ref: u32,
     name: u32,
     args: []const Value,
-) !void {
-    _ = sig_ref;
-    _ = name;
-    _ = args;
-    _ = ctx;
-    @panic("TODO: Implement return_call - needs epilogue + B instruction");
+) !Inst {
+    _ = sig_ref; // TODO: Use for argument marshaling
+    _ = name; // TODO: Load target address for external function
+    _ = args; // TODO: Marshal arguments to target ABI
+
+    // For now, implement simple case: direct tail call
+    // Full implementation needs:
+    // 1. Marshal arguments to target function's ABI locations
+    // 2. Restore FP and LR from stack (epilogue)
+    // 3. Deallocate stack frame (restore SP)
+    // 4. Branch (not call) to target
+
+    // Placeholder: emit epilogue + branch
+    // Restore FP/LR from stack
+    try ctx.emit(Inst{
+        .ldp = .{
+            .dst1 = WritableReg.fromPReg(PReg.fp),
+            .dst2 = WritableReg.fromPReg(PReg.lr),
+            .base = Reg.fromPReg(PReg.sp),
+            .offset = 0, // TODO: Get actual frame size from ABI
+            .size = .size64,
+        },
+    });
+
+    // Deallocate stack frame
+    try ctx.emit(Inst{
+        .add_imm = .{
+            .dst = WritableReg.fromPReg(PReg.sp),
+            .src = Reg.fromPReg(PReg.sp),
+            .imm = Imm12.fromU32(16) orelse unreachable, // TODO: Get actual frame size
+            .size = .size64,
+        },
+    });
+
+    // Load target function address
+    // For external functions, we need to use ADRP+ADD or load via GOT
+    // TODO: Get external name from function reference 'name'
+    // For now, use a placeholder - need to wire up external name lookup
+    const target_reg = try ctx.lower_ctx.allocVReg(.int);
+
+    // Placeholder: Load external function address
+    // Real implementation needs: adrp_symbol + add_symbol_lo12 or load_ext_name_got
+    _ = target_reg;
+
+    @panic("TODO: Wire up external function name lookup and address loading for return_call");
 }
 
 /// Constructor: return_call_indirect - indirect tail call.
@@ -1980,12 +2020,40 @@ pub fn aarch64_return_call_indirect(
     sig_ref: u32,
     ptr: Value,
     args: []const Value,
-) !void {
-    _ = sig_ref;
-    _ = ptr;
-    _ = args;
-    _ = ctx;
-    @panic("TODO: Implement return_call_indirect - needs epilogue + BR instruction");
+) !Inst {
+    _ = sig_ref; // TODO: Use for argument marshaling
+    _ = args; // TODO: Marshal arguments to target ABI
+
+    // Get function pointer
+    const ptr_reg = try ctx.getValueReg(ptr, .int);
+
+    // Restore FP/LR from stack (epilogue)
+    try ctx.emit(Inst{
+        .ldp = .{
+            .dst1 = WritableReg.fromPReg(PReg.fp),
+            .dst2 = WritableReg.fromPReg(PReg.lr),
+            .base = Reg.fromPReg(PReg.sp),
+            .offset = 0, // TODO: Get actual frame size from ABI
+            .size = .size64,
+        },
+    });
+
+    // Deallocate stack frame
+    try ctx.emit(Inst{
+        .add_imm = .{
+            .dst = WritableReg.fromPReg(PReg.sp),
+            .src = Reg.fromPReg(PReg.sp),
+            .imm = Imm12.fromU32(16) orelse unreachable, // TODO: Get actual frame size
+            .size = .size64,
+        },
+    });
+
+    // Branch to function pointer (not call - this is a tail call)
+    return Inst{
+        .br = .{
+            .target = ptr_reg,
+        },
+    };
 }
 
 /// Constructor: ldadd - atomic add (LSE).
