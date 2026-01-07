@@ -859,18 +859,46 @@ pub const Aarch64ABICallee = struct {
             // Allocate remaining frame space
             var remaining = self.frame_size - 16;
 
-            // SUB immediate can encode 12-bit values (0-4095)
-            // For now, we don't use the shift form (would require updating emit.zig)
-            // so we just break into 4095-byte chunks
-            while (remaining > 0) {
-                const chunk = @min(remaining, 4095);
-                try emit_fn(.{ .sub_imm = .{
-                    .dst = sp_w,
-                    .src = sp,
-                    .imm = @intCast(chunk),
-                    .size = .size64,
-                } }, buffer);
-                remaining -= chunk;
+            // Stack probe: touch each 4KB page to avoid guard page miss
+            // Required for large frames to prevent stack overflow attacks
+            const page_size = 4096;
+            const xzr = Reg.fromPReg(PReg.new(.int, 31)); // XZR (zero register, 31 encodes XZR when used as source)
+
+            if (remaining > page_size) {
+                // Need to probe: allocate and touch pages in 4KB chunks
+                while (remaining > 0) {
+                    const chunk = @min(remaining, page_size);
+                    try emit_fn(.{ .sub_imm = .{
+                        .dst = sp_w,
+                        .src = sp,
+                        .imm = @intCast(chunk),
+                        .size = .size64,
+                    } }, buffer);
+
+                    // Touch the page by writing zero to [SP]
+                    // STR XZR, [SP]
+                    try emit_fn(.{ .str = .{
+                        .src = xzr,
+                        .base = sp,
+                        .offset = 0,
+                        .size = .size64,
+                    } }, buffer);
+
+                    remaining -= chunk;
+                }
+            } else {
+                // Small remaining size - allocate without probing
+                // SUB immediate can encode 12-bit values (0-4095)
+                while (remaining > 0) {
+                    const chunk = @min(remaining, 4095);
+                    try emit_fn(.{ .sub_imm = .{
+                        .dst = sp_w,
+                        .src = sp,
+                        .imm = @intCast(chunk),
+                        .size = .size64,
+                    } }, buffer);
+                    remaining -= chunk;
+                }
             }
         }
 
