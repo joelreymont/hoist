@@ -517,6 +517,16 @@ fn lowerAArch64(ctx: *Context) CodegenError!void {
     try emitAArch64WithAllocation(ctx, &vcode, &allocator);
 }
 
+/// Convert IR type to ABI type.
+fn irTypeToAbiType(ty: ir.Type) @import("../machinst/abi.zig").Type {
+    if (ty.eql(ir.Type.I32)) return .i32;
+    if (ty.eql(ir.Type.I64)) return .i64;
+    if (ty.eql(ir.Type.F32)) return .f32;
+    if (ty.eql(ir.Type.F64)) return .f64;
+    // Default to i64 for unsupported types
+    return .i64;
+}
+
 /// Emit AArch64 machine code with register allocation applied.
 fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) CodegenError!void {
     const emit_mod = @import("../backends/aarch64/emit.zig");
@@ -530,8 +540,35 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
     var buffer = buffer_mod.MachBuffer.init(ctx.allocator);
     defer buffer.deinit();
 
+    // Convert IR signature to ABI signature
+    const machinst_abi = @import("../machinst/abi.zig");
+    var arg_types = std.ArrayList(machinst_abi.Type){};
+    defer arg_types.deinit(ctx.allocator);
+    for (ctx.func.sig.params.items) |param| {
+        try arg_types.append(ctx.allocator, irTypeToAbiType(param.value_type));
+    }
+    var ret_types = std.ArrayList(machinst_abi.Type){};
+    defer ret_types.deinit(ctx.allocator);
+    for (ctx.func.sig.returns.items) |ret| {
+        try ret_types.append(ctx.allocator, irTypeToAbiType(ret.value_type));
+    }
+
+    // Map IR calling convention to ABI calling convention
+    const abi_call_conv: machinst_abi.CallConv = switch (ctx.func.sig.call_conv) {
+        .fast => .fast,
+        .system_v => .aapcs64,
+        .preserve_all => .preserve_all,
+        else => .fast, // Default to fast for unsupported conventions
+    };
+
+    const abi_sig = machinst_abi.ABISignature.init(
+        arg_types.items,
+        ret_types.items,
+        abi_call_conv,
+    );
+
     // Create minimal ABI callee for prologue/epilogue generation
-    var abi_callee = abi_mod.Aarch64ABICallee.init(ctx.allocator, ctx.func.signature, .fast);
+    var abi_callee = abi_mod.Aarch64ABICallee.init(ctx.allocator, abi_sig);
     defer abi_callee.deinit();
 
     // For now, use zero frame size (no locals/spills)

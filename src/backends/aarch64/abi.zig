@@ -2,15 +2,17 @@ const std = @import("std");
 const testing = std.testing;
 const builtin = @import("builtin");
 
-const root = @import("root");
-const abi_mod = root.abi;
-const Inst = root.aarch64_inst.Inst;
-const Reg = root.aarch64_inst.Reg;
-const PReg = root.aarch64_inst.PReg;
-const WritableReg = root.aarch64_inst.WritableReg;
-const OperandSize = root.aarch64_inst.OperandSize;
-const buffer_mod = root.buffer;
-const vcode_mod = root.vcode;
+const abi_mod = @import("../../machinst/abi.zig");
+const inst_mod = @import("inst.zig");
+const Inst = inst_mod.Inst;
+const Reg = inst_mod.Reg;
+const PReg = inst_mod.PReg;
+const WritableReg = inst_mod.WritableReg;
+const OperandSize = inst_mod.OperandSize;
+const buffer_mod = @import("../../machinst/buffer.zig");
+const vcode_mod = @import("../../machinst/vcode.zig");
+const types = @import("../../ir/types.zig");
+const Type = types.Type;
 
 /// Platform-specific ABI variant.
 pub const Platform = enum {
@@ -853,6 +855,8 @@ pub const CallerSavedTracker = struct {
 
 /// Prologue/epilogue generation for aarch64 functions.
 pub const Aarch64ABICallee = struct {
+    /// Allocator for dynamic allocations.
+    allocator: std.mem.Allocator,
     /// Function signature.
     sig: abi_mod.ABISignature,
     /// Calling convention.
@@ -884,10 +888,9 @@ pub const Aarch64ABICallee = struct {
     is_cold: bool,
 
     pub fn init(
-        _allocator: std.mem.Allocator,
+        allocator: std.mem.Allocator,
         sig: abi_mod.ABISignature,
     ) Aarch64ABICallee {
-        _ = _allocator;
         const abi = switch (sig.call_conv) {
             .aapcs64, .cold => aapcs64(),
             .fast => fast(),
@@ -900,6 +903,7 @@ pub const Aarch64ABICallee = struct {
         const is_cold = sig.call_conv == .cold;
 
         return .{
+            .allocator = allocator,
             .sig = sig,
             .abi = abi,
             .call_conv = null,
@@ -947,7 +951,7 @@ pub const Aarch64ABICallee = struct {
             var cc_mut = cc;
             cc_mut.deinit();
         }
-        self.clobbered_callee_saves.deinit();
+        self.clobbered_callee_saves.deinit(self.allocator);
     }
 
     /// Enable dynamic stack allocations (alloca).
@@ -1235,7 +1239,7 @@ pub const Aarch64ABICallee = struct {
         }
 
         // 3. Return: RET (defaults to X30/LR)
-        try emit_fn(.{ .ret = .{ .reg = null } }, buffer);
+        try emit_fn(.{ .ret = {} }, buffer);
     }
 
     /// Mark a callee-save register as clobbered.
@@ -3368,7 +3372,7 @@ pub const ReturnLocation = union(enum) {
 
 /// Classify return value according to AAPCS64 rules.
 /// Returns how the value should be returned.
-pub fn classifyReturn(ty: root.types.Type) ReturnLocation {
+pub fn classifyReturn(ty: Type) ReturnLocation {
     // Integer types (i8, i16, i32, i64) -> X0
     if (ty.isInt()) {
         const bits = ty.bits();
@@ -3401,7 +3405,6 @@ pub fn classifyReturn(ty: root.types.Type) ReturnLocation {
 }
 
 test "classifyReturn - integer types" {
-    const Type = root.types.Type;
 
     // i32 -> X0
     const i32_ret = classifyReturn(Type.I32);
@@ -3421,7 +3424,6 @@ test "classifyReturn - integer types" {
 }
 
 test "classifyReturn - float types" {
-    const Type = root.types.Type;
 
     // f32 -> V0
     const f32_ret = classifyReturn(Type.F32);
