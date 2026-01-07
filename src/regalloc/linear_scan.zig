@@ -94,6 +94,10 @@ pub const LinearScanAllocator = struct {
     /// Next available spill slot offset (in bytes)
     next_spill_offset: u32,
 
+    /// Free spill slots that can be reused
+    /// Stores offsets of slots that were allocated but are no longer in use
+    free_spill_slots: std.ArrayList(u32),
+
     /// Register allocation hints: preferred physical register for each virtual register
     /// Used to improve allocation quality by preferring certain registers when available
     hints: std.AutoHashMap(u32, machinst.PReg),
@@ -132,6 +136,7 @@ pub const LinearScanAllocator = struct {
             .num_float_regs = num_float_regs,
             .num_vector_regs = num_vector_regs,
             .next_spill_offset = 0,
+            .free_spill_slots = std.ArrayList(u32).init(allocator),
             .hints = std.AutoHashMap(u32, machinst.PReg).init(allocator),
             .allocator = allocator,
         };
@@ -143,6 +148,7 @@ pub const LinearScanAllocator = struct {
         self.free_int_regs.deinit();
         self.free_float_regs.deinit();
         self.free_vector_regs.deinit();
+        self.free_spill_slots.deinit();
         self.hints.deinit();
     }
 
@@ -212,16 +218,15 @@ pub const LinearScanAllocator = struct {
             const range = self.active.items[i];
 
             if (range.end_inst < current_pos) {
-                // This interval has ended - free its register
-                const preg = result.getPhysReg(range.vreg) orelse {
-                    // No register was assigned (shouldn't happen)
-                    i += 1;
-                    continue;
-                };
-
-                // Mark the register as free
-                const free_regs = self.getFreeRegs(range.reg_class);
-                free_regs.set(preg.index);
+                // This interval has ended - free its register or spill slot
+                if (result.getPhysReg(range.vreg)) |preg| {
+                    // Had a register - mark it as free
+                    const free_regs = self.getFreeRegs(range.reg_class);
+                    free_regs.set(preg.index);
+                } else if (result.getSpillSlot(range.vreg)) |slot| {
+                    // Was spilled - free the spill slot for reuse
+                    try self.freeSpillSlot(slot);
+                }
 
                 // Remove from active list (swap with last element for O(1) removal)
                 _ = self.active.swapRemove(i);
@@ -331,20 +336,36 @@ pub const LinearScanAllocator = struct {
         free_regs.set(preg.index);
 
         // Allocate a spill slot for the spilled vreg
-        const spill_slot = self.allocateSpillSlot();
+        const spill_slot = try self.allocateSpillSlot();
         try result.assignSpillSlot(spill_range.vreg, spill_slot);
 
         return preg;
     }
 
-    /// Allocate a new spill slot on the stack.
+    /// Allocate a spill slot on the stack.
     ///
-    /// Returns a SpillSlot with the next available stack offset.
+    /// Returns a SpillSlot with an available stack offset.
+    /// Reuses freed slots when possible, otherwise allocates a new one.
     /// Spill slots are allocated in 8-byte increments to maintain alignment.
-    fn allocateSpillSlot(self: *LinearScanAllocator) SpillSlot {
+    fn allocateSpillSlot(self: *LinearScanAllocator) !SpillSlot {
+        // Try to reuse a freed slot first
+        if (self.free_spill_slots.items.len > 0) {
+            const offset = self.free_spill_slots.pop();
+            return SpillSlot.init(offset);
+        }
+
+        // No free slots - allocate new one
         const slot = SpillSlot.init(self.next_spill_offset);
         self.next_spill_offset += 8; // 8-byte slots for all types
         return slot;
+    }
+
+    /// Free a spill slot for reuse.
+    ///
+    /// Marks the slot as available for future allocations.
+    /// Called when a spilled vreg's live range ends.
+    fn freeSpillSlot(self: *LinearScanAllocator, slot: SpillSlot) !void {
+        try self.free_spill_slots.append(self.allocator, slot.offset);
     }
 
     /// Get the bitset for free registers of a given class
