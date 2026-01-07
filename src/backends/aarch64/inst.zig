@@ -2715,8 +2715,59 @@ pub const Inst = union(enum) {
             .br => |*i| {
                 try collector.regUse(i.target);
             },
+            .bl => {
+                // Call clobbers caller-saved registers per AAPCS64:
+                // - X0-X18 (integer caller-saved)
+                // - V0-V7, V16-V31 (FP/SIMD caller-saved)
+                // Mark them as defs so register allocator knows they're clobbered
+
+                // Integer caller-saved: X0-X18
+                var i: u6 = 0;
+                while (i <= 18) : (i += 1) {
+                    const preg = PReg.new(.int, i);
+                    try collector.regDef(WritableReg.fromReg(Reg.fromPReg(preg)));
+                }
+
+                // FP caller-saved: V0-V7
+                i = 0;
+                while (i <= 7) : (i += 1) {
+                    const preg = PReg.new(.float, i);
+                    try collector.regDef(WritableReg.fromReg(Reg.fromPReg(preg)));
+                }
+
+                // FP caller-saved: V16-V31
+                i = 16;
+                while (i <= 31) : (i += 1) {
+                    const preg = PReg.new(.float, i);
+                    try collector.regDef(WritableReg.fromReg(Reg.fromPReg(preg)));
+                }
+            },
             .blr => |*i| {
                 try collector.regUse(i.target);
+
+                // Call clobbers caller-saved registers per AAPCS64
+                // Same as bl - mark all caller-saved registers as clobbered
+
+                // Integer caller-saved: X0-X18
+                var reg_i: u6 = 0;
+                while (reg_i <= 18) : (reg_i += 1) {
+                    const preg = PReg.new(.int, reg_i);
+                    try collector.regDef(WritableReg.fromReg(Reg.fromPReg(preg)));
+                }
+
+                // FP caller-saved: V0-V7
+                reg_i = 0;
+                while (reg_i <= 7) : (reg_i += 1) {
+                    const preg = PReg.new(.float, reg_i);
+                    try collector.regDef(WritableReg.fromReg(Reg.fromPReg(preg)));
+                }
+
+                // FP caller-saved: V16-V31
+                reg_i = 16;
+                while (reg_i <= 31) : (reg_i += 1) {
+                    const preg = PReg.new(.float, reg_i);
+                    try collector.regDef(WritableReg.fromReg(Reg.fromPReg(preg)));
+                }
             },
             .sxtb => |*i| {
                 try collector.regUse(i.src);
@@ -3089,7 +3140,7 @@ pub const Inst = union(enum) {
             .ret_call => {
                 // No operands to collect (implicit use of X30/LR handled by ABI)
             },
-            .call, .b, .b_cond, .bl, .nop, .dmb, .dsb, .fence, .epilogue_placeholder, .data, .brk, .udf, .bti, .csdb, .isb, .autiasp, .paciasp => {
+            .call, .b, .b_cond, .nop, .dmb, .dsb, .fence, .epilogue_placeholder, .data, .brk, .udf, .bti, .csdb, .isb, .autiasp, .paciasp => {
                 // No register operands (labels/immediates/special only)
             },
             else => {

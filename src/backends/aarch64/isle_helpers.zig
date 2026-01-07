@@ -2825,7 +2825,18 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
     }
 
     // Direct call: BL (branch with link)
-    try ctx.emit(Inst{ .bl = .{ .target = .{ .symbol = name } } });
+    // Convert ExternalName to string for CallTarget
+    // TODO: Proper ExternalName->string conversion (currently using testcase name)
+    const symbol_name = switch (name) {
+        .testcase => |n| n,
+        .user => |u| blk: {
+            // For now, format user external names as "u{namespace}:{index}"
+            // This is a temporary workaround - proper symbol resolution TBD
+            _ = u;
+            break :blk "external_user_func";
+        },
+    };
+    try ctx.emit(Inst{ .bl = .{ .target = .{ .external_name = symbol_name } } });
 
     // Return value in X0 (AAPCS64 convention)
     return lower_mod.ValueRegs.one(Reg.gpr(0));
