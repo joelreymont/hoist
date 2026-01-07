@@ -173,6 +173,67 @@ pub fn fast() abi_mod.ABIMachineSpec(u64) {
     };
 }
 
+/// PreserveAll calling convention - callee saves all registers except args.
+/// Used for GC statepoints and patchpoints where most registers must be preserved.
+/// - Args: X0-X7, V0-V7 (same as AAPCS64)
+/// - Callee-saves: ALL other GPRs (X8-X30) and FPRs (V8-V31)
+/// - Large prologue/epilogue required
+pub fn preserveAll() abi_mod.ABIMachineSpec(u64) {
+    // Argument registers same as AAPCS64
+    const int_args = [_]PReg{
+        PReg.new(.int, 0), PReg.new(.int, 1), PReg.new(.int, 2), PReg.new(.int, 3),
+        PReg.new(.int, 4), PReg.new(.int, 5), PReg.new(.int, 6), PReg.new(.int, 7),
+    };
+
+    const float_args = [_]PReg{
+        PReg.new(.float, 0), PReg.new(.float, 1), PReg.new(.float, 2), PReg.new(.float, 3),
+        PReg.new(.float, 4), PReg.new(.float, 5), PReg.new(.float, 6), PReg.new(.float, 7),
+    };
+
+    // Return registers same as AAPCS64
+    const int_rets = [_]PReg{
+        PReg.new(.int, 0), PReg.new(.int, 1), PReg.new(.int, 2), PReg.new(.int, 3),
+        PReg.new(.int, 4), PReg.new(.int, 5), PReg.new(.int, 6), PReg.new(.int, 7),
+    };
+
+    const float_rets = [_]PReg{
+        PReg.new(.float, 0), PReg.new(.float, 1), PReg.new(.float, 2), PReg.new(.float, 3),
+        PReg.new(.float, 4), PReg.new(.float, 5), PReg.new(.float, 6), PReg.new(.float, 7),
+    };
+
+    // Callee-saves: ALL registers except args and SP (X31)
+    // GPRs: X8-X30 (excluding arg registers X0-X7)
+    // FPRs: V8-V31 (excluding arg registers V0-V7)
+    const callee_saves = [_]PReg{
+        // X8-X18 (caller-saved in standard ABI, but preserved here)
+        PReg.new(.int, 8),    PReg.new(.int, 9),    PReg.new(.int, 10),   PReg.new(.int, 11),
+        PReg.new(.int, 12),   PReg.new(.int, 13),   PReg.new(.int, 14),   PReg.new(.int, 15),
+        PReg.new(.int, 16),   PReg.new(.int, 17),   PReg.new(.int, 18),
+        // X19-X30 (standard callee-saves)
+          PReg.new(.int, 19),
+        PReg.new(.int, 20),   PReg.new(.int, 21),   PReg.new(.int, 22),   PReg.new(.int, 23),
+        PReg.new(.int, 24),   PReg.new(.int, 25),   PReg.new(.int, 26),   PReg.new(.int, 27),
+        PReg.new(.int, 28),   PReg.new(.int, 29),   PReg.new(.int, 30),
+        // V8-V31 (V8-V15 standard callee-save, V16-V31 caller-saved but preserved here)
+          PReg.new(.float, 8),
+        PReg.new(.float, 9),  PReg.new(.float, 10), PReg.new(.float, 11), PReg.new(.float, 12),
+        PReg.new(.float, 13), PReg.new(.float, 14), PReg.new(.float, 15), PReg.new(.float, 16),
+        PReg.new(.float, 17), PReg.new(.float, 18), PReg.new(.float, 19), PReg.new(.float, 20),
+        PReg.new(.float, 21), PReg.new(.float, 22), PReg.new(.float, 23), PReg.new(.float, 24),
+        PReg.new(.float, 25), PReg.new(.float, 26), PReg.new(.float, 27), PReg.new(.float, 28),
+        PReg.new(.float, 29), PReg.new(.float, 30), PReg.new(.float, 31),
+    };
+
+    return .{
+        .int_arg_regs = &int_args,
+        .float_arg_regs = &float_args,
+        .int_ret_regs = &int_rets,
+        .float_ret_regs = &float_rets,
+        .callee_saves = &callee_saves,
+        .stack_align = 16,
+    };
+}
+
 /// Round up size to 16-byte alignment as required by AAPCS64.
 fn alignTo16(size: u32) u32 {
     return (size + 15) & ~@as(u32, 15);
@@ -830,7 +891,7 @@ pub const Aarch64ABICallee = struct {
         const abi = switch (sig.call_conv) {
             .aapcs64, .cold => aapcs64(),
             .fast => fast(),
-            .preserve_all => aapcs64(), // TODO: implement preserve_all variant
+            .preserve_all => preserveAll(),
             .system_v, .windows_fastcall => unreachable,
         };
 
@@ -3482,4 +3543,28 @@ test "fast calling convention uses extended registers" {
 
     // Verify V15 is the last float arg register in fast convention
     try testing.expectEqual(PReg.new(.float, 15), fast_abi.float_arg_regs[15]);
+}
+
+test "preserveAll calling convention saves all non-arg registers" {
+    const preserve_abi = preserveAll();
+    const standard_abi = aapcs64();
+
+    // Same argument registers as standard ABI
+    try testing.expectEqual(@as(usize, 8), preserve_abi.int_arg_regs.len);
+    try testing.expectEqual(@as(usize, 8), preserve_abi.float_arg_regs.len);
+
+    // PreserveAll has many more callee-saves: X8-X30 (23 regs) + V8-V31 (24 regs) = 47 total
+    // Standard has: X19-X30 (12 regs) + V8-V15 (8 regs) = 20 total
+    try testing.expectEqual(@as(usize, 47), preserve_abi.callee_saves.len);
+    try testing.expectEqual(@as(usize, 20), standard_abi.callee_saves.len);
+
+    // Verify X8 is saved (caller-saved in standard ABI, callee-saved in PreserveAll)
+    try testing.expectEqual(PReg.new(.int, 8), preserve_abi.callee_saves[0]);
+
+    // Verify V16 is saved (caller-saved in standard ABI, callee-saved in PreserveAll)
+    // V16 is at position: 23 GPRs (X8-X30) + 8 FPRs (V8-V15) = index 31
+    try testing.expectEqual(PReg.new(.float, 16), preserve_abi.callee_saves[31]);
+
+    // Verify V31 is the last callee-save
+    try testing.expectEqual(PReg.new(.float, 31), preserve_abi.callee_saves[46]);
 }
