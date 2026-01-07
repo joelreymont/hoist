@@ -1624,6 +1624,230 @@ pub fn aarch64_smul_overflow_trap(
     ctx.lower_ctx.bindLabel(skip_label);
 }
 
+/// Constructor: sqadd_8 - signed saturating add for I8.
+pub fn aarch64_sqadd_8(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .sqadd = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size8,
+    } });
+}
+
+/// Constructor: sqadd_16 - signed saturating add for I16.
+pub fn aarch64_sqadd_16(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .sqadd = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size16,
+    } });
+}
+
+/// Constructor: sqadd_32 - signed saturating add for I32.
+pub fn aarch64_sqadd_32(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .sqadd = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size32,
+    } });
+}
+
+/// Constructor: sqadd_64 - signed saturating add for I64.
+pub fn aarch64_sqadd_64(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .sqadd = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size64,
+    } });
+}
+
+/// Constructor: sqsub_8 - signed saturating subtract for I8.
+pub fn aarch64_sqsub_8(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .sqsub = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size8,
+    } });
+}
+
+/// Constructor: sqsub_16 - signed saturating subtract for I16.
+pub fn aarch64_sqsub_16(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .sqsub = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size16,
+    } });
+}
+
+/// Constructor: sqsub_32 - signed saturating subtract for I32.
+pub fn aarch64_sqsub_32(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .sqsub = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size32,
+    } });
+}
+
+/// Constructor: sqsub_64 - signed saturating subtract for I64.
+pub fn aarch64_sqsub_64(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .sqsub = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size64,
+    } });
+}
+
+/// Constructor: uqadd_8 - unsigned saturating add for I8.
+pub fn aarch64_uqadd_8(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .uqadd = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size8,
+    } });
+}
+
+/// Constructor: uqadd_16 - unsigned saturating add for I16.
+pub fn aarch64_uqadd_16(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .uqadd = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size16,
+    } });
+}
+
+/// Constructor: uqadd_32 - unsigned saturating add for I32.
+pub fn aarch64_uqadd_32(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .uqadd = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size32,
+    } });
+}
+
+/// Constructor: uqadd_64 - unsigned saturating add for I64.
+pub fn aarch64_uqadd_64(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .uqadd = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size64,
+    } });
+}
+
+/// Constructor: uqsub_8 - unsigned saturating subtract for I8.
+pub fn aarch64_uqsub_8(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .uqsub = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size8,
+    } });
+}
+
+/// Constructor: uqsub_16 - unsigned saturating subtract for I16.
+pub fn aarch64_uqsub_16(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .uqsub = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size16,
+    } });
+}
+
+/// Constructor: uqsub_32 - unsigned saturating subtract for I32.
+pub fn aarch64_uqsub_32(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .uqsub = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size32,
+    } });
+}
+
+/// Constructor: uqsub_64 - unsigned saturating subtract for I64.
+pub fn aarch64_uqsub_64(ctx: *IsleContext, a: Value, b: Value) !void {
+    const a_reg = try ctx.getValueReg(a, .int);
+    const b_reg = try ctx.getValueReg(b, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(Inst{ .uqsub = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = .size64,
+    } });
+}
+
 /// Constructor: return_call - direct tail call.
 /// Emits epilogue followed by direct branch instead of call+return.
 pub fn aarch64_return_call(
