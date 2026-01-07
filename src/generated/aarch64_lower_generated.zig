@@ -1571,6 +1571,63 @@ pub fn lower(
                     .size = size,
                 } });
                 return true;
+            } else if (data.opcode == .band_not) {
+                // Bitwise AND NOT - bic instruction
+                const src1 = data.args[0];
+                const src2 = data.args[1];
+
+                const src1_reg = Reg.fromVReg(try ctx.getValueReg(src1, .int));
+                const src2_reg = Reg.fromVReg(try ctx.getValueReg(src2, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .bic_rr = .{
+                    .dst = dst,
+                    .src1 = src1_reg,
+                    .src2 = src2_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .bor_not) {
+                // Bitwise OR NOT - orn instruction
+                const src1 = data.args[0];
+                const src2 = data.args[1];
+
+                const src1_reg = Reg.fromVReg(try ctx.getValueReg(src1, .int));
+                const src2_reg = Reg.fromVReg(try ctx.getValueReg(src2, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .orn_rr = .{
+                    .dst = dst,
+                    .src1 = src1_reg,
+                    .src2 = src2_reg,
+                    .size = size,
+                } });
+                return true;
+            } else if (data.opcode == .bxor_not) {
+                // Bitwise XOR NOT - eon instruction
+                const src1 = data.args[0];
+                const src2 = data.args[1];
+
+                const src1_reg = Reg.fromVReg(try ctx.getValueReg(src1, .int));
+                const src2_reg = Reg.fromVReg(try ctx.getValueReg(src2, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .eon_rr = .{
+                    .dst = dst,
+                    .src1 = src1_reg,
+                    .src2 = src2_reg,
+                    .size = size,
+                } });
+                return true;
             }
         },
         .binary_imm64 => |data| {
