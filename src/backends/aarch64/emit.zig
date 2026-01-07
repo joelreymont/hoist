@@ -157,6 +157,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_addp => |i| try emitVecAddp(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_ext => |i| try emitVecExt(i.dst.toReg(), i.src1, i.src2, i.index, i.size, buffer),
         .vec_mul => |i| try emitVecMul(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .vec_sdot => |i| try emitVecSdot(i.dst.toReg(), i.src1, i.src2, buffer),
+        .vec_udot => |i| try emitVecUdot(i.dst.toReg(), i.src1, i.src2, buffer),
         .vec_smin => |i| try emitVecSmin(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_smax => |i| try emitVecSmax(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .vec_umin => |i| try emitVecUmin(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -10573,6 +10575,52 @@ fn emitVecMul(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *bu
         (0b1 << 20) |
         (@as(u32, rm) << 16) |
         (0b100111 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    try buffer.put4(insn);
+}
+
+/// Vector signed dot product: SDOT Vd.4S, Vn.16B, Vm.16B
+/// Encoding: 0|Q|0|01110|10|0|Rm|100101|Rn|Rd
+/// Requires FEAT_DotProd
+fn emitVecSdot(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q: u32 = 1; // Always 128-bit (4S destination)
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b0 << 29) | // U=0 for signed
+        (0b0 << 28) |
+        (0b01110 << 23) |
+        (0b10 << 21) | // size=10 for 8-bit elements
+        (0b0 << 20) |
+        (@as(u32, rm) << 16) |
+        (0b100101 << 10) |
+        (@as(u32, rn) << 5) |
+        @as(u32, rd);
+
+    try buffer.put4(insn);
+}
+
+/// Vector unsigned dot product: UDOT Vd.4S, Vn.16B, Vm.16B
+/// Encoding: 0|Q|1|01110|10|0|Rm|100101|Rn|Rd
+/// Requires FEAT_DotProd
+fn emitVecUdot(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const q: u32 = 1; // Always 128-bit (4S destination)
+
+    const insn: u32 = (@as(u32, q) << 30) |
+        (0b1 << 29) | // U=1 for unsigned
+        (0b0 << 28) |
+        (0b01110 << 23) |
+        (0b10 << 21) | // size=10 for 8-bit elements
+        (0b0 << 20) |
+        (@as(u32, rm) << 16) |
+        (0b100101 << 10) |
         (@as(u32, rn) << 5) |
         @as(u32, rd);
 

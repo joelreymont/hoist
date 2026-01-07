@@ -1537,6 +1537,24 @@ pub const Inst = union(enum) {
         size: VecElemSize,
     },
 
+    /// Vector signed dot product (SDOT Vd.4S, Vn.16B, Vm.16B).
+    /// Computes 4-way dot product: dst[i] += src1[4*i:4*i+3] · src2[4*i:4*i+3]
+    /// Requires FEAT_DotProd. Each lane: accumulate dot product of 4 bytes.
+    vec_sdot: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    /// Vector unsigned dot product (UDOT Vd.4S, Vn.16B, Vm.16B).
+    /// Computes 4-way unsigned dot product: dst[i] += src1[4*i:4*i+3] · src2[4*i:4*i+3]
+    /// Requires FEAT_DotProd. Each lane: accumulate dot product of 4 bytes.
+    vec_udot: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
     /// Vector floating-point addition (FADD Vd, Vn, Vm).
     /// Computes dst = src1 + src2 (element-wise FP addition).
     vec_fadd: struct {
@@ -2229,6 +2247,8 @@ pub const Inst = union(enum) {
             .vec_add => |i| try writer.print("vec_add.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_sub => |i| try writer.print("vec_sub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_mul => |i| try writer.print("vec_mul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_sdot => |i| try writer.print("vec_sdot.4s {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .vec_udot => |i| try writer.print("vec_udot.4s {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
             .vec_smin => |i| try writer.print("vec_smin.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_smax => |i| try writer.print("vec_smax.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_umin => |i| try writer.print("vec_umin.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
@@ -2443,6 +2463,16 @@ pub const Inst = union(enum) {
                 try collector.regDef(i.dst);
             },
             .vec_mul => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_sdot => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .vec_udot => |*i| {
                 try collector.regUse(i.src1);
                 try collector.regUse(i.src2);
                 try collector.regDef(i.dst);
