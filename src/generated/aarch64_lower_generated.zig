@@ -2404,7 +2404,7 @@ pub fn lower(
                 try ctx.emit(Inst{ .ldr = .{
                     .dst = dst,
                     .base = fp_reg,
-                    .offset = fp_offset,
+                    .offset = @intCast(fp_offset),
                     .size = size,
                 } });
 
@@ -2448,7 +2448,7 @@ pub fn lower(
         .stack_store => |data| {
             if (data.opcode == .stack_store) {
                 // Store to stack slot at FP + offset
-                const value = data.args[1];
+                const value = data.arg;
                 const stack_slot = data.stack_slot;
                 const offset = data.offset;
 
