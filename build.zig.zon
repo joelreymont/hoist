@@ -2,8 +2,6 @@
     .name = .hoist,
     .version = "0.0.0",
     .fingerprint = 0x1859437b338089d5,
-    .fingerprint = 0x1859437b338089d5,
-    .minimum_zig_version = "0.15.0",
     .dependencies = .{
         .ohsnap = .{
             .path = "deps/ohsnap",
