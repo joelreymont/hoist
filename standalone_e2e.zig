@@ -24,8 +24,10 @@ fn makeExecutable(memory: []align(16384) u8) !void {
     try std.posix.mprotect(memory, prot);
 }
 
-fn freeExecutableMemory(memory: []align(16384) u8) void {
-    std.heap.page_allocator.free(memory);
+fn freeExecutableMemory(allocator: std.mem.Allocator, memory: []align(16384) u8) void {
+    // page_allocator doesn't support individual frees - memory is released on process exit
+    _ = allocator;
+    _ = memory;
 }
 
 extern "c" fn sys_icache_invalidate(start: *const anyopaque, len: usize) void;
@@ -115,7 +117,7 @@ pub fn main() !void {
     // Allocate executable memory
     std.debug.print("\n--- Executing JIT Code ---\n", .{});
     const exec_mem = try allocExecutableMemory(allocator, compiled.code.items.len);
-    defer freeExecutableMemory(exec_mem);
+    defer freeExecutableMemory(allocator, exec_mem);
 
     @memcpy(exec_mem[0..compiled.code.items.len], compiled.code.items);
 
