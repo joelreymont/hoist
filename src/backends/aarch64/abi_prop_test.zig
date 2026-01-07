@@ -23,10 +23,7 @@ test "prop: frame_size always 16-byte aligned" {
         for (0..callee_saves_count) |i| {
             const reg_class: @import("../../machinst/machinst.zig").RegClass =
                 if (i % 2 == 0) .int else .float;
-            try callee.clobbered_callee_saves.append(
-                allocator,
-                @import("../../machinst/machinst.zig").PReg.new(reg_class, @intCast(i))
-            );
+            try callee.clobbered_callee_saves.append(allocator, @import("../../machinst/machinst.zig").PReg.new(reg_class, @intCast(i)));
         }
 
         callee.setLocalsSize(locals_size);
@@ -74,7 +71,7 @@ test "prop: dynamic allocations require frame pointer and X19" {
     // Properties: dynamic alloc requires FP and uses X19
     try testing.expect(callee.uses_frame_pointer);
     try testing.expect(callee.has_dynamic_alloc);
-    
+
     const dyn_sp = callee.getDynStackPointer().?;
     try testing.expectEqual(@as(u32, 19), dyn_sp.index);
 }
