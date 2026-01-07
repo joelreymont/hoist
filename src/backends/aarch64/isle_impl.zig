@@ -2554,3 +2554,72 @@ pub fn aarch64_vldr(
         @panic("vldr: unsupported vector size");
     }
 }
+
+/// Constructor: aarch64_get_frame_pointer - Get frame pointer (X29/FP).
+pub fn aarch64_get_frame_pointer(
+    ctx: *IsleContext,
+) !Inst {
+    const dst = try ctx.allocOutputReg(.int);
+    const fp = Reg.gpr(29); // X29 is the frame pointer
+    
+    return Inst{ .mov = .{
+        .dst = dst,
+        .src = fp,
+    } };
+}
+
+/// Constructor: aarch64_get_stack_pointer - Get stack pointer (SP).
+pub fn aarch64_get_stack_pointer(
+    ctx: *IsleContext,
+) !Inst {
+    const dst = try ctx.allocOutputReg(.int);
+    const sp = Reg.gpr(31); // X31/SP is the stack pointer
+    
+    return Inst{ .mov = .{
+        .dst = dst,
+        .src = sp,
+    } };
+}
+
+/// Constructor: aarch64_get_return_address - Get return address (X30/LR).
+pub fn aarch64_get_return_address(
+    ctx: *IsleContext,
+) !Inst {
+    const dst = try ctx.allocOutputReg(.int);
+    const lr = Reg.gpr(30); // X30 is the link register
+    
+    return Inst{ .mov = .{
+        .dst = dst,
+        .src = lr,
+    } };
+}
+
+/// Constructor: aarch64_get_pinned_reg - Get platform pinned register.
+/// X18 on Darwin (reserved by Apple), X28 elsewhere.
+pub fn aarch64_get_pinned_reg(
+    ctx: *IsleContext,
+) !Inst {
+    const dst = try ctx.allocOutputReg(.int);
+    // TODO: Platform detection - for now use X28
+    const pinned = Reg.gpr(28);
+    
+    return Inst{ .mov = .{
+        .dst = dst,
+        .src = pinned,
+    } };
+}
+
+/// Constructor: aarch64_set_pinned_reg - Set platform pinned register.
+pub fn aarch64_set_pinned_reg(
+    ctx: *IsleContext,
+    val: Value,
+) !Inst {
+    const val_reg = ctx.getValueReg(val);
+    // TODO: Platform detection - for now use X28
+    const pinned = Reg.gpr(28);
+    
+    return Inst{ .mov = .{
+        .dst = WritableReg.fromReg(pinned),
+        .src = val_reg,
+    } };
+}
