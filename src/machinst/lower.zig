@@ -38,6 +38,10 @@ pub fn LowerCtx(comptime MachInst: type) type {
         /// This tracks which virtual register holds each SSA value.
         value_to_reg: std.AutoHashMap(Value, VReg),
 
+        /// Mapping from IR Block to VCode BlockIndex.
+        /// Used for branch target resolution.
+        block_map: std.AutoHashMap(Block, vcode_mod.BlockIndex),
+
         /// Next available virtual register index.
         next_vreg: u32,
 
@@ -56,6 +60,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
                 .vcode = vcode,
                 .current_block = null,
                 .value_to_reg = std.AutoHashMap(Value, VReg).init(allocator),
+                .block_map = std.AutoHashMap(Block, vcode_mod.BlockIndex).init(allocator),
                 .next_vreg = 0,
                 .allocator = allocator,
             };
@@ -63,6 +68,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
 
         pub fn deinit(self: *Self) void {
             self.value_to_reg.deinit();
+            self.block_map.deinit();
         }
 
         /// Get the virtual register holding a value, allocating if needed.
@@ -90,15 +96,23 @@ pub fn LowerCtx(comptime MachInst: type) type {
         }
 
         /// Start lowering a new block.
-        pub fn startBlock(self: *Self, _: Block) !vcode_mod.BlockIndex {
+        pub fn startBlock(self: *Self, ir_block: Block) !vcode_mod.BlockIndex {
             const block_idx = try self.vcode.startBlock(&.{}); // No params for now
             self.current_block = block_idx;
+            try self.block_map.put(ir_block, block_idx);
             return block_idx;
         }
 
         /// Finish lowering the current block.
         pub fn endBlock(self: *Self) void {
             self.current_block = null;
+        }
+
+        /// Get the VCode block index for an IR block.
+        /// Returns label for branch targets.
+        pub fn getBlockLabel(self: *const Self, ir_block: Block) !u32 {
+            const block_idx = self.block_map.get(ir_block) orelse return error.BlockNotFound;
+            return block_idx;
         }
 
         /// Get instruction data for an IR instruction.

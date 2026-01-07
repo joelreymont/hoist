@@ -264,6 +264,47 @@ pub fn lower(
                 return true;
             }
         },
+        .jump => |data| {
+            if (data.opcode == .jump) {
+                // Unconditional jump to destination block
+                const target_label = try ctx.getBlockLabel(data.destination);
+                try ctx.emit(Inst{ .b = .{
+                    .target = .{ .label = target_label },
+                } });
+                return true;
+            }
+        },
+        .branch => |data| {
+            if (data.opcode == .brif) {
+                // Conditional branch: if condition then then_dest else else_dest
+                const cond_val = data.condition;
+                const cond_reg = Reg.fromVReg(try ctx.getValueReg(cond_val, .int));
+
+                // Get target labels
+                const then_label = try ctx.getBlockLabel(data.then_dest.?);
+                const else_label = try ctx.getBlockLabel(data.else_dest.?);
+
+                // Compare condition to zero
+                try ctx.emit(Inst{ .cmp_imm = .{
+                    .src = cond_reg,
+                    .imm = 0,
+                    .size = .size64,
+                } });
+
+                // Branch if not equal (condition != 0) to then block
+                try ctx.emit(Inst{ .b_cond = .{
+                    .cond = .ne,
+                    .target = .{ .label = then_label },
+                } });
+
+                // Fall through or jump to else block
+                try ctx.emit(Inst{ .b = .{
+                    .target = .{ .label = else_label },
+                } });
+
+                return true;
+            }
+        },
         else => {},
     }
 
