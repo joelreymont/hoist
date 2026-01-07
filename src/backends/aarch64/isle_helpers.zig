@@ -2822,7 +2822,7 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                     try ctx.emit(Inst{ .fmov_rr = .{
                         .dst = lower_mod.WritableReg.fromReg(abi_reg),
                         .src = arg_reg.toReg(),
-                        .size = typeToFPSize(arg_type),
+                        .size = typeToFpuOperandSize(arg_type),
                     } });
                 }
                 fp_count += 1;
@@ -2834,7 +2834,7 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                         .src = arg_reg.toReg(),
                         .base = Reg.gpr(31), // SP
                         .offset = @intCast(stack_offset),
-                        .size = typeToFPSize(arg_type),
+                        .size = typeToFpuOperandSize(arg_type),
                     },
                 });
                 stack_offset += 8;
@@ -2930,7 +2930,7 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                     try ctx.emit(Inst{ .fmov_rr = .{
                         .dst = lower_mod.WritableReg.fromReg(abi_reg),
                         .src = arg_reg.toReg(),
-                        .size = typeToFPSize(arg_type),
+                        .size = typeToFpuOperandSize(arg_type),
                     } });
                 }
                 fp_count += 1;
@@ -2942,7 +2942,7 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                         .src = arg_reg.toReg(),
                         .base = Reg.gpr(31), // SP
                         .offset = @intCast(stack_offset),
-                        .size = typeToFPSize(arg_type),
+                        .size = typeToFpuOperandSize(arg_type),
                     },
                 });
                 stack_offset += 8;
