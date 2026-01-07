@@ -1159,6 +1159,16 @@ pub const Inst = union(enum) {
         symbol: []const u8,
     },
 
+    /// Load external name via GOT (Global Offset Table).
+    /// Emits: ADRP + LDR sequence for PIC (position-independent code).
+    /// This is a pseudo-instruction expanded during emission to:
+    ///   adrp rd, :got:symbol
+    ///   ldr  rd, [rd, :got_lo12:symbol]
+    load_ext_name_got: struct {
+        dst: WritableReg,
+        symbol: []const u8,
+    },
+
     /// No operation (NOP).
     nop: void,
 
@@ -2212,6 +2222,7 @@ pub const Inst = union(enum) {
             .vldp => |i| try writer.print("vldp.{} {}, {}, [{}, #{d}]", .{ i.size, i.dst1, i.dst2, i.base, i.offset }),
             .vstp => |i| try writer.print("vstp.{} {}, {}, [{}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
             .ld1r => |i| try writer.print("ld1r.{} {}, [{}]", .{ i.size, i.dst, i.base }),
+            .load_ext_name_got => |i| try writer.print("load_ext_name_got {}, {s}", .{ i.dst, i.symbol }),
             .vec_and => |i| try writer.print("vec_and.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_orr => |i| try writer.print("vec_orr.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_eor => |i| try writer.print("vec_eor.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
@@ -2438,6 +2449,9 @@ pub const Inst = union(enum) {
             },
             .ld1r => |*i| {
                 try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .load_ext_name_got => |*i| {
                 try collector.regDef(i.dst);
             },
             .vec_and => |*i| {

@@ -23,14 +23,18 @@ pub const Reloc = enum {
     aarch64_call26,
     /// R_AARCH64_JUMP26 - B to external target.
     aarch64_jump26,
-    /// R_AARCH64_ADR_PREL_PG_HI21 - ADRP for GOT/PLT access (high 21 bits).
+    /// R_AARCH64_ADR_PREL_PG_HI21 - ADRP for symbol access (high 21 bits).
     aarch64_adr_prel_pg_hi21,
-    /// R_AARCH64_ADD_ABS_LO12_NC - ADD for GOT/PLT access (low 12 bits).
+    /// R_AARCH64_ADD_ABS_LO12_NC - ADD for symbol access (low 12 bits).
     aarch64_add_abs_lo12_nc,
     /// R_AARCH64_LDST64_ABS_LO12_NC - LDR/STR offset (low 12 bits).
     aarch64_ldst64_abs_lo12_nc,
     /// R_AARCH64_ABS64 - Absolute 64-bit address.
     aarch64_abs64,
+    /// R_AARCH64_ADR_GOT_PAGE - ADRP for GOT entry (high 21 bits).
+    aarch64_adr_got_page,
+    /// R_AARCH64_LD64_GOT_LO12_NC - LDR from GOT entry (low 12 bits).
+    aarch64_ld64_got_lo12_nc,
 };
 
 /// Addend for relocations.
@@ -692,6 +696,8 @@ fn relocTypeToElf(kind: Reloc) u32 {
         .aarch64_add_abs_lo12_nc => 277, // R_AARCH64_ADD_ABS_LO12_NC
         .aarch64_ldst64_abs_lo12_nc => 286, // R_AARCH64_LDST64_ABS_LO12_NC
         .aarch64_abs64 => 257, // R_AARCH64_ABS64
+        .aarch64_adr_got_page => 311, // R_AARCH64_ADR_GOT_PAGE
+        .aarch64_ld64_got_lo12_nc => 312, // R_AARCH64_LD64_GOT_LO12_NC
         .abs8, .abs4 => 257, // Generic absolute
         .x86_pc_rel_32 => 2, // R_X86_64_PC32
     };

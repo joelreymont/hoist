@@ -84,6 +84,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .ldr_shifted => |i| try emitLdrShifted(i.dst.toReg(), i.base, i.offset, i.shift_op, i.shift_amt, i.size, buffer),
         .vldr => |i| try emitVldr(i.dst.toReg(), i.base, i.offset, i.size, buffer),
         .ld1r => |i| try emitLd1r(i.dst.toReg(), i.base, i.size, buffer),
+        .load_ext_name_got => |i| try emitLoadExtNameGot(i.dst.toReg(), i.symbol, buffer),
         .str => |i| try emitStr(i.src, i.base, i.offset, i.size, buffer),
         .vstr => |i| try emitVstr(i.src, i.base, i.offset, i.size, buffer),
         .str_reg => |i| try emitStrReg(i.src, i.base, i.offset, i.size, buffer),
@@ -3015,6 +3016,38 @@ fn emitAddSymbolLo12(dst: Reg, src: Reg, symbol: []const u8, buffer: *buffer_mod
     try buffer.addReloc(
         offset,
         buffer_mod.Reloc.aarch64_add_abs_lo12_nc,
+        symbol,
+        0,
+    );
+}
+
+/// Load external name via GOT (Global Offset Table)
+/// Emits ADRP + LDR sequence for position-independent code:
+///   adrp rd, :got:symbol
+///   ldr  rd, [rd, :got_lo12:symbol]
+fn emitLoadExtNameGot(dst: Reg, symbol: []const u8, buffer: *buffer_mod.MachBuffer) !void {
+    const rd = hwEnc(dst);
+
+    // ADRP rd, :got:symbol
+    // ADRP: 1|immlo|10000|immhi|Rd
+    const adrp_insn: u32 = (@as(u32, 1) << 31) | (@as(u32, 0b10000) << 24) | rd;
+    const adrp_offset = buffer.curOffset();
+    try buffer.put4(adrp_insn);
+    try buffer.addReloc(
+        adrp_offset,
+        buffer_mod.Reloc.aarch64_adr_got_page,
+        symbol,
+        0,
+    );
+
+    // LDR rd, [rd, :got_lo12:symbol]
+    // LDR 64-bit: 11|111|0|01|01|imm12|Rn|Rt
+    const ldr_insn: u32 = (0b11111001 << 24) | (0b01 << 22) | (@as(u32, rd) << 5) | rd;
+    const ldr_offset = buffer.curOffset();
+    try buffer.put4(ldr_insn);
+    try buffer.addReloc(
+        ldr_offset,
+        buffer_mod.Reloc.aarch64_ld64_got_lo12_nc,
         symbol,
         0,
     );
