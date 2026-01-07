@@ -118,6 +118,61 @@ pub fn aapcs64() abi_mod.ABIMachineSpec(u64) {
     };
 }
 
+/// Fast calling convention - maximize register usage, minimize stack.
+/// Extends AAPCS64 with more argument registers:
+/// - Integer args: X0-X17 (vs X0-X7 in standard AAPCS64)
+/// - Float args: V0-V15 (vs V0-V7 in standard AAPCS64)
+/// Caller saves all volatile registers.
+pub fn fast() abi_mod.ABIMachineSpec(u64) {
+    // Fast convention int args: X0-X17 (excluding X18 on Darwin)
+    const int_args = [_]PReg{
+        PReg.new(.int, 0),  PReg.new(.int, 1),  PReg.new(.int, 2),  PReg.new(.int, 3),
+        PReg.new(.int, 4),  PReg.new(.int, 5),  PReg.new(.int, 6),  PReg.new(.int, 7),
+        PReg.new(.int, 8),  PReg.new(.int, 9),  PReg.new(.int, 10), PReg.new(.int, 11),
+        PReg.new(.int, 12), PReg.new(.int, 13), PReg.new(.int, 14), PReg.new(.int, 15),
+        PReg.new(.int, 16), PReg.new(.int, 17),
+    };
+
+    // V0-V15 for float args (doubles standard AAPCS64)
+    const float_args = [_]PReg{
+        PReg.new(.float, 0),  PReg.new(.float, 1),  PReg.new(.float, 2),  PReg.new(.float, 3),
+        PReg.new(.float, 4),  PReg.new(.float, 5),  PReg.new(.float, 6),  PReg.new(.float, 7),
+        PReg.new(.float, 8),  PReg.new(.float, 9),  PReg.new(.float, 10), PReg.new(.float, 11),
+        PReg.new(.float, 12), PReg.new(.float, 13), PReg.new(.float, 14), PReg.new(.float, 15),
+    };
+
+    // Return registers same as AAPCS64: X0-X7, V0-V7
+    const int_rets = [_]PReg{
+        PReg.new(.int, 0), PReg.new(.int, 1), PReg.new(.int, 2), PReg.new(.int, 3),
+        PReg.new(.int, 4), PReg.new(.int, 5), PReg.new(.int, 6), PReg.new(.int, 7),
+    };
+
+    const float_rets = [_]PReg{
+        PReg.new(.float, 0), PReg.new(.float, 1), PReg.new(.float, 2), PReg.new(.float, 3),
+        PReg.new(.float, 4), PReg.new(.float, 5), PReg.new(.float, 6), PReg.new(.float, 7),
+    };
+
+    // Callee-saves same as AAPCS64: X19-X30, V8-V15
+    // Note: V8-V15 are callee-save in standard ABI but used as args in fast convention
+    // This is acceptable as fast convention is for internal/optimized calls
+    const callee_saves = [_]PReg{
+        PReg.new(.int, 19),   PReg.new(.int, 20),   PReg.new(.int, 21),   PReg.new(.int, 22),
+        PReg.new(.int, 23),   PReg.new(.int, 24),   PReg.new(.int, 25),   PReg.new(.int, 26),
+        PReg.new(.int, 27),   PReg.new(.int, 28),   PReg.new(.int, 29),   PReg.new(.int, 30),
+        PReg.new(.float, 8),  PReg.new(.float, 9),  PReg.new(.float, 10), PReg.new(.float, 11),
+        PReg.new(.float, 12), PReg.new(.float, 13), PReg.new(.float, 14), PReg.new(.float, 15),
+    };
+
+    return .{
+        .int_arg_regs = &int_args,
+        .float_arg_regs = &float_args,
+        .int_ret_regs = &int_rets,
+        .float_ret_regs = &float_rets,
+        .callee_saves = &callee_saves,
+        .stack_align = 16,
+    };
+}
+
 /// Round up size to 16-byte alignment as required by AAPCS64.
 fn alignTo16(size: u32) u32 {
     return (size + 15) & ~@as(u32, 15);
@@ -773,7 +828,8 @@ pub const Aarch64ABICallee = struct {
     ) Aarch64ABICallee {
         _ = _allocator;
         const abi = switch (sig.call_conv) {
-            .aapcs64, .fast, .cold => aapcs64(),
+            .aapcs64, .cold => aapcs64(),
+            .fast => fast(),
             .preserve_all => aapcs64(), // TODO: implement preserve_all variant
             .system_v, .windows_fastcall => unreachable,
         };
@@ -3407,4 +3463,23 @@ test "CallerSavedTracker: X18 reserved on Darwin" {
     darwin_tracker.markIntReg(PReg.new(.int, 17));
     try testing.expect(linux_tracker.int_regs.isSet(17));
     try testing.expect(darwin_tracker.int_regs.isSet(17));
+}
+
+test "fast calling convention uses extended registers" {
+    const fast_abi = fast();
+    const standard_abi = aapcs64();
+
+    // Fast convention has 18 int arg registers (X0-X17) vs 8 (X0-X7) in standard
+    try testing.expectEqual(@as(usize, 18), fast_abi.int_arg_regs.len);
+    try testing.expectEqual(@as(usize, 8), standard_abi.int_arg_regs.len);
+
+    // Fast convention has 16 float arg registers (V0-V15) vs 8 (V0-V7) in standard
+    try testing.expectEqual(@as(usize, 16), fast_abi.float_arg_regs.len);
+    try testing.expectEqual(@as(usize, 8), standard_abi.float_arg_regs.len);
+
+    // Verify X17 is the last int arg register in fast convention
+    try testing.expectEqual(PReg.new(.int, 17), fast_abi.int_arg_regs[17]);
+
+    // Verify V15 is the last float arg register in fast convention
+    try testing.expectEqual(PReg.new(.float, 15), fast_abi.float_arg_regs[15]);
 }
