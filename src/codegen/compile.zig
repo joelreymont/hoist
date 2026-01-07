@@ -2776,6 +2776,32 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
                     }
                 }
             },
+            .jt_sequence => |*i| {
+                if (i.index.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.index = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+                if (i.table_base.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.table_base = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+                if (i.target.toReg().toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.target = WritableReg.fromReg(Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        }));
+                    }
+                }
+            },
             .vstr => |*i| {
                 if (i.src.toVReg()) |vreg| {
                     if (allocator.getAllocation(vreg)) |alloc| {

@@ -2,6 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 
 const reg_mod = @import("../../machinst/reg.zig");
+const entities = @import("../../ir/entities.zig");
 
 pub const Reg = reg_mod.Reg;
 pub const PReg = reg_mod.PReg;
@@ -1169,6 +1170,20 @@ pub const Inst = union(enum) {
         symbol: []const u8,
     },
 
+    /// Jump table sequence for br_table lowering.
+    /// This is a pseudo-instruction that expands during emission to:
+    ///   adr table_base, .LJTI<N>
+    ///   ldr target, [table_base, index]  // index already shifted
+    ///   add target, table_base, target   // PC-relative offset
+    ///   br target
+    /// The targets array must be heap-allocated and will be freed by the instruction.
+    jt_sequence: struct {
+        index: Reg, // Byte offset (index * 4)
+        targets: []const entities.Block, // Array of target blocks
+        table_base: WritableReg,
+        target: WritableReg,
+    },
+
     /// No operation (NOP).
     nop: void,
 
@@ -2241,6 +2256,7 @@ pub const Inst = union(enum) {
             .vstp => |i| try writer.print("vstp.{} {}, {}, [{}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
             .ld1r => |i| try writer.print("ld1r.{} {}, [{}]", .{ i.size, i.dst, i.base }),
             .load_ext_name_got => |i| try writer.print("load_ext_name_got {}, {s}", .{ i.dst, i.symbol }),
+            .jt_sequence => |i| try writer.print("jt_sequence {}, {} targets", .{ i.index, i.targets.len }),
             .vec_and => |i| try writer.print("vec_and.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_orr => |i| try writer.print("vec_orr.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .vec_eor => |i| try writer.print("vec_eor.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
@@ -2483,6 +2499,11 @@ pub const Inst = union(enum) {
             },
             .load_ext_name_got => |*i| {
                 try collector.regDef(i.dst);
+            },
+            .jt_sequence => |*i| {
+                try collector.regUse(i.index);
+                try collector.regDef(i.table_base);
+                try collector.regDef(i.target);
             },
             .vec_and => |*i| {
                 try collector.regUse(i.src1);

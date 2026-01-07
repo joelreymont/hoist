@@ -23,6 +23,7 @@ const Value = lower_mod.Value;
 const Block = lower_mod.Block;
 const StackSlot = lower_mod.StackSlot;
 const types = root.types;
+const entities = root.entities;
 const Type = types.Type;
 const condcodes = root.condcodes;
 const IntCC = condcodes.IntCC;
@@ -1195,24 +1196,20 @@ pub fn aarch64_global_value(
 pub fn aarch64_br_table(
     ctx: *IsleContext,
     index: Value,
-    jt: u32,
+    jt: entities.JumpTable,
     default_target: Block,
-) !void {
+) !Inst {
     // Get the jump table from function data
-    // Note: jt is an index into the function's jump table array
-    _ = jt; // TODO: Need to wire up jump table lookup from function context
+    const jt_data = &ctx.lower_ctx.func.jump_tables.elems.items[jt.toIndex()];
+    const table_size: u32 = @intCast(jt_data.len());
 
     // Get index register (should be i32 or i64)
     const index_reg = try ctx.lower_ctx.getValueReg(index, .int);
 
-    // Get the table size (TODO: need to get this from jump table metadata)
-    // For now, we'll assume it's passed separately or stored with the table
-    const table_size: u32 = 10; // Placeholder
-
     // Allocate temporary registers
     const table_base = try ctx.lower_ctx.allocVReg(.int);
     const offset_reg = try ctx.lower_ctx.allocVReg(.int);
-    const target_offset_reg = try ctx.lower_ctx.allocVReg(.int);
+    const target_reg = try ctx.lower_ctx.allocVReg(.int);
 
     // 1. Bounds check: if (index >= table_size) goto default
     try ctx.emit(Inst{
@@ -1235,7 +1232,7 @@ pub fn aarch64_br_table(
                         .size = .size32,
                     },
                 });
-                return;
+                return Inst{ .nop = {} }; // Early return after compare
             },
             .size = .size32,
         },
@@ -1249,23 +1246,33 @@ pub fn aarch64_br_table(
         },
     });
 
-    // 2. Load table base address
-    // TODO: Use ADR or ADRP+ADD to get table address
-    // For now, use placeholder
-    _ = table_base;
-    _ = offset_reg;
-    _ = target_offset_reg;
+    // 2. Compute byte offset: offset = index * 4 (for 32-bit PC-relative entries)
+    try ctx.emit(Inst{
+        .lsl_imm = .{
+            .dst = WritableReg.fromVReg(offset_reg),
+            .src = index_reg,
+            .shift = 2, // Multiply by 4
+            .size = .size32,
+        },
+    });
 
-    // 3. Compute byte offset: offset = index * 4 (for 32-bit entries)
-    // LSL index, #2
+    // 3. Build target list for jt_sequence instruction
+    // Extract blocks from jump table
+    var targets = std.ArrayList(Block).init(ctx.lower_ctx.vcode.allocator);
+    defer targets.deinit();
+    for (jt_data.asSlice()) |block_call| {
+        try targets.append(ctx.lower_ctx.vcode.allocator, block_call.block);
+    }
 
-    // 4. Load target offset from table: LDR offset_reg, [table_base, offset]
-
-    // 5. Compute target address: ADD target, table_base, offset_reg
-
-    // 6. Branch to target: BR target_reg
-
-    @panic("TODO: Complete br_table implementation - need label/table infrastructure");
+    // 4. Emit jt_sequence: Load table address, load offset, compute target, branch
+    return Inst{
+        .jt_sequence = .{
+            .index = Reg.fromVReg(offset_reg),
+            .targets = try targets.toOwnedSlice(ctx.lower_ctx.vcode.allocator),
+            .table_base = WritableReg.fromVReg(table_base),
+            .target = WritableReg.fromVReg(target_reg),
+        },
+    };
 }
 
 /// Constructor: uadd_overflow_cin - unsigned add with carry-in and overflow.

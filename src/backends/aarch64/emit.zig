@@ -2,6 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 
 const inst_mod = @import("inst.zig");
+const entities = @import("../../ir/entities.zig");
 const Inst = inst_mod.Inst;
 const OperandSize = inst_mod.OperandSize;
 const FpuOperandSize = inst_mod.FpuOperandSize;
@@ -86,6 +87,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vldr => |i| try emitVldr(i.dst.toReg(), i.base, i.offset, i.size, buffer),
         .ld1r => |i| try emitLd1r(i.dst.toReg(), i.base, i.size, buffer),
         .load_ext_name_got => |i| try emitLoadExtNameGot(i.dst.toReg(), i.symbol, buffer),
+        .jt_sequence => |i| try emitJtSequence(i.index, i.targets, i.table_base.toReg(), i.target.toReg(), buffer),
         .str => |i| try emitStr(i.src, i.base, i.offset, i.size, buffer),
         .vstr => |i| try emitVstr(i.src, i.base, i.offset, i.size, buffer),
         .str_reg => |i| try emitStrReg(i.src, i.base, i.offset, i.size, buffer),
@@ -3104,6 +3106,34 @@ fn emitLoadExtNameGot(dst: Reg, symbol: []const u8, buffer: *buffer_mod.MachBuff
         symbol,
         0,
     );
+}
+
+/// Jump table sequence for br_table.
+/// Emits:
+///   adr table_base, .LJT<N>
+///   ldr target, [table_base, index]  // index already shifted by 2
+///   add target, table_base, target   // Convert PC-relative offset to address
+///   br target
+/// The jump table data is emitted separately via buffer.addJumpTable().
+fn emitJtSequence(
+    index: Reg,
+    targets: []const entities.Block,
+    table_base: Reg,
+    target: Reg,
+    buffer: *buffer_mod.MachBuffer,
+) !void {
+    _ = targets; // Jump table data handled separately
+    _ = buffer; // Will be used for ADR/LDR/ADD/BR sequence
+    const rd = hwEnc(table_base);
+    const rn = hwEnc(index);
+    const rt = hwEnc(target);
+
+    // TODO: Implement jump table emission
+    // For now, panic because we need jump table infrastructure in buffer.zig
+    _ = rd;
+    _ = rn;
+    _ = rt;
+    @panic("TODO: Implement jump table emission infrastructure in MachBuffer");
 }
 
 /// NOP
