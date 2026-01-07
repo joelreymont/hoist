@@ -21,7 +21,16 @@ const BinaryData = instruction_data.BinaryData;
 const UnaryData = instruction_data.UnaryData;
 const UnaryImmData = instruction_data.UnaryImmData;
 const NullaryData = instruction_data.NullaryData;
+const TernaryData = instruction_data.TernaryData;
+const IntCompareData = instruction_data.IntCompareData;
+const FloatCompareData = instruction_data.FloatCompareData;
+const BranchData = instruction_data.BranchData;
+const LoadData = instruction_data.LoadData;
+const StoreData = instruction_data.StoreData;
 const Imm64 = @import("immediates.zig").Imm64;
+const IntCC = @import("condcodes.zig").IntCC;
+const FloatCC = @import("condcodes.zig").FloatCC;
+const MemFlags = @import("memflags.zig").MemFlags;
 
 /// Function builder - ergonomic IR construction.
 pub const FunctionBuilder = struct {
@@ -160,6 +169,164 @@ pub const FunctionBuilder = struct {
 
         try self.func.layout.appendInst(inst, block);
         return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn bor(self: *Self, ty: Type, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .binary = BinaryData.init(.bor, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn bxor(self: *Self, ty: Type, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .binary = BinaryData.init(.bxor, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn bnot(self: *Self, ty: Type, val: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .unary = UnaryData.init(.bnot, val) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn fadd(self: *Self, ty: Type, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .binary = BinaryData.init(.fadd, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn fsub(self: *Self, ty: Type, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .binary = BinaryData.init(.fsub, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn fmul(self: *Self, ty: Type, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .binary = BinaryData.init(.fmul, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn fdiv(self: *Self, ty: Type, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .binary = BinaryData.init(.fdiv, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn sextend(self: *Self, ty: Type, val: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .unary = UnaryData.init(.sextend, val) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn uextend(self: *Self, ty: Type, val: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .unary = UnaryData.init(.uextend, val) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn bitcast(self: *Self, ty: Type, val: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .unary = UnaryData.init(.bitcast, val) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn icmp(self: *Self, ty: Type, cond: IntCC, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .int_compare = IntCompareData.init(.icmp, cond, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn fcmp(self: *Self, ty: Type, cond: FloatCC, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .float_compare = FloatCompareData.init(.fcmp, cond, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn select(self: *Self, ty: Type, cond: Value, then_val: Value, else_val: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .ternary = TernaryData.init(.select, cond, then_val, else_val) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn load(self: *Self, ty: Type, addr: Value, flags: MemFlags) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .load = LoadData.init(.load, flags, addr, Imm64.new(0)) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn store(self: *Self, val: Value, addr: Value, flags: MemFlags) !void {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .store = StoreData.init(.store, flags, val, addr, Imm64.new(0)) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+    }
+
+    pub fn brif(self: *Self, cond: Value, then_block: Block, else_block: Block) !void {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .branch = BranchData.init(.brif, cond, then_block, else_block) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
     }
 
     pub fn jump(self: *Self, dest: Block) !void {
