@@ -10,6 +10,7 @@ const aapcs64 = abi_mod.aapcs64;
 const fast = abi_mod.fast;
 const preserveAll = abi_mod.preserveAll;
 const PReg = @import("../../machinst/reg.zig").PReg;
+const ABISignature = @import("../../machinst/abi.zig").ABISignature;
 
 test "fast calling convention: extended int arg registers" {
     const fast_abi = fast();
@@ -97,11 +98,7 @@ test "preserveAll calling convention: all FPRs saved except args" {
 }
 
 test "cold calling convention: same ABI as standard" {
-    const root = @import("root");
-    const abi_api = root.abi;
-
-    var sig = abi_api.ABISignature.init(testing.allocator, .cold);
-    defer sig.deinit();
+    const sig = ABISignature.init(&.{}, &.{}, .cold);
 
     const callee = abi_mod.Aarch64ABICallee.init(testing.allocator, sig);
 
@@ -128,12 +125,8 @@ test "darwin platform: X18 never allocated" {
 }
 
 test "darwin platform: red zone disabled" {
-    const root = @import("root");
-    const abi_api = root.abi;
-
     // Create a signature for Darwin
-    var sig = abi_api.ABISignature.init(testing.allocator, .aapcs64);
-    defer sig.deinit();
+    const sig = ABISignature.init(&.{}, &.{}, .aapcs64);
 
     // Note: This test runs on the current platform, so we can't directly test
     // Darwin-specific behavior unless we're on Darwin. The actual platform

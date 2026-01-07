@@ -6,6 +6,7 @@
 const std = @import("std");
 const testing = std.testing;
 const MockABICallee = @import("mock_abi.zig").MockABICallee;
+const PReg = @import("../../machinst/reg.zig").PReg;
 
 test "arg classification: integer args in X0-X7" {
     var mock = MockABICallee.init(testing.allocator);
@@ -113,9 +114,6 @@ test "arg classification: int arg register mapping" {
     var mock = MockABICallee.init(testing.allocator);
     defer mock.deinit();
 
-    const root = @import("root");
-    const PReg = root.aarch64_inst.PReg;
-
     // X0-X7 mapping
     try testing.expectEqual(PReg.new(.int, 0), mock.getIntArgReg(0).?);
     try testing.expectEqual(PReg.new(.int, 1), mock.getIntArgReg(1).?);
@@ -129,9 +127,6 @@ test "arg classification: int arg register mapping" {
 test "arg classification: float arg register mapping" {
     var mock = MockABICallee.init(testing.allocator);
     defer mock.deinit();
-
-    const root = @import("root");
-    const PReg = root.aarch64_inst.PReg;
 
     // V0-V7 mapping
     try testing.expectEqual(PReg.new(.float, 0), mock.getFloatArgReg(0).?);
@@ -181,8 +176,6 @@ test "arg classification: single int arg" {
     try testing.expectEqual(@as(u32, 1), mock.register_args);
     try testing.expectEqual(@as(u32, 0), mock.stack_args);
 
-    const root = @import("root");
-    const PReg = root.aarch64_inst.PReg;
     try testing.expectEqual(PReg.new(.int, 0), mock.getIntArgReg(0).?);
 }
 
@@ -195,7 +188,5 @@ test "arg classification: single float arg" {
     try testing.expectEqual(@as(u32, 1), mock.register_args);
     try testing.expectEqual(@as(u32, 0), mock.stack_args);
 
-    const root = @import("root");
-    const PReg = root.aarch64_inst.PReg;
     try testing.expectEqual(PReg.new(.float, 0), mock.getFloatArgReg(0).?);
 }
