@@ -1797,6 +1797,49 @@ pub fn lower(
                 });
 
                 return true;
+            } else if (data.opcode == .bitselect) {
+                // Bitwise select: dst = (a & c) | (b & ~c)
+                // Where c is the selector, a is chosen for set bits, b for clear bits
+                const a = data.args[0];
+                const b = data.args[1];
+                const c = data.args[2];
+
+                const a_reg = Reg.fromVReg(try ctx.getValueReg(a, .int));
+                const b_reg = Reg.fromVReg(try ctx.getValueReg(b, .int));
+                const c_reg = Reg.fromVReg(try ctx.getValueReg(c, .int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Emit (a & c) | (b & ~c) sequence
+                // tmp1 = a & c
+                const tmp1 = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(Inst{ .and_rr = .{
+                    .dst = tmp1,
+                    .src1 = a_reg,
+                    .src2 = c_reg,
+                    .size = size,
+                } });
+
+                // tmp2 = b & ~c (using bic: b & NOT c)
+                const tmp2 = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(Inst{ .bic_rr = .{
+                    .dst = tmp2,
+                    .src1 = b_reg,
+                    .src2 = c_reg,
+                    .size = size,
+                } });
+
+                // dst = tmp1 | tmp2
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(Inst{ .orr_rr = .{
+                    .dst = dst,
+                    .src1 = tmp1.toReg(),
+                    .src2 = tmp2.toReg(),
+                    .size = size,
+                } });
+
+                return true;
             }
         },
         else => {},
