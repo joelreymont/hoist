@@ -1139,6 +1139,256 @@ pub fn lower(
                 }
 
                 return true;
+            } else if (data.opcode == .band_imm) {
+                // Bitwise AND with immediate
+                const src = data.arg;
+                const imm = data.imm.value;
+
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Try to use and_imm with logical immediate encoding
+                const imm_u64 = @as(u64, @bitCast(imm));
+                if (inst_mod.aarch64_and_imm(dst, src_reg, imm_u64, size)) |inst| {
+                    try ctx.emit(inst);
+                } else {
+                    // Immediate not encodable - materialize and use and_rr
+                    const imm_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
+                    const imm_abs = if (imm < 0) @as(u64, @bitCast(-imm)) else @as(u64, @intCast(imm));
+
+                    if (imm_abs <= 0xFFFF) {
+                        try ctx.emit(Inst{ .movz = .{
+                            .dst = imm_reg,
+                            .imm = @truncate(imm_abs),
+                            .shift = 0,
+                            .size = size,
+                        } });
+                        if (imm < 0) {
+                            const neg_dst = WritableReg.fromReg(imm_reg.toReg());
+                            try ctx.emit(Inst{ .neg_rr = .{
+                                .dst = neg_dst,
+                                .src = imm_reg.toReg(),
+                                .size = size,
+                            } });
+                        }
+                    } else {
+                        const chunks = [_]u16{
+                            @truncate(imm_abs),
+                            @truncate(imm_abs >> 16),
+                            @truncate(imm_abs >> 32),
+                            @truncate(imm_abs >> 48),
+                        };
+
+                        var first = true;
+                        for (chunks, 0..) |chunk, i| {
+                            if (chunk != 0 or first) {
+                                if (first) {
+                                    try ctx.emit(Inst{ .movz = .{
+                                        .dst = imm_reg,
+                                        .imm = chunk,
+                                        .shift = @intCast(i * 16),
+                                        .size = size,
+                                    } });
+                                    first = false;
+                                } else {
+                                    try ctx.emit(Inst{ .movk = .{
+                                        .dst = imm_reg,
+                                        .imm = chunk,
+                                        .shift = @intCast(i * 16),
+                                        .size = size,
+                                    } });
+                                }
+                            }
+                        }
+
+                        if (imm < 0) {
+                            const neg_dst = WritableReg.fromReg(imm_reg.toReg());
+                            try ctx.emit(Inst{ .neg_rr = .{
+                                .dst = neg_dst,
+                                .src = imm_reg.toReg(),
+                                .size = size,
+                            } });
+                        }
+                    }
+
+                    try ctx.emit(Inst{ .and_rr = .{
+                        .dst = dst,
+                        .src1 = src_reg,
+                        .src2 = imm_reg.toReg(),
+                        .size = size,
+                    } });
+                }
+
+                return true;
+            } else if (data.opcode == .bor_imm) {
+                // Bitwise OR with immediate
+                const src = data.arg;
+                const imm = data.imm.value;
+
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                const imm_u64 = @as(u64, @bitCast(imm));
+                if (inst_mod.aarch64_orr_imm(dst, src_reg, imm_u64, size)) |inst| {
+                    try ctx.emit(inst);
+                } else {
+                    // Materialize and use orr_rr
+                    const imm_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
+                    const imm_abs = if (imm < 0) @as(u64, @bitCast(-imm)) else @as(u64, @intCast(imm));
+
+                    if (imm_abs <= 0xFFFF) {
+                        try ctx.emit(Inst{ .movz = .{
+                            .dst = imm_reg,
+                            .imm = @truncate(imm_abs),
+                            .shift = 0,
+                            .size = size,
+                        } });
+                        if (imm < 0) {
+                            const neg_dst = WritableReg.fromReg(imm_reg.toReg());
+                            try ctx.emit(Inst{ .neg_rr = .{
+                                .dst = neg_dst,
+                                .src = imm_reg.toReg(),
+                                .size = size,
+                            } });
+                        }
+                    } else {
+                        const chunks = [_]u16{
+                            @truncate(imm_abs),
+                            @truncate(imm_abs >> 16),
+                            @truncate(imm_abs >> 32),
+                            @truncate(imm_abs >> 48),
+                        };
+
+                        var first = true;
+                        for (chunks, 0..) |chunk, i| {
+                            if (chunk != 0 or first) {
+                                if (first) {
+                                    try ctx.emit(Inst{ .movz = .{
+                                        .dst = imm_reg,
+                                        .imm = chunk,
+                                        .shift = @intCast(i * 16),
+                                        .size = size,
+                                    } });
+                                    first = false;
+                                } else {
+                                    try ctx.emit(Inst{ .movk = .{
+                                        .dst = imm_reg,
+                                        .imm = chunk,
+                                        .shift = @intCast(i * 16),
+                                        .size = size,
+                                    } });
+                                }
+                            }
+                        }
+
+                        if (imm < 0) {
+                            const neg_dst = WritableReg.fromReg(imm_reg.toReg());
+                            try ctx.emit(Inst{ .neg_rr = .{
+                                .dst = neg_dst,
+                                .src = imm_reg.toReg(),
+                                .size = size,
+                            } });
+                        }
+                    }
+
+                    try ctx.emit(Inst{ .orr_rr = .{
+                        .dst = dst,
+                        .src1 = src_reg,
+                        .src2 = imm_reg.toReg(),
+                        .size = size,
+                    } });
+                }
+
+                return true;
+            } else if (data.opcode == .bxor_imm) {
+                // Bitwise XOR with immediate
+                const src = data.arg;
+                const imm = data.imm.value;
+
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                const imm_u64 = @as(u64, @bitCast(imm));
+                if (inst_mod.aarch64_eor_imm(dst, src_reg, imm_u64, size)) |inst| {
+                    try ctx.emit(inst);
+                } else {
+                    // Materialize and use eor_rr
+                    const imm_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
+                    const imm_abs = if (imm < 0) @as(u64, @bitCast(-imm)) else @as(u64, @intCast(imm));
+
+                    if (imm_abs <= 0xFFFF) {
+                        try ctx.emit(Inst{ .movz = .{
+                            .dst = imm_reg,
+                            .imm = @truncate(imm_abs),
+                            .shift = 0,
+                            .size = size,
+                        } });
+                        if (imm < 0) {
+                            const neg_dst = WritableReg.fromReg(imm_reg.toReg());
+                            try ctx.emit(Inst{ .neg_rr = .{
+                                .dst = neg_dst,
+                                .src = imm_reg.toReg(),
+                                .size = size,
+                            } });
+                        }
+                    } else {
+                        const chunks = [_]u16{
+                            @truncate(imm_abs),
+                            @truncate(imm_abs >> 16),
+                            @truncate(imm_abs >> 32),
+                            @truncate(imm_abs >> 48),
+                        };
+
+                        var first = true;
+                        for (chunks, 0..) |chunk, i| {
+                            if (chunk != 0 or first) {
+                                if (first) {
+                                    try ctx.emit(Inst{ .movz = .{
+                                        .dst = imm_reg,
+                                        .imm = chunk,
+                                        .shift = @intCast(i * 16),
+                                        .size = size,
+                                    } });
+                                    first = false;
+                                } else {
+                                    try ctx.emit(Inst{ .movk = .{
+                                        .dst = imm_reg,
+                                        .imm = chunk,
+                                        .shift = @intCast(i * 16),
+                                        .size = size,
+                                    } });
+                                }
+                            }
+                        }
+
+                        if (imm < 0) {
+                            const neg_dst = WritableReg.fromReg(imm_reg.toReg());
+                            try ctx.emit(Inst{ .neg_rr = .{
+                                .dst = neg_dst,
+                                .src = imm_reg.toReg(),
+                                .size = size,
+                            } });
+                        }
+                    }
+
+                    try ctx.emit(Inst{ .eor_rr = .{
+                        .dst = dst,
+                        .src1 = src_reg,
+                        .src2 = imm_reg.toReg(),
+                        .size = size,
+                    } });
+                }
+
+                return true;
             }
         },
         .stack_load => |data| {
