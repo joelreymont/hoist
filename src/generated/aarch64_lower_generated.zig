@@ -179,6 +179,57 @@ pub fn lower(
                 return true;
             }
         },
+        .load => |data| {
+            if (data.opcode == .load) {
+                // Get address operand
+                const addr = data.arg;
+
+                // Get register for address
+                const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
+
+                // Allocate output register
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                // Get type for size
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Emit load instruction with offset from LoadData
+                try ctx.emit(Inst{ .ldr = .{
+                    .dst = dst,
+                    .base = addr_reg,
+                    .offset = @intCast(data.offset.value),
+                    .size = size,
+                } });
+
+                return true;
+            }
+        },
+        .store => |data| {
+            if (data.opcode == .store) {
+                // Get value and address operands
+                const value = data.arg;
+                const addr = data.addr;
+
+                // Get registers
+                const value_reg = Reg.fromVReg(try ctx.getValueReg(value, .int));
+                const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
+
+                // Get type for size
+                const ty = ctx.getValueType(value);
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Emit store instruction with offset from StoreData
+                try ctx.emit(Inst{ .str = .{
+                    .src = value_reg,
+                    .base = addr_reg,
+                    .offset = @intCast(data.offset.value),
+                    .size = size,
+                } });
+
+                return true;
+            }
+        },
         else => {},
     }
 
