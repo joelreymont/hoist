@@ -905,6 +905,22 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Atomic add with acquire (LDADDA).
+    ldadda: struct {
+        src: Reg,
+        dst: WritableReg,
+        base: Reg,
+        size: OperandSize,
+    },
+
+    /// Atomic add with acquire-release (LDADDAL).
+    ldaddal: struct {
+        src: Reg,
+        dst: WritableReg,
+        base: Reg,
+        size: OperandSize,
+    },
+
     /// Atomic clear bits (LDCLR).
     ldclr: struct {
         src: Reg,
@@ -1090,13 +1106,13 @@ pub const Inst = union(enum) {
     /// Loads PC-relative address into register.
     adr: struct {
         dst: WritableReg,
-        label: u32,
+        label: i32,
     },
 
     /// Address of label, page-aligned (ADRP Xd, label).
     adrp: struct {
         dst: WritableReg,
-        label: u32,
+        label: i32,
     },
 
     /// Load page address of global symbol (ADRP Xd, symbol).

@@ -8604,7 +8604,7 @@ test "emit sxth 64-bit" {
     try emit(.{ .sxth = .{
         .dst = wr6,
         .src = r7,
-        .size = .size64,
+        .dst_size = .size64,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8655,7 +8655,7 @@ test "emit uxtb 32-bit" {
     try emit(.{ .uxtb = .{
         .dst = wr10,
         .src = r11,
-        .size = .size32,
+        .dst_size = .size32,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8681,7 +8681,7 @@ test "emit uxtb 64-bit" {
     try emit(.{ .uxtb = .{
         .dst = wr12,
         .src = r13,
-        .size = .size64,
+        .dst_size = .size64,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8707,7 +8707,7 @@ test "emit uxth 32-bit" {
     try emit(.{ .uxth = .{
         .dst = wr14,
         .src = r15,
-        .size = .size32,
+        .dst_size = .size32,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8733,7 +8733,7 @@ test "emit uxth 64-bit" {
     try emit(.{ .uxth = .{
         .dst = wr16,
         .src = r17,
-        .size = .size64,
+        .dst_size = .size64,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8760,23 +8760,23 @@ test "emit extend instructions - verify against ARM manual examples" {
     try emit(.{ .sxtb = .{
         .dst = wr0,
         .src = r1,
-        .size = .size32,
+        .dst_size = .size32,
     } }, &buffer);
     var insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x13001C20), insn);
 
     // Test SXTB X0, W1 encoding: should be 0x93401C20
-    buffer.reset();
+    buffer.data.clearRetainingCapacity();
     try emit(.{ .sxtb = .{
         .dst = wr0,
         .src = r1,
-        .size = .size64,
+.dst_size = .size64,
     } }, &buffer);
     insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x93401C20), insn);
 
     // Test SXTH W0, W1 encoding: should be 0x13003C20
-    buffer.reset();
+    buffer.data.clearRetainingCapacity();
     try emit(.{ .sxth = .{
         .dst = wr0,
         .src = r1,
@@ -8786,7 +8786,7 @@ test "emit extend instructions - verify against ARM manual examples" {
     try testing.expectEqual(@as(u32, 0x13003C20), insn);
 
     // Test SXTH X0, W1 encoding: should be 0x93403C20
-    buffer.reset();
+    buffer.data.clearRetainingCapacity();
     try emit(.{ .sxth = .{
         .dst = wr0,
         .src = r1,
@@ -8796,7 +8796,7 @@ test "emit extend instructions - verify against ARM manual examples" {
     try testing.expectEqual(@as(u32, 0x93403C20), insn);
 
     // Test SXTW X0, W1 encoding: should be 0x93407C20
-    buffer.reset();
+    buffer.data.clearRetainingCapacity();
     try emit(.{ .sxtw = .{
         .dst = wr0,
         .src = r1,
@@ -8805,7 +8805,7 @@ test "emit extend instructions - verify against ARM manual examples" {
     try testing.expectEqual(@as(u32, 0x93407C20), insn);
 
     // Test UXTB W0, W1 encoding: should be 0x53001C20
-    buffer.reset();
+    buffer.data.clearRetainingCapacity();
     try emit(.{ .uxtb = .{
         .dst = wr0,
         .src = r1,
@@ -8815,7 +8815,7 @@ test "emit extend instructions - verify against ARM manual examples" {
     try testing.expectEqual(@as(u32, 0x53001C20), insn);
 
     // Test UXTB X0, W1 encoding (actually implemented as UBFM with sf=1): should be 0xD3401C20
-    buffer.reset();
+    buffer.data.clearRetainingCapacity();
     try emit(.{ .uxtb = .{
         .dst = wr0,
         .src = r1,
@@ -8825,7 +8825,7 @@ test "emit extend instructions - verify against ARM manual examples" {
     try testing.expectEqual(@as(u32, 0xD3401C20), insn);
 
     // Test UXTH W0, W1 encoding: should be 0x53003C20
-    buffer.reset();
+    buffer.data.clearRetainingCapacity();
     try emit(.{ .uxth = .{
         .dst = wr0,
         .src = r1,
@@ -8835,7 +8835,7 @@ test "emit extend instructions - verify against ARM manual examples" {
     try testing.expectEqual(@as(u32, 0x53003C20), insn);
 
     // Test UXTH X0, W1 encoding (actually implemented as UBFM with sf=1): should be 0xD3403C20
-    buffer.reset();
+    buffer.data.clearRetainingCapacity();
     try emit(.{ .uxth = .{
         .dst = wr0,
         .src = r1,
@@ -8897,7 +8897,7 @@ test "emit adr negative offset" {
     // ADR X5, #-0x100 (negative offset)
     try emit(.{ .adr = .{
         .dst = wr5,
-        .offset = -0x100,
+        .label = -0x100,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8931,7 +8931,7 @@ test "emit adr zero offset" {
     // ADR X10, #0
     try emit(.{ .adr = .{
         .dst = wr10,
-        .offset = 0,
+        .label = 0,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8961,7 +8961,7 @@ test "emit adrp positive offset" {
     // ADRP X2, #0x5000 (page offset)
     try emit(.{ .adrp = .{
         .dst = wr2,
-        .offset = 0x5000,
+        .label = 0x5000,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -8997,7 +8997,7 @@ test "emit adrp negative offset" {
     // ADRP X7, #-0x2000
     try emit(.{ .adrp = .{
         .dst = wr7,
-        .offset = -0x2000,
+        .label = -0x2000,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -9031,7 +9031,7 @@ test "emit adr max positive offset" {
     // ADR X1, #0xFFFFF (max positive 21-bit signed value = 1048575)
     try emit(.{ .adr = .{
         .dst = wr1,
-        .offset = (1 << 20) - 1,
+        .label = (1 << 20) - 1,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -9058,7 +9058,7 @@ test "emit adr max negative offset" {
     // ADR X3, #-0x100000 (min 21-bit signed value = -1048576)
     try emit(.{ .adr = .{
         .dst = wr3,
-        .offset = -(1 << 20),
+        .label = -(1 << 20),
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -9090,7 +9090,7 @@ test "emit adr/adrp different registers" {
 
         try emit(.{ .adr = .{
             .dst = wr,
-            .offset = 0x100,
+            .label = 0x100,
         } }, &buffer);
 
         const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
@@ -9725,6 +9725,7 @@ test "emit fadd double-precision" {
         .dst = wr3,
         .src1 = r4,
         .src2 = r5,
+        .size = .size64,
     } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
@@ -9754,6 +9755,7 @@ test "emit fsub and fmul" {
         .dst = wr0,
         .src1 = r1,
         .src2 = r2,
+        .size = .size32,
     } }, &buffer);
     const fsub_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0b001110), (fsub_insn >> 10) & 0b111111);
@@ -9764,6 +9766,7 @@ test "emit fsub and fmul" {
         .dst = wr0,
         .src1 = r1,
         .src2 = r2,
+        .size = .size32,
     } }, &buffer);
     const fmul_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0b000010), (fmul_insn >> 10) & 0b111111);
@@ -9791,9 +9794,10 @@ test "emit fmov register and immediate" {
     const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // FMOV S0, S1
-    try emit(.{ .fmov_rr = .{
+    try emit(.{ .fmov = .{
         .dst = wr0,
         .src = r1,
+        .size = .size32,
     } }, &buffer);
     const fmov_rr_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x1E204020), fmov_rr_insn);
@@ -9848,9 +9852,11 @@ test "emit scvtf and fcvtzs conversions" {
     const wr0 = inst_mod.WritableReg.fromReg(r0);
 
     // SCVTF S1, W0
-    try emit(.{ .scvtf_w_to_s = .{
+    try emit(.{ .scvtf = .{
         .dst = wr1,
         .src = r0,
+        .src_size = .size32,
+        .dst_size = .size32,
     } }, &buffer);
     const scvtf_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x1E220001), scvtf_insn);
@@ -9881,6 +9887,7 @@ test "emit fneg fabs fmax fmin" {
     try emit(.{ .fneg = .{
         .dst = wr0,
         .src = r1,
+        .size = .size32,
     } }, &buffer);
     const fneg_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x1E214020), fneg_insn);
@@ -9965,7 +9972,7 @@ test "emit ldxr and stxr doubleword" {
     const wr2 = inst_mod.WritableReg.fromReg(r2);
 
     // LDXR X0, [X1] - 64-bit
-    try emit(.{ .ldxr_x = .{
+    try emit(.{ .ldxr = .{
         .dst = wr0,
         .base = r1,
     } }, &buffer);
@@ -10060,7 +10067,7 @@ test "emit ldaxr and stlxr with acquire/release" {
 
     // LDAXR X0, [X1] - acquire 64-bit (o0=1)
     buffer.data.clearRetainingCapacity();
-    try emit(.{ .ldaxr_x = .{
+    try emit(.{ .ldaxr = .{
         .dst = wr0,
         .base = r1,
     } }, &buffer);
