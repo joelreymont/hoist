@@ -2677,7 +2677,7 @@ pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args:
     }
 
     // Branch via register (BR, not BLR - no link)
-    return Inst{ .br = .{ .rn = ptr_reg } };
+    return Inst{ .br = .{ .target = ptr_reg } };
 }
 
 /// Vector test operations (ISLE constructors)
@@ -2815,7 +2815,7 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
     const ptr_reg = try ctx.getValueReg(ptr, .int);
 
     // Indirect call: BLR (branch with link to register)
-    try ctx.emit(Inst{ .blr = .{ .rn = ptr_reg } });
+    try ctx.emit(Inst{ .blr = .{ .target = ptr_reg } });
 
     // Return value in x0 (simplified - should handle multi-return)
     return lower_mod.ValueRegs.one(Reg.gpr(0));
@@ -2845,7 +2845,7 @@ pub fn aarch64_try_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lo
     const ptr_reg = try ctx.getValueReg(ptr, .int);
 
     // Indirect call: BLR (branch with link to register)
-    try ctx.emit(Inst{ .blr = .{ .rn = ptr_reg } });
+    try ctx.emit(Inst{ .blr = .{ .target = ptr_reg } });
 
     // Return value in x0 (simplified)
     return lower_mod.ValueRegs.one(Reg.gpr(0));
