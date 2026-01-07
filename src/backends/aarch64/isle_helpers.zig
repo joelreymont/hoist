@@ -2098,6 +2098,55 @@ pub fn aarch64_set_pinned_reg(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Ins
     return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(28)), .src = src } };
 }
 
+/// TLS operations (ISLE constructors)
+pub fn tls_local_exec(offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Local-exec TLS model: simplest, for executables only
+    // Sequence: MRS + ADD
+    //   MRS Xd, TPIDR_EL0     // Read thread pointer
+    //   ADD Xd, Xd, #offset   // Add TLS variable offset
+
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+
+    // Read thread pointer register
+    try ctx.emit(Inst{ .mrs = .{
+        .dst = dst,
+        .sysreg = Inst.SystemReg.tpidr_el0,
+    } });
+
+    // Add TLS offset to get variable address
+    // For now, use immediate offset (will need relocation support later)
+    if (offset == 0) {
+        // No offset, just return thread pointer
+        return Inst{ .mov_rr = .{
+            .dst = dst,
+            .src = dst.toReg(),
+            .size = .size64,
+        } };
+    } else if (offset <= 0xFFF) {
+        // Small offset fits in ADD immediate
+        return Inst{ .add_imm = .{
+            .dst = dst,
+            .src = dst.toReg(),
+            .imm = @intCast(offset),
+            .size = .size64,
+        } };
+    } else {
+        // Large offset: MOV immediate + ADD
+        const offset_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+        try ctx.emit(Inst{ .mov_imm = .{
+            .dst = offset_reg,
+            .imm = offset,
+            .size = .size64,
+        } });
+        return Inst{ .add_rr = .{
+            .dst = dst,
+            .src1 = dst.toReg(),
+            .src2 = offset_reg.toReg(),
+            .size = .size64,
+        } };
+    }
+}
+
 /// Debug operations (ISLE constructors)
 pub fn aarch64_debugtrap(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     _ = ctx;

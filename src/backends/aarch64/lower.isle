@@ -3145,6 +3145,12 @@
 (rule (lower (set_pinned_reg val))
       (aarch64_set_pinned_reg val))
 
+;; tls_value: Thread-local storage access (local-exec model)
+(decl tls_local_exec (u64) Aarch64Inst)
+(extern constructor tls_local_exec tls_local_exec)
+(rule (lower (tls_value offset))
+      (tls_local_exec offset))
+
 ;; global_value: Load address of global value
 (decl aarch64_global_value (GlobalValue) Aarch64Inst)
 (rule (lower (global_value gv))
