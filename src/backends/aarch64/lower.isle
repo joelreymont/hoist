@@ -3163,6 +3163,12 @@
 (rule (lower (set_pinned_reg val))
       (aarch64_set_pinned_reg val))
 
+;; stack_switch: Switch stack pointer (for fiber/coroutine support)
+(decl aarch64_stack_switch (Value Value) Aarch64Inst)
+(extern constructor aarch64_stack_switch aarch64_stack_switch)
+(rule (lower (stack_switch old_sp_addr new_sp_addr))
+      (aarch64_stack_switch old_sp_addr new_sp_addr))
+
 ;; tls_value: Thread-local storage access (local-exec model)
 (decl tls_local_exec (u64) Aarch64Inst)
 (extern constructor tls_local_exec tls_local_exec)

@@ -2098,6 +2098,51 @@ pub fn aarch64_set_pinned_reg(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Ins
     return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(28)), .src = src } };
 }
 
+/// Stack switching for fiber/coroutine support (ISLE constructors)
+pub fn aarch64_stack_switch(old_sp_addr: lower_mod.Value, new_sp_addr: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Stack switch sequence:
+    // 1. MOV X<tmp>, SP              - Save current SP
+    // 2. STR X<tmp>, [old_sp_addr]   - Store to old_sp_addr
+    // 3. LDR X<new>, [new_sp_addr]   - Load from new_sp_addr
+    // 4. MOV SP, X<new>              - Switch to new SP
+
+    const sp = Reg.gpr(31); // SP register
+    const tmp = lower_mod.WritableReg.allocReg(.int, ctx);
+
+    // Save current SP to temporary
+    try ctx.emit(Inst{ .mov_rr = .{
+        .dst = tmp,
+        .src = sp,
+        .size = .size64,
+    } });
+
+    // Store old SP to memory
+    const old_addr_reg = try ctx.getValueReg(old_sp_addr, .int);
+    try ctx.emit(Inst{ .str = .{
+        .src = tmp.toReg(),
+        .base = old_addr_reg,
+        .offset = 0,
+        .size = .size64,
+    } });
+
+    // Load new SP from memory
+    const new_addr_reg = try ctx.getValueReg(new_sp_addr, .int);
+    const new_sp = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .ldr = .{
+        .dst = new_sp,
+        .base = new_addr_reg,
+        .offset = 0,
+        .size = .size64,
+    } });
+
+    // Switch to new stack pointer
+    return Inst{ .mov_rr = .{
+        .dst = lower_mod.WritableReg.from(sp),
+        .src = new_sp.toReg(),
+        .size = .size64,
+    } };
+}
+
 /// TLS operations (ISLE constructors)
 pub fn tls_local_exec(offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Local-exec TLS model: simplest, for executables only
