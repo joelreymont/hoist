@@ -21,10 +21,17 @@ const lower_mod = root.lower;
 const LowerCtx = lower_mod.LowerCtx;
 const Value = lower_mod.Value;
 const Block = lower_mod.Block;
+const StackSlot = lower_mod.StackSlot;
 const types = root.types;
 const Type = types.Type;
 const condcodes = root.condcodes;
 const IntCC = condcodes.IntCC;
+const isle_helpers = root.aarch64_isle_helpers;
+
+/// Determine register class from IR type.
+fn regClassForType(ty: Type) lower_mod.RegClass {
+    return if (ty.isFloat()) .float else .int;
+}
 
 /// ISLE context for aarch64 lowering.
 /// This wraps LowerCtx with backend-specific state needed by ISLE constructors.
@@ -1010,11 +1017,72 @@ pub fn aarch64_stack_load(
     stack_slot: u32,
     offset: i32,
 ) !WritableReg {
-    _ = ty;
-    _ = stack_slot;
-    _ = offset;
-    _ = ctx;
-    @panic("TODO: Implement stack_load - needs frame layout infrastructure");
+    const slot = StackSlot.new(stack_slot);
+
+    // Get address of stack slot
+    const addr_inst = try isle_helpers.aarch64_stack_addr(slot, offset, ctx.lower_ctx);
+    try ctx.emit(addr_inst);
+    const addr_reg = addr_inst.getWritableDst().?;
+
+    // Allocate destination register
+    const dst = WritableReg.allocReg(regClassForType(ty), ctx.lower_ctx);
+
+    // Emit LDR instruction based on type size
+    const size_bits = ty.bits();
+    const load_inst = if (ty.isInt() or ty.isBool()) blk: {
+        if (size_bits == 64) {
+            break :blk Inst{ .ldr = .{
+                .dst = dst,
+                .base = addr_reg.toReg(),
+                .offset = 0,
+                .size = .size64,
+            } };
+        } else if (size_bits == 32) {
+            break :blk Inst{ .ldr = .{
+                .dst = dst,
+                .base = addr_reg.toReg(),
+                .offset = 0,
+                .size = .size32,
+            } };
+        } else if (size_bits == 16) {
+            break :blk Inst{ .ldrh = .{
+                .dst = dst,
+                .base = addr_reg.toReg(),
+                .offset = 0,
+            } };
+        } else if (size_bits == 8) {
+            break :blk Inst{ .ldrb = .{
+                .dst = dst,
+                .base = addr_reg.toReg(),
+                .offset = 0,
+            } };
+        } else {
+            return error.UnsupportedIntegerSize;
+        }
+    } else if (ty.isFloat()) blk: {
+        if (size_bits == 64) {
+            break :blk Inst{ .fp_load = .{
+                .dst = dst,
+                .base = addr_reg.toReg(),
+                .offset = 0,
+                .size = .size64,
+            } };
+        } else if (size_bits == 32) {
+            break :blk Inst{ .fp_load = .{
+                .dst = dst,
+                .base = addr_reg.toReg(),
+                .offset = 0,
+                .size = .size32,
+            } };
+        } else {
+            return error.UnsupportedFloatSize;
+        }
+    } else {
+        return error.UnsupportedType;
+    };
+
+    try ctx.emit(load_inst);
+    return dst;
 }
 
 /// Constructor: stack_store - store to stack slot.
@@ -1026,12 +1094,71 @@ pub fn aarch64_stack_store(
     stack_slot: u32,
     offset: i32,
 ) !void {
-    _ = ty;
-    _ = value;
-    _ = stack_slot;
-    _ = offset;
-    _ = ctx;
-    @panic("TODO: Implement stack_store - needs frame layout infrastructure");
+    const slot = StackSlot.new(stack_slot);
+
+    // Get address of stack slot
+    const addr_inst = try isle_helpers.aarch64_stack_addr(slot, offset, ctx.lower_ctx);
+    try ctx.emit(addr_inst);
+    const addr_reg = addr_inst.getWritableDst().?;
+
+    // Get value register
+    const val_reg = try ctx.lower_ctx.getValueReg(value, regClassForType(ty));
+
+    // Emit STR instruction based on type size
+    const size_bits = ty.bits();
+    const store_inst = if (ty.isInt() or ty.isBool()) blk: {
+        if (size_bits == 64) {
+            break :blk Inst{ .str = .{
+                .src = val_reg,
+                .base = addr_reg.toReg(),
+                .offset = 0,
+                .size = .size64,
+            } };
+        } else if (size_bits == 32) {
+            break :blk Inst{ .str = .{
+                .src = val_reg,
+                .base = addr_reg.toReg(),
+                .offset = 0,
+                .size = .size32,
+            } };
+        } else if (size_bits == 16) {
+            break :blk Inst{ .strh = .{
+                .src = val_reg,
+                .base = addr_reg.toReg(),
+                .offset = 0,
+            } };
+        } else if (size_bits == 8) {
+            break :blk Inst{ .strb = .{
+                .src = val_reg,
+                .base = addr_reg.toReg(),
+                .offset = 0,
+            } };
+        } else {
+            return error.UnsupportedIntegerSize;
+        }
+    } else if (ty.isFloat()) blk: {
+        if (size_bits == 64) {
+            break :blk Inst{ .fp_store = .{
+                .src = val_reg,
+                .base = addr_reg.toReg(),
+                .offset = 0,
+                .size = .size64,
+            } };
+        } else if (size_bits == 32) {
+            break :blk Inst{ .fp_store = .{
+                .src = val_reg,
+                .base = addr_reg.toReg(),
+                .offset = 0,
+                .size = .size32,
+            } };
+        } else {
+            return error.UnsupportedFloatSize;
+        }
+    } else {
+        return error.UnsupportedType;
+    };
+
+    try ctx.emit(store_inst);
 }
 
 /// Constructor: global_value - load address of global value.
