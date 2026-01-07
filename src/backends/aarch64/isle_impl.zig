@@ -1187,9 +1187,99 @@ pub fn aarch64_global_value(
     ctx: *IsleContext,
     gv: u32,
 ) !WritableReg {
-    _ = gv;
-    _ = ctx;
-    @panic("TODO: Implement global_value - needs global value data structure");
+    // Get global value data from function
+    const gv_entity = entities.GlobalValue.new(gv);
+    const gv_data = &ctx.lower_ctx.func.global_values.elems.items[gv_entity.toIndex()];
+
+    const dst = ctx.allocOutputReg(.int);
+
+    switch (gv_data.*) {
+        .vmctx => {
+            // VM context is passed in a register (typically x0 or similar)
+            // For now, assume it's in a specific register
+            // TODO: Get vmctx register from ABI
+            try ctx.emit(Inst{
+                .mov_rr = .{
+                    .dst = dst,
+                    .src = Reg.fromPReg(PReg.x0), // Placeholder - should come from ABI
+                    .size = .size64,
+                },
+            });
+        },
+        .symbol => |sym_data| {
+            // Load symbol address using ADRP + ADD
+            const symbol_name = try ctx.lower_ctx.func.dfg.ext_funcs.getName(sym_data.name);
+
+            try ctx.emit(Inst{
+                .adrp_symbol = .{
+                    .dst = dst,
+                    .symbol = symbol_name,
+                },
+            });
+            try ctx.emit(Inst{
+                .add_symbol_lo12 = .{
+                    .dst = dst,
+                    .src = dst.toReg(),
+                    .symbol = symbol_name,
+                },
+            });
+        },
+        .iadd_imm => |add_data| {
+            // Load base global value, then add offset
+            const base_reg = try aarch64_global_value(ctx, add_data.base.toRaw());
+            const offset: i64 = add_data.offset.value;
+
+            if (Imm12.fromI64(offset)) |imm| {
+                try ctx.emit(Inst{
+                    .add_imm = .{
+                        .dst = dst,
+                        .src = base_reg.toReg(),
+                        .imm = imm,
+                        .size = .size64,
+                    },
+                });
+            } else {
+                // Offset too large for immediate, materialize in register
+                const offset_reg = ctx.allocInputReg(.int);
+                try ctx.emit(Inst{
+                    .mov_imm = .{
+                        .dst = WritableReg.fromReg(offset_reg),
+                        .imm = @bitCast(offset),
+                        .size = .size64,
+                    },
+                });
+                try ctx.emit(Inst{
+                    .add_rr = .{
+                        .dst = dst,
+                        .src1 = base_reg.toReg(),
+                        .src2 = offset_reg,
+                        .size = .size64,
+                    },
+                });
+            }
+        },
+        .load => |load_data| {
+            // Load from base global value + offset
+            const base_reg = try aarch64_global_value(ctx, load_data.base.toRaw());
+            const offset: i32 = load_data.offset.value;
+
+            try ctx.emit(Inst{
+                .ldr = .{
+                    .dst = dst,
+                    .base = base_reg.toReg(),
+                    .offset = offset,
+                    .size = .size64,
+                },
+            });
+        },
+        .dyn_scale_target_const => {
+            // Dynamic scale for scalable vectors
+            // TODO: Implement proper scalable vector support
+            @panic("TODO: Implement dyn_scale_target_const for scalable vectors");
+        },
+    }
+
+    return dst;
 }
 
 /// Constructor: br_table - branch table (jump table dispatch).
