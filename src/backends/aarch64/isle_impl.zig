@@ -2423,3 +2423,134 @@ pub fn aarch64_vstr(
         .offset = 0,
     } };
 }
+
+/// Constructor: aarch64_snarrow - Signed saturating narrow (SQXTN).
+/// Narrows wider elements to narrower with signed saturation.
+pub fn aarch64_snarrow(
+    ctx: *IsleContext,
+    size: isle_helpers.VectorSize,
+    src: Value,
+) !Inst {
+    const src_reg = ctx.getValueReg(src);
+    const dst = try ctx.allocOutputReg(.float);
+    
+    // Map VectorSize to VecElemSize for output
+    const elem_size: Inst.VecElemSize = switch (size) {
+        .V8B => .size8x8,   // 16x8b -> 8x8b
+        .V16B => .size8x16, // 16x8b -> 8x16b (SQXTN2)
+        .V4H => .size16x4,  // 8x16b -> 4x16b
+        .V8H => .size16x8,  // 8x16b -> 8x16b (SQXTN2)
+        .V2S => .size32x2,  // 4x32b -> 2x32b
+        .V4S => .size32x4,  // 4x32b -> 4x32b (SQXTN2)
+        .V2D => unreachable, // No 64->32 narrow with 2D output
+    };
+    
+    const high = switch (size) {
+        .V16B, .V8H, .V4S => true, // SQXTN2 (write high half)
+        .V8B, .V4H, .V2S => false, // SQXTN (write low half)
+        .V2D => unreachable,
+    };
+    
+    return Inst{ .vec_sqxtn = .{
+        .dst = dst,
+        .src = src_reg,
+        .size = elem_size,
+        .high = high,
+    } };
+}
+
+/// Constructor: aarch64_unarrow - Signed to unsigned saturating narrow (SQXTUN).
+/// Narrows signed wider elements to unsigned narrower with saturation.
+pub fn aarch64_unarrow(
+    ctx: *IsleContext,
+    size: isle_helpers.VectorSize,
+    src: Value,
+) !Inst {
+    const src_reg = ctx.getValueReg(src);
+    const dst = try ctx.allocOutputReg(.float);
+    
+    const elem_size: Inst.VecElemSize = switch (size) {
+        .V8B => .size8x8,
+        .V16B => .size8x16,
+        .V4H => .size16x4,
+        .V8H => .size16x8,
+        .V2S => .size32x2,
+        .V4S => .size32x4,
+        .V2D => unreachable,
+    };
+    
+    const high = switch (size) {
+        .V16B, .V8H, .V4S => true,
+        .V8B, .V4H, .V2S => false,
+        .V2D => unreachable,
+    };
+    
+    return Inst{ .vec_sqxtun = .{
+        .dst = dst,
+        .src = src_reg,
+        .size = elem_size,
+        .high = high,
+    } };
+}
+
+/// Constructor: aarch64_uunarrow - Unsigned saturating narrow (UQXTN).
+/// Narrows unsigned wider elements to unsigned narrower with saturation.
+pub fn aarch64_uunarrow(
+    ctx: *IsleContext,
+    size: isle_helpers.VectorSize,
+    src: Value,
+) !Inst {
+    const src_reg = ctx.getValueReg(src);
+    const dst = try ctx.allocOutputReg(.float);
+    
+    const elem_size: Inst.VecElemSize = switch (size) {
+        .V8B => .size8x8,
+        .V16B => .size8x16,
+        .V4H => .size16x4,
+        .V8H => .size16x8,
+        .V2S => .size32x2,
+        .V4S => .size32x4,
+        .V2D => unreachable,
+    };
+    
+    const high = switch (size) {
+        .V16B, .V8H, .V4S => true,
+        .V8B, .V4H, .V2S => false,
+        .V2D => unreachable,
+    };
+    
+    return Inst{ .vec_uqxtn = .{
+        .dst = dst,
+        .src = src_reg,
+        .size = elem_size,
+        .high = high,
+    } };
+}
+
+/// Constructor: aarch64_vldr - Load vector (LDR Qt/Dt).
+pub fn aarch64_vldr(
+    ctx: *IsleContext,
+    ty: Type,
+    addr: Value,
+) !Inst {
+    const addr_reg = ctx.getValueReg(addr);
+    const dst = try ctx.allocOutputReg(.float);
+    
+    // Determine size from type
+    const bits = ty.bits();
+    if (bits == 128) {
+        return Inst{ .ldr_q = .{
+            .dst = dst,
+            .base = addr_reg,
+            .offset = 0,
+        } };
+    } else if (bits == 64) {
+        return Inst{ .ldr_d = .{
+            .dst = dst,
+            .base = addr_reg,
+            .offset = 0,
+        } };
+    } else {
+        @panic("vldr: unsupported vector size");
+    }
+}
