@@ -11039,9 +11039,11 @@ fn emitVecRev64(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.M
 }
 
 /// Vector shift by immediate
-/// SHL:  0Q 0 01111 immh immb 010101 Rn Rd
-/// USHR: 0Q 1 01111 immh immb 000001 Rn Rd
-/// SSHR: 0Q 0 01111 immh immb 000001 Rn Rd
+/// SHL:   0Q 0 01111 immh immb 010101 Rn Rd
+/// USHR:  0Q 1 01111 immh immb 000001 Rn Rd
+/// SSHR:  0Q 0 01111 immh immb 000001 Rn Rd
+/// USHLL: 0Q 1 01111 immh immb 101001 Rn Rd (unsigned shift left long)
+/// SSHLL: 0Q 0 01111 immh immb 101001 Rn Rd (signed shift left long)
 fn emitVecShiftImm(
     op: inst_mod.VecShiftImmOp,
     dst: Reg,
@@ -11065,12 +11067,16 @@ fn emitVecShiftImm(
         .Shl => 0,
         .Ushr => 1,
         .Sshr => 0,
+        .Ushll => 1,
+        .Sshll => 0,
     };
 
     const opcode: u32 = switch (op) {
         .Shl => 0b010101,
         .Ushr => 0b000001,
         .Sshr => 0b000001,
+        .Ushll => 0b101001, // SHLL/USHLL opcode
+        .Sshll => 0b101001, // SHLL/SSHLL opcode
     };
 
     const insn: u32 = (0b0 << 31) |

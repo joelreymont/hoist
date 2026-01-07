@@ -3581,6 +3581,8 @@ pub const VecShiftImmOp = enum {
     Shl, // Unsigned shift left
     Ushr, // Unsigned shift right
     Sshr, // Signed shift right
+    Ushll, // Unsigned shift left long (widens elements)
+    Sshll, // Signed shift left long (widens elements)
 };
 
 /// Vector size for ISLE integration (maps to ISLE VectorSize enum).
