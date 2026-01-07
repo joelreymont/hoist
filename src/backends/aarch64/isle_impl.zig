@@ -1003,10 +1003,28 @@ pub fn aarch64_stack_addr(
     stack_slot: u32,
     offset: i32,
 ) !WritableReg {
-    _ = stack_slot;
-    _ = offset;
-    _ = ctx;
-    @panic("TODO: Implement stack_addr - needs frame layout infrastructure");
+    const slot = StackSlot.new(stack_slot);
+
+    // Get the frame offset for this stack slot
+    const frame_offset = try ctx.lower_ctx.getStackSlotOffset(slot);
+
+    // Add user-provided offset
+    const total_offset = frame_offset + offset;
+
+    // Allocate output register for the address
+    const dst = ctx.allocOutputReg(.int);
+
+    // Generate: ADD dst, SP, #total_offset
+    // Use SP (x31) as base register
+    const sp = Reg.gpr(31);
+
+    try ctx.emit(Inst{ .add_imm = .{
+        .dst = dst,
+        .src = sp,
+        .imm = @intCast(total_offset),
+    } });
+
+    return dst;
 }
 
 /// Constructor: stack_load - load from stack slot.
