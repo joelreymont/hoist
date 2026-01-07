@@ -279,6 +279,66 @@ pub fn lower(
                 } });
 
                 return true;
+            } else if (data.opcode == .band) {
+                // Bitwise AND
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .and_rr = .{
+                    .dst = dst,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                return true;
+            } else if (data.opcode == .bor) {
+                // Bitwise OR
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .orr_rr = .{
+                    .dst = dst,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                return true;
+            } else if (data.opcode == .bxor) {
+                // Bitwise XOR
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .eor_rr = .{
+                    .dst = dst,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                return true;
             }
         },
         .load => |data| {
@@ -355,6 +415,22 @@ pub fn lower(
 
                 // Emit ret instruction
                 try ctx.emit(Inst.ret);
+
+                return true;
+            } else if (data.opcode == .bnot) {
+                // Bitwise NOT
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .mvn_rr = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .size = size,
+                } });
 
                 return true;
             }
