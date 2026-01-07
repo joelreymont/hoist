@@ -7,9 +7,11 @@ const inst_mod = @import("../backends/aarch64/inst.zig");
 const Inst = inst_mod.Inst;
 const Reg = inst_mod.Reg;
 const WritableReg = inst_mod.WritableReg;
+const PReg = inst_mod.PReg;
 const OperandSize = inst_mod.OperandSize;
 const FpuOperandSize = inst_mod.FpuOperandSize;
 const CondCode = inst_mod.CondCode;
+const Imm12 = inst_mod.Imm12;
 const lower_mod = @import("../machinst/lower.zig");
 
 const Opcode = root.opcodes.Opcode;
@@ -983,8 +985,8 @@ pub fn lower(
                 return true;
             } else if (data.opcode == .istore8) {
                 // Store byte
-                const value = data.arg;
-                const addr = data.addr;
+                const value = data.args[1];
+                const addr = data.args[0];
 
                 const value_reg = Reg.fromVReg(try ctx.getValueReg(value, .int));
                 const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
@@ -998,8 +1000,8 @@ pub fn lower(
                 return true;
             } else if (data.opcode == .istore16) {
                 // Store halfword
-                const value = data.arg;
-                const addr = data.addr;
+                const value = data.args[1];
+                const addr = data.args[0];
 
                 const value_reg = Reg.fromVReg(try ctx.getValueReg(value, .int));
                 const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
@@ -1013,8 +1015,8 @@ pub fn lower(
                 return true;
             } else if (data.opcode == .istore32) {
                 // Store 32-bit word
-                const value = data.arg;
-                const addr = data.addr;
+                const value = data.args[1];
+                const addr = data.args[0];
 
                 const value_reg = Reg.fromVReg(try ctx.getValueReg(value, .int));
                 const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
@@ -1479,50 +1481,62 @@ pub fn lower(
                 }
 
                 // For I8/I16, clamp to [signed_min, signed_max]
-                const result_reg = Reg.fromVReg(result.toVReg());
+                const result_reg = result.toReg();
 
                 // Load max value for the target type
                 const max_val: u64 = if (dst_ty.bits() == 8) 0x7F else 0x7FFF;
                 const max_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
-                try ctx.emit(inst_mod.aarch64_movz(max_reg, max_val, 0, .size32));
+                try ctx.emit(Inst{ .movz = .{
+                    .dst = max_reg,
+                    .imm = @truncate(max_val),
+                    .shift = 0,
+                    .size = .size32,
+                } });
 
                 // Load min value (sign-extended)
                 const min_val: u64 = if (dst_ty.bits() == 8) 0xFF80 else 0xFFFF8000;
                 const min_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
-                try ctx.emit(inst_mod.aarch64_movn(min_reg, ~min_val & 0xFFFF, 0, .size32));
+                try ctx.emit(Inst{ .movn = .{
+                    .dst = min_reg,
+                    .imm = @truncate(~min_val & 0xFFFF),
+                    .shift = 0,
+                    .size = .size32,
+                } });
 
                 // Clamp to max: if result > max, use max
                 const clamped1 = WritableReg.fromVReg(ctx.allocVReg(.int));
                 try ctx.emit(Inst{
-                    .subs = .{
+                    .subs_rr = .{
                         .dst = WritableReg.fromVReg(ctx.allocVReg(.int)), // discard flags
                         .src1 = result_reg,
-                        .src2 = Reg.fromVReg(max_reg.toVReg()),
+                        .src2 = max_reg.toReg(),
                         .size = dst_size,
                     },
                 });
                 try ctx.emit(Inst{ .csel = .{
                     .dst = clamped1,
                     .cond = CondCode.gt,
-                    .if_true = Reg.fromVReg(max_reg.toVReg()),
-                    .if_false = result_reg,
+                    .src1 = max_reg.toReg(),
+                    .src2 = result_reg,
+                    .size = dst_size,
                 } });
 
                 // Clamp to min: if result < min, use min
                 const clamped2 = WritableReg.fromVReg(ctx.allocVReg(.int));
                 try ctx.emit(Inst{
-                    .subs = .{
+                    .subs_rr = .{
                         .dst = WritableReg.fromVReg(ctx.allocVReg(.int)), // discard flags
-                        .src1 = Reg.fromVReg(clamped1.toVReg()),
-                        .src2 = Reg.fromVReg(min_reg.toVReg()),
+                        .src1 = clamped1.toReg(),
+                        .src2 = min_reg.toReg(),
                         .size = dst_size,
                     },
                 });
                 try ctx.emit(Inst{ .csel = .{
                     .dst = clamped2,
                     .cond = CondCode.lt,
-                    .if_true = Reg.fromVReg(min_reg.toVReg()),
-                    .if_false = Reg.fromVReg(clamped1.toVReg()),
+                    .src1 = min_reg.toReg(),
+                    .src2 = clamped1.toReg(),
+                    .size = dst_size,
                 } });
 
                 return true;
@@ -1554,20 +1568,25 @@ pub fn lower(
                 }
 
                 // For I8/I16, clamp to [0, unsigned_max]
-                const result_reg = Reg.fromVReg(result.toVReg());
+                const result_reg = result.toReg();
 
                 // Load max value for the target type (zero-extend)
                 const max_val: u64 = if (dst_ty.bits() == 8) 0xFF else 0xFFFF;
                 const max_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
-                try ctx.emit(inst_mod.aarch64_movz(max_reg, max_val, 0, .size32));
+                try ctx.emit(Inst{ .movz = .{
+                    .dst = max_reg,
+                    .imm = @truncate(max_val),
+                    .shift = 0,
+                    .size = .size32,
+                } });
 
                 // Clamp to max: if result > max, use max
                 const clamped = WritableReg.fromVReg(ctx.allocVReg(.int));
                 try ctx.emit(Inst{
-                    .subs = .{
+                    .subs_rr = .{
                         .dst = WritableReg.fromVReg(ctx.allocVReg(.int)), // discard flags
                         .src1 = result_reg,
-                        .src2 = Reg.fromVReg(max_reg.toVReg()),
+                        .src2 = max_reg.toReg(),
                         .size = .size32,
                     },
                 });
@@ -1575,8 +1594,9 @@ pub fn lower(
                     .csel = .{
                         .dst = clamped,
                         .cond = CondCode.hi, // unsigned higher
-                        .if_true = Reg.fromVReg(max_reg.toVReg()),
-                        .if_false = result_reg,
+                        .src1 = max_reg.toReg(),
+                        .src2 = result_reg,
+                        .size = .size32,
                     },
                 });
 
@@ -1617,7 +1637,7 @@ pub fn lower(
             } else if (data.opcode == .get_frame_pointer) {
                 // Get frame pointer (x29)
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
-                const fp_reg = Reg.fromPReg(Reg.fromInt(29)); // X29 (FP)
+                const fp_reg = Reg.fromPReg(inst_mod.fp);
 
                 try ctx.emit(Inst{ .mov_rr = .{
                     .dst = dst,
@@ -1628,7 +1648,7 @@ pub fn lower(
             } else if (data.opcode == .get_stack_pointer) {
                 // Get stack pointer (sp/x31)
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
-                const sp_reg = Reg.fromPReg(Reg.fromInt(31)); // SP
+                const sp_reg = Reg.fromPReg(inst_mod.sp); // SP
 
                 try ctx.emit(Inst{ .mov_rr = .{
                     .dst = dst,
@@ -1639,7 +1659,7 @@ pub fn lower(
             } else if (data.opcode == .get_pinned_reg) {
                 // Get pinned register (x18 - platform register)
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
-                const pinned_reg = Reg.fromPReg(Reg.fromInt(18)); // X18
+                const pinned_reg = Reg.fromPReg(PReg.new(.int, 18)); // X18
 
                 try ctx.emit(Inst{ .mov_rr = .{
                     .dst = dst,
@@ -1651,57 +1671,11 @@ pub fn lower(
         },
         .unary_with_trap => |data| {
             if (data.opcode == .trapz) {
-                // Trap if zero
-                const arg = data.arg;
-                const arg_reg = Reg.fromVReg(try ctx.getValueReg(arg, .int));
-
-                // Compare arg to zero
-                try ctx.emit(Inst{ .cmp_imm = .{
-                    .src = arg_reg,
-                    .imm = 0,
-                    .size = .size64,
-                } });
-
-                // Create trap block label
-                const trap_label = ctx.allocLabel();
-
-                // Branch to trap if equal (zero)
-                try ctx.emit(Inst{ .b_cond = .{
-                    .cond = .eq,
-                    .target = .{ .label = trap_label },
-                } });
-
-                // Emit trap code
-                try ctx.emitLabel(trap_label);
-                try ctx.emit(Inst{ .udf = .{ .imm = 0 } });
-
-                return true;
+                // TODO: Trap if zero - needs label allocation support
+                return false;
             } else if (data.opcode == .trapnz) {
-                // Trap if not zero
-                const arg = data.arg;
-                const arg_reg = Reg.fromVReg(try ctx.getValueReg(arg, .int));
-
-                // Compare arg to zero
-                try ctx.emit(Inst{ .cmp_imm = .{
-                    .src = arg_reg,
-                    .imm = 0,
-                    .size = .size64,
-                } });
-
-                // Create trap block label
-                const trap_label = ctx.allocLabel();
-
-                // Branch to trap if not equal (not zero)
-                try ctx.emit(Inst{ .b_cond = .{
-                    .cond = .ne,
-                    .target = .{ .label = trap_label },
-                } });
-
-                // Emit trap code
-                try ctx.emitLabel(trap_label);
-                try ctx.emit(Inst{ .udf = .{ .imm = 0 } });
-
-                return true;
+                // TODO: Trap if not zero - needs label allocation support
+                return false;
             }
         },
         .jump => |data| {
@@ -1727,7 +1701,7 @@ pub fn lower(
                 // Compare condition to zero
                 try ctx.emit(Inst{ .cmp_imm = .{
                     .src = cond_reg,
-                    .imm = 0,
+                    .imm = Imm12{ .bits = 0, .shift12 = false },
                     .size = .size64,
                 } });
 
@@ -1821,7 +1795,7 @@ pub fn lower(
                     // Emit cmp immediate instruction
                     try ctx.emit(Inst{ .cmp_imm = .{
                         .src = lhs_reg,
-                        .imm = @intCast(imm),
+                        .imm = Imm12{ .bits = @intCast(imm), .shift12 = false },
                         .size = size,
                     } });
                 } else {
@@ -1992,7 +1966,7 @@ pub fn lower(
                 }
 
                 return true;
-            } else if (data.opcode == .isub_imm) {
+            } else if (false) { // TODO: .isub_imm does not exist as an opcode
                 // Integer subtract with immediate
                 const src = data.arg;
                 const imm = data.imm.value;
@@ -2424,7 +2398,7 @@ pub fn lower(
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
-                const fp_reg = Reg.fromPReg(Reg.fromInt(29)); // X29 (FP)
+                const fp_reg = Reg.fromPReg(inst_mod.fp); // X29 (FP)
 
                 // Emit ldr with FP-relative addressing
                 try ctx.emit(Inst{ .ldr = .{
@@ -2448,7 +2422,7 @@ pub fn lower(
                 const fp_offset = offset;
 
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
-                const fp_reg = Reg.fromPReg(Reg.fromInt(29)); // X29 (FP)
+                const fp_reg = Reg.fromPReg(inst_mod.fp); // X29 (FP)
 
                 // Emit add to compute address
                 if (fp_offset == 0) {
@@ -2474,7 +2448,7 @@ pub fn lower(
         .stack_store => |data| {
             if (data.opcode == .stack_store) {
                 // Store to stack slot at FP + offset
-                const value = data.arg;
+                const value = data.args[1];
                 const stack_slot = data.stack_slot;
                 const offset = data.offset;
 
@@ -2488,7 +2462,7 @@ pub fn lower(
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 const value_reg = Reg.fromVReg(try ctx.getValueReg(value, .int));
-                const fp_reg = Reg.fromPReg(Reg.fromInt(29)); // X29 (FP)
+                const fp_reg = Reg.fromPReg(inst_mod.fp); // X29 (FP)
 
                 // Emit str with FP-relative addressing
                 try ctx.emit(Inst{ .str = .{
@@ -2524,7 +2498,7 @@ pub fn lower(
                 // Test condition against zero
                 try ctx.emit(Inst{ .cmp_imm = .{
                     .src = cond_reg,
-                    .imm = 0,
+                    .imm = Imm12{ .bits = 0, .shift12 = false },
                     .size = size,
                 } });
 
