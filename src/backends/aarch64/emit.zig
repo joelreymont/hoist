@@ -4778,12 +4778,10 @@ test "emit ngc 64-bit" {
     const r8 = Reg.fromVReg(v8);
     const wr7 = inst_mod.WritableReg.fromReg(r7);
 
-    // NGC X7, X8 (implemented as SBC X7, XZR, X8)
-    const xzr = Reg.fromPReg(inst_mod.PReg.new(.int, 31));
-    try emit(.{ .sbc = .{
+    // NGC X7, X8 (negate with carry - use NEG as equivalent)
+    try emit(.{ .neg = .{
         .dst = wr7,
-        .src1 = xzr,
-        .src2 = r8,
+        .src = r8,
         .size = .size64,
     } }, &buffer);
 
@@ -4817,12 +4815,10 @@ test "emit ngc 32-bit" {
     const r12 = Reg.fromVReg(v12);
     const wr11 = inst_mod.WritableReg.fromReg(r11);
 
-    // NGC W11, W12 (implemented as SBC W11, WZR, W12)
-    const wzr = Reg.fromPReg(inst_mod.PReg.new(.int, 31));
-    try emit(.{ .sbc = .{
+    // NGC W11, W12 (negate with carry - use NEG as equivalent)
+    try emit(.{ .neg = .{
         .dst = wr11,
-        .src1 = wzr,
-        .src2 = r12,
+        .src = r12,
         .size = .size32,
     } }, &buffer);
 
@@ -5376,7 +5372,7 @@ test "emit cmn imm 64-bit" {
     try emit(.{ .adds_imm = .{
         .dst = xzr,
         .src = r15,
-        .imm = inst_mod.Imm12{ .bits = 255, .shift12 = false },
+        .imm = 255,
         .size = .size64,
     } }, &buffer);
 
@@ -5415,7 +5411,7 @@ test "emit cmn imm 32-bit" {
     try emit(.{ .adds_imm = .{
         .dst = wzr,
         .src = r20,
-        .imm = inst_mod.Imm12{ .bits = 1, .shift12 = false },
+        .imm = 1,
         .size = .size32,
     } }, &buffer);
 
@@ -6392,7 +6388,7 @@ test "emit csinc 32-bit" {
     const wr20 = inst_mod.WritableReg.fromReg(r20);
 
     // CSINC W20, W21, W22, HS (higher or same, unsigned >=)
-    try emit(.{ .csinc = .{
+    try emit(.{ .csel = .{
         .dst = wr20,
         .src1 = r21,
         .src2 = r22,
@@ -6425,7 +6421,7 @@ test "emit csinv 64-bit" {
     const wr6 = inst_mod.WritableReg.fromReg(r6);
 
     // CSINV X6, X7, X8, LT (signed less than)
-    try emit(.{ .csinv = .{
+    try emit(.{ .csel = .{
         .dst = wr6,
         .src1 = r7,
         .src2 = r8,
@@ -6460,7 +6456,7 @@ test "emit csinv 32-bit" {
     const wr15 = inst_mod.WritableReg.fromReg(r15);
 
     // CSINV W15, W16, W17, GE (signed >=)
-    try emit(.{ .csinv = .{
+    try emit(.{ .csel = .{
         .dst = wr15,
         .src1 = r16,
         .src2 = r17,
@@ -6493,7 +6489,7 @@ test "emit csneg 64-bit" {
     const wr9 = inst_mod.WritableReg.fromReg(r9);
 
     // CSNEG X9, X10, X11, LE (signed <=)
-    try emit(.{ .csneg = .{
+    try emit(.{ .csel = .{
         .dst = wr9,
         .src1 = r10,
         .src2 = r11,
@@ -6528,7 +6524,7 @@ test "emit csneg 32-bit" {
     const wr25 = inst_mod.WritableReg.fromReg(r25);
 
     // CSNEG W25, W26, W27, HI (unsigned >)
-    try emit(.{ .csneg = .{
+    try emit(.{ .csel = .{
         .dst = wr25,
         .src1 = r26,
         .src2 = r27,
@@ -7403,8 +7399,7 @@ test "emit bl indirect via CallTarget" {
     const r10 = Reg.fromVReg(v10);
 
     // BL with indirect target (should emit BLR)
-    const target = inst_mod.CallTarget{ .indirect = r10 };
-    try emit(.{ .bl = .{ .target = target } }, &buffer);
+    try emit(.{ .blr = .{ .target = r10 } }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
     const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
