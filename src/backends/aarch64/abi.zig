@@ -757,6 +757,9 @@ pub const Aarch64ABICallee = struct {
     /// Whether red zone (128 bytes below SP) is allowed.
     /// AAPCS64 allows red zone for leaf functions, but Darwin disables it.
     red_zone_allowed: bool,
+    /// Whether this function is marked as cold (rarely executed).
+    /// Hints to optimizer to de-prioritize inlining and code placement.
+    is_cold: bool,
 
     pub fn init(
         _allocator: std.mem.Allocator,
@@ -764,12 +767,14 @@ pub const Aarch64ABICallee = struct {
     ) Aarch64ABICallee {
         _ = _allocator;
         const abi = switch (sig.call_conv) {
-            .aapcs64 => aapcs64(),
+            .aapcs64, .fast, .cold => aapcs64(),
+            .preserve_all => aapcs64(), // TODO: implement preserve_all variant
             .system_v, .windows_fastcall => unreachable,
         };
 
         const platform = Platform.detect();
         const red_zone_allowed = platform != .darwin;
+        const is_cold = sig.call_conv == .cold;
 
         return .{
             .sig = sig,
@@ -783,6 +788,7 @@ pub const Aarch64ABICallee = struct {
             .dyn_sp_reg = null,
             .platform = platform,
             .red_zone_allowed = red_zone_allowed,
+            .is_cold = is_cold,
         };
     }
 
@@ -3355,4 +3361,26 @@ test "dynamic stack pointer tracking" {
     // Enabling again should be idempotent
     callee.enableDynamicAlloc();
     try testing.expectEqual(PReg.new(.int, 19), callee.getDynStackPointer().?);
+}
+
+test "cold calling convention sets is_cold flag" {
+    const allocator = testing.allocator;
+
+    // Test cold convention
+    var cold_sig = abi_mod.ABISignature.init(allocator, .cold);
+    defer cold_sig.deinit();
+
+    var cold_callee = Aarch64ABICallee.init(allocator, cold_sig);
+    defer cold_callee.deinit();
+
+    try testing.expect(cold_callee.is_cold);
+
+    // Test non-cold convention
+    var normal_sig = abi_mod.ABISignature.init(allocator, .aapcs64);
+    defer normal_sig.deinit();
+
+    var normal_callee = Aarch64ABICallee.init(allocator, normal_sig);
+    defer normal_callee.deinit();
+
+    try testing.expect(!normal_callee.is_cold);
 }
