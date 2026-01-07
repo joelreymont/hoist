@@ -123,6 +123,7 @@ test {
     _ = @import("backends/aarch64/legalize.zig");
     _ = @import("backends/aarch64/frame_layout_test.zig");
     _ = @import("backends/aarch64/arg_classification_test.zig");
+    _ = @import("backends/aarch64/abi_callconv_test.zig");
 }
 
 pub const x64_inst = @import("backends/x64/inst.zig");
