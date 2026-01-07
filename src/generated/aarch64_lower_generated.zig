@@ -2093,6 +2093,48 @@ pub fn lower(
                     .dst_size = dst_size,
                 } });
                 return true;
+            } else if (data.opcode == .fcvt_from_sint) {
+                // Convert signed integer to float
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                // Get source integer type
+                const src_ty = ctx.getValueType(src);
+                const src_size: OperandSize = if (src_ty.bits() <= 32) .size32 else .size64;
+
+                // Get destination float type
+                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const dst_size: FpuOperandSize = if (dst_ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .scvtf = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .src_size = src_size,
+                    .dst_size = dst_size,
+                } });
+                return true;
+            } else if (data.opcode == .fcvt_from_uint) {
+                // Convert unsigned integer to float
+                const src = data.arg;
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                // Get source integer type
+                const src_ty = ctx.getValueType(src);
+                const src_size: OperandSize = if (src_ty.bits() <= 32) .size32 else .size64;
+
+                // Get destination float type
+                const dst_ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const dst_size: FpuOperandSize = if (dst_ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .ucvtf = .{
+                    .dst = dst,
+                    .src = src_reg,
+                    .src_size = src_size,
+                    .dst_size = dst_size,
+                } });
+                return true;
             }
         },
         .binary_imm64 => |data| {
