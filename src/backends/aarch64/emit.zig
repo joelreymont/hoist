@@ -617,6 +617,40 @@ fn emitSmulh(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
     try buffer.put4(insn);
 }
 
+/// CCMP Xn, Xm, #nzcv, cond (conditional compare register)
+fn emitCcmp(src1: Reg, src2: Reg, nzcv: u4, cond: CondCode, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = if (size == .size64) 1 else 0;
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+
+    // CCMP: sf|1|1|11010010|Rm|cond|0|0|Rn|0|nzcv
+    const insn: u32 = (sf_bit << 31) |
+        (0b111010010 << 21) |
+        (@as(u32, rm) << 16) |
+        (@as(u32, @intFromEnum(cond)) << 12) |
+        (@as(u32, rn) << 5) |
+        @as(u32, nzcv);
+
+    try buffer.put4(insn);
+}
+
+/// CCMP Xn, #imm, #nzcv, cond (conditional compare immediate)
+fn emitCcmpImm(src: Reg, imm: u5, nzcv: u4, cond: CondCode, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = if (size == .size64) 1 else 0;
+    const rn = hwEnc(src);
+
+    // CCMP: sf|1|1|11010010|imm5|cond|1|0|Rn|0|nzcv
+    const insn: u32 = (sf_bit << 31) |
+        (0b111010010 << 21) |
+        (@as(u32, imm) << 16) |
+        (@as(u32, @intFromEnum(cond)) << 12) |
+        (1 << 11) | // immediate form
+        (@as(u32, rn) << 5) |
+        @as(u32, nzcv);
+
+    try buffer.put4(insn);
+}
+
 /// UMULH Xd, Xn, Xm (unsigned multiply high)
 fn emitUmulh(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);

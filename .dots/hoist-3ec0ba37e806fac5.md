@@ -1,0 +1,9 @@
+---
+title: Implement CCMP/CCMN conditional compare
+status: active
+priority: 2
+issue-type: task
+created-at: "\"2026-01-07T22:29:52.775513+02:00\""
+---
+
+Implementing CCMP/CCMN instructions

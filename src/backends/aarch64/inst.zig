@@ -258,6 +258,27 @@ pub const Inst = union(enum) {
         src2: Reg,
     },
 
+    /// Conditional compare register (CCMP Xn, Xm, #nzcv, cond).
+    /// If condition holds, compare Xn with Xm and set flags.
+    /// If condition fails, set flags to nzcv immediate.
+    ccmp: struct {
+        src1: Reg,
+        src2: Reg,
+        nzcv: u4, // flags to set if condition false
+        cond: CondCode,
+        size: OperandSize,
+    },
+
+    /// Conditional compare immediate (CCMP Xn, #imm, #nzcv, cond).
+    /// Like ccmp but second operand is 5-bit immediate.
+    ccmp_imm: struct {
+        src: Reg,
+        imm: u5,
+        nzcv: u4,
+        cond: CondCode,
+        size: OperandSize,
+    },
+
     /// Signed multiply long (SMULL Xd, Wn, Wm).
     /// Computes Xd = sign_extend(Wn) * sign_extend(Wm).
     smull: struct {
@@ -2028,6 +2049,8 @@ pub const Inst = union(enum) {
             .msub => |i| try writer.print("msub.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.minuend }),
             .smulh => |i| try writer.print("smulh {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
             .umulh => |i| try writer.print("umulh {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
+            .ccmp => |i| try writer.print("ccmp.{} {}, {}, #{d}, {}", .{ i.size, i.src1, i.src2, i.nzcv, i.cond }),
+            .ccmp_imm => |i| try writer.print("ccmp.{} {}, #{d}, #{d}, {}", .{ i.size, i.src, i.imm, i.nzcv, i.cond }),
             .smull => |i| try writer.print("smull {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
             .umull => |i| try writer.print("umull {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
             .sdiv => |i| try writer.print("sdiv.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
