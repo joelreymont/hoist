@@ -1057,6 +1057,46 @@ pub fn lower(
                 return true;
             }
         },
+        .ternary => |data| {
+            if (data.opcode == .select) {
+                // Conditional select: dst = (cond != 0) ? true_val : false_val
+                const cond = data.args[0];
+                const true_val = data.args[1];
+                const false_val = data.args[2];
+
+                // Get registers for operands
+                const cond_reg = Reg.fromVReg(try ctx.getValueReg(cond, .int));
+                const true_reg = Reg.fromVReg(try ctx.getValueReg(true_val, .int));
+                const false_reg = Reg.fromVReg(try ctx.getValueReg(false_val, .int));
+
+                // Allocate output register
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                // Determine operand size from result type
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Test condition against zero
+                try ctx.emit(Inst{ .cmp_imm = .{
+                    .src = cond_reg,
+                    .imm = 0,
+                    .size = size,
+                } });
+
+                // Conditional select: if condition != 0, use true_val, else false_val
+                try ctx.emit(Inst{
+                    .csel = .{
+                        .dst = dst,
+                        .src1 = true_reg,
+                        .src2 = false_reg,
+                        .cond = .ne, // non-equal (condition != 0)
+                        .size = size,
+                    },
+                });
+
+                return true;
+            }
+        },
         else => {},
     }
 
