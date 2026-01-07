@@ -101,6 +101,84 @@ pub fn lower(
                 return true;
             }
         },
+        .binary => |data| {
+            if (data.opcode == .iadd) {
+                // Get operands
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                // Get registers for operands
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
+
+                // Allocate output register
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                // Get type for size
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Emit add instruction
+                try ctx.emit(Inst{ .add_rr = .{
+                    .dst = dst,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                return true;
+            } else if (data.opcode == .isub) {
+                // Get operands
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                // Get registers for operands
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
+
+                // Allocate output register
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                // Get type for size
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Emit sub instruction
+                try ctx.emit(Inst{ .sub_rr = .{
+                    .dst = dst,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                return true;
+            } else if (data.opcode == .imul) {
+                // Get operands
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                // Get registers for operands
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
+
+                // Allocate output register
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                // Get type for size
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                // Emit mul instruction
+                try ctx.emit(Inst{ .mul_rr = .{
+                    .dst = dst,
+                    .src1 = lhs_reg,
+                    .src2 = rhs_reg,
+                    .size = size,
+                } });
+
+                return true;
+            }
+        },
         else => {},
     }
 
