@@ -961,6 +961,102 @@ pub fn lower(
                 return true;
             }
         },
+        .stack_load => |data| {
+            if (data.opcode == .stack_load) {
+                // Load from stack slot at FP + offset
+                const stack_slot = data.stack_slot;
+                const offset = data.offset;
+
+                // Get stack slot data from function
+                const slot_data = ctx.func.stack_slots.get(stack_slot) orelse return false;
+
+                // Calculate FP-relative offset
+                // Stack slots are allocated relative to FP
+                // TODO: This needs frame layout to compute actual offset
+                const fp_offset = offset;
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+                const fp_reg = Reg.fromPReg(Reg.fromInt(29)); // X29 (FP)
+
+                // Emit ldr with FP-relative addressing
+                try ctx.emit(Inst{ .ldr = .{
+                    .dst = dst,
+                    .base = fp_reg,
+                    .offset = fp_offset,
+                    .size = size,
+                } });
+
+                _ = slot_data; // TODO: Use slot_data for size/alignment checks
+                return true;
+            } else if (data.opcode == .stack_addr) {
+                // Compute address of stack slot: FP + offset
+                const stack_slot = data.stack_slot;
+                const offset = data.offset;
+
+                // Get stack slot data from function
+                const slot_data = ctx.func.stack_slots.get(stack_slot) orelse return false;
+
+                // Calculate FP-relative offset
+                const fp_offset = offset;
+
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+                const fp_reg = Reg.fromPReg(Reg.fromInt(29)); // X29 (FP)
+
+                // Emit add to compute address
+                if (fp_offset == 0) {
+                    // Just move FP to dst
+                    try ctx.emit(Inst{ .mov_rr = .{
+                        .dst = dst,
+                        .src = fp_reg,
+                        .size = .size64,
+                    } });
+                } else {
+                    try ctx.emit(Inst{ .add_imm = .{
+                        .dst = dst,
+                        .src = fp_reg,
+                        .imm = @intCast(fp_offset),
+                        .size = .size64,
+                    } });
+                }
+
+                _ = slot_data; // TODO: Use slot_data for size/alignment checks
+                return true;
+            }
+        },
+        .stack_store => |data| {
+            if (data.opcode == .stack_store) {
+                // Store to stack slot at FP + offset
+                const value = data.arg;
+                const stack_slot = data.stack_slot;
+                const offset = data.offset;
+
+                // Get stack slot data from function
+                const slot_data = ctx.func.stack_slots.get(stack_slot) orelse return false;
+
+                // Calculate FP-relative offset
+                const fp_offset = offset;
+
+                const ty = ctx.getValueType(value);
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                const value_reg = Reg.fromVReg(try ctx.getValueReg(value, .int));
+                const fp_reg = Reg.fromPReg(Reg.fromInt(29)); // X29 (FP)
+
+                // Emit str with FP-relative addressing
+                try ctx.emit(Inst{ .str = .{
+                    .src = value_reg,
+                    .base = fp_reg,
+                    .offset = fp_offset,
+                    .size = size,
+                } });
+
+                _ = slot_data; // TODO: Use slot_data for size/alignment checks
+                return true;
+            }
+        },
         else => {},
     }
 

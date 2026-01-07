@@ -57,6 +57,8 @@ pub const InstructionData = union(enum) {
     atomic_rmw: AtomicRmwData,
     atomic_cas: AtomicCasData,
     fence: FenceData,
+    stack_load: StackLoadData,
+    stack_store: StackStoreData,
 
     pub fn opcode(self: InstructionData) Opcode {
         return switch (self) {
@@ -335,6 +337,27 @@ pub const FenceData = struct {
 
     pub fn init(op: Opcode, ordering: AtomicOrdering) FenceData {
         return .{ .opcode = op, .ordering = ordering };
+    }
+};
+
+pub const StackLoadData = struct {
+    opcode: Opcode,
+    stack_slot: entities.StackSlot,
+    offset: i32,
+
+    pub fn init(op: Opcode, stack_slot: entities.StackSlot, offset: i32) StackLoadData {
+        return .{ .opcode = op, .stack_slot = stack_slot, .offset = offset };
+    }
+};
+
+pub const StackStoreData = struct {
+    opcode: Opcode,
+    arg: Value,
+    stack_slot: entities.StackSlot,
+    offset: i32,
+
+    pub fn init(op: Opcode, arg: Value, stack_slot: entities.StackSlot, offset: i32) StackStoreData {
+        return .{ .opcode = op, .arg = arg, .stack_slot = stack_slot, .offset = offset };
     }
 };
 

@@ -484,7 +484,10 @@ pub const DataFlowGraph = struct {
                     data.expected = self.resolveAliases(data.expected);
                     data.replacement = self.resolveAliases(data.replacement);
                 },
-                .jump, .nullary, .unary_imm, .fence => {},
+                .stack_store => |*data| {
+                    data.arg = self.resolveAliases(data.arg);
+                },
+                .jump, .nullary, .unary_imm, .fence, .stack_load => {},
             }
         }
     }
