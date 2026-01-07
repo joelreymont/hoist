@@ -754,6 +754,9 @@ pub const Aarch64ABICallee = struct {
     dyn_sp_reg: ?PReg,
     /// Platform for ABI-specific behavior.
     platform: Platform,
+    /// Whether red zone (128 bytes below SP) is allowed.
+    /// AAPCS64 allows red zone for leaf functions, but Darwin disables it.
+    red_zone_allowed: bool,
 
     pub fn init(
         _allocator: std.mem.Allocator,
@@ -765,6 +768,9 @@ pub const Aarch64ABICallee = struct {
             .system_v, .windows_fastcall => unreachable,
         };
 
+        const platform = Platform.detect();
+        const red_zone_allowed = platform != .darwin;
+
         return .{
             .sig = sig,
             .abi = abi,
@@ -775,7 +781,8 @@ pub const Aarch64ABICallee = struct {
             .uses_frame_pointer = false,
             .has_dynamic_alloc = false,
             .dyn_sp_reg = null,
-            .platform = Platform.detect(),
+            .platform = platform,
+            .red_zone_allowed = red_zone_allowed,
         };
     }
 
@@ -783,8 +790,18 @@ pub const Aarch64ABICallee = struct {
     /// This will recalculate the total frame size with proper alignment.
     pub fn setLocalsSize(self: *Aarch64ABICallee, size: u32) void {
         self.locals_size = size;
+
+        // On Darwin, red zone is disabled - force frame creation for any locals
+        // On other platforms, red zone (128 bytes) allows small leaf functions
+        // to use stack space without explicit frame allocation
+        const effective_locals = if (!self.red_zone_allowed and size > 0)
+            // Force minimum frame for Darwin when any locals present
+            @max(size, 16)
+        else
+            size;
+
         self.frame_size = calculateFrameSize(
-            self.locals_size,
+            effective_locals,
             @intCast(self.clobbered_callee_saves.items.len),
         );
 
