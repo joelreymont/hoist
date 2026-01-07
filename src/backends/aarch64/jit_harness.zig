@@ -136,6 +136,93 @@ pub const JitMemory = struct {
     }
 };
 
+/// Test helper: compile IR function and execute it with JIT.
+/// Returns the compiled machine code and JIT memory for inspection/execution.
+pub const CompileResult = struct {
+    mem: JitMemory,
+    code: []const u8,
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        self.mem.deinit();
+        allocator.free(self.code);
+    }
+};
+
+/// Compile a function to machine code and load it into executable memory.
+/// Caller owns returned CompileResult and must call deinit().
+pub fn compileAndLoad(
+    allocator: std.mem.Allocator,
+    func: anytype,
+) !CompileResult {
+    const hoist = @import("../../root.zig");
+    const ContextBuilder = hoist.context.ContextBuilder;
+
+    // Compile function
+    var builder = ContextBuilder.init(allocator);
+    var ctx = builder
+        .targetNative()
+        .optLevel(.none)
+        .build();
+
+    const compiled = try ctx.compileFunction(func);
+
+    // Allocate JIT memory
+    var mem = try JitMemory.init(allocator, compiled.code.items.len);
+    errdefer mem.deinit();
+
+    // Copy compiled code
+    const code = try allocator.dupe(u8, compiled.code.items);
+    errdefer allocator.free(code);
+
+    // Write to executable memory
+    try mem.write(code);
+
+    return .{
+        .mem = mem,
+        .code = code,
+    };
+}
+
+/// Test helper: compile and execute a function with () -> i32 signature.
+pub fn compileAndExecuteVoidToI32(
+    allocator: std.mem.Allocator,
+    func: anytype,
+) !i32 {
+    var result = try compileAndLoad(allocator, func);
+    defer result.deinit(allocator);
+
+    const jit_fn = result.mem.getFnVoidToI32();
+    return jit_fn();
+}
+
+/// Test helper: compile and execute a function with (i32, i32) -> i32 signature.
+pub fn compileAndExecuteI32I32ToI32(
+    allocator: std.mem.Allocator,
+    func: anytype,
+    arg1: i32,
+    arg2: i32,
+) !i32 {
+    var result = try compileAndLoad(allocator, func);
+    defer result.deinit(allocator);
+
+    const jit_fn = result.mem.getFnI32I32ToI32();
+    return jit_fn(arg1, arg2);
+}
+
+/// Test helper: compile and execute a function with (i64, i64) -> i64 signature.
+pub fn compileAndExecuteI64I64ToI64(
+    allocator: std.mem.Allocator,
+    func: anytype,
+    arg1: i64,
+    arg2: i64,
+) !i64 {
+    var result = try compileAndLoad(allocator, func);
+    defer result.deinit(allocator);
+
+    const jit_fn = result.mem.getFnI64I64ToI64();
+    return jit_fn(arg1, arg2);
+};
+
 test "JitMemory allocate and free" {
     if (builtin.os.tag != .macos and builtin.os.tag != .linux) {
         return error.SkipZigTest;
