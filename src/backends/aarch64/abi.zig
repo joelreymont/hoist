@@ -1239,8 +1239,8 @@ pub const Aarch64ABICallee = struct {
             }
         }
 
-        // 3. Return: RET (defaults to X30/LR)
-        try emit_fn(.{ .ret = {} }, buffer);
+        // 3. RET instruction will be emitted separately by the instruction emitter
+        // Don't emit it here to avoid double RET
     }
 
     /// Mark a callee-save register as clobbered.
