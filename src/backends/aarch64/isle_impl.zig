@@ -2623,3 +2623,11 @@ pub fn aarch64_set_pinned_reg(
         .src = val_reg,
     } };
 }
+
+/// Constructor: aarch64_debugtrap - Emit debug trap (BRK).
+pub fn aarch64_debugtrap(
+    ctx: *IsleContext,
+) !Inst {
+    _ = ctx;
+    return Inst{ .brk = .{ .imm = 0 } };
+}
