@@ -1285,6 +1285,70 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
                     }
                 }
             },
+            // Priority 3: Essential branch operations
+            .br => |*i| {
+                if (i.target.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.target = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .blr => |*i| {
+                if (i.target.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.target = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .cbz => |*i| {
+                if (i.reg.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.reg = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .cbnz => |*i| {
+                if (i.reg.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.reg = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .tbz => |*i| {
+                if (i.reg.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.reg = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .tbnz => |*i| {
+                if (i.reg.toVReg()) |vreg| {
+                    if (allocator.getAllocation(vreg)) |alloc| {
+                        i.reg = Reg.fromPReg(switch (alloc) {
+                            .reg => |r| r,
+                            .spill => @panic("Spilling not yet implemented"),
+                        });
+                    }
+                }
+            },
+            .b_cond, .bl, .b => {
+                // No register operands - use labels/immediate offsets
+            },
             .ret => {
                 // No registers to rewrite
             },
