@@ -2799,28 +2799,38 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
     // AAPCS64 calling convention:
     // - First 8 integer args in X0-X7
     // - First 8 FP args in V0-V7
-    // - Remaining args on stack (not yet supported)
+    // - Remaining args on stack (8-byte aligned, pushed in order)
 
-    // TODO: Stack arguments for calls with >8 args
-    // For now, only support up to 8 integer arguments
-    if (args.len > 8) {
-        return error.TooManyCallArguments;
-    }
+    // Marshal arguments to ABI registers and stack
+    // For now, assume all arguments are integers
+    var stack_offset: u32 = 0;
 
-    // Marshal arguments to ABI registers
-    // For now, assume all arguments are integers and place them in X0-X7
     for (args, 0..) |arg_value, i| {
         const arg_reg = try ctx.getValueReg(arg_value, .int);
-        const abi_reg_num: u8 = @intCast(i);
-        const abi_reg = Reg.gpr(abi_reg_num);
 
-        // Emit move to ABI register if not already there
-        if (!arg_reg.toReg().eq(abi_reg)) {
-            try ctx.emit(Inst{ .mov_rr = .{
-                .dst = lower_mod.WritableReg.fromReg(abi_reg),
+        if (i < 8) {
+            // First 8 args go in X0-X7
+            const abi_reg_num: u8 = @intCast(i);
+            const abi_reg = Reg.gpr(abi_reg_num);
+
+            // Emit move to ABI register if not already there
+            if (!arg_reg.toReg().eq(abi_reg)) {
+                try ctx.emit(Inst{ .mov_rr = .{
+                    .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                    .src = arg_reg.toReg(),
+                    .size = .size64,
+                } });
+            }
+        } else {
+            // Args 9+ go on stack
+            // AAPCS64: Stack arguments are 8-byte aligned
+            try ctx.emit(Inst{ .str = .{
                 .src = arg_reg.toReg(),
+                .base = Reg.gpr(31), // SP
+                .offset = @intCast(stack_offset),
                 .size = .size64,
             } });
+            stack_offset += 8;
         }
     }
 
@@ -2848,13 +2858,7 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
     // AAPCS64 calling convention:
     // - First 8 integer args in X0-X7
     // - First 8 FP args in V0-V7
-    // - Remaining args on stack (not yet supported)
-
-    // TODO: Stack arguments for calls with >8 args
-    // For now, only support up to 8 integer arguments
-    if (args.len > 8) {
-        return error.TooManyCallArguments;
-    }
+    // - Remaining args on stack (8-byte aligned, pushed in order)
 
     // Get function pointer into a temporary register (not X0-X7 to avoid conflicts)
     // Use X9 as temp (caller-saved, safe to use)
@@ -2868,20 +2872,36 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
         } });
     }
 
-    // Marshal arguments to ABI registers
-    // For now, assume all arguments are integers and place them in X0-X7
+    // Marshal arguments to ABI registers and stack
+    // For now, assume all arguments are integers
+    var stack_offset: u32 = 0;
+
     for (args, 0..) |arg_value, i| {
         const arg_reg = try ctx.getValueReg(arg_value, .int);
-        const abi_reg_num: u8 = @intCast(i);
-        const abi_reg = Reg.gpr(abi_reg_num);
 
-        // Emit move to ABI register if not already there
-        if (!arg_reg.toReg().eq(abi_reg)) {
-            try ctx.emit(Inst{ .mov_rr = .{
-                .dst = lower_mod.WritableReg.fromReg(abi_reg),
+        if (i < 8) {
+            // First 8 args go in X0-X7
+            const abi_reg_num: u8 = @intCast(i);
+            const abi_reg = Reg.gpr(abi_reg_num);
+
+            // Emit move to ABI register if not already there
+            if (!arg_reg.toReg().eq(abi_reg)) {
+                try ctx.emit(Inst{ .mov_rr = .{
+                    .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                    .src = arg_reg.toReg(),
+                    .size = .size64,
+                } });
+            }
+        } else {
+            // Args 9+ go on stack
+            // AAPCS64: Stack arguments are 8-byte aligned
+            try ctx.emit(Inst{ .str = .{
                 .src = arg_reg.toReg(),
+                .base = Reg.gpr(31), // SP
+                .offset = @intCast(stack_offset),
                 .size = .size64,
             } });
+            stack_offset += 8;
         }
     }
 
