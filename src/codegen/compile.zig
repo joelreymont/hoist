@@ -524,10 +524,22 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
     const Reg = @import("../machinst/reg.zig").Reg;
     const WritableReg = @import("../machinst/reg.zig").WritableReg;
     const context_mod = @import("context.zig");
+    const abi_mod = @import("../backends/aarch64/abi.zig");
 
     // Create machine code buffer
     var buffer = buffer_mod.MachBuffer.init(ctx.allocator);
     defer buffer.deinit();
+
+    // Create minimal ABI callee for prologue/epilogue generation
+    var abi_callee = abi_mod.Aarch64ABICallee.init(ctx.allocator, ctx.func.signature, .fast);
+    defer abi_callee.deinit();
+
+    // For now, use zero frame size (no locals/spills)
+    // TODO: Calculate actual frame size from allocator spill slots
+    abi_callee.locals_size = 0;
+
+    // Emit function prologue
+    try abi_callee.emitPrologue(&buffer);
 
     // Emit each instruction with vregs rewritten to pregs
     for (vcode.insns.items) |inst| {
@@ -687,6 +699,11 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
                     }
                 }
             }
+        }
+
+        // Emit epilogue before return instructions
+        if (rewritten_inst == .ret) {
+            try abi_callee.emitEpilogue(&buffer);
         }
 
         // Emit instruction using generic emit function
