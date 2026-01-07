@@ -71,6 +71,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .cmp_imm => |i| try emitCmpImm(i.src, i.imm, i.size, buffer),
         .ccmp => |i| try emitCcmp(i.src1, i.src2, i.nzcv, i.cond, i.size, buffer),
         .ccmp_imm => |i| try emitCcmpImm(i.src, i.imm, i.nzcv, i.cond, i.size, buffer),
+        .cset => |i| try emitCset(i.dst.toReg(), i.cond, i.size, buffer),
         .tst_rr => |i| try emitTstRR(i.src1, i.src2, i.size, buffer),
         .tst_imm => |i| try emitTstImm(i.src, i.imm, buffer),
         .sxtb => |i| try emitSxtb(i.dst.toReg(), i.src, i.dst_size, buffer),
@@ -1319,6 +1320,27 @@ fn emitCsel(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize, b
         (cond_bits << 12) |
         (0b00 << 10) | // op=00 for CSEL
         (@as(u32, rn) << 5) |
+        rd;
+
+    try buffer.put4(insn);
+}
+
+/// CSET Xd, cond (conditional set - alias for CSINC Xd, XZR, XZR, invert(cond))
+/// Sets Xd = 1 if cond is true, else 0
+/// Encoding: sf|0|0|11010100|11111|cond_inv|01|11111|Rd
+fn emitCset(dst: Reg, cond: CondCode, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const cond_inv: u32 = @intCast(@intFromEnum(cond) ^ 1); // Invert condition
+    const xzr: u32 = 31; // XZR/WZR register
+
+    // CSET (alias for CSINC): sf|0|0|11010100|11111|cond_inv|01|11111|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b11010100 << 21) |
+        (xzr << 16) | // Rm = XZR
+        (cond_inv << 12) |
+        (0b01 << 10) | // op=01 for CSINC
+        (xzr << 5) | // Rn = XZR
         rd;
 
     try buffer.put4(insn);

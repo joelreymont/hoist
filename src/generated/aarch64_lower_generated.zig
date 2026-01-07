@@ -850,11 +850,11 @@ pub fn lower(
                 const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
-                // Emit load instruction with offset from LoadData
+                // Emit load instruction with zero offset
                 try ctx.emit(Inst{ .ldr = .{
                     .dst = dst,
                     .base = addr_reg,
-                    .offset = @intCast(data.offset.value),
+                    .offset = 0,
                     .size = size,
                 } });
 

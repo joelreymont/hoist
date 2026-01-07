@@ -308,7 +308,7 @@ fn computeRPO(allocator: Allocator, func: *const Function) !std.ArrayList(Block)
     const entry = block_iter.next() orelse return rpo;
 
     // DFS postorder traversal
-    try dfsPostorder(func, entry, &visited, &rpo);
+    try dfsPostorder(func, entry, &visited, &rpo, allocator);
 
     // Reverse to get reverse postorder
     std.mem.reverse(Block, rpo.items);
@@ -322,6 +322,7 @@ fn dfsPostorder(
     block: Block,
     visited: *std.AutoHashMap(Block, void),
     postorder: *std.ArrayList(Block),
+    allocator: Allocator,
 ) !void {
     if (visited.contains(block)) return;
     try visited.put(block, {});
@@ -335,7 +336,7 @@ fn dfsPostorder(
     }
 
     // Add block to postorder after visiting successors
-    try postorder.append(block);
+    try postorder.append(allocator, block);
 }
 
 /// Lower an entire function from IR to VCode.
