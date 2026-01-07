@@ -6,6 +6,17 @@ const root = @import("root");
 const vcode_mod = @import("vcode.zig");
 const reg_mod = @import("reg.zig");
 
+/// Track whether an SSA value is used zero, one, or multiple times.
+/// Enables dead code elimination and single-use optimizations.
+pub const ValueUseState = enum {
+    /// Value is never used (dead code).
+    unused,
+    /// Value is used exactly once.
+    once,
+    /// Value is used more than once.
+    multiple,
+};
+
 // Import real IR types
 pub const Function = root.function.Function;
 pub const Block = root.entities.Block;
@@ -45,6 +56,10 @@ pub fn LowerCtx(comptime MachInst: type) type {
         /// Next available virtual register index.
         next_vreg: u32,
 
+        /// Value use state (unused, once, multiple) for each SSA value.
+        /// Used to skip dead code and enable single-use optimizations.
+        value_uses: std.AutoHashMap(Value, ValueUseState),
+
         /// Allocator.
         allocator: Allocator,
 
@@ -62,6 +77,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
                 .value_to_reg = std.AutoHashMap(Value, VReg).init(allocator),
                 .block_map = std.AutoHashMap(Block, vcode_mod.BlockIndex).init(allocator),
                 .next_vreg = 0,
+                .value_uses = std.AutoHashMap(Value, ValueUseState).init(allocator),
                 .allocator = allocator,
             };
         }
@@ -69,6 +85,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
         pub fn deinit(self: *Self) void {
             self.value_to_reg.deinit();
             self.block_map.deinit();
+            self.value_uses.deinit();
         }
 
         /// Get the virtual register holding a value, allocating if needed.
@@ -134,6 +151,57 @@ pub fn LowerCtx(comptime MachInst: type) type {
         /// Get the type of an IR value.
         pub fn getValueType(self: *const Self, value: Value) root.types.Type {
             return self.func.dfg.valueType(value);
+        }
+
+        /// Compute value use counts for dead code elimination.
+        /// Marks each SSA value as unused, used once, or used multiple times.
+        pub fn computeValueUses(self: *Self) !void {
+            // Initialize all values as unused
+            var block_iter = self.func.layout.blocks();
+            while (block_iter.next()) |block| {
+                // Mark block params as unused initially
+                const block_params = self.func.dfg.blockParams(block);
+                for (block_params) |param_value| {
+                    try self.value_uses.put(param_value, .unused);
+                }
+
+                // Mark instruction results as unused initially
+                var inst_iter = self.func.layout.blockInsts(block);
+                while (inst_iter.next()) |inst| {
+                    const results = self.func.dfg.instResults(inst);
+                    for (results) |result_value| {
+                        try self.value_uses.put(result_value, .unused);
+                    }
+                }
+            }
+
+            // Scan all instruction operands to count uses
+            block_iter = self.func.layout.blocks();
+            while (block_iter.next()) |block| {
+                var inst_iter = self.func.layout.blockInsts(block);
+                while (inst_iter.next()) |inst| {
+                    const inst_data = self.func.dfg.insts.get(inst).?;
+
+                    // Visit all operand values in this instruction
+                    var operands: [8]Value = undefined;
+                    const operand_count = inst_data.collectOperands(&operands);
+
+                    for (operands[0..operand_count]) |operand| {
+                        // Increment use count: unused -> once -> multiple
+                        const entry = try self.value_uses.getOrPut(operand);
+                        if (!entry.found_existing) {
+                            // Value used but not defined - could be a constant
+                            entry.value_ptr.* = .once;
+                        } else {
+                            entry.value_ptr.* = switch (entry.value_ptr.*) {
+                                .unused => .once,
+                                .once => .multiple,
+                                .multiple => .multiple,
+                            };
+                        }
+                    }
+                }
+            }
         }
 
         /// Pre-allocate VRegs for all SSA values in the function.
@@ -252,6 +320,9 @@ pub fn lowerFunction(
     // Pre-allocate VRegs for all SSA values
     try ctx.allocateSSAVRegs();
 
+    // Compute value use counts for dead code elimination
+    try ctx.computeValueUses();
+
     // Lower each block in reverse postorder
     var rpo = try computeRPO(allocator, func);
     defer rpo.deinit();
@@ -359,4 +430,98 @@ test "SSA VReg pre-allocation" {
     // Verify that calling getValueReg again returns the same VReg
     const vreg_again = try ctx.getValueReg(v1, .int);
     try testing.expectEqual(vreg, vreg_again);
+}
+
+test "Value use state computation" {
+    const TestInst = struct {
+        opcode: u32,
+    };
+
+    const Signature = root.signature.Signature;
+    const Type = root.types.Type;
+    const InstructionData = root.instruction_data.InstructionData;
+
+    // Create function with dead and live values
+    // block0:
+    //   v0 = iconst 10   (dead - never used)
+    //   v1 = iconst 20   (used once)
+    //   v2 = iconst 30   (used multiple times)
+    //   v3 = iadd v1, v2
+    //   v4 = iadd v2, v2
+    //   return v4
+
+    const sig = Signature.init(&.{}, &.{Type.i64()});
+    var func = try Function.init(testing.allocator, "test_value_uses", sig);
+    defer func.deinit();
+
+    const block0 = func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    // v0 = iconst 10 (dead)
+    const v0_inst = func.dfg.makeInst(InstructionData{ .unary_imm = .{
+        .opcode = .iconst,
+        .imm = .{ .value = 10 },
+    } });
+    try func.layout.appendInst(v0_inst, block0);
+    const v0 = Value.fromInst(v0_inst);
+    try func.dfg.attachResult(v0_inst, Type.i64());
+
+    // v1 = iconst 20 (used once in v3)
+    const v1_inst = func.dfg.makeInst(InstructionData{ .unary_imm = .{
+        .opcode = .iconst,
+        .imm = .{ .value = 20 },
+    } });
+    try func.layout.appendInst(v1_inst, block0);
+    const v1 = Value.fromInst(v1_inst);
+    try func.dfg.attachResult(v1_inst, Type.i64());
+
+    // v2 = iconst 30 (used multiple times)
+    const v2_inst = func.dfg.makeInst(InstructionData{ .unary_imm = .{
+        .opcode = .iconst,
+        .imm = .{ .value = 30 },
+    } });
+    try func.layout.appendInst(v2_inst, block0);
+    const v2 = Value.fromInst(v2_inst);
+    try func.dfg.attachResult(v2_inst, Type.i64());
+
+    // v3 = iadd v1, v2
+    const v3_inst = func.dfg.makeInst(InstructionData{ .binary = .{
+        .opcode = .iadd,
+        .args = .{ v1, v2 },
+    } });
+    try func.layout.appendInst(v3_inst, block0);
+    const v3 = Value.fromInst(v3_inst);
+    try func.dfg.attachResult(v3_inst, Type.i64());
+
+    // v4 = iadd v2, v2 (uses v2 again)
+    const v4_inst = func.dfg.makeInst(InstructionData{ .binary = .{
+        .opcode = .iadd,
+        .args = .{ v2, v2 },
+    } });
+    try func.layout.appendInst(v4_inst, block0);
+    const v4 = Value.fromInst(v4_inst);
+    try func.dfg.attachResult(v4_inst, Type.i64());
+
+    // return v4
+    const ret_inst = func.dfg.makeInst(InstructionData{ .unary = .{
+        .opcode = .@"return",
+        .arg = v4,
+    } });
+    try func.layout.appendInst(ret_inst, block0);
+
+    // Create LowerCtx and compute value uses
+    var vcode = vcode_mod.VCode(TestInst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = LowerCtx(TestInst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    try ctx.computeValueUses();
+
+    // Verify use states
+    try testing.expectEqual(ValueUseState.unused, ctx.value_uses.get(v0).?); // dead
+    try testing.expectEqual(ValueUseState.once, ctx.value_uses.get(v1).?); // used once
+    try testing.expectEqual(ValueUseState.multiple, ctx.value_uses.get(v2).?); // used 3 times
+    try testing.expectEqual(ValueUseState.unused, ctx.value_uses.get(v3).?); // dead (not used in return)
+    try testing.expectEqual(ValueUseState.once, ctx.value_uses.get(v4).?); // used once (in return)
 }
