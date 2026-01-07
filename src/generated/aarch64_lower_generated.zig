@@ -1389,6 +1389,45 @@ pub fn lower(
                 }
 
                 return true;
+            } else if (data.opcode == .ishl_imm) {
+                // Logical shift left with immediate
+                const src = data.arg;
+                const shift = @as(u8, @intCast(data.imm.value & 0x3F)); // Mask to 6 bits
+
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(inst_mod.aarch64_lsl(dst, src_reg, shift, size));
+                return true;
+            } else if (data.opcode == .ushr_imm) {
+                // Logical shift right with immediate
+                const src = data.arg;
+                const shift = @as(u8, @intCast(data.imm.value & 0x3F));
+
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(inst_mod.aarch64_lsr(dst, src_reg, shift, size));
+                return true;
+            } else if (data.opcode == .sshr_imm) {
+                // Arithmetic shift right with immediate
+                const src = data.arg;
+                const shift = @as(u8, @intCast(data.imm.value & 0x3F));
+
+                const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                try ctx.emit(inst_mod.aarch64_asr(dst, src_reg, shift, size));
+                return true;
             }
         },
         .stack_load => |data| {
