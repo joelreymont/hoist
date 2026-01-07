@@ -496,6 +496,34 @@ pub fn lower(
                 } });
 
                 return true;
+            } else if (data.opcode == .uload32) {
+                // Load unsigned 32-bit word (zero-extend to 64-bit)
+                const addr = data.arg;
+                const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                // Use 32-bit load which automatically zero-extends
+                try ctx.emit(Inst{ .ldr = .{
+                    .dst = dst,
+                    .base = addr_reg,
+                    .offset = @intCast(data.offset.value),
+                    .size = .size32,
+                } });
+
+                return true;
+            } else if (data.opcode == .sload32) {
+                // Load signed 32-bit word (sign-extend to 64-bit)
+                const addr = data.arg;
+                const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                try ctx.emit(Inst{ .ldrsw = .{
+                    .dst = dst,
+                    .base = addr_reg,
+                    .offset = @intCast(data.offset.value),
+                } });
+
+                return true;
             }
         },
         .store => |data| {
@@ -548,6 +576,22 @@ pub fn lower(
                     .src = value_reg,
                     .base = addr_reg,
                     .offset = @intCast(data.offset.value),
+                } });
+
+                return true;
+            } else if (data.opcode == .istore32) {
+                // Store 32-bit word
+                const value = data.arg;
+                const addr = data.addr;
+
+                const value_reg = Reg.fromVReg(try ctx.getValueReg(value, .int));
+                const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
+
+                try ctx.emit(Inst{ .str = .{
+                    .src = value_reg,
+                    .base = addr_reg,
+                    .offset = @intCast(data.offset.value),
+                    .size = .size32,
                 } });
 
                 return true;
