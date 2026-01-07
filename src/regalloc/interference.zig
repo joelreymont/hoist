@@ -103,6 +103,51 @@ pub const InterferenceGraph = struct {
     }
 };
 
+/// Build an interference graph from liveness information.
+///
+/// Iterates over all pairs of live ranges and adds edges between vregs
+/// whose ranges overlap (interfere). Two vregs interfere if their live
+/// ranges overlap - they cannot be assigned to the same physical register.
+///
+/// Complexity: O(N²) where N is the number of live ranges, but N is typically
+/// small (<100 vregs in most functions).
+pub fn buildInterferenceGraph(
+    allocator: std.mem.Allocator,
+    liveness: *const @import("liveness.zig").LivenessInfo,
+) !InterferenceGraph {
+    const ranges = liveness.ranges.items;
+
+    // Find max vreg index to size the graph
+    var max_vreg_idx: u32 = 0;
+    for (ranges) |range| {
+        if (range.vreg.index > max_vreg_idx) {
+            max_vreg_idx = range.vreg.index;
+        }
+    }
+
+    // Create graph sized for all vregs (max_index + 1)
+    var graph = try InterferenceGraph.init(allocator, max_vreg_idx + 1);
+    errdefer graph.deinit();
+
+    // Check all pairs of live ranges for interference
+    var i: usize = 0;
+    while (i < ranges.len) : (i += 1) {
+        const range_i = ranges[i];
+
+        var j: usize = i + 1;
+        while (j < ranges.len) : (j += 1) {
+            const range_j = ranges[j];
+
+            // If ranges overlap, vregs interfere
+            if (range_i.overlaps(range_j)) {
+                graph.addEdge(range_i.vreg, range_j.vreg);
+            }
+        }
+    }
+
+    return graph;
+}
+
 // Tests
 const testing = std.testing;
 
@@ -232,4 +277,57 @@ test "InterferenceGraph out of bounds handling" {
     graph.addEdge(v0, v_invalid); // Should be ignored
     try testing.expect(!graph.interferes(v0, v_invalid));
     try testing.expectEqual(@as(u32, 0), graph.degree(v_invalid));
+}
+
+test "buildInterferenceGraph from liveness" {
+    const allocator = testing.allocator;
+    const liveness_mod = @import("liveness.zig");
+
+    var liveness = liveness_mod.LivenessInfo.init(allocator);
+    defer liveness.deinit();
+
+    // Create some overlapping live ranges
+    const v0 = machinst.VReg.new(0, .int);
+    const v1 = machinst.VReg.new(1, .int);
+    const v2 = machinst.VReg.new(2, .int);
+
+    // v0: [0, 10] - overlaps with v1
+    try liveness.addRange(.{
+        .vreg = v0,
+        .start_inst = 0,
+        .end_inst = 10,
+        .reg_class = .int,
+    });
+
+    // v1: [5, 15] - overlaps with v0 and v2
+    try liveness.addRange(.{
+        .vreg = v1,
+        .start_inst = 5,
+        .end_inst = 15,
+        .reg_class = .int,
+    });
+
+    // v2: [12, 20] - overlaps with v1 only
+    try liveness.addRange(.{
+        .vreg = v2,
+        .start_inst = 12,
+        .end_inst = 20,
+        .reg_class = .int,
+    });
+
+    // Build interference graph
+    var graph = try buildInterferenceGraph(allocator, &liveness);
+    defer graph.deinit();
+
+    // Check interferences
+    try testing.expect(graph.interferes(v0, v1)); // v0 and v1 overlap [5,10]
+    try testing.expect(graph.interferes(v1, v0)); // Symmetric
+    try testing.expect(graph.interferes(v1, v2)); // v1 and v2 overlap [12,15]
+    try testing.expect(graph.interferes(v2, v1)); // Symmetric
+    try testing.expect(!graph.interferes(v0, v2)); // v0 and v2 don't overlap
+
+    // Check degrees
+    try testing.expectEqual(@as(u32, 1), graph.degree(v0)); // Interferes with v1
+    try testing.expectEqual(@as(u32, 2), graph.degree(v1)); // Interferes with v0 and v2
+    try testing.expectEqual(@as(u32, 1), graph.degree(v2)); // Interferes with v1
 }
