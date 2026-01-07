@@ -33,8 +33,8 @@ test "arg classification: integer args overflow to stack" {
     }
 
     // Verify 9th and 10th on stack
-    try testing.expectEqual(@as(?@TypeOf(.{}), null), mock.getIntArgReg(8));
-    try testing.expectEqual(@as(?@TypeOf(.{}), null), mock.getIntArgReg(9));
+    try testing.expectEqual(@as(?PReg, null), mock.getIntArgReg(8));
+    try testing.expectEqual(@as(?PReg, null), mock.getIntArgReg(9));
 }
 
 test "arg classification: float args in V0-V7" {
@@ -62,8 +62,8 @@ test "arg classification: float args overflow to stack" {
     }
 
     // Verify 9th and 10th on stack
-    try testing.expectEqual(@as(?@TypeOf(.{}), null), mock.getFloatArgReg(8));
-    try testing.expectEqual(@as(?@TypeOf(.{}), null), mock.getFloatArgReg(9));
+    try testing.expectEqual(@as(?PReg, null), mock.getFloatArgReg(8));
+    try testing.expectEqual(@as(?PReg, null), mock.getFloatArgReg(9));
 }
 
 test "arg classification: mixed int and float args" {

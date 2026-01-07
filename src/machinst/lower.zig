@@ -396,7 +396,7 @@ test "LowerCtx basic" {
     const Signature = root.signature.Signature;
 
     // Create minimal stub function
-    const sig = Signature.init(&.{}, &.{});
+    const sig = Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -423,16 +423,16 @@ test "SSA VReg pre-allocation" {
     };
 
     const Signature = root.signature.Signature;
-    const Type = root.types.Type;
+//     const Type = root.types.Type;
     const InstructionData = root.instruction_data.InstructionData;
 
     // Create function with some instructions
-    const sig = Signature.init(&.{}, &.{Type.i64()});
+    const sig = Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test_prealloc", sig);
     defer func.deinit();
 
     // Create block with instructions
-    const block0 = func.dfg.makeBlock();
+    const block0 = try func.dfg.makeBlock();
     try func.layout.appendBlock(block0);
 
     // Add an instruction that produces a value
@@ -440,10 +440,10 @@ test "SSA VReg pre-allocation" {
         .opcode = .iconst,
         .imm = .{ .value = 42 },
     } };
-    const inst1 = func.dfg.makeInst(iconst_data);
+    const inst1 = try func.dfg.makeInst(iconst_data);
     try func.layout.appendInst(inst1, block0);
-    const v1 = Value.fromInst(inst1);
-    try func.dfg.attachResult(inst1, Type.i64());
+    const v1 = func.dfg.firstResult(inst1).?;
+//     try func.dfg.attachResult(inst1, Type.i64());
 
     // Create LowerCtx and pre-allocate VRegs
     var vcode = vcode_mod.VCode(TestInst).init(testing.allocator);
@@ -471,7 +471,7 @@ test "Value use state computation" {
     };
 
     const Signature = root.signature.Signature;
-    const Type = root.types.Type;
+//     const Type = root.types.Type;
     const InstructionData = root.instruction_data.InstructionData;
 
     // Create function with dead and live values
@@ -483,60 +483,60 @@ test "Value use state computation" {
     //   v4 = iadd v2, v2
     //   return v4
 
-    const sig = Signature.init(&.{}, &.{Type.i64()});
+    const sig = Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test_value_uses", sig);
     defer func.deinit();
 
-    const block0 = func.dfg.makeBlock();
+    const block0 = try func.dfg.makeBlock();
     try func.layout.appendBlock(block0);
 
     // v0 = iconst 10 (dead)
-    const v0_inst = func.dfg.makeInst(InstructionData{ .unary_imm = .{
+    const v0_inst = try func.dfg.makeInst(InstructionData{ .unary_imm = .{
         .opcode = .iconst,
         .imm = .{ .value = 10 },
     } });
     try func.layout.appendInst(v0_inst, block0);
-    const v0 = Value.fromInst(v0_inst);
-    try func.dfg.attachResult(v0_inst, Type.i64());
+    const v0 = func.dfg.firstResult(v0_inst).?;
+//     try func.dfg.attachResult(v0_inst, Type.i64());
 
     // v1 = iconst 20 (used once in v3)
-    const v1_inst = func.dfg.makeInst(InstructionData{ .unary_imm = .{
+    const v1_inst = try func.dfg.makeInst(InstructionData{ .unary_imm = .{
         .opcode = .iconst,
         .imm = .{ .value = 20 },
     } });
     try func.layout.appendInst(v1_inst, block0);
-    const v1 = Value.fromInst(v1_inst);
-    try func.dfg.attachResult(v1_inst, Type.i64());
+    const v1 = func.dfg.firstResult(v1_inst).?;
+//     try func.dfg.attachResult(v1_inst, Type.i64());
 
     // v2 = iconst 30 (used multiple times)
-    const v2_inst = func.dfg.makeInst(InstructionData{ .unary_imm = .{
+    const v2_inst = try func.dfg.makeInst(InstructionData{ .unary_imm = .{
         .opcode = .iconst,
         .imm = .{ .value = 30 },
     } });
     try func.layout.appendInst(v2_inst, block0);
-    const v2 = Value.fromInst(v2_inst);
-    try func.dfg.attachResult(v2_inst, Type.i64());
+    const v2 = func.dfg.firstResult(v2_inst).?;
+//     try func.dfg.attachResult(v2_inst, Type.i64());
 
     // v3 = iadd v1, v2
-    const v3_inst = func.dfg.makeInst(InstructionData{ .binary = .{
+    const v3_inst = try func.dfg.makeInst(InstructionData{ .binary = .{
         .opcode = .iadd,
         .args = .{ v1, v2 },
     } });
     try func.layout.appendInst(v3_inst, block0);
-    const v3 = Value.fromInst(v3_inst);
-    try func.dfg.attachResult(v3_inst, Type.i64());
+    const v3 = func.dfg.firstResult(v3_inst).?;
+//     try func.dfg.attachResult(v3_inst, Type.i64());
 
     // v4 = iadd v2, v2 (uses v2 again)
-    const v4_inst = func.dfg.makeInst(InstructionData{ .binary = .{
+    const v4_inst = try func.dfg.makeInst(InstructionData{ .binary = .{
         .opcode = .iadd,
         .args = .{ v2, v2 },
     } });
     try func.layout.appendInst(v4_inst, block0);
-    const v4 = Value.fromInst(v4_inst);
-    try func.dfg.attachResult(v4_inst, Type.i64());
+    const v4 = func.dfg.firstResult(v4_inst).?;
+//     try func.dfg.attachResult(v4_inst, Type.i64());
 
     // return v4
-    const ret_inst = func.dfg.makeInst(InstructionData{ .unary = .{
+    const ret_inst = try func.dfg.makeInst(InstructionData{ .unary = .{
         .opcode = .@"return",
         .arg = v4,
     } });

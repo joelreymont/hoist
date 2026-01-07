@@ -411,8 +411,8 @@ pub fn ABIMachineSpec(comptime WordSize: type) type {
                             .ty = arg_ty,
                             .extension = .none,
                         } });
-                        stack_offset += @as(i64, @intCast(arg_ty.bytes()));
-                        stack_offset = std.mem.alignForward(i64, stack_offset, self.stack_align);
+                        stack_offset.* += @as(i64, @intCast(arg_ty.bytes()));
+                        stack_offset.* = std.mem.alignForward(i64, stack_offset.*, self.stack_align);
                     }
                 },
             }
