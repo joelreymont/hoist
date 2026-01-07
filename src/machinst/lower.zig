@@ -22,6 +22,7 @@ pub const Function = root.function.Function;
 pub const Block = root.entities.Block;
 pub const Inst = root.entities.Inst;
 pub const Value = root.entities.Value;
+pub const StackSlot = root.entities.StackSlot;
 
 pub const VReg = reg_mod.VReg;
 pub const Reg = reg_mod.Reg;
@@ -239,6 +240,38 @@ pub fn LowerCtx(comptime MachInst: type) type {
         /// Determine register class from IR type.
         fn regClassForType(ty: root.types.Type) RegClass {
             return if (ty.isInt() or ty.isBool()) .int else .float;
+        }
+
+        /// Get the offset of a stack slot within the locals area.
+        /// Returns offset in bytes from the start of the locals/spills area.
+        /// Note: This is NOT the final SP offset - the ABI layer adds FP/LR
+        /// and callee-save overhead during prologue/epilogue generation.
+        pub fn getStackSlotOffset(self: *const Self, slot: StackSlot) i32 {
+            var offset: u32 = 0;
+
+            // Iterate through all stack slots up to the requested one
+            const slots = self.func.stack_slots.elems.items;
+            const slot_idx = slot.index();
+
+            for (slots[0..@min(slot_idx, slots.len)]) |slot_data| {
+                // Align to slot's required alignment
+                const alignment = slot_data.alignment();
+                const mask = alignment - 1;
+                offset = (offset + mask) & ~mask;
+
+                // Add slot size
+                offset += slot_data.size;
+            }
+
+            // Align final offset to the requested slot's alignment
+            if (slot_idx < slots.len) {
+                const slot_data = slots[slot_idx];
+                const alignment = slot_data.alignment();
+                const mask = alignment - 1;
+                offset = (offset + mask) & ~mask;
+            }
+
+            return @intCast(offset);
         }
     };
 }

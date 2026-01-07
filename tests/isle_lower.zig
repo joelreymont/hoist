@@ -352,3 +352,58 @@ test "ISLE lowering: isplit splits I128 into two I64 (TODO)" {
 
     try testing.expect(true); // Placeholder
 }
+
+test "LowerCtx: getStackSlotOffset" {
+    const Signature = root.signature.Signature;
+    const StackSlot = root.entities.StackSlot;
+    const StackSlotData = root.ir.stack_slot_data.StackSlotData;
+
+    const sig = Signature.init(&.{}, &.{});
+    var func = try lower_mod.Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    // Create stack slots with different sizes and alignments
+    // Slot 0: 8 bytes, 8-byte aligned (align_shift=3)
+    const slot0_data = StackSlotData.init(.explicit_slot, 8, 3);
+    const slot0 = StackSlot.new(func.stack_slots.elems.items.len);
+    try func.stack_slots.set(func.allocator, slot0, slot0_data);
+
+    // Slot 1: 4 bytes, 4-byte aligned (align_shift=2)
+    const slot1_data = StackSlotData.init(.explicit_slot, 4, 2);
+    const slot1 = StackSlot.new(func.stack_slots.elems.items.len);
+    try func.stack_slots.set(func.allocator, slot1, slot1_data);
+
+    // Slot 2: 16 bytes, 16-byte aligned (align_shift=4)
+    const slot2_data = StackSlotData.init(.explicit_slot, 16, 4);
+    const slot2 = StackSlot.new(func.stack_slots.elems.items.len);
+    try func.stack_slots.set(func.allocator, slot2, slot2_data);
+
+    // Slot 3: 1 byte, 1-byte aligned (align_shift=0)
+    const slot3_data = StackSlotData.init(.explicit_slot, 1, 0);
+    const slot3 = StackSlot.new(func.stack_slots.elems.items.len);
+    try func.stack_slots.set(func.allocator, slot3, slot3_data);
+
+    // Create LowerCtx
+    var vcode = vcode_mod.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    // Test offsets
+    // Slot 0: offset 0, aligned to 8
+    const offset0 = ctx.getStackSlotOffset(slot0);
+    try testing.expectEqual(@as(i32, 0), offset0);
+
+    // Slot 1: offset 8 (after slot0's 8 bytes), aligned to 4
+    const offset1 = ctx.getStackSlotOffset(slot1);
+    try testing.expectEqual(@as(i32, 8), offset1);
+
+    // Slot 2: offset 12 (after slot0=8, slot1=4), aligned to 16 -> 16
+    const offset2 = ctx.getStackSlotOffset(slot2);
+    try testing.expectEqual(@as(i32, 16), offset2);
+
+    // Slot 3: offset 32 (after slot0=8, slot1=4, slot2=16, rounded to 16), aligned to 1
+    const offset3 = ctx.getStackSlotOffset(slot3);
+    try testing.expectEqual(@as(i32, 32), offset3);
+}
