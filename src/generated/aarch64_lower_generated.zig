@@ -2263,6 +2263,139 @@ pub fn lower(
                 } });
 
                 return true;
+            } else if (data.opcode == .fma) {
+                // Fused multiply-add: dst = args[2] + (args[0] * args[1])
+                const src1 = data.args[0];
+                const src2 = data.args[1];
+                const addend = data.args[2];
+
+                const src1_reg = Reg.fromVReg(try ctx.getValueReg(src1, .float));
+                const src2_reg = Reg.fromVReg(try ctx.getValueReg(src2, .float));
+                const addend_reg = Reg.fromVReg(try ctx.getValueReg(addend, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                try ctx.emit(Inst{ .fmadd = .{
+                    .dst = dst,
+                    .src1 = src1_reg,
+                    .src2 = src2_reg,
+                    .addend = addend_reg,
+                    .size = size,
+                } });
+                return true;
+            }
+        },
+        .binary => |data| {
+            if (data.opcode == .fcopysign) {
+                // Copy sign bit from rhs to lhs
+                const lhs = data.args[0];
+                const rhs = data.args[1];
+
+                const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .float));
+                const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
+                const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
+
+                const ty = ctx.getValueType(root.entities.Value.fromInst(ir_inst));
+                const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                // Use bitwise operations to copy sign bit
+                // For F32: sign bit is bit 31, for F64: bit 63
+                // Extract magnitude from lhs (clear sign), extract sign from rhs, combine
+
+                // Move float regs to int regs for bit manipulation
+                const lhs_int = WritableReg.fromVReg(ctx.allocVReg(.int));
+                const rhs_int = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                try ctx.emit(Inst{ .fmov_to_gpr = .{
+                    .dst = lhs_int,
+                    .src = lhs_reg,
+                    .size = size,
+                } });
+                try ctx.emit(Inst{ .fmov_to_gpr = .{
+                    .dst = rhs_int,
+                    .src = rhs_reg,
+                    .size = size,
+                } });
+
+                // Create sign mask (high bit only)
+                const sign_mask: u64 = if (ty.bits() == 32) 0x80000000 else 0x8000000000000000;
+                const mag_mask: u64 = if (ty.bits() == 32) 0x7FFFFFFF else 0x7FFFFFFFFFFFFFFF;
+
+                // Allocate masks
+                const sign_mask_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
+                const mag_mask_reg = WritableReg.fromVReg(ctx.allocVReg(.int));
+
+                // Materialize masks
+                const op_size: OperandSize = if (ty.bits() == 32) .size32 else .size64;
+                try ctx.emit(Inst{ .movz = .{
+                    .dst = sign_mask_reg,
+                    .imm = @truncate(sign_mask),
+                    .shift = 0,
+                    .size = op_size,
+                } });
+                if (ty.bits() == 64) {
+                    try ctx.emit(Inst{ .movk = .{
+                        .dst = sign_mask_reg,
+                        .imm = @truncate(sign_mask >> 48),
+                        .shift = 48,
+                        .size = op_size,
+                    } });
+                }
+
+                try ctx.emit(Inst{ .movz = .{
+                    .dst = mag_mask_reg,
+                    .imm = @truncate(mag_mask),
+                    .shift = 0,
+                    .size = op_size,
+                } });
+                if (ty.bits() == 64) {
+                    for ([_]u8{ 16, 32, 48 }) |shift| {
+                        try ctx.emit(Inst{ .movk = .{
+                            .dst = mag_mask_reg,
+                            .imm = @truncate(mag_mask >> shift),
+                            .shift = shift,
+                            .size = op_size,
+                        } });
+                    }
+                }
+
+                // Extract magnitude from lhs: lhs & mag_mask
+                const mag = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(Inst{ .and_rr = .{
+                    .dst = mag,
+                    .src1 = lhs_int.toReg(),
+                    .src2 = mag_mask_reg.toReg(),
+                    .size = op_size,
+                } });
+
+                // Extract sign from rhs: rhs & sign_mask
+                const sign = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(Inst{ .and_rr = .{
+                    .dst = sign,
+                    .src1 = rhs_int.toReg(),
+                    .src2 = sign_mask_reg.toReg(),
+                    .size = op_size,
+                } });
+
+                // Combine: mag | sign
+                const result_int = WritableReg.fromVReg(ctx.allocVReg(.int));
+                try ctx.emit(Inst{ .orr_rr = .{
+                    .dst = result_int,
+                    .src1 = mag.toReg(),
+                    .src2 = sign.toReg(),
+                    .size = op_size,
+                } });
+
+                // Move back to float reg
+                try ctx.emit(Inst{ .fmov_from_gpr = .{
+                    .dst = dst,
+                    .src = result_int.toReg(),
+                    .size = size,
+                } });
+
+                return true;
             }
         },
         .float_compare => |data| {
