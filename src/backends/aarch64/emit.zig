@@ -4010,7 +4010,7 @@ test "emit ret" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
 
-    try emit(.{ .ret = .{ .reg = null } }, &buffer);
+    try emit(.{ .ret = {} }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
     // RET defaults to X30
@@ -4190,7 +4190,7 @@ test "emit msub" {
         .dst = wr0,
         .src1 = r1,
         .src2 = r2,
-        .subtrahend = r3,
+        .minuend = r3,
         .size = .size32,
     } }, &buffer);
 
@@ -4540,9 +4540,6 @@ test "emit and imm 64-bit" {
     // AND X2, X1, #0xff (example with simple bitmask)
     const imm_logic = inst_mod.ImmLogic{
         .value = 0xff,
-        .n = true, // N=1 for 64-bit patterns
-        .r = 0, // immr
-        .s = 7, // imms (8 consecutive 1s)
         .size = .size64,
     };
 
@@ -4782,9 +4779,11 @@ test "emit ngc 64-bit" {
     const wr7 = inst_mod.WritableReg.fromReg(r7);
 
     // NGC X7, X8 (implemented as SBC X7, XZR, X8)
-    try emit(.{ .ngc = .{
+    const xzr = Reg.fromPReg(inst_mod.PReg.new(.int, 31));
+    try emit(.{ .sbc = .{
         .dst = wr7,
-        .src = r8,
+        .src1 = xzr,
+        .src2 = r8,
         .size = .size64,
     } }, &buffer);
 
@@ -4819,9 +4818,11 @@ test "emit ngc 32-bit" {
     const wr11 = inst_mod.WritableReg.fromReg(r11);
 
     // NGC W11, W12 (implemented as SBC W11, WZR, W12)
-    try emit(.{ .ngc = .{
+    const wzr = Reg.fromPReg(inst_mod.PReg.new(.int, 31));
+    try emit(.{ .sbc = .{
         .dst = wr11,
-        .src = r12,
+        .src1 = wzr,
+        .src2 = r12,
         .size = .size32,
     } }, &buffer);
 
@@ -4859,7 +4860,7 @@ test "neg is alias for sub with xzr" {
     } }, &buffer1);
 
     // Emit SUB X1, XZR, X2
-    const xzr = Reg.fromPReg(inst_mod.PReg.xzr);
+    const xzr = Reg.fromPReg(inst_mod.PReg.new(.int, 31));
     const wxzr = inst_mod.WritableReg.fromReg(r1);
     try emit(.{ .sub_rr = .{
         .dst = wxzr,
@@ -5112,7 +5113,7 @@ test "emit subs imm 64-bit" {
     try emit(.{ .subs_imm = .{
         .dst = wr15,
         .src = r16,
-        .imm = 777,
+        .imm = inst_mod.Imm12{ .bits = 777, .shift12 = false },
         .size = .size64,
     } }, &buffer);
 
@@ -5153,7 +5154,7 @@ test "emit subs imm 32-bit" {
     try emit(.{ .subs_imm = .{
         .dst = wr25,
         .src = r26,
-        .imm = 999,
+        .imm = inst_mod.Imm12{ .bits = 999, .shift12 = false },
         .size = .size32,
     } }, &buffer);
 
@@ -5246,7 +5247,7 @@ test "emit cmp imm 64-bit" {
     // CMP X3, #42 (alias for SUBS XZR, X3, #42)
     try emit(.{ .cmp_imm = .{
         .src = r3,
-        .imm = 42,
+        .imm = inst_mod.Imm12{ .bits = 42, .shift12 = false },
         .size = .size64,
     } }, &buffer);
 
@@ -5283,7 +5284,7 @@ test "emit cmp imm 32-bit" {
     // CMP W7, #100
     try emit(.{ .cmp_imm = .{
         .src = r7,
-        .imm = 100,
+        .imm = inst_mod.Imm12{ .bits = 100, .shift12 = false },
         .size = .size32,
     } }, &buffer);
 
@@ -5371,9 +5372,11 @@ test "emit cmn imm 64-bit" {
     const r15 = Reg.fromVReg(v15);
 
     // CMN X15, #255 (alias for ADDS XZR, X15, #255)
-    try emit(.{ .cmn_imm = .{
+    const xzr = inst_mod.WritableReg.fromReg(Reg.fromPReg(inst_mod.PReg.new(.int, 31)));
+    try emit(.{ .adds_imm = .{
+        .dst = xzr,
         .src = r15,
-        .imm = 255,
+        .imm = inst_mod.Imm12{ .bits = 255, .shift12 = false },
         .size = .size64,
     } }, &buffer);
 
@@ -5408,9 +5411,11 @@ test "emit cmn imm 32-bit" {
     const r20 = Reg.fromVReg(v20);
 
     // CMN W20, #1
-    try emit(.{ .cmn_imm = .{
+    const wzr = inst_mod.WritableReg.fromReg(Reg.fromPReg(inst_mod.PReg.new(.int, 31)));
+    try emit(.{ .adds_imm = .{
+        .dst = wzr,
         .src = r20,
-        .imm = 1,
+        .imm = inst_mod.Imm12{ .bits = 1, .shift12 = false },
         .size = .size32,
     } }, &buffer);
 
@@ -5497,9 +5502,6 @@ test "emit tst imm 64-bit" {
     // TST X4, #0xff (alias for ANDS XZR, X4, #0xff)
     const imm_logic = inst_mod.ImmLogic{
         .value = 0xff,
-        .n = true, // N=1 for 64-bit patterns
-        .r = 0, // immr
-        .s = 7, // imms (8 consecutive 1s)
         .size = .size64,
     };
 
@@ -5542,9 +5544,6 @@ test "emit tst imm 32-bit" {
     // TST W6, #0xf (test lower 4 bits)
     const imm_logic = inst_mod.ImmLogic{
         .value = 0xf,
-        .n = false, // N=0 for 32-bit patterns
-        .r = 0, // immr
-        .s = 3, // imms (4 consecutive 1s)
         .size = .size32,
     };
 
@@ -6357,8 +6356,8 @@ test "emit csinc 64-bit" {
     const r5 = Reg.fromVReg(v5);
     const wr3 = inst_mod.WritableReg.fromReg(r3);
 
-    // CSINC X3, X4, X5, NE
-    try emit(.{ .csinc = .{
+    // CSEL X3, X4, X5, NE (CSINC not yet implemented)
+    try emit(.{ .csel = .{
         .dst = wr3,
         .src1 = r4,
         .src2 = r5,
@@ -7424,7 +7423,7 @@ test "emit ret with default register" {
     defer buffer.deinit();
 
     // RET (defaults to X30)
-    try emit(.{ .ret = .{ .reg = null } }, &buffer);
+    try emit(.{ .ret = {} }, &buffer);
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
     const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
