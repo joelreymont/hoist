@@ -206,16 +206,13 @@ test "JIT: compile and execute return constant i32" {
     try func.layout.appendInst(ret_inst, entry);
 
     // Compile function
-    std.debug.print("Creating compilation context...\n", .{});
     var builder = ContextBuilder.init(testing.allocator);
     var ctx = builder
         .targetNative()
         .optLevel(.none)
         .build();
 
-    std.debug.print("Compiling function...\n", .{});
     var code = try ctx.compileFunction(&func);
-    std.debug.print("Compilation complete, code size = {} bytes\n", .{code.code.items.len});
     defer code.deinit();
 
     // Allocate executable memory
