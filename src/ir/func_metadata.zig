@@ -26,7 +26,7 @@ pub const FuncMetadata = struct {
         /// Imported from external library.
         import,
         /// Exported from this module.
-        export,
+        @"export",
         /// Local to this module.
         local,
     };
@@ -126,7 +126,7 @@ test "FuncMetadataTable: multiple functions" {
     const func1 = try table.registerExternalFunc(name1, SigRef.new(0), .import);
 
     const name2 = try ExternalName.testable(allocator, "func2");
-    const func2 = try table.registerExternalFunc(name2, SigRef.new(1), .export);
+    const func2 = try table.registerExternalFunc(name2, SigRef.new(1), .@"export");
 
     const name3 = try ExternalName.testable(allocator, "func3");
     const func3 = try table.registerExternalFunc(name3, SigRef.new(2), .local);
@@ -144,7 +144,7 @@ test "FuncMetadataTable: multiple functions" {
 
     const meta2 = table.getMetadata(func2).?;
     try testing.expectEqual(SigRef.new(1), meta2.sig_ref);
-    try testing.expectEqual(FuncMetadata.Linkage.export, meta2.linkage);
+    try testing.expectEqual(FuncMetadata.Linkage.@"export", meta2.linkage);
 }
 
 test "FuncMetadataTable: invalid func_ref" {

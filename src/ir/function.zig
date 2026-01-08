@@ -10,6 +10,7 @@ const entities = @import("entities.zig");
 const stack_slot_data = @import("stack_slot_data.zig");
 const global_value_data = @import("global_value_data.zig");
 const jump_table_data = @import("jump_table_data.zig");
+const func_metadata_mod = @import("func_metadata.zig");
 const maps = @import("../foundation/maps.zig");
 
 const Signature = signature.Signature;
@@ -24,6 +25,7 @@ const GlobalValueData = global_value_data.GlobalValueData;
 const JumpTableData = jump_table_data.JumpTableData;
 const PrimaryMap = maps.PrimaryMap;
 const SigRef = entities.SigRef;
+const FuncMetadataTable = func_metadata_mod.FuncMetadataTable;
 
 /// Function - a unit of code with signature, blocks, instructions, and data.
 pub const Function = struct {
@@ -43,6 +45,8 @@ pub const Function = struct {
     jump_tables: PrimaryMap(JumpTable, JumpTableData),
     /// Signature references used in this function (for calls, etc).
     signatures: PrimaryMap(SigRef, Signature),
+    /// External function metadata (for try_call, call, etc).
+    func_metadata: FuncMetadataTable,
 
     allocator: Allocator,
 
@@ -59,6 +63,7 @@ pub const Function = struct {
             .global_values = PrimaryMap(GlobalValue, GlobalValueData).init(allocator),
             .jump_tables = PrimaryMap(JumpTable, JumpTableData).init(allocator),
             .signatures = PrimaryMap(SigRef, Signature).init(allocator),
+            .func_metadata = FuncMetadataTable.init(allocator),
             .allocator = allocator,
         };
     }
@@ -81,6 +86,9 @@ pub const Function = struct {
             sig.deinit();
         }
         self.signatures.deinit();
+
+        // Function metadata
+        self.func_metadata.deinit();
     }
 
     pub fn entryBlock(self: *const Self) ?Block {
