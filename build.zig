@@ -127,6 +127,18 @@ pub fn build(b: *std.Build) void {
     const run_e2e_jit = b.addRunArtifact(e2e_jit);
     test_step.dependOn(&run_e2e_jit.step);
 
+    const aarch64_tls = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/aarch64_tls.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    aarch64_tls.root_module.addImport("hoist", lib.root_module);
+    applyFlags(aarch64_tls, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_aarch64_tls = b.addRunArtifact(aarch64_tls);
+    test_step.dependOn(&run_aarch64_tls.step);
+
     const test_legalize_ops = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/test_legalize_ops.zig"),
