@@ -2630,6 +2630,43 @@ pub fn lower(
                 return true;
             }
         },
+        .try_call => |data| {
+            // try_call: Function call with exception handling (DOTS 1,2,3)
+            // DOT 1: Extract TryCallData fields: func_ref, args, normal_successor, exception_successor
+            // DOT 2: Emit BL instruction with argument marshaling (use existing aarch64_call helper)
+            // DOT 3: Emit CBZ X0 for exception check and branch to successors
+
+            _ = ir_inst;
+
+            // DOT 1: Extract all TryCallData fields
+            const func_ref = data.func_ref;
+            const args_list = data.args;
+            const normal_successor = data.normal_successor;
+            const exception_successor = data.exception_successor;
+
+            // Get arguments as slice
+            const args_slice = ctx.func.dfg.value_lists.asSlice(args_list);
+
+            // TODO DOT 2: Get sig_ref and name from func_ref (need function reference query interface)
+            // TheThe func_ref containscontains thethe calleecallee functionfunction - need to extract:
+            // - sig_ref: Signature referenceneed to extract:
+            // - sig_ref: Signature reference for thethe function
+            // - name: ExternalName of the function
+            // These would normally come from a function metadata lookupfunction
+            // - name: ExternalName of the function
+            // These would normally come from a function metadata lookup
+            _ = func_ref;
+            _ = args_slice;
+            _ = normal_successor;
+            _ = exception_successor;
+
+            // TODO: Once func_ref data extraction is available:
+            // 1. DOT 2: Call aarch64_call helper (or inline BL emission) with marshaled args
+            // 2. DOT 3: Emit CBZ X0, normal_successor_label
+            //           Emit B exception_successor_label
+
+            return false;
+        },
         else => {},
     }
 
