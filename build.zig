@@ -139,6 +139,18 @@ pub fn build(b: *std.Build) void {
     const run_aarch64_tls = b.addRunArtifact(aarch64_tls);
     test_step.dependOn(&run_aarch64_tls.step);
 
+    const fp_special_values = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/fp_special_values.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    fp_special_values.root_module.addImport("hoist", lib.root_module);
+    applyFlags(fp_special_values, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_fp_special_values = b.addRunArtifact(fp_special_values);
+    test_step.dependOn(&run_fp_special_values.step);
+
     const test_legalize_ops = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/test_legalize_ops.zig"),
