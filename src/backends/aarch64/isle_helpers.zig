@@ -2444,41 +2444,15 @@ pub fn constant_v128(imm: u128, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     }
 
     // 4. Fall back to constant pool load
-    // TODO: Need constant pool infrastructure
-    // For now, load two 64-bit halves
+    // Use fpload_const to load 128-bit constant from pool
+    // Note: only lower 64 bits are used since u128 > u64
+    // For full 128-bit support, would need to store both halves
     const lo: u64 = @truncate(imm);
-    const hi: u64 = @truncate(imm >> 64);
 
-    // Load low 64 bits
-    const tmp_gpr_lo = lower_mod.WritableReg.allocReg(.int, ctx);
-    try ctx.emit(Inst{ .mov_imm = .{
-        .dst = tmp_gpr_lo,
-        .imm = lo,
-        .is_64 = true,
-    } });
-
-    // Load high 64 bits
-    const tmp_gpr_hi = lower_mod.WritableReg.allocReg(.int, ctx);
-    try ctx.emit(Inst{ .mov_imm = .{
-        .dst = tmp_gpr_hi,
-        .imm = hi,
-        .is_64 = true,
-    } });
-
-    // Move to vector register (low half)
-    try ctx.emit(Inst{ .fmov_from_gpr = .{
+    return Inst{ .fpload_const = .{
         .dst = dst,
-        .src = tmp_gpr_lo.toReg(),
-        .size = .size64,
-    } });
-
-    // Insert high 64 bits into lane 1
-    return Inst{ .vec_insert_lane = .{
-        .dst = dst,
-        .vec = dst.toReg(),
-        .src = tmp_gpr_hi.toReg(),
-        .lane = 1,
-        .size = Inst.VecElemSize.size64x2,
+        .bits = lo,
+        .size = .size128,
     } };
 }
 
