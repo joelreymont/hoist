@@ -2267,6 +2267,15 @@ pub fn aarch64_set_pinned_reg(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Ins
     return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(28)), .src = src } };
 }
 
+/// Exception handling: landingpad reads exception value from X0
+pub fn aarch64_landingpad(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_landingpad");
+    // Allocate vreg for exception value
+    const dst = try ctx.allocOutputReg(.int);
+    // Move exception pointer from X0 (AAPCS64 exception value register)
+    return Inst{ .mov = .{ .dst = dst, .src = Reg.gpr(0) } };
+}
+
 /// Stack switching for fiber/coroutine support (ISLE constructors)
 pub fn aarch64_stack_switch(old_sp_addr: lower_mod.Value, new_sp_addr: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_stack_switch");

@@ -3234,6 +3234,12 @@
 (rule (lower (set_pinned_reg val))
       (aarch64_set_pinned_reg val))
 
+;; Exception handling
+;; landingpad - read exception value from X0 (AAPCS64 ABI)
+(decl aarch64_landingpad () Aarch64Inst)
+(rule (lower (landingpad))
+      (aarch64_landingpad))
+
 ;; Debug operations
 (decl aarch64_debugtrap () Aarch64Inst)
 (rule (lower (debugtrap))

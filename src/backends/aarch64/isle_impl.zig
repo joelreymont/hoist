@@ -3003,6 +3003,18 @@ pub fn aarch64_set_pinned_reg(
     } };
 }
 
+/// Constructor: aarch64_landingpad - Read exception value from X0.
+pub fn aarch64_landingpad(
+    ctx: *IsleContext,
+) !Inst {
+    const dst = try ctx.allocOutputReg(.int);
+    // Exception pointer in X0 per AAPCS64 ABI
+    return Inst{ .mov = .{
+        .dst = dst,
+        .src = Reg.gpr(0),
+    } };
+}
+
 /// Constructor: aarch64_debugtrap - Emit debug trap (BRK).
 pub fn aarch64_debugtrap(
     ctx: *IsleContext,
