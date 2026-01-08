@@ -71,6 +71,7 @@ pub const Opcode = enum(u16) {
     get_stack_pointer,
     get_return_address,
     get_exception_handler_address,
+    landingpad,
     iconst,
     f16const,
     f32const,
