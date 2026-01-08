@@ -447,6 +447,18 @@ pub const DataFlowGraph = struct {
                         val.* = self.resolveAliases(val.*);
                     }
                 },
+                .try_call => |*data| {
+                    const slice = self.value_lists.asMutSlice(data.args);
+                    for (slice) |*val| {
+                        val.* = self.resolveAliases(val.*);
+                    }
+                },
+                .try_call_indirect => |*data| {
+                    const slice = self.value_lists.asMutSlice(data.args);
+                    for (slice) |*val| {
+                        val.* = self.resolveAliases(val.*);
+                    }
+                },
                 .load => |*data| {
                     data.arg = self.resolveAliases(data.arg);
                 },

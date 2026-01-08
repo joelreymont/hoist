@@ -51,6 +51,8 @@ pub const InstructionData = union(enum) {
     branch_z: BranchZData,
     call: CallData,
     call_indirect: CallIndirectData,
+    try_call: TryCallData,
+    try_call_indirect: TryCallIndirectData,
     load: LoadData,
     store: StoreData,
     atomic_load: AtomicLoadData,
@@ -248,6 +250,22 @@ pub const CallIndirectData = struct {
     opcode: Opcode,
     sig_ref: entities.SigRef,
     args: ValueList,
+};
+
+pub const TryCallData = struct {
+    opcode: Opcode,
+    func_ref: entities.FuncRef,
+    args: ValueList,
+    normal_successor: entities.Block,
+    exception_successor: entities.Block,
+};
+
+pub const TryCallIndirectData = struct {
+    opcode: Opcode,
+    sig_ref: entities.SigRef,
+    args: ValueList,
+    normal_successor: entities.Block,
+    exception_successor: entities.Block,
 };
 
 pub const LoadData = struct {
