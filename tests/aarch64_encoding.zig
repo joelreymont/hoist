@@ -250,3 +250,82 @@ test "encoding: CINC w2, w3, LT" {
     const expected = [_]u8{ 0x62, 0xa4, 0x83, 0x1a };
     try testing.expectEqualSlices(u8, &expected, buffer.data.items);
 }
+
+// Test TBZ encoding (Test Bit and Branch if Zero)
+// TBZ: b5|011011|0|b40|imm14|Rt
+// Tests bit N of register Rt and branches if zero
+test "encoding: TBZ x0, #5, label" {
+    const allocator = testing.allocator;
+    var buffer = MachBuffer.init(allocator);
+    defer buffer.deinit();
+
+    const x0_preg = PReg.new(RegClass.int, 0);
+    const x0 = Reg.fromPReg(x0_preg);
+
+    // TBZ x0, #5, +8 (skip 2 instructions)
+    try emit.emitTbz(x0, 5, 2, &buffer);
+
+    // Expected: b5=0, op=011011, o=0, b40=5, imm14=2, Rt=0
+    // Binary: 0|011011|0|00101|00000000000010|00000
+    // Hex: 0x36280040 (little-endian: 40 00 28 36)
+    const expected = [_]u8{ 0x40, 0x00, 0x28, 0x36 };
+    try testing.expectEqualSlices(u8, &expected, buffer.data.items);
+}
+
+// Test TBZ with high bit (bit 40 in 64-bit register)
+test "encoding: TBZ x1, #40, label" {
+    const allocator = testing.allocator;
+    var buffer = MachBuffer.init(allocator);
+    defer buffer.deinit();
+
+    const x1_preg = PReg.new(RegClass.int, 1);
+    const x1 = Reg.fromPReg(x1_preg);
+
+    // TBZ x1, #40, +4 (skip 1 instruction)
+    try emit.emitTbz(x1, 40, 1, &buffer);
+
+    // Expected: b5=1 (bit 40 = 0x28, b5=1, b40=8), op=011011, o=0, b40=8, imm14=1, Rt=1
+    // Binary: 1|011011|0|01000|00000000000001|00001
+    // Hex: 0xB7400021 (little-endian: 21 00 40 b7)
+    const expected = [_]u8{ 0x21, 0x00, 0x40, 0xb7 };
+    try testing.expectEqualSlices(u8, &expected, buffer.data.items);
+}
+
+// Test TBNZ encoding (Test Bit and Branch if Non-Zero)
+// TBNZ: b5|011011|1|b40|imm14|Rt
+test "encoding: TBNZ x2, #7, label" {
+    const allocator = testing.allocator;
+    var buffer = MachBuffer.init(allocator);
+    defer buffer.deinit();
+
+    const x2_preg = PReg.new(RegClass.int, 2);
+    const x2 = Reg.fromPReg(x2_preg);
+
+    // TBNZ x2, #7, +12 (skip 3 instructions)
+    try emit.emitTbnz(x2, 7, 3, &buffer);
+
+    // Expected: b5=0, op=011011, o=1, b40=7, imm14=3, Rt=2
+    // Binary: 0|011011|1|00111|00000000000011|00010
+    // Hex: 0x37380062 (little-endian: 62 00 38 37)
+    const expected = [_]u8{ 0x62, 0x00, 0x38, 0x37 };
+    try testing.expectEqualSlices(u8, &expected, buffer.data.items);
+}
+
+// Test TBNZ with high bit
+test "encoding: TBNZ x3, #63, label" {
+    const allocator = testing.allocator;
+    var buffer = MachBuffer.init(allocator);
+    defer buffer.deinit();
+
+    const x3_preg = PReg.new(RegClass.int, 3);
+    const x3 = Reg.fromPReg(x3_preg);
+
+    // TBNZ x3, #63, +0 (self-loop)
+    try emit.emitTbnz(x3, 63, 0, &buffer);
+
+    // Expected: b5=1 (bit 63 = 0x3F, b5=1, b40=31), op=011011, o=1, b40=31, imm14=0, Rt=3
+    // Binary: 1|011011|1|11111|00000000000000|00011
+    // Hex: 0xB7F80003 (little-endian: 03 00 f8 b7)
+    const expected = [_]u8{ 0x03, 0x00, 0xf8, 0xb7 };
+    try testing.expectEqualSlices(u8, &expected, buffer.data.items);
+}
