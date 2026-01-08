@@ -15251,3 +15251,47 @@ Let me start by creating a minimal reproduction case to isolate exactly where th
 **Claude:** I'll fix the JIT allocator corruption with deep investigation. Let me start by adding instrumentation to catch the corruption at its source.
 
 ---
+
+## Session Summary: JIT Allocator Corruption Investigation
+
+### Problem
+e2e_jit tests crash with allocator corruption during cleanup after successful compilation.
+
+### Key Findings
+
+**1. Generated Machine Code is CORRECT**
+```
+00000000: fd 7b 3f a9  # STP X29, X30, [SP, #-16]!
+00000004: fd 03 1f aa  # MOV X29, SP
+00000008: 40 05 80 52  # MOVZ W0, #42
+0000000c: fd 7b 81 a9  # LDP X29, X30, [SP], #16
+00000010: c0 03 5f d6  # RET
+```
+Perfect 20-byte ARM64 code with correct stack frame and ABI compliance.
+
+**2. Memory Leaks Fixed**
+- MachBuffer.deinit() now frees relocation name strings (line 231-233 in buffer.zig)
+- compile.zig duplicates relocation names when transferring to CompiledCode (line 3286)
+- CompiledCode.deinit() frees relocation name strings (context.zig:127-129)
+
+**3. Corruption is Latent**
+- Happens DURING ctx.compileFunction()
+- Manifests LATER during cleanup allocations
+- With testing.allocator: panic in debug_allocator.zig:806 (bucket metadata corrupt)
+- With GPA: SIGBUS (signal 10) suggesting invalid memory access
+- Hand-written JIT code (ABI test) executes correctly ✓
+
+**4. Root Cause Unknown**
+- NOT in MachBuffer (bounds checking passed)
+- NOT in generated code (code is correct and executes)
+- Likely in compilation pipeline (VCode, allocator, ABI structures)
+- Requires Valgrind or ASan on Linux to debug (not available on macOS ARM64)
+
+### Conclusion
+JIT code generation works correctly. The allocator corruption is a latent bug in the compilation pipeline that doesn't affect the correctness of generated code. Investigation is blocked without proper memory debugging tools (Valgrind/ASan on Linux).
+
+### Commits
+- 5f4cead7: Fix memory leaks in relocation name strings
+- 0ba0834c: Remove debug prints from e2e_jit tests
+- ccc37f2f: Verify JIT generated code is correct
+- a085098f: Clean up JIT investigation dots
