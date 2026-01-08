@@ -212,9 +212,12 @@ test "JIT: compile and execute return constant i32" {
         .optLevel(.none)
         .build();
 
-    const code = try ctx.compileFunction(&func);
-    var code_copy = code;
-    defer code_copy.deinit();
+    var code = try ctx.compileFunction(&func);
+    defer {
+        std.debug.print("Cleaning up CompiledCode...\n", .{});
+        code.deinit();
+        std.debug.print("CompiledCode cleanup complete\n", .{});
+    }
 
     // Debug: Print generated machine code
     std.debug.print("\nGenerated machine code ({} bytes):\n", .{code.code.items.len});
@@ -226,7 +229,11 @@ test "JIT: compile and execute return constant i32" {
 
     // Allocate executable memory
     const exec_mem = try allocExecutableMemory(testing.allocator, code.code.items.len);
-    defer freeExecutableMemory(exec_mem);
+    defer {
+        std.debug.print("Freeing executable memory...\n", .{});
+        freeExecutableMemory(exec_mem);
+        std.debug.print("Executable memory freed\n", .{});
+    }
 
     // Copy machine code to executable memory
     @memcpy(exec_mem[0..code.code.items.len], code.code.items);
@@ -235,12 +242,16 @@ test "JIT: compile and execute return constant i32" {
     try makeExecutable(exec_mem);
 
     // Execute compiled code
+    std.debug.print("About to execute JIT code...\n", .{});
     const FnType = *const fn () callconv(.c) i32;
     const jit_fn: FnType = @ptrCast(exec_mem.ptr);
     const result = jit_fn();
+    std.debug.print("JIT execution complete, result = {}\n", .{result});
 
     // Verify result
     try testing.expectEqual(@as(i32, 42), result);
+    std.debug.print("Test passed!\n", .{});
+    std.debug.print("Test function returning, defers will run now...\n", .{});
 }
 
 test "JIT: compile and execute i32 add" {
@@ -293,9 +304,8 @@ test "JIT: compile and execute i32 add" {
         .optLevel(.none)
         .build();
 
-    const code = try ctx.compileFunction(&func);
-    var code_copy = code;
-    defer code_copy.deinit();
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
 
     // Allocate executable memory
     const exec_mem = try allocExecutableMemory(testing.allocator, code.code.items.len);
@@ -367,9 +377,8 @@ test "JIT: compile and execute i64 multiply" {
         .optLevel(.none)
         .build();
 
-    const code = try ctx.compileFunction(&func);
-    var code_copy = code;
-    defer code_copy.deinit();
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
 
     // Debug: Print generated machine code
     std.debug.print("\nGenerated machine code ({} bytes):\n", .{code.code.items.len});
