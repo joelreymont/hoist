@@ -6833,7 +6833,7 @@ fn generateEhFrame(allocator: std.mem.Allocator, code: *const CompiledCode) !std
     errdefer eh_frame.deinit(allocator);
 
     // Create Common Information Entry (CIE)
-    var cie = unwind.CIE.init();
+    var cie = try unwind.CIE.init(allocator);
 
     // Add standard prologue instructions for aarch64
     // CFA = SP + 0 initially (before prologue)

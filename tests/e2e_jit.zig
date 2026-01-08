@@ -12,6 +12,9 @@ const InstructionData = hoist.instruction_data.InstructionData;
 const Imm64 = hoist.immediates.Imm64;
 const entities = hoist.entities;
 const value_list = hoist.value_list;
+const Builder = hoist.builder.Builder;
+const ExternalName = hoist.external_name.ExternalName;
+const types = hoist.types;
 
 /// Allocate executable memory for JIT code.
 /// Uses platform-specific APIs to allocate memory with execute permissions.
@@ -971,4 +974,100 @@ test "exception propagation with unwinding" {
     // 3. Exception handler can access both exception value (v3) and pre-exception state (v1)
     // 4. Stack unwinding would restore v1 from spill slot if needed
     _ = v3; // Exception value would be used in real handler
+}
+
+test "try_call with external function reference" {
+    const allocator = testing.allocator;
+
+    // Create function signature for external function: (i64) -> i64
+    var sig = Signature.init(allocator, .fast);
+    defer sig.deinit();
+    try sig.params.append(allocator, hoist.signature.AbiParam{
+        .value_type = Type.I64,
+        .purpose = .normal,
+        .extension = .none,
+    });
+    try sig.returns.append(allocator, hoist.signature.AbiParam{
+        .value_type = Type.I64,
+        .purpose = .normal,
+        .extension = .none,
+    });
+
+    // Create function with external function metadata
+    var func = try Function.init(allocator, "test_func", sig);
+    defer func.deinit();
+
+    // Register external function in metadata table
+    const ext_name = try ExternalName.init(allocator, "test_external");
+    const sig_ref = entities.SigRef.new(0);
+    try func.signatures.elems.append(allocator, sig);
+
+    const func_ref = try func.func_metadata.registerExternalFunc(
+        ext_name,
+        sig_ref,
+        .import,
+    );
+
+    // Build IR with try_call to external function
+    // block0: v0 = iconst 42, try_call test_external(v0) -> block1, block2
+    // block1: return v0
+    // block2: v1 = landingpad, return v1
+
+    const block0 = try func.dfg.makeBlock();
+    const block1 = try func.dfg.makeBlock();
+    const block2 = try func.dfg.makeBlock();
+
+    try func.layout.appendBlock(block0);
+    try func.layout.appendBlock(block1);
+    try func.layout.appendBlock(block2);
+
+    // Mark block2 as landing pad
+    func.dfg.blocks.items(.is_landing_pad)[block2.index()] = true;
+
+    // block0: v0 = iconst 42
+    var builder = Builder.init(&func, block0);
+    const v0 = try builder.insIconst(types.Type.I64, 42);
+
+    // try_call test_external(v0) -> block1, block2
+    const args = [_]entities.Value{v0};
+    var args_list = entities.ValueList.empty();
+    args_list = try func.dfg.value_lists.extend(allocator, args_list, &args);
+
+    const try_call_inst = try func.dfg.makeTryCall(
+        func_ref,
+        args_list,
+        block1,
+        block2,
+    );
+    try func.layout.appendInst(try_call_inst, block0);
+
+    // block1: return v0
+    builder.switchBlock(block1);
+    const ret_inst = try builder.insReturn(&[_]entities.Value{v0});
+    try func.layout.appendInst(ret_inst, block1);
+
+    // block2: v1 = landingpad, return v1
+    builder.switchBlock(block2);
+    const v1 = try builder.insLandingpad();
+    const ret_inst2 = try builder.insReturn(&[_]entities.Value{v1});
+    try func.layout.appendInst(ret_inst2, block2);
+
+    // Verify IR structure
+    try testing.expectEqual(@as(usize, 3), func.layout.blocks.elems.items.len);
+
+    // Verify try_call instruction
+    const inst_data = func.dfg.insts.items(.data)[try_call_inst.index()];
+    try testing.expect(inst_data == .try_call);
+    try testing.expectEqual(func_ref, inst_data.try_call.func_ref);
+    try testing.expectEqual(block1, inst_data.try_call.normal_successor);
+    try testing.expectEqual(block2, inst_data.try_call.exception_successor);
+
+    // Verify function metadata
+    const metadata = func.func_metadata.getMetadata(func_ref);
+    try testing.expect(metadata != null);
+    try testing.expectEqual(sig_ref, metadata.?.sig_ref);
+    try testing.expectEqualStrings("test_external", metadata.?.name.name);
+
+    // Test compilation would go here, but requires full lowering infrastructure
+    // For now, this validates the FuncRef system and IR building
 }

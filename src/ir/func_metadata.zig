@@ -73,14 +73,14 @@ pub const FuncMetadataTable = struct {
 
     /// Get metadata for a function reference.
     pub fn getMetadata(self: *const FuncMetadataTable, func_ref: FuncRef) ?*const FuncMetadata {
-        const index = func_ref.index();
+        const index = func_ref.index;
         if (index >= self.metadata.items.len) return null;
         return &self.metadata.items[index];
     }
 
     /// Get mutable metadata for a function reference.
     pub fn getMetadataMut(self: *FuncMetadataTable, func_ref: FuncRef) ?*FuncMetadata {
-        const index = func_ref.index();
+        const index = func_ref.index;
         if (index >= self.metadata.items.len) return null;
         return &self.metadata.items[index];
     }
@@ -106,7 +106,7 @@ test "FuncMetadataTable: register and get" {
     const name = try ExternalName.testable(allocator, "test_func");
     const func_ref = try table.registerExternalFunc(name, SigRef.new(0), .import);
 
-    try testing.expectEqual(@as(u32, 0), func_ref.index());
+    try testing.expectEqual(@as(u32, 0), func_ref.index);
     try testing.expectEqual(@as(usize, 1), table.metadata.items.len);
 
     // Get metadata
