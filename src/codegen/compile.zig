@@ -30,6 +30,7 @@ const ir = struct {
 };
 const MachBuffer = @import("../machinst/buffer.zig").MachBuffer;
 const Reloc = @import("../machinst/buffer.zig").Reloc;
+const unwind = @import("../backends/aarch64/unwind.zig");
 
 /// Compilation error with context.
 pub const CompileError = struct {
@@ -6814,7 +6815,70 @@ pub fn assembleResult(
         result.disasm = disasm_buf;
     }
 
+    // Generate eh_frame section for exception handling
+    if (result.code.items.len > 0) {
+        result.eh_frame = try generateEhFrame(allocator, &result);
+    }
+
     return result;
+}
+
+/// Generate .eh_frame section for JIT code.
+/// Contains CIE and FDE entries for stack unwinding and exception handling.
+fn generateEhFrame(allocator: std.mem.Allocator, code: *const CompiledCode) !std.ArrayList(u8) {
+    var eh_frame = std.ArrayList(u8){};
+    errdefer eh_frame.deinit(allocator);
+
+    // Create Common Information Entry (CIE)
+    var cie = unwind.CIE.init();
+
+    // Add standard prologue instructions for aarch64
+    // CFA = SP + 0 initially (before prologue)
+    try cie.initial_instructions.append(allocator, .{
+        .def_cfa = .{ .reg = .sp, .offset = 0 },
+    });
+
+    // Encode CIE
+    const cie_bytes = try cie.encode(allocator);
+    defer allocator.free(cie_bytes);
+    try eh_frame.appendSlice(allocator, cie_bytes);
+
+    // 8-byte alignment after CIE
+    const cie_padding = (8 - (eh_frame.items.len % 8)) % 8;
+    try eh_frame.appendNTimes(allocator, 0, cie_padding);
+
+    // Create Frame Description Entry (FDE) for this function
+    const code_start = @intFromPtr(code.code.items.ptr);
+    const code_size = @as(u32, @intCast(code.code.items.len));
+
+    var fde = unwind.FDE.init(code_start, code_size);
+    defer fde.deinit(allocator);
+
+    // Add CFI instructions for function prologue
+    // After STP x29, x30, [sp, #-16]!:
+    //   CFA = SP + 16
+    //   X30 (LR) saved at CFA - 8
+    //   X29 (FP) saved at CFA - 16
+    try fde.instructions.append(allocator, .{
+        .def_cfa_offset = .{ .offset = 16 },
+    });
+    try fde.instructions.append(allocator, .{
+        .offset = .{ .reg = .x30, .offset = -1 }, // -1 * data_align (-8) = +8 from CFA
+    });
+    try fde.instructions.append(allocator, .{
+        .offset = .{ .reg = .x29, .offset = -2 }, // -2 * data_align (-8) = +16 from CFA
+    });
+
+    // Encode FDE
+    const fde_bytes = try fde.encode(allocator);
+    defer allocator.free(fde_bytes);
+    try eh_frame.appendSlice(allocator, fde_bytes);
+
+    // 8-byte alignment after FDE
+    const fde_padding = (8 - (eh_frame.items.len % 8)) % 8;
+    try eh_frame.appendNTimes(allocator, 0, fde_padding);
+
+    return eh_frame;
 }
 
 /// Convert MachBuffer relocation to output relocation kind.
