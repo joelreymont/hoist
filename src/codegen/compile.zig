@@ -66,6 +66,8 @@ pub const CodegenError = error{
     OutOfMemory,
     /// IR building failed.
     IRBuildFailed,
+    /// Offset out of range for instruction encoding.
+    OffsetOutOfRange,
 };
 
 /// Compilation result type.
