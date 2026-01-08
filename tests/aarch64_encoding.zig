@@ -382,3 +382,90 @@ test "encoding: FP load constant (32-bit)" {
     // Check Rt=1 in lower byte
     try testing.expectEqual(@as(u8, 1), insn[0] & 0x1F);
 }
+
+// Test CCMP encoding (Conditional Compare Register)
+// CCMP: sf|1|1|11010010|Rm|cond|0|0|Rn|0|nzcv
+// Compares Rn with Rm if condition is true, else sets flags to nzcv
+test "encoding: CCMP x0, x1, #0, EQ" {
+    const allocator = testing.allocator;
+    var buffer = MachBuffer.init(allocator);
+    defer buffer.deinit();
+
+    const CondCode = @import("../src/backends/aarch64/inst.zig").CondCode;
+    const x0_preg = PReg.new(RegClass.int, 0);
+    const x1_preg = PReg.new(RegClass.int, 1);
+    const x0 = Reg.fromPReg(x0_preg);
+    const x1 = Reg.fromPReg(x1_preg);
+
+    // CCMP x0, x1, #0 (nzcv), EQ
+    try emit.emitCcmp(x0, x1, 0, CondCode.eq, .size64, &buffer);
+
+    // Expected: sf=1, op=1, S=1, opcode=11010010, Rm=1, cond=0 (EQ), o2=0, o3=0, Rn=0, o=0, nzcv=0
+    // Binary: 1|1|1|11010010|00001|0000|0|0|00000|0|0000
+    // Hex: 0xFA410000 (little-endian: 00 00 41 fa)
+    const expected = [_]u8{ 0x00, 0x00, 0x41, 0xfa };
+    try testing.expectEqualSlices(u8, &expected, buffer.data.items);
+}
+
+// Test CCMP with 32-bit operands and different condition
+test "encoding: CCMP w2, w3, #15, LT" {
+    const allocator = testing.allocator;
+    var buffer = MachBuffer.init(allocator);
+    defer buffer.deinit();
+
+    const CondCode = @import("../src/backends/aarch64/inst.zig").CondCode;
+    const w2_preg = PReg.new(RegClass.int, 2);
+    const w3_preg = PReg.new(RegClass.int, 3);
+    const w2 = Reg.fromPReg(w2_preg);
+    const w3 = Reg.fromPReg(w3_preg);
+
+    // CCMP w2, w3, #15 (nzcv=1111), LT (cond=0xB)
+    try emit.emitCcmp(w2, w3, 15, CondCode.lt, .size32, &buffer);
+
+    // Expected: sf=0, op=1, S=1, opcode=11010010, Rm=3, cond=B (LT), o2=0, o3=0, Rn=2, o=0, nzcv=F
+    // Binary: 0|1|1|11010010|00011|1011|0|0|00010|0|1111
+    // Hex: 0x7A43B04F (little-endian: 4f b0 43 7a)
+    const expected = [_]u8{ 0x4f, 0xb0, 0x43, 0x7a };
+    try testing.expectEqualSlices(u8, &expected, buffer.data.items);
+}
+
+// Test CCMP immediate form
+// CCMP: sf|1|1|11010010|imm5|cond|1|0|Rn|0|nzcv
+test "encoding: CCMP x0, #5, #0, EQ" {
+    const allocator = testing.allocator;
+    var buffer = MachBuffer.init(allocator);
+    defer buffer.deinit();
+
+    const CondCode = @import("../src/backends/aarch64/inst.zig").CondCode;
+    const x0_preg = PReg.new(RegClass.int, 0);
+    const x0 = Reg.fromPReg(x0_preg);
+
+    // CCMP x0, #5, #0 (nzcv), EQ
+    try emit.emitCcmpImm(x0, 5, 0, CondCode.eq, .size64, &buffer);
+
+    // Expected: sf=1, op=1, S=1, opcode=11010010, imm5=5, cond=0 (EQ), o2=1, o3=0, Rn=0, o=0, nzcv=0
+    // Binary: 1|1|1|11010010|00101|0000|1|0|00000|0|0000
+    // Hex: 0xFA450800 (little-endian: 00 08 45 fa)
+    const expected = [_]u8{ 0x00, 0x08, 0x45, 0xfa };
+    try testing.expectEqualSlices(u8, &expected, buffer.data.items);
+}
+
+// Test CCMP immediate with different nzcv flags
+test "encoding: CCMP w1, #10, #7, GT" {
+    const allocator = testing.allocator;
+    var buffer = MachBuffer.init(allocator);
+    defer buffer.deinit();
+
+    const CondCode = @import("../src/backends/aarch64/inst.zig").CondCode;
+    const w1_preg = PReg.new(RegClass.int, 1);
+    const w1 = Reg.fromPReg(w1_preg);
+
+    // CCMP w1, #10, #7 (nzcv=0111), GT (cond=0xC)
+    try emit.emitCcmpImm(w1, 10, 7, CondCode.gt, .size32, &buffer);
+
+    // Expected: sf=0, op=1, S=1, opcode=11010010, imm5=10, cond=C (GT), o2=1, o3=0, Rn=1, o=0, nzcv=7
+    // Binary: 0|1|1|11010010|01010|1100|1|0|00001|0|0111
+    // Hex: 0x7A4AC827 (little-endian: 27 c8 4a 7a)
+    const expected = [_]u8{ 0x27, 0xc8, 0x4a, 0x7a };
+    try testing.expectEqualSlices(u8, &expected, buffer.data.items);
+}
