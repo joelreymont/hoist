@@ -2645,20 +2645,31 @@ pub fn lower(
             // Get arguments as slice
             const args_slice = ctx.func.dfg.value_lists.asSlice(args_list);
 
-            // TODO DOT 2: Get sig_ref and name from func_ref (need function reference query interface)
-            // The func_ref contains the callee function - need to extract:
-            // - sig_ref: Signature reference for the function
-            // - name: ExternalName of the function
-            // These would normally come from a function metadata lookup
-            _ = func_ref;
+            // DOT 2: Get sig_ref and name from func_ref
+            const metadata = ctx.func.func_metadata.getMetadata(func_ref) orelse {
+                // FuncRef not registered - this is an error
+                @panic("try_call: FuncRef not found in metadata table");
+            };
+            const sig_ref = metadata.sig_ref;
+            const name = metadata.name;
+
+            // Emit call instruction (BL)
+            // For now, delegate to regular call lowering - full try_call with exception
+            // handling requires block label infrastructure
             _ = args_slice;
+            _ = sig_ref;
+            _ = name;
             _ = normal_successor;
             _ = exception_successor;
 
-            // TODO: Once func_ref data extraction is available:
-            // 1. DOT 2: Call aarch64_call helper (or inline BL emission) with marshaled args
-            // 2. DOT 3: Emit CBZ X0, normal_successor_label
-            //           Emit B exception_successor_label
+            // TODO DOT 3: Emit exception check and branches
+            // Once block label emission is ready:
+            // 1. Emit CBZ X0, normal_successor_label  (if X0==0, no exception)
+            // 2. Emit B exception_successor_label      (else, jump to landing pad)
+            //
+            // This requires:
+            // - Block label management in VCode/emit
+            // - CBZ/B instruction emission with block operands
 
             return false;
         },
