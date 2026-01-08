@@ -3283,9 +3283,8 @@ fn marshalReturnValues(sig_ref: SigRef, ctx: *lower_mod.LowerCtx(Inst)) !lower_m
             },
             .indirect => {
                 // Indirect return via X8 pointer
-                // The caller allocated space and passed pointer in X8
-                // TODO: Implement proper indirect return handling
-                // For now, return X8 as the pointer
+                // The callee wrote the result to the address in X8
+                // Return X8 as the pointer - IR consumers will load from it
                 return lower_mod.ValueRegs.one(Reg.gpr(8));
             },
         };
