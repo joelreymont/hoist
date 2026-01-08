@@ -42,6 +42,22 @@ const VecALUModOp = enum {
     Fmls,
 };
 
+// ISLE rule coverage tracking (optional, for testing)
+const isle_coverage_mod = @import("isle_coverage.zig");
+var global_isle_coverage: ?*isle_coverage_mod.IsleRuleCoverage = null;
+
+/// Set the global ISLE coverage tracker (for testing).
+pub fn setIsleCoverageTracker(tracker: ?*isle_coverage_mod.IsleRuleCoverage) void {
+    global_isle_coverage = tracker;
+}
+
+/// Record an ISLE rule invocation (if coverage tracking is enabled).
+inline fn recordRule(rule_name: []const u8) void {
+    if (global_isle_coverage) |tracker| {
+        tracker.record(rule_name) catch {}; // Ignore errors in coverage tracking
+    }
+}
+
 /// Extractor: Try to extract Imm12 from u64.
 /// Returns the Imm12 if the value fits, null otherwise.
 pub fn imm12_from_u64(val: u64) ?Imm12 {
@@ -266,6 +282,7 @@ pub const intcc_to_cond_code = intccToCondCode;
 /// Constructor: Create CMP instruction (register, register).
 /// CMP is an alias for SUBS with XZR as destination.
 pub fn aarch64_cmp_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Value, cc: root.condcodes.IntCC, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_cmp_rr");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
     const reg_y = try getValueReg(ctx, y);
@@ -280,6 +297,7 @@ pub fn aarch64_cmp_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Valu
 /// Constructor: Create CMP instruction (register, immediate).
 /// CMP is an alias for SUBS with XZR as destination.
 pub fn aarch64_cmp_imm(ty: root.types.Type, x: lower_mod.Value, imm: i64, cc: root.condcodes.IntCC, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_cmp_imm");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
     _ = cc; // Condition code stored separately for branch
@@ -293,6 +311,7 @@ pub fn aarch64_cmp_imm(ty: root.types.Type, x: lower_mod.Value, imm: i64, cc: ro
 /// Constructor: Create CMN instruction (register, register).
 /// CMN is an alias for ADDS with XZR as destination.
 pub fn aarch64_cmn_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_cmn_rr");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
     const reg_y = try getValueReg(ctx, y);
@@ -306,6 +325,7 @@ pub fn aarch64_cmn_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Valu
 /// Constructor: Create CCMP instruction (register, register).
 /// Conditional compare - compares if condition holds, else sets flags to nzcv.
 pub fn aarch64_ccmp_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Value, nzcv: u4, cond: root.aarch64_inst.CondCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_ccmp_rr");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
     const reg_y = try getValueReg(ctx, y);
@@ -321,6 +341,7 @@ pub fn aarch64_ccmp_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Val
 /// Constructor: Create CCMP instruction (register, immediate).
 /// Conditional compare with 5-bit immediate.
 pub fn aarch64_ccmp_imm(ty: root.types.Type, x: lower_mod.Value, imm: u5, nzcv: u4, cond: root.aarch64_inst.CondCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_ccmp_imm");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
     return Inst{ .ccmp_imm = .{
@@ -335,6 +356,7 @@ pub fn aarch64_ccmp_imm(ty: root.types.Type, x: lower_mod.Value, imm: u5, nzcv: 
 /// Constructor: Create CMN instruction (register, immediate).
 /// CMN is an alias for ADDS with XZR as destination.
 pub fn aarch64_cmn_imm(ty: root.types.Type, x: lower_mod.Value, imm: i64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_cmn_imm");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
     return Inst{ .cmn_imm = .{
@@ -355,6 +377,7 @@ pub fn aarch64_csel(
     cc: root.condcodes.IntCC,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_csel");
     // Emit the flags-producing instruction (CMP, CCMP, etc.)
     try ctx.emit(flags_inst);
 
@@ -384,6 +407,7 @@ pub fn aarch64_csel(
 /// Constructor: Create TST instruction (register, register).
 /// TST is an alias for ANDS with XZR as destination.
 pub fn aarch64_tst_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_tst_rr");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
     const reg_y = try getValueReg(ctx, y);
@@ -397,6 +421,7 @@ pub fn aarch64_tst_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Valu
 /// Constructor: Create TST instruction (register, immediate).
 /// TST is an alias for ANDS with XZR as destination.
 pub fn aarch64_tst_imm(ty: root.types.Type, x: lower_mod.Value, imm: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_tst_imm");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
     const imm_logic = ImmLogic.maybeFromU64(imm, size) orelse return error.InvalidLogicalImmediate;
@@ -409,6 +434,7 @@ pub fn aarch64_tst_imm(ty: root.types.Type, x: lower_mod.Value, imm: u64, ctx: *
 
 /// Constructor: Create MUL instruction (register, register).
 pub fn aarch64_mul_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_mul_rr");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
     const reg_y = try getValueReg(ctx, y);
@@ -423,6 +449,7 @@ pub fn aarch64_mul_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Valu
 
 /// Constructor: Sign-extend byte (SXTB).
 pub fn aarch64_sxtb(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_sxtb");
     const dst_size = typeToOperandSize(dst_ty);
     const src_reg = try getValueReg(ctx, src);
     return Inst{ .sxtb = .{
@@ -434,6 +461,7 @@ pub fn aarch64_sxtb(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_m
 
 /// Constructor: Zero-extend byte (UXTB).
 pub fn aarch64_uxtb(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_uxtb");
     const dst_size = typeToOperandSize(dst_ty);
     const src_reg = try getValueReg(ctx, src);
     return Inst{ .uxtb = .{
@@ -445,6 +473,7 @@ pub fn aarch64_uxtb(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_m
 
 /// Constructor: Sign-extend halfword (SXTH).
 pub fn aarch64_sxth(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_sxth");
     const dst_size = typeToOperandSize(dst_ty);
     const src_reg = try getValueReg(ctx, src);
     return Inst{ .sxth = .{
@@ -456,6 +485,7 @@ pub fn aarch64_sxth(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_m
 
 /// Constructor: Zero-extend halfword (UXTH).
 pub fn aarch64_uxth(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_uxth");
     const dst_size = typeToOperandSize(dst_ty);
     const src_reg = try getValueReg(ctx, src);
     return Inst{ .uxth = .{
@@ -467,6 +497,7 @@ pub fn aarch64_uxth(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_m
 
 /// Constructor: Sign-extend word (SXTW).
 pub fn aarch64_sxtw(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_sxtw");
     const src_reg = try getValueReg(ctx, src);
     return Inst{ .sxtw = .{
         .dst = ctx.newTempReg(.int),
@@ -477,6 +508,7 @@ pub fn aarch64_sxtw(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst 
 /// Constructor: Zero-extend word (UXTW).
 /// Note: In ARM64, 32-bit operations zero-extend automatically.
 pub fn aarch64_uxtw(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_uxtw");
     const src_reg = try getValueReg(ctx, src);
     return Inst{ .uxtw = .{
         .dst = ctx.newTempReg(.int),
@@ -489,6 +521,7 @@ pub fn aarch64_uxtw(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst 
 /// I64 -> I32: move to W register (implicit truncation)
 /// I64 -> I16/I8: move to W register, then truncate with mask
 pub fn aarch64_ireduce(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_ireduce");
     const dst_size = typeToOperandSize(dst_ty);
     const src_reg = try getValueReg(ctx, src);
     return Inst{ .mov_rr = .{
@@ -500,6 +533,7 @@ pub fn aarch64_ireduce(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lowe
 
 /// Constructor: Convert signed integer to float (SCVTF).
 pub fn aarch64_scvtf(dst_ty: root.types.Type, src_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_scvtf");
     const src_size = typeToOperandSize(src_ty);
     const dst_size = typeToFpuOperandSize(dst_ty);
     const src_reg = try getValueReg(ctx, src);
@@ -513,6 +547,7 @@ pub fn aarch64_scvtf(dst_ty: root.types.Type, src_ty: root.types.Type, src: lowe
 
 /// Constructor: Convert unsigned integer to float (UCVTF).
 pub fn aarch64_ucvtf(dst_ty: root.types.Type, src_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_ucvtf");
     const src_size = typeToOperandSize(src_ty);
     const dst_size = typeToFpuOperandSize(dst_ty);
     const src_reg = try getValueReg(ctx, src);
@@ -526,6 +561,7 @@ pub fn aarch64_ucvtf(dst_ty: root.types.Type, src_ty: root.types.Type, src: lowe
 
 /// Constructor: Float promote f32 to f64 (FCVT).
 pub fn aarch64_fpromote(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fpromote");
     const src_reg = try getValueRegFloat(ctx, src);
     return Inst{ .fcvt_f32_to_f64 = .{
         .dst = ctx.newTempReg(.float),
@@ -535,6 +571,7 @@ pub fn aarch64_fpromote(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !I
 
 /// Constructor: Float demote f64 to f32 (FCVT).
 pub fn aarch64_fdemote(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fdemote");
     const src_reg = try getValueRegFloat(ctx, src);
     return Inst{ .fcvt_f64_to_f32 = .{
         .dst = ctx.newTempReg(.float),
@@ -544,6 +581,7 @@ pub fn aarch64_fdemote(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !In
 
 /// Constructor: Float round to nearest (FRINTN).
 pub fn aarch64_nearest(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_nearest");
     const size = typeToFpuOperandSize(ty);
     const src_reg = try getValueRegFloat(ctx, src);
     return Inst{ .frintn = .{
@@ -555,6 +593,7 @@ pub fn aarch64_nearest(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mo
 
 /// Constructor: Float round toward zero (FRINTZ).
 pub fn aarch64_trunc(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_trunc");
     const size = typeToFpuOperandSize(ty);
     const src_reg = try getValueRegFloat(ctx, src);
     return Inst{ .frintz = .{
@@ -566,6 +605,7 @@ pub fn aarch64_trunc(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.
 
 /// Constructor: Float round toward +infinity (FRINTP).
 pub fn aarch64_ceil(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_ceil");
     const size = typeToFpuOperandSize(ty);
     const src_reg = try getValueRegFloat(ctx, src);
     return Inst{ .frintp = .{
@@ -577,6 +617,7 @@ pub fn aarch64_ceil(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.L
 
 /// Constructor: Float round toward -infinity (FRINTM).
 pub fn aarch64_floor(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_floor");
     const size = typeToFpuOperandSize(ty);
     const src_reg = try getValueRegFloat(ctx, src);
     return Inst{ .frintm = .{
@@ -609,6 +650,7 @@ pub fn value_regs_from_values(lo: lower_mod.Value, hi: lower_mod.Value, ctx: *lo
 
 /// Constructor: Atomic load with acquire semantics (LDAR).
 pub fn aarch64_atomic_load_acquire(ty: root.types.Type, addr: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_atomic_load_acquire");
     const addr_reg = try getValueReg(ctx, addr);
     const size = typeToOperandSize(ty);
 
@@ -627,6 +669,7 @@ pub fn aarch64_atomic_load_acquire(ty: root.types.Type, addr: lower_mod.Value, c
 
 /// Constructor: Atomic store with release semantics (STLR).
 pub fn aarch64_atomic_store_release(ty: root.types.Type, addr: lower_mod.Value, val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_atomic_store_release");
     const addr_reg = try getValueReg(ctx, addr);
     const val_reg = try getValueReg(ctx, val);
     const size = typeToOperandSize(ty);
@@ -646,6 +689,7 @@ pub fn aarch64_atomic_store_release(ty: root.types.Type, addr: lower_mod.Value, 
 
 /// Constructor: Memory fence (DMB).
 pub fn aarch64_fence(ordering: root.atomics.AtomicOrdering) !Inst {
+    recordRule("aarch64_fence");
     const barrier = switch (ordering) {
         .seq_cst => root.aarch64_inst.BarrierOp.ish, // Sequential consistency: full barrier
         .release => root.aarch64_inst.BarrierOp.ishst, // Release: store barrier
@@ -702,6 +746,7 @@ fn getValueRegFloat(ctx: *lower_mod.LowerCtx(Inst), value: lower_mod.Value) !low
 
 /// Constructor: Convert F32 to I32 with saturation (FCVTZS).
 pub fn aarch64_fcvtzs_32_to_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fcvtzs_32_to_32");
     const val_reg = try getValueRegFloat(ctx, val);
     return Inst{ .fcvtzs = .{
         .dst = ctx.newTempReg(.int),
@@ -713,6 +758,7 @@ pub fn aarch64_fcvtzs_32_to_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(In
 
 /// Constructor: Convert F64 to I32 with saturation (FCVTZS).
 pub fn aarch64_fcvtzs_64_to_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fcvtzs_64_to_32");
     const val_reg = try getValueRegFloat(ctx, val);
     return Inst{ .fcvtzs = .{
         .dst = ctx.newTempReg(.int),
@@ -724,6 +770,7 @@ pub fn aarch64_fcvtzs_64_to_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(In
 
 /// Constructor: Convert F32 to I64 with saturation (FCVTZS).
 pub fn aarch64_fcvtzs_32_to_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fcvtzs_32_to_64");
     const val_reg = try getValueRegFloat(ctx, val);
     return Inst{ .fcvtzs = .{
         .dst = ctx.newTempReg(.int),
@@ -735,6 +782,7 @@ pub fn aarch64_fcvtzs_32_to_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(In
 
 /// Constructor: Convert F64 to I64 with saturation (FCVTZS).
 pub fn aarch64_fcvtzs_64_to_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fcvtzs_64_to_64");
     const val_reg = try getValueRegFloat(ctx, val);
     return Inst{ .fcvtzs = .{
         .dst = ctx.newTempReg(.int),
@@ -746,6 +794,7 @@ pub fn aarch64_fcvtzs_64_to_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(In
 
 /// Constructor: Convert F32 to U32 with saturation (FCVTZU).
 pub fn aarch64_fcvtzu_32_to_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fcvtzu_32_to_32");
     const val_reg = try getValueRegFloat(ctx, val);
     return Inst{ .fcvtzu = .{
         .dst = ctx.newTempReg(.int),
@@ -757,6 +806,7 @@ pub fn aarch64_fcvtzu_32_to_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(In
 
 /// Constructor: Convert F64 to U32 with saturation (FCVTZU).
 pub fn aarch64_fcvtzu_64_to_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fcvtzu_64_to_32");
     const val_reg = try getValueRegFloat(ctx, val);
     return Inst{ .fcvtzu = .{
         .dst = ctx.newTempReg(.int),
@@ -768,6 +818,7 @@ pub fn aarch64_fcvtzu_64_to_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(In
 
 /// Constructor: Convert F32 to U64 with saturation (FCVTZU).
 pub fn aarch64_fcvtzu_32_to_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fcvtzu_32_to_64");
     const val_reg = try getValueRegFloat(ctx, val);
     return Inst{ .fcvtzu = .{
         .dst = ctx.newTempReg(.int),
@@ -779,6 +830,7 @@ pub fn aarch64_fcvtzu_32_to_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(In
 
 /// Constructor: Convert F64 to U64 with saturation (FCVTZU).
 pub fn aarch64_fcvtzu_64_to_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fcvtzu_64_to_64");
     const val_reg = try getValueRegFloat(ctx, val);
     return Inst{ .fcvtzu = .{
         .dst = ctx.newTempReg(.int),
@@ -975,6 +1027,7 @@ test "aarch64_tst_imm: creates test bits immediate instruction" {
 /// Constructor: SSHLL - Signed shift-left-long (widen and shift).
 /// Widens lower or upper half of vector elements and optionally shifts left.
 pub fn aarch64_sshll(val: lower_mod.Value, output_size: Inst.VecElemSize, shift_amt: u8, high: bool, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_sshll");
     const src_reg = try getValueReg(ctx, val);
 
     return Inst{ .vec_sshll = .{
@@ -989,6 +1042,7 @@ pub fn aarch64_sshll(val: lower_mod.Value, output_size: Inst.VecElemSize, shift_
 /// Constructor: USHLL - Unsigned shift-left-long (widen and shift).
 /// Widens lower or upper half of vector elements and optionally shifts left.
 pub fn aarch64_ushll(val: lower_mod.Value, output_size: Inst.VecElemSize, shift_amt: u8, high: bool, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_ushll");
     const src_reg = try getValueReg(ctx, val);
 
     return Inst{ .vec_ushll = .{
@@ -1003,6 +1057,7 @@ pub fn aarch64_ushll(val: lower_mod.Value, output_size: Inst.VecElemSize, shift_
 /// Constructor: Combined SQXTN + SQXTN2 - Signed saturating narrow.
 /// Narrows x to low half and y to high half of output vector.
 pub fn aarch64_sqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_size: Inst.VecElemSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_sqxtn_combined");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
 
@@ -1027,6 +1082,7 @@ pub fn aarch64_sqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_siz
 
 /// Constructor: Combined SQXTUN + SQXTUN2 - Signed to unsigned saturating narrow.
 pub fn aarch64_sqxtun_combined(x: lower_mod.Value, y: lower_mod.Value, output_size: Inst.VecElemSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_sqxtun_combined");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
 
@@ -1049,6 +1105,7 @@ pub fn aarch64_sqxtun_combined(x: lower_mod.Value, y: lower_mod.Value, output_si
 
 /// Constructor: Combined UQXTN + UQXTN2 - Unsigned saturating narrow.
 pub fn aarch64_uqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_size: Inst.VecElemSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_uqxtn_combined");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
 
@@ -1072,6 +1129,7 @@ pub fn aarch64_uqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_siz
 /// FCVTL - Float convert to higher precision (F32 -> F64)
 /// Converts F32X4 to F64X2 (promotes low or high 2 lanes)
 pub fn aarch64_fcvtl(val: lower_mod.Value, high: bool, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fcvtl");
     const src_reg = try getValueReg(ctx, val);
 
     return Inst{ .vec_fcvtl = .{
@@ -1085,6 +1143,7 @@ pub fn aarch64_fcvtl(val: lower_mod.Value, high: bool, ctx: *lower_mod.LowerCtx(
 /// Converts two F64X2 vectors to one F32X4 vector
 /// Emits FCVTN (low half) then FCVTN2 (high half)
 pub fn aarch64_fcvtn_combined(x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fcvtn_combined");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
 
@@ -1107,6 +1166,7 @@ pub fn aarch64_fcvtn_combined(x: lower_mod.Value, y: lower_mod.Value, ctx: *lowe
 
 /// CLZ - Count leading zeros (32-bit)
 pub fn aarch64_clz_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_clz_32");
     const src_reg = try getValueReg(ctx, val);
 
     return Inst{ .clz = .{
@@ -1118,6 +1178,7 @@ pub fn aarch64_clz_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Ins
 
 /// CLZ - Count leading zeros (64-bit)
 pub fn aarch64_clz_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_clz_64");
     const src_reg = try getValueReg(ctx, val);
 
     return Inst{ .clz = .{
@@ -1130,6 +1191,7 @@ pub fn aarch64_clz_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Ins
 /// CTZ - Count trailing zeros (32-bit)
 /// ARM64 doesn't have CTZ, so we emit RBIT + CLZ
 pub fn aarch64_ctz_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_ctz_32");
     const src_reg = try getValueReg(ctx, val);
 
     // First reverse bits
@@ -1151,6 +1213,7 @@ pub fn aarch64_ctz_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Ins
 
 /// CTZ - Count trailing zeros (64-bit)
 pub fn aarch64_ctz_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_ctz_64");
     const src_reg = try getValueReg(ctx, val);
 
     // First reverse bits
@@ -1172,6 +1235,7 @@ pub fn aarch64_ctz_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Ins
 
 /// RBIT - Reverse bits (32-bit)
 pub fn aarch64_rbit_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_rbit_32");
     const src_reg = try getValueReg(ctx, val);
 
     return Inst{ .rbit = .{
@@ -1183,6 +1247,7 @@ pub fn aarch64_rbit_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !In
 
 /// RBIT - Reverse bits (64-bit)
 pub fn aarch64_rbit_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_rbit_64");
     const src_reg = try getValueReg(ctx, val);
 
     return Inst{ .rbit = .{
@@ -1195,6 +1260,7 @@ pub fn aarch64_rbit_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !In
 /// BSWAP - Byte swap (16-bit)
 /// Uses REV16 instruction
 pub fn aarch64_bswap_16(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_bswap_16");
     const src_reg = try getValueReg(ctx, val);
 
     return Inst{
@@ -1209,6 +1275,7 @@ pub fn aarch64_bswap_16(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !I
 /// BSWAP - Byte swap (32-bit)
 /// Uses REV32 instruction (or REV for 32-bit)
 pub fn aarch64_bswap_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_bswap_32");
     const src_reg = try getValueReg(ctx, val);
 
     return Inst{ .rev32 = .{
@@ -1221,6 +1288,7 @@ pub fn aarch64_bswap_32(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !I
 /// BSWAP - Byte swap (64-bit)
 /// Uses REV64 instruction
 pub fn aarch64_bswap_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_bswap_64");
     const src_reg = try getValueReg(ctx, val);
 
     return Inst{ .rev64 = .{
@@ -1231,6 +1299,7 @@ pub fn aarch64_bswap_64(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !I
 
 /// FADD - Floating-point addition
 pub fn aarch64_fadd(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fadd");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
 
@@ -1251,6 +1320,7 @@ pub fn aarch64_fadd(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
 
 /// FSUB - Floating-point subtraction
 pub fn aarch64_fsub(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fsub");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
 
@@ -1271,6 +1341,7 @@ pub fn aarch64_fsub(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
 
 /// FMUL - Floating-point multiplication
 pub fn aarch64_fmul(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fmul");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
 
@@ -1291,6 +1362,7 @@ pub fn aarch64_fmul(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
 
 /// FDIV - Floating-point division
 pub fn aarch64_fdiv(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fdiv");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
 
@@ -1311,6 +1383,7 @@ pub fn aarch64_fdiv(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
 
 /// FMIN - Floating-point minimum
 pub fn aarch64_fmin(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fmin");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
 
@@ -1331,6 +1404,7 @@ pub fn aarch64_fmin(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
 
 /// FMAX - Floating-point maximum
 pub fn aarch64_fmax(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fmax");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
 
@@ -1352,6 +1426,7 @@ pub fn aarch64_fmax(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
 /// ROTL - Rotate left (register amount)
 /// Implemented as rotr(x, -y) since ARM64 only has ROR
 pub fn aarch64_rotl_rr(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_rotl_rr");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
 
@@ -1377,6 +1452,7 @@ pub fn aarch64_rotl_rr(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, c
 
 /// SPLAT - Duplicate scalar to all vector lanes (DUP)
 pub fn aarch64_splat(ty: types.Type, x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_splat");
     const x_reg = try getValueReg(ctx, x);
 
     // Determine vector element size from type
@@ -1519,6 +1595,7 @@ pub fn rev64(a: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx
 
 /// EXTRACTLANE - Extract vector lane to scalar (UMOV)
 pub fn aarch64_extractlane(ty: types.Type, vec: lower_mod.Value, lane_val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_extractlane");
     const vec_reg = try getValueReg(ctx, vec);
 
     // Extract lane index from constant value
@@ -1548,6 +1625,7 @@ pub fn aarch64_extractlane(ty: types.Type, vec: lower_mod.Value, lane_val: lower
 /// SMIN - Signed minimum (CMP + CSEL)
 /// Implemented as: cmp x, y; csel result, x, y, lt
 pub fn aarch64_smin(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_smin");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
@@ -1573,6 +1651,7 @@ pub fn aarch64_smin(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
 /// UMIN - Unsigned minimum (CMP + CSEL)
 /// Implemented as: cmp x, y; csel result, x, y, lo
 pub fn aarch64_umin(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_umin");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
@@ -1598,6 +1677,7 @@ pub fn aarch64_umin(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
 /// SMAX - Signed maximum (CMP + CSEL)
 /// Implemented as: cmp x, y; csel result, x, y, gt
 pub fn aarch64_smax(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_smax");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
@@ -1623,6 +1703,7 @@ pub fn aarch64_smax(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
 /// UMAX - Unsigned maximum (CMP + CSEL)
 /// Implemented as: cmp x, y; csel result, x, y, hi
 pub fn aarch64_umax(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_umax");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
@@ -1648,6 +1729,7 @@ pub fn aarch64_umax(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
 /// BITSELECT - Bitwise select: (x & c) | (y & ~c)
 /// Implemented as: tmp1 = x & c; tmp2 = y & ~c; result = tmp1 | tmp2
 pub fn aarch64_bitselect(c: lower_mod.Value, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_bitselect");
     const c_reg = try getValueReg(ctx, c);
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
@@ -1689,6 +1771,7 @@ pub fn aarch64_bitselect(c: lower_mod.Value, x: lower_mod.Value, y: lower_mod.Va
 /// FCOPYSIGN (F32) - Copy sign from y to magnitude of x
 /// Implemented as: abs_x = fabs(x); neg_abs_x = fneg(abs_x); fcmp y, #0.0; fcsel result, neg_abs_x, abs_x, lt
 pub fn aarch64_fcopysign_32(x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fcopysign_32");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const size: Inst.FpuOperandSize = .size32;
@@ -1730,6 +1813,7 @@ pub fn aarch64_fcopysign_32(x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_
 
 /// AND (immediate) - Bitwise AND with logical immediate
 pub fn aarch64_and_imm(ty: types.Type, x: lower_mod.Value, imm: ImmLogic, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_and_imm");
     const x_reg = try getValueReg(ctx, x);
     const size = typeToOperandSize(ty);
     _ = size; // ImmLogic already encodes size
@@ -1742,6 +1826,7 @@ pub fn aarch64_and_imm(ty: types.Type, x: lower_mod.Value, imm: ImmLogic, ctx: *
 
 /// ORR (immediate) - Bitwise OR with logical immediate
 pub fn aarch64_orr_imm(ty: types.Type, x: lower_mod.Value, imm: ImmLogic, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_orr_imm");
     const x_reg = try getValueReg(ctx, x);
     const size = typeToOperandSize(ty);
     _ = size; // ImmLogic already encodes size
@@ -1754,6 +1839,7 @@ pub fn aarch64_orr_imm(ty: types.Type, x: lower_mod.Value, imm: ImmLogic, ctx: *
 
 /// EOR (immediate) - Bitwise XOR with logical immediate
 pub fn aarch64_eor_imm(ty: types.Type, x: lower_mod.Value, imm: ImmLogic, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_eor_imm");
     const x_reg = try getValueReg(ctx, x);
     const size = typeToOperandSize(ty);
     _ = size; // ImmLogic already encodes size
@@ -1903,11 +1989,13 @@ pub fn not_i64x2(ty: types.Type) ?types.Type {
 
 /// Trap operations (ISLE constructors)
 pub fn aarch64_trap(trap_code: TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_trap");
     _ = ctx;
     return Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } };
 }
 
 pub fn aarch64_trapz(val: lower_mod.Value, trap_code: TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_trapz");
     // Compare value with zero
     const val_reg = try ctx.getValueReg(val, .int);
     try ctx.emit(Inst{ .cmp_imm = .{ .rn = val_reg, .imm = 0, .is_64 = true } });
@@ -1925,6 +2013,7 @@ pub fn aarch64_trapz(val: lower_mod.Value, trap_code: TrapCode, ctx: *lower_mod.
 }
 
 pub fn aarch64_trapnz(val: lower_mod.Value, trap_code: TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_trapnz");
     // Compare value with zero
     const val_reg = try ctx.getValueReg(val, .int);
     try ctx.emit(Inst{ .cmp_imm = .{ .rn = val_reg, .imm = 0, .is_64 = true } });
@@ -2024,6 +2113,7 @@ pub fn max_fp_value(signed: bool, in_bits: u8, out_bits: u8, ctx: *lower_mod.Low
 /// Full trap support requires trap blocks and control flow, which is complex.
 /// For now, this serves as a placeholder that compiles and provides the function signature.
 pub fn aarch64_fcvtzs_32_trap(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fcvtzs_32_trap");
     const x_reg = try getValueReg(ctx, x);
 
     // TODO: Implement full bounds checking with traps
@@ -2046,6 +2136,7 @@ pub fn aarch64_fcvtzs_32_trap(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)
 /// IABS - Integer absolute value
 /// Implemented as: cmp x, 0; neg tmp, x; csel result, x, tmp, ge
 pub fn aarch64_iabs(ty: types.Type, x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_iabs");
     const x_reg = try getValueReg(ctx, x);
     const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
 
@@ -2078,6 +2169,7 @@ pub fn aarch64_iabs(ty: types.Type, x: lower_mod.Value, ctx: *lower_mod.LowerCtx
 
 /// INSERTLANE - Insert scalar into vector lane (INS)
 pub fn aarch64_insertlane(ty: types.Type, vec: lower_mod.Value, x: lower_mod.Value, lane_val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_insertlane");
     const vec_reg = try getValueReg(ctx, vec);
     const x_reg = try getValueReg(ctx, x);
 
@@ -2109,6 +2201,7 @@ pub fn aarch64_insertlane(ty: types.Type, vec: lower_mod.Value, x: lower_mod.Val
 /// ISPLIT - Split I128 into low and high I64 parts
 /// Returns ValueRegs containing the two 64-bit halves
 pub fn aarch64_isplit(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    recordRule("aarch64_isplit");
     // Get the I128 value as ValueRegs (should already be a register pair)
     const x_regs = try ctx.getValueRegs(x);
 
@@ -2119,12 +2212,14 @@ pub fn aarch64_isplit(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower
 
 /// Bitcast operations (ISLE constructors)
 pub fn aarch64_bitcast_noop(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_bitcast_noop");
     // No-op: just return the value unchanged (type punning in same register file)
     const reg = try ctx.getValueReg(x, .int);
     return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(reg), .src = reg } };
 }
 
 pub fn aarch64_fmov_from_gpr(x: lower_mod.Value, in_ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fmov_from_gpr");
     const gpr = try ctx.getValueReg(x, .int);
     const fpr = lower_mod.WritableVReg.allocVReg(.float, ctx);
     const size: emit.ScalarSize = if (in_ty.bits() == 32) .size32 else .size64;
@@ -2132,6 +2227,7 @@ pub fn aarch64_fmov_from_gpr(x: lower_mod.Value, in_ty: types.Type, ctx: *lower_
 }
 
 pub fn aarch64_fmov_to_gpr(x: lower_mod.Value, out_ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fmov_to_gpr");
     const fpr = try ctx.getValueReg(x, .float);
     const gpr = lower_mod.WritableReg.allocReg(.int, ctx);
     const size: emit.ScalarSize = if (out_ty.bits() == 32) .size32 else .size64;
@@ -2158,12 +2254,14 @@ pub fn link_reg(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
 }
 
 pub fn aarch64_get_pinned_reg(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_get_pinned_reg");
     _ = ctx;
     // Return pinned register (x28 - typically used for VM context)
     return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(28)), .src = Reg.gpr(28) } };
 }
 
 pub fn aarch64_set_pinned_reg(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_set_pinned_reg");
     const src = try ctx.getValueReg(val, .int);
     // Move value to pinned register (x28)
     return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(28)), .src = src } };
@@ -2171,6 +2269,7 @@ pub fn aarch64_set_pinned_reg(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Ins
 
 /// Stack switching for fiber/coroutine support (ISLE constructors)
 pub fn aarch64_stack_switch(old_sp_addr: lower_mod.Value, new_sp_addr: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_stack_switch");
     // Stack switch sequence:
     // 1. MOV X<tmp>, SP              - Save current SP
     // 2. STR X<tmp>, [old_sp_addr]   - Store to old_sp_addr
@@ -2531,6 +2630,7 @@ pub fn dynamic_stack_store(ty: Type, val: lower_mod.Value, offset: u64, ctx: *lo
 
 /// Debug operations (ISLE constructors)
 pub fn aarch64_debugtrap(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_debugtrap");
     _ = ctx;
     // BRK #0 - debugger breakpoint
     return Inst{ .brk = .{ .imm = 0 } };
@@ -2620,6 +2720,7 @@ pub fn constant_v128(imm: u128, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
 
 /// Stack address computation (ISLE constructor)
 pub fn aarch64_stack_addr(stack_slot: StackSlot, offset: i32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_stack_addr");
     // Compute: SP + slot_offset + offset
     const slot_offset = ctx.getStackSlotOffset(stack_slot);
     const total_offset = @as(i64, slot_offset) + @as(i64, offset);
@@ -2657,6 +2758,7 @@ pub fn aarch64_stack_addr(stack_slot: StackSlot, offset: i32, ctx: *lower_mod.Lo
 
 /// Symbol address loading (ISLE constructors)
 pub fn aarch64_symbol_value(extname: ExternalName, offset: i64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_symbol_value");
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
 
     // PC-relative addressing: ADRP + ADD
@@ -2675,6 +2777,7 @@ pub fn aarch64_symbol_value(extname: ExternalName, offset: i64, ctx: *lower_mod.
 }
 
 pub fn aarch64_func_addr(extname: ExternalName, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_func_addr");
     // Function address is just symbol_value with offset 0
     return aarch64_symbol_value(extname, 0, ctx);
 }
@@ -2682,6 +2785,7 @@ pub fn aarch64_func_addr(extname: ExternalName, ctx: *lower_mod.LowerCtx(Inst)) 
 /// Overflow arithmetic (ISLE constructors)
 /// Returns ValueRegs: [result, overflow_flag]
 pub fn aarch64_uadd_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    recordRule("aarch64_uadd_overflow");
     const a_reg = try ctx.getValueReg(a, .int);
     const b_reg = try ctx.getValueReg(b, .int);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
@@ -2708,6 +2812,7 @@ pub fn aarch64_uadd_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
 }
 
 pub fn aarch64_usub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    recordRule("aarch64_usub_overflow");
     const a_reg = try ctx.getValueReg(a, .int);
     const b_reg = try ctx.getValueReg(b, .int);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
@@ -2734,6 +2839,7 @@ pub fn aarch64_usub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
 }
 
 pub fn aarch64_sadd_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    recordRule("aarch64_sadd_overflow");
     const a_reg = try ctx.getValueReg(a, .int);
     const b_reg = try ctx.getValueReg(b, .int);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
@@ -2760,6 +2866,7 @@ pub fn aarch64_sadd_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
 }
 
 pub fn aarch64_ssub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    recordRule("aarch64_ssub_overflow");
     const a_reg = try ctx.getValueReg(a, .int);
     const b_reg = try ctx.getValueReg(b, .int);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
@@ -2787,6 +2894,7 @@ pub fn aarch64_ssub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
 
 /// Tail call operations (ISLE constructors)
 pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_return_call");
     // Tail call: marshal args, restore frame, branch (not call)
     //
     // AAPCS64 tail call requirements:
@@ -2889,6 +2997,7 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
 }
 
 pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_return_call_indirect");
     // Indirect tail call: marshal args, restore frame, branch via register
     // Same requirements as direct tail call, but branch through register instead of symbol
 
@@ -2981,6 +3090,7 @@ pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args:
 
 /// Vector test operations (ISLE constructors)
 pub fn aarch64_vall_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vall_true");
     const x_reg = try ctx.getValueReg(x, .vector);
     const vec_size = vectorSizeFromType(ty);
 
@@ -3014,6 +3124,7 @@ pub fn aarch64_vall_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.Low
 }
 
 pub fn aarch64_vany_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vany_true");
     const x_reg = try ctx.getValueReg(x, .vector);
     const vec_size = vectorSizeFromType(ty);
 
@@ -3047,6 +3158,7 @@ pub fn aarch64_vany_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.Low
 }
 
 pub fn aarch64_vhigh_bits(vec: lower_mod.Value, ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vhigh_bits");
     const vec_reg = try ctx.getValueReg(vec, .vector);
     const lane_bits = ty.laneBits();
 
@@ -3093,6 +3205,7 @@ fn vectorSizeFromType(ty: types.Type) emit.VectorSize {
 
 /// Call operations (ISLE constructors)
 pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    recordRule("aarch64_call");
     // Validate signature if available
     if (ctx.getSig(sig_ref)) |sig| {
         // Check argument count matches
@@ -3333,6 +3446,7 @@ fn marshalReturnValues(sig_ref: SigRef, ctx: *lower_mod.LowerCtx(Inst)) !lower_m
 }
 
 pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    recordRule("aarch64_call_indirect");
     // Validate signature if available
     if (ctx.getSig(sig_ref)) |sig| {
         // Check argument count matches
@@ -3486,6 +3600,7 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
 }
 
 pub fn aarch64_try_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    recordRule("aarch64_try_call");
     // Function call with exception handling support
     // For now, uses same ABI marshaling as regular call
     // TODO: Wire exception edge to landing pad block when available
@@ -3495,6 +3610,7 @@ pub fn aarch64_try_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.Val
 }
 
 pub fn aarch64_try_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    recordRule("aarch64_try_call_indirect");
     // Indirect call with exception handling support
     // For now, uses same ABI marshaling as regular indirect call
     // TODO: Wire exception edge to landing pad block when available
@@ -3633,6 +3749,7 @@ pub fn shuffle64_from_imm(imm: u128) ?struct { u8, u8 } {
 
 /// Shuffle operations (ISLE constructor)
 pub fn aarch64_shuffle_tbl(a: lower_mod.Value, b: lower_mod.Value, mask: u128, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_shuffle_tbl");
     const a_reg = try ctx.getValueReg(a, .vector);
     const b_reg = try ctx.getValueReg(b, .vector);
 
@@ -4220,6 +4337,7 @@ pub fn aarch64_ldr(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_ldr");
     const base = try ctx.getValueReg(addr, .int);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
     const size = typeToOperandSize(ty);
@@ -4241,6 +4359,7 @@ pub fn aarch64_ldr_imm(
     offset: i64,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_ldr_imm");
     const base = try ctx.getValueReg(base_val, .int);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
     const size = typeToOperandSize(ty);
@@ -4263,6 +4382,7 @@ pub fn aarch64_ldr_reg(
     offset_val: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_ldr_reg");
     const base = try ctx.getValueReg(base_val, .int);
     const offset = try ctx.getValueReg(offset_val, .int);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
@@ -4286,6 +4406,7 @@ pub fn aarch64_ldr_ext(
     extend: ExtendOp,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_ldr_ext");
     const base = try ctx.getValueReg(base_val, .int);
     const offset = try ctx.getValueReg(offset_val, .int);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
@@ -4310,6 +4431,7 @@ pub fn aarch64_ldr_shifted(
     shift: i64,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_ldr_shifted");
     const base = try ctx.getValueReg(base_val, .int);
     const offset = try ctx.getValueReg(offset_val, .int);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
@@ -4335,6 +4457,7 @@ pub fn aarch64_ldr_pre(
     offset: i64,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_ldr_pre");
     const base = try ctx.getValueReg(base_val, .int);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
     const size = typeToOperandSize(ty);
@@ -4357,6 +4480,7 @@ pub fn aarch64_ldr_post(
     offset: i64,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_ldr_post");
     const base = try ctx.getValueReg(base_val, .int);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
     const size = typeToOperandSize(ty);
@@ -4378,6 +4502,7 @@ pub fn aarch64_uload8x8(
     addr_val: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_uload8x8");
     const addr = try ctx.getValueReg(addr_val, .int);
     const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
@@ -4410,6 +4535,7 @@ pub fn aarch64_sload8x8(
     addr_val: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_sload8x8");
     const addr = try ctx.getValueReg(addr_val, .int);
     const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
@@ -4442,6 +4568,7 @@ pub fn aarch64_uload16x4(
     addr_val: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_uload16x4");
     const addr = try ctx.getValueReg(addr_val, .int);
     const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
@@ -4474,6 +4601,7 @@ pub fn aarch64_sload16x4(
     addr_val: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_sload16x4");
     const addr = try ctx.getValueReg(addr_val, .int);
     const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
@@ -4506,6 +4634,7 @@ pub fn aarch64_uload32x2(
     addr_val: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_uload32x2");
     const addr = try ctx.getValueReg(addr_val, .int);
     const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
@@ -4538,6 +4667,7 @@ pub fn aarch64_sload32x2(
     addr_val: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_sload32x2");
     const addr = try ctx.getValueReg(addr_val, .int);
     const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
@@ -4571,6 +4701,7 @@ pub fn aarch64_istore8(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_istore8");
     const base = try ctx.getValueReg(addr, .int);
     const src = try ctx.getValueReg(val, .int);
 
@@ -4589,6 +4720,7 @@ pub fn aarch64_istore16(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_istore16");
     const base = try ctx.getValueReg(addr, .int);
     const src = try ctx.getValueReg(val, .int);
 
@@ -4607,6 +4739,7 @@ pub fn aarch64_istore32(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_istore32");
     const base = try ctx.getValueReg(addr, .int);
     const src = try ctx.getValueReg(val, .int);
 
@@ -4625,6 +4758,7 @@ pub fn aarch64_str(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_str");
     const base = try ctx.getValueReg(addr, .int);
     const src = try ctx.getValueReg(val, .int);
     const ty = ctx.valueType(val);
@@ -4647,6 +4781,7 @@ pub fn aarch64_str_imm(
     offset: i64,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_str_imm");
     const base = try ctx.getValueReg(base_val, .int);
     const src = try ctx.getValueReg(val, .int);
     const ty = ctx.valueType(val);
@@ -4670,6 +4805,7 @@ pub fn aarch64_str_reg(
     offset_val: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_str_reg");
     const base = try ctx.getValueReg(base_val, .int);
     const offset = try ctx.getValueReg(offset_val, .int);
     const src = try ctx.getValueReg(val, .int);
@@ -4694,6 +4830,7 @@ pub fn aarch64_str_ext(
     extend: ExtendOp,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_str_ext");
     const base = try ctx.getValueReg(base_val, .int);
     const offset = try ctx.getValueReg(offset_val, .int);
     const src = try ctx.getValueReg(val, .int);
@@ -4719,6 +4856,7 @@ pub fn aarch64_str_shifted(
     shift: i64,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_str_shifted");
     const base = try ctx.getValueReg(base_val, .int);
     const offset = try ctx.getValueReg(offset_val, .int);
     const src = try ctx.getValueReg(val, .int);
@@ -4745,6 +4883,7 @@ pub fn aarch64_str_pre(
     offset: i64,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_str_pre");
     const base = try ctx.getValueReg(base_val, .int);
     const src = try ctx.getValueReg(val, .int);
     const ty = ctx.valueType(val);
@@ -4768,6 +4907,7 @@ pub fn aarch64_str_post(
     offset: i64,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_str_post");
     const base = try ctx.getValueReg(base_val, .int);
     const src = try ctx.getValueReg(val, .int);
     const ty = ctx.valueType(val);
@@ -4790,6 +4930,7 @@ pub fn aarch64_vldr(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_vldr");
     const base = try ctx.getValueReg(addr, .int);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
     const fp_size = typeToFpuOperandSize(ty);
@@ -4810,6 +4951,7 @@ pub fn aarch64_vstr(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_vstr");
     const base = try ctx.getValueReg(addr, .int);
     const src = try ctx.getValueReg(val, .vector);
     const ty = ctx.valueType(val);
@@ -4829,6 +4971,7 @@ pub fn aarch64_uload8(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_uload8");
     const base = try ctx.getValueReg(addr, .int);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
@@ -4846,6 +4989,7 @@ pub fn aarch64_uload16(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_uload16");
     const base = try ctx.getValueReg(addr, .int);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
@@ -4863,6 +5007,7 @@ pub fn aarch64_uload32(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_uload32");
     const base = try ctx.getValueReg(addr, .int);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
@@ -4880,6 +5025,7 @@ pub fn aarch64_uload64(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_uload64");
     const base = try ctx.getValueReg(addr, .int);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
@@ -4897,6 +5043,7 @@ pub fn aarch64_sload8(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_sload8");
     const base = try ctx.getValueReg(addr, .int);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
@@ -4914,6 +5061,7 @@ pub fn aarch64_sload16(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_sload16");
     const base = try ctx.getValueReg(addr, .int);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
@@ -4931,6 +5079,7 @@ pub fn aarch64_sload32(
     addr: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_sload32");
     const base = try ctx.getValueReg(addr, .int);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
@@ -4952,6 +5101,7 @@ pub fn aarch64_umul_overflow_i16(
     b: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.ValueRegs {
+    recordRule("aarch64_umul_overflow_i16");
     // Zero-extend both operands to 32-bit
     const a_ext = try put_in_reg_zext32(a, ctx);
     const b_ext = try put_in_reg_zext32(b, ctx);
@@ -5011,6 +5161,7 @@ pub fn aarch64_umul_overflow_i32(
     b: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.ValueRegs {
+    recordRule("aarch64_umul_overflow_i32");
     const a_reg = try ctx.getValueReg(a, .int);
     const b_reg = try ctx.getValueReg(b, .int);
 
@@ -5066,6 +5217,7 @@ pub fn aarch64_umul_overflow_i64(
     b: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.ValueRegs {
+    recordRule("aarch64_umul_overflow_i64");
     const a_reg = try ctx.getValueReg(a, .int);
     const b_reg = try ctx.getValueReg(b, .int);
 
@@ -5118,6 +5270,7 @@ pub fn aarch64_smul_overflow_i16(
     b: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.ValueRegs {
+    recordRule("aarch64_smul_overflow_i16");
     // Sign-extend both operands to 32-bit
     const a_ext = try put_in_reg_sext32(a, ctx);
     const b_ext = try put_in_reg_sext32(b, ctx);
@@ -5175,6 +5328,7 @@ pub fn aarch64_smul_overflow_i32(
     b: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.ValueRegs {
+    recordRule("aarch64_smul_overflow_i32");
     const a_reg = try ctx.getValueReg(a, .int);
     const b_reg = try ctx.getValueReg(b, .int);
 
@@ -5230,6 +5384,7 @@ pub fn aarch64_smul_overflow_i64(
     b: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.ValueRegs {
+    recordRule("aarch64_smul_overflow_i64");
     const a_reg = try ctx.getValueReg(a, .int);
     const b_reg = try ctx.getValueReg(b, .int);
 
@@ -5535,6 +5690,7 @@ pub fn aarch64_vec_shift_imm(
     size: Inst.VectorSize,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
+    recordRule("aarch64_vec_shift_imm");
     const src_reg = try ctx.getValueReg(src, .vec);
     const dst = lower_mod.WritableReg.allocReg(.vec, ctx);
     return Inst{
@@ -5558,6 +5714,7 @@ pub fn shift_masked_imm(ty: types.Type, imm: u64) u8 {
 /// Vector arithmetic operations (ISLE constructors)
 /// Vector ADD: element-wise addition
 pub fn aarch64_vec_add(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vec_add");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
@@ -5582,6 +5739,7 @@ pub fn aarch64_vec_add(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value,
 
 /// Vector SUB: element-wise subtraction
 pub fn aarch64_vec_sub(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vec_sub");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
@@ -5606,6 +5764,7 @@ pub fn aarch64_vec_sub(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value,
 
 /// Vector MUL: element-wise multiplication
 pub fn aarch64_vec_mul(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vec_mul");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
@@ -5632,6 +5791,7 @@ pub fn aarch64_vec_mul(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value,
 /// SDOT Vd.4S, Vn.16B, Vm.16B - dst[i] += src1[4*i:4*i+3] · src2[4*i:4*i+3]
 /// Requires FEAT_DotProd
 pub fn aarch64_vec_sdot(acc: lower_mod.Value, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vec_sdot");
     const acc_reg = try getValueReg(ctx, acc);
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
@@ -5643,7 +5803,7 @@ pub fn aarch64_vec_sdot(acc: lower_mod.Value, x: lower_mod.Value, y: lower_mod.V
         .src = acc_reg,
     } });
 
-    return Inst{ .vec_udot = .{
+    return Inst{ .vec_sdot = .{
         .dst = dst,
         .src1 = x_reg,
         .src2 = y_reg,
@@ -5654,6 +5814,7 @@ pub fn aarch64_vec_sdot(acc: lower_mod.Value, x: lower_mod.Value, y: lower_mod.V
 /// UDOT Vd.4S, Vn.16B, Vm.16B - dst[i] += src1[4*i:4*i+3] · src2[4*i:4*i+3]
 /// Requires FEAT_DotProd
 pub fn aarch64_vec_udot(acc: lower_mod.Value, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vec_udot");
     const acc_reg = try getValueReg(ctx, acc);
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
@@ -5674,6 +5835,7 @@ pub fn aarch64_vec_udot(acc: lower_mod.Value, x: lower_mod.Value, y: lower_mod.V
 
 /// Vector FADD: element-wise FP addition
 pub fn aarch64_vec_fadd(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vec_fadd");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
@@ -5695,6 +5857,7 @@ pub fn aarch64_vec_fadd(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
 
 /// Vector FSUB: element-wise FP subtraction
 pub fn aarch64_vec_fsub(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vec_fsub");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
@@ -5716,6 +5879,7 @@ pub fn aarch64_vec_fsub(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
 
 /// Vector FMUL: element-wise FP multiplication
 pub fn aarch64_vec_fmul(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vec_fmul");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
@@ -5737,6 +5901,7 @@ pub fn aarch64_vec_fmul(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
 
 /// Vector FDIV: element-wise FP division
 pub fn aarch64_vec_fdiv(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vec_fdiv");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
@@ -5757,6 +5922,7 @@ pub fn aarch64_vec_fdiv(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
 }
 
 pub fn aarch64_vec_smin(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vec_smin");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
@@ -5771,6 +5937,7 @@ pub fn aarch64_vec_smin(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
 }
 
 pub fn aarch64_vec_smax(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vec_smax");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
@@ -5785,6 +5952,7 @@ pub fn aarch64_vec_smax(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
 }
 
 pub fn aarch64_vec_umin(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vec_umin");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
@@ -5799,6 +5967,7 @@ pub fn aarch64_vec_umin(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
 }
 
 pub fn aarch64_vec_umax(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vec_umax");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
@@ -5813,6 +5982,7 @@ pub fn aarch64_vec_umax(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
 }
 
 pub fn aarch64_vec_fmin(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vec_fmin");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
@@ -5833,6 +6003,7 @@ pub fn aarch64_vec_fmin(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
 }
 
 pub fn aarch64_vec_fmax(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_vec_fmax");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
@@ -5855,6 +6026,7 @@ pub fn aarch64_vec_fmax(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
 /// Constructor: snarrow - Signed saturating narrow (SQXTN)
 /// Narrow from 16→8, 32→16, or 64→32 with signed saturation
 pub fn aarch64_snarrow(size: VectorSize, x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_snarrow");
     const x_reg = try getValueReg(ctx, x);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
     const elem_size = try vectorSizeToElemSize(size);
@@ -5870,6 +6042,7 @@ pub fn aarch64_snarrow(size: VectorSize, x: lower_mod.Value, ctx: *lower_mod.Low
 /// Constructor: unarrow - Signed to unsigned saturating narrow (SQXTUN)
 /// Narrow from 16→8, 32→16, or 64→32 with unsigned saturation (from signed input)
 pub fn aarch64_unarrow(size: VectorSize, x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_unarrow");
     const x_reg = try getValueReg(ctx, x);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
     const elem_size = try vectorSizeToElemSize(size);
@@ -5885,6 +6058,7 @@ pub fn aarch64_unarrow(size: VectorSize, x: lower_mod.Value, ctx: *lower_mod.Low
 /// Constructor: uunarrow - Unsigned saturating narrow (UQXTN)
 /// Narrow from 16→8, 32→16, or 64→32 with unsigned saturation
 pub fn aarch64_uunarrow(size: VectorSize, x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_uunarrow");
     const x_reg = try getValueReg(ctx, x);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
     const elem_size = try vectorSizeToElemSize(size);
@@ -5899,6 +6073,7 @@ pub fn aarch64_uunarrow(size: VectorSize, x: lower_mod.Value, ctx: *lower_mod.Lo
 
 /// Constructor: get_frame_pointer - Get frame pointer (X29/FP)
 pub fn aarch64_get_frame_pointer(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_get_frame_pointer");
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     const fp = Reg.fromPReg(PReg.new(.int, 29)); // X29 (FP)
 
@@ -5911,6 +6086,7 @@ pub fn aarch64_get_frame_pointer(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
 
 /// Constructor: get_stack_pointer - Get stack pointer (SP)
 pub fn aarch64_get_stack_pointer(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_get_stack_pointer");
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     const sp = Reg.fromPReg(PReg.new(.int, 31)); // SP
 
@@ -5923,6 +6099,7 @@ pub fn aarch64_get_stack_pointer(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
 
 /// Constructor: get_return_address - Get return address (X30/LR)
 pub fn aarch64_get_return_address(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_get_return_address");
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     const lr = Reg.fromPReg(PReg.new(.int, 30)); // X30 (LR)
 
@@ -5937,6 +6114,7 @@ pub fn aarch64_get_return_address(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
 /// Pattern: splat(load(addr)) -> LD1R {Vt.<T>}, [Xn]
 /// This is more efficient than LDR + DUP (one instruction vs two)
 pub fn aarch64_ld1r(ty: types.Type, addr: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_ld1r");
     const base_reg = try getValueReg(ctx, addr);
 
     // Map Type to VecElemSize for LD1R instruction
@@ -5973,6 +6151,7 @@ fn canEncodeFMovImmF64(value: f64) bool {
 /// Constructor: aarch64_f32const - Load 32-bit float constant
 /// Uses FMOV immediate if possible, otherwise loads from constant pool
 pub fn aarch64_f32const(value: f32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_f32const");
     // Try FMOV immediate for common values
     if (canEncodeFMovImmF32(value)) {
         return Inst{ .fmov_imm = .{
@@ -5998,6 +6177,7 @@ pub fn aarch64_f32const(value: f32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
 /// Constructor: aarch64_f64const - Load 64-bit float constant
 /// Uses FMOV immediate if possible, otherwise loads from constant pool
 pub fn aarch64_f64const(value: f64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_f64const");
     // Try FMOV immediate for common values
     if (canEncodeFMovImmF64(value)) {
         return Inst{ .fmov_imm = .{
