@@ -3179,6 +3179,10 @@
 (decl tls_init_exec (ExternalName) Aarch64Inst)
 (extern constructor tls_init_exec tls_init_exec)
 
+;; TLS General-Dynamic model: Full dynamic TLS via descriptors
+(decl tls_general_dynamic (ExternalName) Aarch64Inst)
+(extern constructor tls_general_dynamic tls_general_dynamic)
+
 ;; global_value: Load address of global value
 (decl aarch64_global_value (GlobalValue) Aarch64Inst)
 (rule (lower (global_value gv))

@@ -2268,6 +2268,79 @@ pub fn tls_init_exec(extname: ExternalName, ctx: *lower_mod.LowerCtx(Inst)) !Ins
     } };
 }
 
+pub fn tls_general_dynamic(extname: ExternalName, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // General-dynamic TLS model: Full dynamic TLS via descriptors
+    // Modern sequence with TLS descriptors:
+    //   ADRP Xtmp, :tlsdesc:symbol         // Load descriptor page
+    //   LDR  Xfn, [Xtmp, :tlsdesc_lo12:symbol]  // Load descriptor function
+    //   ADD  X0, Xtmp, :tlsdesc_lo12:symbol     // Descriptor argument in X0
+    //   BLR  Xfn                           // Call descriptor resolver
+    //   ADD  Xd, X0, TPIDR_EL0             // Add thread pointer to result
+    //
+    // Note: Modern linkers optimize this to IE or LE when possible
+
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    const tmp = lower_mod.WritableReg.allocReg(.int, ctx);
+    const fn_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+
+    // ADRP: Load TLS descriptor page
+    try ctx.emit(Inst{
+        .adrp = .{
+            .dst = tmp,
+            .symbol = extname,
+            // Note: relocation will be aarch64_tlsdesc_adr_page21
+        },
+    });
+
+    // LDR: Load descriptor function pointer
+    try ctx.emit(Inst{
+        .ldr_imm = .{
+            .dst = fn_reg,
+            .base = tmp.toReg(),
+            .offset = 0, // Will be filled by relocation
+            .size = .size64,
+            .sign_extend = false,
+            // Note: relocation will be aarch64_tlsdesc_ld64_lo12
+        },
+    });
+
+    // ADD: Prepare descriptor argument in X0
+    const x0 = Reg.gpr(0); // X0 - first argument register
+    const x0_writable = lower_mod.WritableReg.fromReg(x0);
+    try ctx.emit(Inst{
+        .add_imm = .{
+            .dst = x0_writable,
+            .src = tmp.toReg(),
+            .imm = 0, // Will be filled by relocation
+            .size = .size64,
+            // Note: relocation will be aarch64_tlsdesc_add_lo12
+        },
+    });
+
+    // BLR: Call TLS descriptor resolver
+    try ctx.emit(Inst{
+        .blr = .{
+            .rn = fn_reg.toReg(),
+            // Note: this call has special semantics - aarch64_tlsdesc_call
+            // X0 contains argument, result returned in X0
+        },
+    });
+
+    // MRS: Read thread pointer
+    try ctx.emit(Inst{ .mrs = .{
+        .dst = dst,
+        .sysreg = Inst.SystemReg.tpidr_el0,
+    } });
+
+    // ADD: Add thread pointer to TLS offset (in X0) to get variable address
+    return Inst{ .add_rr = .{
+        .dst = dst,
+        .src1 = dst.toReg(),
+        .src2 = x0,
+        .size = .size64,
+    } };
+}
+
 /// Dynamic stack operations (ISLE constructors)
 pub fn dynamic_stack_addr(offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Get dynamic stack pointer register (X19)
