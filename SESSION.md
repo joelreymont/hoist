@@ -30884,3 +30884,61 @@ Let me modify the function to do this:
 **Claude:** The labels should be MachLabel.new(0):
 
 ---
+
+---
+
+## Session: 2026-01-08 - Jump Tables and Constant Pool
+
+### Completed Features
+
+1. **Jump Table Emission for br_table**
+   - Implemented `emitJtSequence` in src/backends/aarch64/emit.zig:3159-3206
+   - Full ADR/LDR/ADD/BR dispatch sequence
+   - Uses existing MachBuffer jump table infrastructure
+   - Test: tests/e2e_branches.zig:111-255 (3-case switch)
+   - Commit: b2a39a65, bc941519
+
+2. **FP Constant Pool Loading**
+   - Added `fpload_const` instruction (src/backends/aarch64/inst.zig:1281-1289)
+   - Implemented `emitFploadConst` (src/backends/aarch64/emit.zig:12764+)
+   - Uses PC-relative LDR literal with 19-bit offset
+   - Automatic constant pool deduplication
+   - Supports f32, f64, and v128 sizes
+   - Updated constant_f32, constant_f64, constant_v128 to use fpload_const
+   - Replaces inefficient GPR+FMOV multi-instruction sequences
+   - Commits: 9867da0c, 24c11f9f, 96c269f2
+
+3. **Infrastructure Improvements**
+   - Fixed MachBuffer jump table to use unmanaged ArrayList (Zig 0.15)
+   - Added fpload_const to getOperands and format
+   - Constant pool automatically handles size and alignment
+
+### Key Details
+
+**Jump Table Dispatch Sequence:**
+```
+ADR table_base, .LJT<N>      ; Get table address (PC-relative)
+LDR target, [table_base, index, LSL #2]  ; Load offset from table
+ADD target, table_base, target           ; Compute absolute target
+BR target                                ; Jump to target
+```
+
+**Constant Pool Flow:**
+1. During lowering: emit fpload_const with bits and size
+2. During emission: emitFploadConst adds constant to pool
+3. Pool deduplicates identical constants
+4. LDR literal emitted with label use for fixup
+5. Pool emitted at end of function
+
+### Limitations Noted
+- Vector constant v128: only lower 64 bits used (fpload_const.bits is u64)
+- For full 128-bit support, would need to extend constant pool value field
+
+### Closed Dots
+- hoist-398da5a7a7e25bfd (jump table emission)
+- hoist-54daaa94d013863f (br_table test)
+- hoist-47cc37ac5227766f (FP constant loading)
+- hoist-c48cce12697d7c04 (ADRP+LDR for FP constants)
+- hoist-e7dec5e6708fd9ef (test FP constant loading)
+- hoist-47cd4e2e3e278f7a (constant pool for vectors)
+
