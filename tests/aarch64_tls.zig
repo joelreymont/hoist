@@ -5,7 +5,6 @@ const hoist = @import("hoist");
 const Function = hoist.function.Function;
 const Signature = hoist.signature.Signature;
 const AbiParam = hoist.signature.AbiParam;
-const AbiParam = hoist.signature.AbiParam;
 const Type = hoist.types.Type;
 const InstructionData = hoist.instruction_data.InstructionData;
 const Imm64 = hoist.immediates.Imm64;
