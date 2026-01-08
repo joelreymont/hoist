@@ -1255,6 +1255,21 @@ pub const Aarch64ABICallee = struct {
     }
 };
 
+/// Determine if a function signature requires struct return pointer (sret) in X8.
+/// Per AAPCS64: structs >16 bytes returned indirectly via caller-allocated memory.
+pub fn needsStructReturnPointer(returns: []const AbiParam) bool {
+    if (returns.len == 0) return false;
+    if (returns.len > 1) {
+        // Multiple returns not directly supported - would need sret
+        // TODO: Handle this case properly
+        return false;
+    }
+
+    const ret_ty = returns[0].value_type;
+    const ret_loc = classifyReturn(ret_ty);
+    return ret_loc == .indirect;
+}
+
 /// Argument location according to AAPCS64.
 pub const ArgLoc = union(enum) {
     /// Argument in a single register.
@@ -1272,10 +1287,12 @@ pub const ArgLoc = union(enum) {
 /// Compute argument locations for a function signature per AAPCS64.
 /// Allocates registers X0-X7 for integers, V0-V7 for floats/vectors.
 /// Handles 16-byte alignment by rounding NGRN to even number.
+/// If needs_sret is true, reserves X8 for struct return pointer (implicit parameter).
 /// Returns array of ArgLoc (caller must free).
 pub fn computeArgLocs(
     allocator: std.mem.Allocator,
     params: []const AbiParam,
+    needs_sret: bool,
 ) ![]ArgLoc {
     var locs = std.ArrayList(ArgLoc).init(allocator);
     errdefer locs.deinit();
@@ -1283,6 +1300,15 @@ pub fn computeArgLocs(
     var next_gpr: u8 = 0; // Next general-purpose register (X0-X7)
     var next_fpr: u8 = 0; // Next floating-point register (V0-V7)
     var next_stack: u32 = 0; // Next stack offset (bytes)
+
+    // If function returns large struct indirectly, X8 holds return pointer
+    // This is an implicit parameter, not in the params list
+    // X8 doesn't count against NGRN (doesn't affect X0-X7 allocation)
+    if (needs_sret) {
+        // Note: sret pointer is passed in X8, which is separate from X0-X7 arg regs
+        // We don't add it to locs since it's implicit, not an explicit parameter
+        // The caller will handle X8 allocation separately
+    }
 
     for (params) |param| {
         const ty = param.value_type;
