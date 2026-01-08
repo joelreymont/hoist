@@ -24,13 +24,16 @@ pub const BlockPredecessor = struct {
 pub const CFGNode = struct {
     /// Map from terminator instruction to predecessor block.
     predecessors: std.AutoHashMap(Inst, Block),
-    /// Set of successor blocks.
+    /// Set of successor blocks (normal control flow).
     successors: std.AutoHashMap(Block, void),
+    /// Set of exception successor blocks (exception edges from try_call).
+    exception_successors: std.AutoHashMap(Block, void),
 
     pub fn init(allocator: std.mem.Allocator) CFGNode {
         return .{
             .predecessors = std.AutoHashMap(Inst, Block).init(allocator),
             .successors = std.AutoHashMap(Block, void).init(allocator),
+            .exception_successors = std.AutoHashMap(Block, void).init(allocator),
         };
     }
 
@@ -38,11 +41,13 @@ pub const CFGNode = struct {
         _ = allocator;
         self.predecessors.deinit();
         self.successors.deinit();
+        self.exception_successors.deinit();
     }
 
     fn clear(self: *CFGNode) void {
         self.predecessors.clearRetainingCapacity();
         self.successors.clearRetainingCapacity();
+        self.exception_successors.clearRetainingCapacity();
     }
 };
 
