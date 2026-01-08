@@ -202,3 +202,51 @@ test "encoding: RET" {
     const expected = [_]u8{ 0xc0, 0x03, 0x5f, 0xd6 };
     try testing.expectEqualSlices(u8, &expected, buffer.data.items);
 }
+// Test CINC encoding (Conditional Increment)
+// CINC is alias for CSINC with Rm==Rn and inverted condition
+// CSINC: sf|0|0|11010100|Rm|cond|01|Rn|Rd
+// CINC Xd, Xn, cond => CSINC Xd, Xn, Xn, invert(cond)
+test "encoding: CINC x0, x1, EQ" {
+    const allocator = testing.allocator;
+    var buffer = MachBuffer.init(allocator);
+    defer buffer.deinit();
+
+    const CondCode = @import("../src/backends/aarch64/inst.zig").CondCode;
+    const x0_preg = PReg.new(RegClass.int, 0);
+    const x1_preg = PReg.new(RegClass.int, 1);
+    const x0 = Reg.fromPReg(x0_preg);
+    const x1 = Reg.fromPReg(x1_preg);
+    const dst = WritableReg.fromReg(x0);
+
+    try emit.emitCinc(dst.toReg(), x1, CondCode.eq, .size64, &buffer);
+
+    // CINC with EQ (0x0) => CSINC with NE (0x1)
+    // Expected: sf=1, opc=00, Rm=1, cond=1 (NE), op2=01, Rn=1, Rd=0
+    // Binary: 1|0|0|11010100|00001|0001|01|00001|00000
+    // Hex: 0x9A810420 (little-endian: 20 04 81 9a)
+    const expected = [_]u8{ 0x20, 0x04, 0x81, 0x9a };
+    try testing.expectEqualSlices(u8, &expected, buffer.data.items);
+}
+
+// Test CINC with 32-bit operands
+test "encoding: CINC w2, w3, LT" {
+    const allocator = testing.allocator;
+    var buffer = MachBuffer.init(allocator);
+    defer buffer.deinit();
+
+    const CondCode = @import("../src/backends/aarch64/inst.zig").CondCode;
+    const w2_preg = PReg.new(RegClass.int, 2);
+    const w3_preg = PReg.new(RegClass.int, 3);
+    const w2 = Reg.fromPReg(w2_preg);
+    const w3 = Reg.fromPReg(w3_preg);
+    const dst = WritableReg.fromReg(w2);
+
+    try emit.emitCinc(dst.toReg(), w3, CondCode.lt, .size32, &buffer);
+
+    // CINC with LT (0xB) => CSINC with GE (0xA)
+    // Expected: sf=0, opc=00, Rm=3, cond=A (GE), op2=01, Rn=3, Rd=2
+    // Binary: 0|0|0|11010100|00011|1010|01|00011|00010
+    // Hex: 0x1A83A462 (little-endian: 62 a4 83 1a)
+    const expected = [_]u8{ 0x62, 0xa4, 0x83, 0x1a };
+    try testing.expectEqualSlices(u8, &expected, buffer.data.items);
+}
