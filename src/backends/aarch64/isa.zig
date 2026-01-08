@@ -42,8 +42,12 @@ pub const Features = packed struct {
     /// AES, SHA1, SHA256, etc. instructions
     has_crypto: bool = false,
 
+    /// Has dot product extensions (FEAT_DotProd)
+    /// SDOT/UDOT instructions for 4-way dot products
+    has_dotprod: bool = false,
+
     /// Reserved for future features
-    _reserved: u24 = 0,
+    _reserved: u23 = 0,
 
     pub fn init() Features {
         return .{};
@@ -59,6 +63,7 @@ pub const Features = packed struct {
                 .has_crypto = true,
                 .has_fp16 = true,
                 .has_lse = true,
+                .has_dotprod = true, // Apple Silicon supports FEAT_DotProd (ARMv8.2-A)
                 // Conservative defaults for security features
                 .has_pauth = false,
                 .has_bti = false,
@@ -77,6 +82,11 @@ pub const Features = packed struct {
     /// Check if pointer auth is available for code generation.
     pub fn canUsePauth(self: Features) bool {
         return self.has_pauth;
+    }
+
+    /// Check if dot product instructions are available (SDOT/UDOT).
+    pub fn hasDotProd(self: Features) bool {
+        return self.has_dotprod;
     }
 };
 
