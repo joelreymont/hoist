@@ -109,6 +109,12 @@ pub const CompiledCode = struct {
     /// Disassembly text (if requested).
     disasm: ?std.ArrayList(u8),
 
+    /// eh_frame unwind information section (if available).
+    eh_frame: ?std.ArrayList(u8),
+
+    /// Whether eh_frame has been registered with runtime.
+    eh_frame_registered: bool,
+
     /// Allocator for cleanup.
     allocator: std.mem.Allocator,
 
@@ -117,6 +123,8 @@ pub const CompiledCode = struct {
             .code = std.ArrayList(u8){},
             .relocs = std.ArrayList(Relocation){},
             .disasm = null,
+            .eh_frame = null,
+            .eh_frame_registered = false,
             .allocator = allocator,
         };
     }
@@ -130,6 +138,9 @@ pub const CompiledCode = struct {
         self.relocs.deinit(self.allocator);
         if (self.disasm) |*d| {
             d.deinit(self.allocator);
+        }
+        if (self.eh_frame) |*ef| {
+            ef.deinit(self.allocator);
         }
     }
 };

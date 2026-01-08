@@ -214,11 +214,78 @@ pub const CIE = struct {
     }
 };
 
+/// Call site entry in LSDA call site table.
+/// Maps a try_call instruction PC range to its landing pad.
+pub const CallSiteEntry = struct {
+    start_offset: u32,
+    length: u32,
+    landing_pad_offset: u32,
+};
+
+/// Language-Specific Data Area (LSDA) for exception handling.
+/// Maps instruction PC ranges to landing pad PCs using ULEB128 encoding.
+/// Follows Itanium C++ ABI exception handling specification.
+pub const LSDA = struct {
+    call_sites: std.ArrayList(CallSiteEntry),
+
+    pub fn init(allocator: std.mem.Allocator) LSDA {
+        return .{
+            .call_sites = std.ArrayList(CallSiteEntry){
+                .items = &.{},
+                .capacity = 0,
+            },
+        };
+    }
+
+    pub fn deinit(self: *LSDA, allocator: std.mem.Allocator) void {
+        self.call_sites.deinit(allocator);
+    }
+
+    /// Add a call site entry mapping a try_call range to landing pad.
+    pub fn addCallSite(self: *LSDA, allocator: std.mem.Allocator, start_offset: u32, length: u32, landing_pad_offset: u32) !void {
+        try self.call_sites.append(allocator, .{
+            .start_offset = start_offset,
+            .length = length,
+            .landing_pad_offset = landing_pad_offset,
+        });
+    }
+
+    /// Encode LSDA call site table as ULEB128 pairs.
+    /// Format: (start_offset, length, landing_pad_offset) for each call site.
+    /// Returns allocated byte slice containing encoded data.
+    pub fn encode(self: *LSDA, allocator: std.mem.Allocator) ![]u8 {
+        var buf = std.ArrayList(u8){
+            .items = &.{},
+            .capacity = 0,
+        };
+
+        // Encode each call site entry as three ULEB128 values
+        for (self.call_sites.items) |entry| {
+            var uleb_buf: [10]u8 = undefined;
+
+            // Encode start_offset
+            const start_len = try Uleb128.encode(entry.start_offset, &uleb_buf);
+            try buf.appendSlice(allocator, uleb_buf[0..start_len]);
+
+            // Encode length
+            const length_len = try Uleb128.encode(entry.length, &uleb_buf);
+            try buf.appendSlice(allocator, uleb_buf[0..length_len]);
+
+            // Encode landing_pad_offset
+            const lp_len = try Uleb128.encode(entry.landing_pad_offset, &uleb_buf);
+            try buf.appendSlice(allocator, uleb_buf[0..lp_len]);
+        }
+
+        return buf.toOwnedSlice(allocator);
+    }
+};
+
 /// Frame Description Entry for a function.
 pub const FDE = struct {
     pc_begin: u64,
     code_size: u32,
     instructions: std.ArrayList(CFI),
+    lsda: ?*LSDA = null,
 
     pub fn init(pc_begin: u64, code_size: u32) FDE {
         return .{
@@ -228,11 +295,16 @@ pub const FDE = struct {
                 .items = &.{},
                 .capacity = 0,
             },
+            .lsda = null,
         };
     }
 
     pub fn deinit(self: *FDE, allocator: std.mem.Allocator) void {
         self.instructions.deinit(allocator);
+        if (self.lsda) |lsda| {
+            lsda.deinit(allocator);
+            allocator.destroy(lsda);
+        }
     }
 
     pub fn encode(self: *FDE, allocator: std.mem.Allocator) ![]u8 {
@@ -249,7 +321,18 @@ pub const FDE = struct {
         std.mem.writeInt(u64, &code_size_bytes, self.code_size, .little);
         try buf.appendSlice(allocator, &code_size_bytes);
 
-        try buf.append(allocator, 0);
+        // FDE augmentation data: if LSDA is present, encode pointer to LSDA
+        if (self.lsda) |lsda| {
+            // Augmentation: one byte indicating LSDA pointer follows (0x1b for absolute pointer)
+            try buf.append(allocator, 0x1b);
+            // Placeholder for LSDA pointer (8 bytes for 64-bit)
+            // In actual use, this would be filled with the LSDA address
+            var lsda_ptr_bytes: [8]u8 = undefined;
+            std.mem.writeInt(u64, &lsda_ptr_bytes, 0, .little);
+            try buf.appendSlice(allocator, &lsda_ptr_bytes);
+        } else {
+            try buf.append(allocator, 0);
+        }
 
         for (self.instructions.items) |cfi| {
             var cfi_buf: [32]u8 = undefined;
@@ -282,6 +365,27 @@ pub const FDE = struct {
         try self.instructions.append(allocator, .{ .offset = .{ .reg = reg, .offset = cfa_offset } });
     }
 };
+
+/// Build an LSDA from a list of try_call locations and their landing pads.
+/// Maps instruction PC ranges to landing pad offsets using ULEB128 encoding.
+pub fn buildLSDA(
+    allocator: std.mem.Allocator,
+    try_call_locations: []const struct { start: u32, length: u32 },
+    landing_pads: []const u32,
+) !*LSDA {
+    if (try_call_locations.len != landing_pads.len) {
+        return error.MismatchedArrayLengths;
+    }
+
+    const lsda = try allocator.create(LSDA);
+    lsda.* = LSDA.init(allocator);
+
+    for (try_call_locations, landing_pads) |try_call, landing_pad| {
+        try lsda.addCallSite(allocator, try_call.start, try_call.length, landing_pad);
+    }
+
+    return lsda;
+}
 
 /// Unwind information for a compiled function.
 pub const UnwindInfo = struct {
