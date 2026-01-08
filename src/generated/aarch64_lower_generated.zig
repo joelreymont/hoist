@@ -2636,8 +2636,6 @@ pub fn lower(
             // DOT 2: Emit BL instruction with argument marshaling (use existing aarch64_call helper)
             // DOT 3: Emit CBZ X0 for exception check and branch to successors
 
-            _ = ir_inst;
-
             // DOT 1: Extract all TryCallData fields
             const func_ref = data.func_ref;
             const args_list = data.args;
@@ -2648,11 +2646,8 @@ pub fn lower(
             const args_slice = ctx.func.dfg.value_lists.asSlice(args_list);
 
             // TODO DOT 2: Get sig_ref and name from func_ref (need function reference query interface)
-            // TheThe func_ref containscontains thethe calleecallee functionfunction - need to extract:
-            // - sig_ref: Signature referenceneed to extract:
-            // - sig_ref: Signature reference for thethe function
-            // - name: ExternalName of the function
-            // These would normally come from a function metadata lookupfunction
+            // The func_ref contains the callee function - need to extract:
+            // - sig_ref: Signature reference for the function
             // - name: ExternalName of the function
             // These would normally come from a function metadata lookup
             _ = func_ref;

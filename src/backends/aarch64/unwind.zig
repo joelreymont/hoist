@@ -228,7 +228,7 @@ pub const CallSiteEntry = struct {
 pub const LSDA = struct {
     call_sites: std.ArrayList(CallSiteEntry),
 
-    pub fn init(allocator: std.mem.Allocator) LSDA {
+    pub fn init(_: std.mem.Allocator) LSDA {
         return .{
             .call_sites = std.ArrayList(CallSiteEntry){
                 .items = &.{},
@@ -322,7 +322,7 @@ pub const FDE = struct {
         try buf.appendSlice(allocator, &code_size_bytes);
 
         // FDE augmentation data: if LSDA is present, encode pointer to LSDA
-        if (self.lsda) |lsda| {
+        if (self.lsda) |_| {
             // Augmentation: one byte indicating LSDA pointer follows (0x1b for absolute pointer)
             try buf.append(allocator, 0x1b);
             // Placeholder for LSDA pointer (8 bytes for 64-bit)
@@ -651,4 +651,100 @@ test "emitRestoreState" {
     const len = try emitRestoreState(&buf);
     try std.testing.expectEqual(@as(usize, 1), len);
     try std.testing.expectEqual(@as(u8, 0x0b), buf[0]);
+}
+
+test "LSDA init and deinit" {
+    const allocator = std.testing.allocator;
+    var lsda = LSDA.init(allocator);
+    defer lsda.deinit(allocator);
+    try std.testing.expectEqual(@as(usize, 0), lsda.call_sites.items.len);
+}
+
+test "LSDA addCallSite" {
+    const allocator = std.testing.allocator;
+    var lsda = LSDA.init(allocator);
+    defer lsda.deinit(allocator);
+
+    // Add first call site: try_call at offset 0x100, length 4, landing pad at 0x200
+    try lsda.addCallSite(allocator, 0x100, 4, 0x200);
+    try std.testing.expectEqual(@as(usize, 1), lsda.call_sites.items.len);
+    try std.testing.expectEqual(@as(u32, 0x100), lsda.call_sites.items[0].start_offset);
+    try std.testing.expectEqual(@as(u32, 4), lsda.call_sites.items[0].length);
+    try std.testing.expectEqual(@as(u32, 0x200), lsda.call_sites.items[0].landing_pad_offset);
+
+    // Add second call site
+    try lsda.addCallSite(allocator, 0x300, 8, 0x400);
+    try std.testing.expectEqual(@as(usize, 2), lsda.call_sites.items.len);
+}
+
+test "LSDA encode single call site" {
+    const allocator = std.testing.allocator;
+    var lsda = LSDA.init(allocator);
+    defer lsda.deinit(allocator);
+
+    // Small values that fit in single ULEB128 bytes
+    try lsda.addCallSite(allocator, 0x10, 4, 0x20);
+
+    const encoded = try lsda.encode(allocator);
+    defer allocator.free(encoded);
+
+    // Each value encodes to 1 byte (< 128)
+    try std.testing.expectEqual(@as(usize, 3), encoded.len);
+    try std.testing.expectEqual(@as(u8, 0x10), encoded[0]); // start_offset
+    try std.testing.expectEqual(@as(u8, 0x04), encoded[1]); // length
+    try std.testing.expectEqual(@as(u8, 0x20), encoded[2]); // landing_pad_offset
+}
+
+test "LSDA encode multiple call sites" {
+    const allocator = std.testing.allocator;
+    var lsda = LSDA.init(allocator);
+    defer lsda.deinit(allocator);
+
+    try lsda.addCallSite(allocator, 0x100, 4, 0x200);
+    try lsda.addCallSite(allocator, 0x300, 8, 0x400);
+
+    const encoded = try lsda.encode(allocator);
+    defer allocator.free(encoded);
+
+    // 0x100 = 1 byte, 4 = 1 byte, 0x200 = 2 bytes (requires continuation)
+    // 0x300 = 2 bytes, 8 = 1 byte, 0x400 = 2 bytes
+    // Total: 9 bytes
+    try std.testing.expect(encoded.len > 0);
+
+    // Verify first call site start offset (0x100 = 0x80, 0x02 in ULEB128)
+    try std.testing.expectEqual(@as(u8, 0x80), encoded[0]); // 0x100 & 0x7f | 0x80
+    try std.testing.expectEqual(@as(u8, 0x02), encoded[1]); // 0x100 >> 7
+}
+
+test "LSDA encode large offsets" {
+    const allocator = std.testing.allocator;
+    var lsda = LSDA.init(allocator);
+    defer lsda.deinit(allocator);
+
+    // Large offset requiring multi-byte ULEB128 encoding
+    try lsda.addCallSite(allocator, 0x12345, 0x100, 0x67890);
+
+    const encoded = try lsda.encode(allocator);
+    defer allocator.free(encoded);
+
+    // Verify encoding is non-empty and uses continuation bytes
+    try std.testing.expect(encoded.len > 3);
+    // First byte should have continuation bit set (>= 0x80)
+    try std.testing.expect(encoded[0] >= 0x80);
+}
+
+test "FDE with LSDA" {
+    const allocator = std.testing.allocator;
+    var fde = FDE.init(0x1000, 0x100);
+    defer fde.deinit(allocator);
+
+    // Create and attach LSDA
+    const lsda = try allocator.create(LSDA);
+    lsda.* = LSDA.init(allocator);
+    try lsda.addCallSite(allocator, 0x20, 4, 0x80);
+    fde.lsda = lsda;
+
+    // Verify LSDA is attached
+    try std.testing.expect(fde.lsda != null);
+    try std.testing.expectEqual(@as(usize, 1), fde.lsda.?.call_sites.items.len);
 }
