@@ -682,3 +682,132 @@ test "try_call basic lowering" {
     // 3. Verification of BL+CBZ+B instruction sequence
     // For now, this tests IR construction and basic validation
 }
+
+test "landing pad with exception edge" {
+    const allocator = testing.allocator;
+
+    // Build signature: fn() -> i32
+    var sig = Signature.init(allocator, .fast);
+    defer sig.deinit();
+    try sig.returns.append(allocator, hoist.abi_param.AbiParam.new(Type.I32));
+
+    // Create function
+    var func = try Function.init(allocator, "test_landing_pad", sig);
+    defer func.deinit();
+
+    // Build IR with try_call and landing pad:
+    // block0:
+    //   v0 = iconst.i32 10
+    //   try_call some_func() -> block1, block2
+    // block1: (normal)
+    //   return v0
+    // block2: (landing pad)
+    //   v1 = landingpad
+    //   v2 = iconst.i32 20
+    //   return v2
+
+    const block0 = try func.dfg.makeBlock();
+    const block1 = try func.dfg.makeBlock();
+    const block2 = try func.dfg.makeBlock();
+
+    // Mark block2 as landing pad
+    func.dfg.blocks.items(.data)[block2.index()].is_landing_pad = true;
+
+    try func.layout.appendBlock(block0);
+    try func.layout.appendBlock(block1);
+    try func.layout.appendBlock(block2);
+
+    // block0: v0 = iconst.i32 10
+    const v0_data = InstructionData{ .unary_imm = .{
+        .opcode = .iconst,
+        .imm = Imm64.new(10),
+    } };
+    const v0_inst = try func.dfg.makeInst(v0_data);
+    try func.layout.appendInst(v0_inst, block0);
+    const v0 = func.dfg.firstResult(v0_inst).?;
+
+    // block0: try_call
+    const empty_args = try func.dfg.value_lists.allocate(allocator, &.{});
+    const try_call_data = InstructionData{ .try_call = .{
+        .opcode = .try_call,
+        .func_ref = entities.FuncRef.new(0),
+        .args = empty_args,
+        .normal_successor = block1,
+        .exception_successor = block2,
+    } };
+    const try_call_inst = try func.dfg.makeInst(try_call_data);
+    try func.layout.appendInst(try_call_inst, block0);
+
+    // block0: jump block1
+    const jump_data = InstructionData{ .jump = .{
+        .opcode = .jump,
+        .destination = block1,
+    } };
+    const jump_inst = try func.dfg.makeInst(jump_data);
+    try func.layout.appendInst(jump_inst, block0);
+
+    // block1: return v0
+    const ret1_data = InstructionData{ .unary = .{
+        .opcode = .@"return",
+        .arg = v0,
+    } };
+    const ret1_inst = try func.dfg.makeInst(ret1_data);
+    try func.layout.appendInst(ret1_inst, block1);
+
+    // block2: v1 = landingpad (exception value in X0)
+    const landingpad_data = InstructionData{ .nullary = .{
+        .opcode = .landingpad,
+    } };
+    const landingpad_inst = try func.dfg.makeInst(landingpad_data);
+    try func.layout.appendInst(landingpad_inst, block2);
+    const v1 = func.dfg.firstResult(landingpad_inst).?;
+
+    // block2: v2 = iconst.i32 20
+    const v2_data = InstructionData{ .unary_imm = .{
+        .opcode = .iconst,
+        .imm = Imm64.new(20),
+    } };
+    const v2_inst = try func.dfg.makeInst(v2_data);
+    try func.layout.appendInst(v2_inst, block2);
+    const v2 = func.dfg.firstResult(v2_inst).?;
+
+    // block2: return v2
+    const ret2_data = InstructionData{ .unary = .{
+        .opcode = .@"return",
+        .arg = v2,
+    } };
+    const ret2_inst = try func.dfg.makeInst(ret2_data);
+    try func.layout.appendInst(ret2_inst, block2);
+
+    // Compute CFG to verify exception edges
+    const cfg_mod = @import("hoist").cfg;
+    var cfg = cfg_mod.CFG.init(allocator);
+    defer cfg.deinit();
+    try cfg.compute(&func);
+
+    // Verify block0 has block1 as normal successor
+    const block0_node = cfg.nodes.get(block0).?;
+    try testing.expect(block0_node.successors.contains(block1));
+
+    // Verify block0 has block2 as exception successor
+    try testing.expect(block0_node.exception_successors.contains(block2));
+
+    // Verify block2 is marked as landing pad
+    try testing.expect(func.dfg.blocks.items(.data)[block2.index()].is_landing_pad);
+
+    // Verify block2 has landingpad instruction
+    var found_landingpad = false;
+    var inst_iter = func.layout.blockInsts(block2);
+    while (inst_iter.next()) |inst| {
+        const inst_data = func.dfg.insts.items(.data)[inst.index()];
+        if (inst_data == .nullary and inst_data.nullary.opcode == .landingpad) {
+            found_landingpad = true;
+            // landingpad returns exception value (conceptually from X0)
+            try testing.expectEqual(v1, func.dfg.firstResult(inst).?);
+        }
+    }
+    try testing.expect(found_landingpad);
+
+    // Verify exception value (v1) is available in landing pad
+    _ = v1; // v1 would be used in real exception handling code
+}
