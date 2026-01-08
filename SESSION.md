@@ -15295,3 +15295,22 @@ JIT code generation works correctly. The allocator corruption is a latent bug in
 - 0ba0834c: Remove debug prints from e2e_jit tests
 - ccc37f2f: Verify JIT generated code is correct
 - a085098f: Clean up JIT investigation dots
+
+## Next Steps
+
+### Immediate Tasks
+1. **Debug allocator corruption on Linux** - Run tests with Valgrind to identify exact corruption point
+2. **Add more e2e tests** - Expand test coverage for basic operations
+3. **Test existing features** - Verify GOT loading, br_table, and other implemented features
+
+### Cleaned Up
+- Archived 8 investigation dots related to JIT debugging
+- Confirmed GOT loading is fully implemented (emitLoadExtNameGot in emit.zig)
+- Verified generated ARM64 code is correct
+
+### Current State
+- JIT code generation: ✓ Works correctly
+- Basic instructions: ✓ Implemented
+- GOT loading: ✓ Implemented
+- Allocator corruption: ⚠️  Blocked on Linux/Valgrind
+
