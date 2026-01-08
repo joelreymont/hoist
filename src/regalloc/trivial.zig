@@ -88,6 +88,9 @@ pub const TrivialAllocator = struct {
     /// Next free spill slot index.
     next_spill_slot: u32,
 
+    /// Previous spill slot allocated (for adjacency detection).
+    prev_spill_slot: ?SpillSlot,
+
     /// Tracks adjacent spill slot pairs for STP coalescing.
     /// Maps first slot to its adjacent pair.
     adjacent_spill_slots: std.AutoHashMap(SpillSlot, AdjacentSlots),
@@ -104,6 +107,7 @@ pub const TrivialAllocator = struct {
             .int_regs = [_]?VReg{null} ** 30,
             .float_regs = [_]?VReg{null} ** 32,
             .next_spill_slot = 0,
+            .prev_spill_slot = null,
             .adjacent_spill_slots = std.AutoHashMap(SpillSlot, AdjacentSlots).init(allocator),
             .allocator = allocator,
         };
@@ -168,6 +172,19 @@ pub const TrivialAllocator = struct {
                 // Out of registers - spill
                 const spill = SpillSlot.new(self.next_spill_slot);
                 self.next_spill_slot += 1;
+
+                // Check if adjacent to previous spill (8-byte aligned slots)
+                if (self.prev_spill_slot) |prev| {
+                    if (prev.index + 1 == spill.index) {
+                        // Adjacent slots - mark for STP coalescing
+                        try self.adjacent_spill_slots.put(prev, .{
+                            .first = prev,
+                            .second = spill,
+                        });
+                    }
+                }
+                self.prev_spill_slot = spill;
+
                 break :blk Allocation{ .spill = spill };
             },
             .float, .vector => blk: {
@@ -182,6 +199,19 @@ pub const TrivialAllocator = struct {
                 // Out of registers - spill
                 const spill = SpillSlot.new(self.next_spill_slot);
                 self.next_spill_slot += 1;
+
+                // Check if adjacent to previous spill (8-byte aligned slots)
+                if (self.prev_spill_slot) |prev| {
+                    if (prev.index + 1 == spill.index) {
+                        // Adjacent slots - mark for STP coalescing
+                        try self.adjacent_spill_slots.put(prev, .{
+                            .first = prev,
+                            .second = spill,
+                        });
+                    }
+                }
+                self.prev_spill_slot = spill;
+
                 break :blk Allocation{ .spill = spill };
             },
         };
