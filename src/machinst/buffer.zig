@@ -35,6 +35,28 @@ pub const Reloc = enum {
     aarch64_adr_got_page,
     /// R_AARCH64_LD64_GOT_LO12_NC - LDR from GOT entry (low 12 bits).
     aarch64_ld64_got_lo12_nc,
+
+    // TLS relocations - Local Exec (LE) model
+    /// R_AARCH64_TLSLE_ADD_TPREL_HI12 - ADD for TLS LE (high 12 bits).
+    aarch64_tlsle_add_tprel_hi12,
+    /// R_AARCH64_TLSLE_ADD_TPREL_LO12_NC - ADD for TLS LE (low 12 bits).
+    aarch64_tlsle_add_tprel_lo12_nc,
+
+    // TLS relocations - Initial Exec (IE) model
+    /// R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21 - ADRP for GOT entry containing TP offset.
+    aarch64_tlsie_adr_gottprel_page21,
+    /// R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC - LDR from GOT entry for TP offset.
+    aarch64_tlsie_ld64_gottprel_lo12_nc,
+
+    // TLS relocations - General Dynamic (GD) model with TLS descriptors
+    /// R_AARCH64_TLSDESC_ADR_PAGE21 - ADRP for TLS descriptor.
+    aarch64_tlsdesc_adr_page21,
+    /// R_AARCH64_TLSDESC_LD64_LO12 - LDR for TLS descriptor function pointer.
+    aarch64_tlsdesc_ld64_lo12,
+    /// R_AARCH64_TLSDESC_ADD_LO12 - ADD for TLS descriptor offset.
+    aarch64_tlsdesc_add_lo12,
+    /// R_AARCH64_TLSDESC_CALL - BLR to TLS descriptor resolver.
+    aarch64_tlsdesc_call,
 };
 
 /// Addend for relocations.
@@ -703,6 +725,17 @@ fn relocTypeToElf(kind: Reloc) u32 {
         .aarch64_abs64 => 257, // R_AARCH64_ABS64
         .aarch64_adr_got_page => 311, // R_AARCH64_ADR_GOT_PAGE
         .aarch64_ld64_got_lo12_nc => 312, // R_AARCH64_LD64_GOT_LO12_NC
+        // TLS Local Exec
+        .aarch64_tlsle_add_tprel_hi12 => 549, // R_AARCH64_TLSLE_ADD_TPREL_HI12
+        .aarch64_tlsle_add_tprel_lo12_nc => 550, // R_AARCH64_TLSLE_ADD_TPREL_LO12_NC
+        // TLS Initial Exec
+        .aarch64_tlsie_adr_gottprel_page21 => 541, // R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21
+        .aarch64_tlsie_ld64_gottprel_lo12_nc => 542, // R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC
+        // TLS General Dynamic
+        .aarch64_tlsdesc_adr_page21 => 562, // R_AARCH64_TLSDESC_ADR_PAGE21
+        .aarch64_tlsdesc_ld64_lo12 => 563, // R_AARCH64_TLSDESC_LD64_LO12
+        .aarch64_tlsdesc_add_lo12 => 564, // R_AARCH64_TLSDESC_ADD_LO12
+        .aarch64_tlsdesc_call => 569, // R_AARCH64_TLSDESC_CALL
         .abs8, .abs4 => 257, // Generic absolute
         .x86_pc_rel_32 => 2, // R_X86_64_PC32
     };
