@@ -130,6 +130,11 @@ pub const CompiledCode = struct {
     }
 
     pub fn deinit(self: *CompiledCode) void {
+        // Deregister eh_frame before freeing
+        if (self.eh_frame_registered) {
+            self.deregisterEhFrame();
+        }
+
         self.code.deinit(self.allocator);
         // Free relocation name strings
         for (self.relocs.items) |reloc| {
@@ -143,7 +148,101 @@ pub const CompiledCode = struct {
             ef.deinit(self.allocator);
         }
     }
+
+    /// Register eh_frame with runtime for exception handling.
+    /// Attempts modern libunwind API first, falls back to legacy __register_frame.
+    pub fn registerEhFrame(self: *CompiledCode) void {
+        if (self.eh_frame) |*ef| {
+            if (ef.items.len == 0) return;
+
+            const eh_frame_ptr = ef.items.ptr;
+
+            // Try modern libunwind API first (preferred)
+            if (unwAddDynamicEhFrameSection(eh_frame_ptr)) {
+                self.eh_frame_registered = true;
+                return;
+            }
+
+            // Fallback to legacy __register_frame (libgcc/older libunwind)
+            if (registerFrame(eh_frame_ptr)) {
+                self.eh_frame_registered = true;
+                return;
+            }
+
+            // No registration available - continue without unwinding support
+            // This is not fatal; exception handling just won't work for this JIT code
+        }
+    }
+
+    /// Deregister eh_frame from runtime.
+    fn deregisterEhFrame(self: *CompiledCode) void {
+        if (self.eh_frame) |*ef| {
+            if (ef.items.len == 0) return;
+
+            const eh_frame_ptr = ef.items.ptr;
+
+            // Try modern libunwind API first
+            if (unwRemoveDynamicEhFrameSection(eh_frame_ptr)) {
+                self.eh_frame_registered = false;
+                return;
+            }
+
+            // Fallback to legacy __deregister_frame
+            if (deregisterFrame(eh_frame_ptr)) {
+                self.eh_frame_registered = false;
+                return;
+            }
+        }
+    }
 };
+
+// External function declarations for libunwind dynamic registration
+// These are weak linkage - if not available, function pointers will be null
+
+/// Modern libunwind API for registering eh_frame sections.
+extern "c" fn __unw_add_dynamic_eh_frame_section(eh_frame_ptr: [*]const u8) callconv(.c) void;
+extern "c" fn __unw_remove_dynamic_eh_frame_section(eh_frame_ptr: [*]const u8) callconv(.c) void;
+
+/// Legacy libgcc/libunwind API for registering eh_frame.
+extern "c" fn __register_frame(eh_frame_ptr: [*]const u8) callconv(.c) void;
+extern "c" fn __deregister_frame(eh_frame_ptr: [*]const u8) callconv(.c) void;
+
+/// Try modern libunwind registration.
+fn unwAddDynamicEhFrameSection(eh_frame_ptr: [*]const u8) bool {
+    // Check if symbol is available (weak linkage)
+    const func_ptr: ?*const fn ([*]const u8) callconv(.c) void = @ptrFromInt(@intFromPtr(&__unw_add_dynamic_eh_frame_section));
+    if (func_ptr == null) return false;
+
+    __unw_add_dynamic_eh_frame_section(eh_frame_ptr);
+    return true;
+}
+
+/// Try modern libunwind deregistration.
+fn unwRemoveDynamicEhFrameSection(eh_frame_ptr: [*]const u8) bool {
+    const func_ptr: ?*const fn ([*]const u8) callconv(.c) void = @ptrFromInt(@intFromPtr(&__unw_remove_dynamic_eh_frame_section));
+    if (func_ptr == null) return false;
+
+    __unw_remove_dynamic_eh_frame_section(eh_frame_ptr);
+    return true;
+}
+
+/// Try legacy __register_frame.
+fn registerFrame(eh_frame_ptr: [*]const u8) bool {
+    const func_ptr: ?*const fn ([*]const u8) callconv(.c) void = @ptrFromInt(@intFromPtr(&__register_frame));
+    if (func_ptr == null) return false;
+
+    __register_frame(eh_frame_ptr);
+    return true;
+}
+
+/// Try legacy __deregister_frame.
+fn deregisterFrame(eh_frame_ptr: [*]const u8) bool {
+    const func_ptr: ?*const fn ([*]const u8) callconv(.c) void = @ptrFromInt(@intFromPtr(&__deregister_frame));
+    if (func_ptr == null) return false;
+
+    __deregister_frame(eh_frame_ptr);
+    return true;
+}
 
 /// Relocation entry.
 pub const Relocation = struct {

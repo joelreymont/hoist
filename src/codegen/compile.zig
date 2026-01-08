@@ -6818,6 +6818,9 @@ pub fn assembleResult(
     // Generate eh_frame section for exception handling
     if (result.code.items.len > 0) {
         result.eh_frame = try generateEhFrame(allocator, &result);
+
+        // Register eh_frame with runtime for unwinding support
+        result.registerEhFrame();
     }
 
     return result;
