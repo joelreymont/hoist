@@ -112,6 +112,12 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .load_ext_name_got => |i| try emitLoadExtNameGot(i.dst.toReg(), i.symbol, buffer),
         .jt_sequence => |i| try emitJtSequence(i.index, i.targets, i.table_base.toReg(), i.target.toReg(), buffer),
         .str => |i| try emitStr(i.src, i.base, i.offset, i.size, buffer),
+        .stp_imm => |i| {
+            // Convert i7 offset to i16 for emitStp (offset is in register-size multiples)
+            const scale: i16 = if (i.size == .size64) 8 else 4;
+            const byte_offset: i16 = @as(i16, i.offset) * scale;
+            try emitStp(i.rt1, i.rt2, i.rn, byte_offset, i.size, buffer);
+        },
         .vstr => |i| try emitVstr(i.src, i.base, i.offset, i.size, buffer),
         .str_reg => |i| try emitStrReg(i.src, i.base, i.offset, i.size, buffer),
         .str_ext => |i| try emitStrExt(i.src, i.base, i.offset, i.extend, i.size, buffer),
