@@ -65,6 +65,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .eon_rr => |i| try emitEonRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .neg => |i| try emitNeg(i.dst.toReg(), i.src, i.size, buffer),
         .adds_rr => |i| try emitAddsRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .adcs => |i| try emitAdcs(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .sbcs => |i| try emitSbcs(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .adds_imm => |i| try emitAddsImm(i.dst.toReg(), i.src, i.imm, i.size, buffer),
         .subs_rr => |i| try emitSubsRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .subs_imm => |i| try emitSubsImm(i.dst.toReg(), i.src, i.imm, i.size, buffer),
@@ -524,6 +526,46 @@ fn emitAddsRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer
     const insn: u32 = (sf_bit << 31) |
         (0b01 << 29) |
         (0b01011 << 24) |
+        (@as(u32, rm) << 16) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    try buffer.put4(insn);
+}
+
+/// ADCS (add with carry, setting flags)
+/// ADCS Xd, Xn, Xm - adds Xn + Xm + C, sets flags
+/// Encoding: sf|0|1|11010000|Rm|000000|Rn|Rd
+fn emitAdcs(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+
+    // ADCS encoding: sf|0|1|11010000|Rm|000000|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b01 << 29) |
+        (0b11010000 << 21) |
+        (@as(u32, rm) << 16) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    try buffer.put4(insn);
+}
+
+/// SBCS (subtract with carry, setting flags)
+/// SBCS Xd, Xn, Xm - subtracts Xn - Xm - NOT(C), sets flags
+/// Encoding: sf|1|1|11010000|Rm|000000|Rn|Rd
+fn emitSbcs(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+
+    // SBCS encoding: sf|1|1|11010000|Rm|000000|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b11 << 29) |
+        (0b11010000 << 21) |
         (@as(u32, rm) << 16) |
         (@as(u32, rn) << 5) |
         rd;
