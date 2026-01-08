@@ -48,6 +48,7 @@ pub const InstructionData = union(enum) {
     branch: BranchData,
     jump: JumpData,
     branch_table: BranchTableData,
+    branch_z: BranchZData,
     call: CallData,
     call_indirect: CallIndirectData,
     load: LoadData,
@@ -224,6 +225,16 @@ pub const BranchTableData = struct {
 
     pub fn init(op: Opcode, arg: Value, table: entities.JumpTable) BranchTableData {
         return .{ .opcode = op, .arg = arg, .destination = table };
+    }
+};
+
+pub const BranchZData = struct {
+    opcode: Opcode,
+    condition: Value,
+    destination: entities.Block,
+
+    pub fn init(op: Opcode, cond: Value, dest: entities.Block) BranchZData {
+        return .{ .opcode = op, .condition = cond, .destination = dest };
     }
 };
 

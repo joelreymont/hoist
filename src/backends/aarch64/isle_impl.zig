@@ -998,6 +998,42 @@ pub fn aarch64_cmp_and_branch(
     } });
 }
 
+/// Constructor: CBZ - Compare and branch if zero.
+/// Emits a CBZ instruction that branches to target if x == 0.
+pub fn aarch64_cbz(
+    ctx: *IsleContext,
+    x: Value,
+    target: Block,
+) !void {
+    const ty = ctx.valueType(x);
+    const size = ctx.typeToSize(ty);
+    const reg = try ctx.getValueReg(x, .int);
+
+    try ctx.emit(.{ .cbz = .{
+        .reg = reg,
+        .target = target,
+        .size = size,
+    } });
+}
+
+/// Constructor: CBNZ - Compare and branch if non-zero.
+/// Emits a CBNZ instruction that branches to target if x != 0.
+pub fn aarch64_cbnz(
+    ctx: *IsleContext,
+    x: Value,
+    target: Block,
+) !void {
+    const ty = ctx.valueType(x);
+    const size = ctx.typeToSize(ty);
+    const reg = try ctx.getValueReg(x, .int);
+
+    try ctx.emit(.{ .cbnz = .{
+        .reg = reg,
+        .target = target,
+        .size = size,
+    } });
+}
+
 /// Constructor: stack_addr - compute address of stack slot.
 /// Returns SP/FP + offset for accessing stack-allocated data.
 pub fn aarch64_stack_addr(

@@ -1990,6 +1990,16 @@
 (rule (lower (br_table index jt default_target))
       (aarch64_br_table index jt default_target))
 
+;; brz: Branch if zero (direct CBZ)
+;; Pattern: brz(x, target) => CBZ x, target
+(rule (lower (brz x target))
+      (aarch64_cbz x target))
+
+;; brnz: Branch if non-zero (direct CBNZ)
+;; Pattern: brnz(x, target) => CBNZ x, target
+(rule (lower (brnz x target))
+      (aarch64_cbnz x target))
+
 ;; return: Return from function
 (rule (lower (return))
       (aarch64_ret))
@@ -2529,6 +2539,10 @@
 ;; Control flow
 (decl aarch64_b (Block) Aarch64Inst)
 (decl aarch64_b_cond (Value Block) Aarch64Inst)
+(decl aarch64_cbz (Value Block) Aarch64Inst)
+(decl aarch64_cbnz (Value Block) Aarch64Inst)
+(decl aarch64_cbz (Value Block) Aarch64Inst)
+(decl aarch64_cbnz (Value Block) Aarch64Inst)
 (decl aarch64_cmp_and_branch (Type Value Value IntCC Block) Aarch64Inst)
 (decl aarch64_cmp_imm_and_branch (Type Value i64 IntCC Block) Aarch64Inst)
 (decl aarch64_ret () Aarch64Inst)

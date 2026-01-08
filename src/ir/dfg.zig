@@ -430,6 +430,9 @@ pub const DataFlowGraph = struct {
                 .branch_table => |*data| {
                     data.arg = self.resolveAliases(data.arg);
                 },
+                .branch_z => |*data| {
+                    data.condition = self.resolveAliases(data.condition);
+                },
                 .call => |*data| {
                     const slice = self.value_lists.asMutSlice(data.args);
                     for (slice) |*val| {
@@ -546,6 +549,9 @@ pub const DataFlowGraph = struct {
                     if (std.meta.eql(data.arg, old_value)) {
                         data.arg = new_value;
                     }
+                },
+                .branch_z => |*data| {
+                    data.condition = self.resolveAliases(data.condition);
                 },
                 .call => |*data| {
                     const slice = self.value_lists.asMutSlice(data.args);
