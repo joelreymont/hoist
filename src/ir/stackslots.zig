@@ -124,7 +124,7 @@ test "Stack slot frame size with alignment padding" {
     _ = try createStackSlot(&func, .explicit_slot, 16, 4); // 16 bytes, 16-byte aligned (needs padding)
 
     const frame_size = calculateFrameSize(&func);
-    
+
     // Frame layout should be:
     // 0-1: first 1-byte slot
     // 1-8: padding for alignment
@@ -158,7 +158,7 @@ test "Dynamic stack slot" {
 
     const slot = try createStackSlot(&func, .explicit_dynamic_slot, 128, 4);
     const data = getStackSlot(&func, slot).?;
-    
+
     try testing.expectEqual(StackSlotKind.explicit_dynamic_slot, data.kind);
     try testing.expectEqual(@as(u32, 128), data.size);
     try testing.expectEqual(@as(u32, 16), data.alignment());
