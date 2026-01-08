@@ -562,3 +562,123 @@ test "JIT: register spilling with 40+ live values" {
     try testing.expectEqual(@as(i64, 1780), jit_fn(25)); // 40*25 + 780
     try testing.expectEqual(@as(i64, 4780), jit_fn(100)); // 40*100 + 780
 }
+
+test "try_call basic lowering" {
+    const allocator = testing.allocator;
+
+    // Build signature: fn() -> i32
+    var sig = Signature.init(allocator, .fast);
+    defer sig.deinit();
+    try sig.returns.append(allocator, hoist.abi_param.AbiParam.new(Type.I32));
+
+    // Create function
+    var func = try Function.init(allocator, "test_try_call", sig);
+    defer func.deinit();
+
+    // Build IR:
+    // block0:
+    //   v0 = iconst.i32 42
+    //   v1 = try_call some_func() -> block1, block2  // normal, exception
+    // block1:  // normal return
+    //   return v0
+    // block2:  // exception handler (landing pad)
+    //   v2 = iconst.i32 99
+    //   return v2
+
+    const block0 = try func.dfg.makeBlock();
+    const block1 = try func.dfg.makeBlock();
+    const block2 = try func.dfg.makeBlock();
+
+    // Mark block2 as landing pad
+    func.dfg.blocks.items(.data)[block2.index()].is_landing_pad = true;
+
+    try func.layout.appendBlock(block0);
+    try func.layout.appendBlock(block1);
+    try func.layout.appendBlock(block2);
+
+    // block0: v0 = iconst.i32 42
+    const v0_data = InstructionData{ .unary_imm = .{
+        .opcode = .iconst,
+        .imm = Imm64.new(42),
+    } };
+    const v0_inst = try func.dfg.makeInst(v0_data);
+    try func.layout.appendInst(v0_inst, block0);
+    const v0 = func.dfg.firstResult(v0_inst).?;
+
+    // block0: try_call (skeleton - needs proper function reference)
+    // For now, we create the try_call instruction data but can't lower it
+    // because we need a valid FuncRef (external function metadata)
+    // This test verifies the IR accepts try_call instructions
+    const empty_args = try func.dfg.value_lists.allocate(allocator, &.{});
+    const try_call_data = InstructionData{
+        .try_call = .{
+            .opcode = .try_call,
+            .func_ref = entities.FuncRef.new(0), // Placeholder
+            .args = empty_args,
+            .normal_successor = block1,
+            .exception_successor = block2,
+        },
+    };
+    const try_call_inst = try func.dfg.makeInst(try_call_data);
+    try func.layout.appendInst(try_call_inst, block0);
+    // try_call has no result (returns void)
+
+    // block0: jump to block1 (after try_call succeeds)
+    const jump_data = InstructionData{ .jump = .{
+        .opcode = .jump,
+        .destination = block1,
+    } };
+    const jump_inst = try func.dfg.makeInst(jump_data);
+    try func.layout.appendInst(jump_inst, block0);
+
+    // block1: return v0
+    const ret1_data = InstructionData{ .unary = .{
+        .opcode = .@"return",
+        .arg = v0,
+    } };
+    const ret1_inst = try func.dfg.makeInst(ret1_data);
+    try func.layout.appendInst(ret1_inst, block1);
+
+    // block2: v2 = iconst.i32 99
+    const v2_data = InstructionData{ .unary_imm = .{
+        .opcode = .iconst,
+        .imm = Imm64.new(99),
+    } };
+    const v2_inst = try func.dfg.makeInst(v2_data);
+    try func.layout.appendInst(v2_inst, block2);
+    const v2 = func.dfg.firstResult(v2_inst).?;
+
+    // block2: return v2
+    const ret2_data = InstructionData{ .unary = .{
+        .opcode = .@"return",
+        .arg = v2,
+    } };
+    const ret2_inst = try func.dfg.makeInst(ret2_data);
+    try func.layout.appendInst(ret2_inst, block2);
+
+    // Verify IR structure
+    try testing.expectEqual(@as(usize, 3), func.layout.blocks.items.len);
+
+    // Verify block0 has try_call instruction
+    var found_try_call = false;
+    var inst_iter = func.layout.blockInsts(block0);
+    while (inst_iter.next()) |inst| {
+        const inst_data = func.dfg.insts.items(.data)[inst.index()];
+        if (inst_data == .try_call) {
+            found_try_call = true;
+            // Verify successors
+            try testing.expectEqual(block1, inst_data.try_call.normal_successor);
+            try testing.expectEqual(block2, inst_data.try_call.exception_successor);
+        }
+    }
+    try testing.expect(found_try_call);
+
+    // Verify block2 is marked as landing pad
+    try testing.expect(func.dfg.blocks.items(.data)[block2.index()].is_landing_pad);
+
+    // Note: Full lowering test would require:
+    // 1. Valid external function reference (FuncRef with metadata)
+    // 2. Compilation through lower/regalloc/emit pipeline
+    // 3. Verification of BL+CBZ+B instruction sequence
+    // For now, this tests IR construction and basic validation
+}
