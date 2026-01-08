@@ -45,6 +45,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .mul_rr => |i| try emitMulRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .madd => |i| try emitMadd(i.dst.toReg(), i.src1, i.src2, i.addend, i.size, buffer),
         .msub => |i| try emitMsub(i.dst.toReg(), i.src1, i.src2, i.minuend, i.size, buffer),
+        .smull => |i| try emitSmull(i.dst.toReg(), i.src1, i.src2, buffer),
+        .umull => |i| try emitUmull(i.dst.toReg(), i.src1, i.src2, buffer),
         .lsl_rr => |i| try emitLslRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .lsl_imm => |i| try emitLslImm(i.dst.toReg(), i.src, i.imm, i.size, buffer),
         .lsr_rr => |i| try emitLsrRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
