@@ -171,9 +171,11 @@ pub const ValueData = packed struct {
 /// Basic block data.
 pub const BlockData = struct {
     params: ValueList,
+    /// True if this block is a landing pad for exception handling.
+    is_landing_pad: bool = false,
 
     pub fn init() BlockData {
-        return .{ .params = ValueList.default() };
+        return .{ .params = ValueList.default(), .is_landing_pad = false };
     }
 
     pub fn getParams(self: BlockData, pool: *const ValueListPool) []const Value {
