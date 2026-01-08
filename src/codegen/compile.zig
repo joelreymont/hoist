@@ -6872,6 +6872,21 @@ fn generateEhFrame(allocator: std.mem.Allocator, code: *const CompiledCode) !std
         .offset = .{ .reg = .x29, .offset = -2 }, // -2 * data_align (-8) = +16 from CFA
     });
 
+    // TODO: Wire LSDA for exception handling
+    // To populate LSDA, need:
+    // 1. Access to IR Function (to find try_call instructions)
+    // 2. Instruction->PC mapping from emission (MachBuffer.labels or similar)
+    // 3. For each try_call:
+    //    - Get try_call PC offset
+    //    - Get landing_pad (exception_successor) PC offset
+    //    - Add call site: lsda.addCallSite(try_call_offset, 4, landing_pad_offset)
+    // 4. Attach LSDA to FDE: fde.lsda = &lsda
+    //
+    // Implementation requires:
+    // - Pass Function to generateEhFrame/assembleResult
+    // - Build inst->PC map during lowering/emission
+    // - Store block->PC map for landing pad lookup
+
     // Encode FDE
     const fde_bytes = try fde.encode(allocator);
     defer allocator.free(fde_bytes);
