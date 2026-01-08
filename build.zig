@@ -246,6 +246,18 @@ pub fn build(b: *std.Build) void {
     const run_isle_coverage_tests = b.addRunArtifact(isle_coverage_tests);
     test_step.dependOn(&run_isle_coverage_tests.step);
 
+    const isle_compare_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/isle_compare.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    isle_compare_tests.root_module.addImport("hoist", lib.root_module);
+    applyFlags(isle_compare_tests, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_isle_compare_tests = b.addRunArtifact(isle_compare_tests);
+    test_step.dependOn(&run_isle_compare_tests.step);
+
     const test_legalize_ops = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/test_legalize_ops.zig"),
