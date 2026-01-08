@@ -65,6 +65,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .bic_rr => |i| try emitBicRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .orn_rr => |i| try emitOrnRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .eon_rr => |i| try emitEonRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
+        .clz => |i| try emitClz(i.dst.toReg(), i.src, i.size, buffer),
+        .rbit => |i| try emitRbit(i.dst.toReg(), i.src, i.size, buffer),
+        .ctz => |i| try emitCtz(i.dst.toReg(), i.src, i.size, buffer),
         .neg => |i| try emitNeg(i.dst.toReg(), i.src, i.size, buffer),
         .adds_rr => |i| try emitAddsRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .adcs => |i| try emitAdcs(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -1329,6 +1332,17 @@ fn emitRbit(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffe
         rd;
 
     try buffer.put4(insn);
+}
+
+/// CTZ (count trailing zeros) - pseudo-instruction
+/// Implemented as: RBIT Xd, Xn; CLZ Xd, Xd
+/// First reverses bits, then counts leading zeros (which were trailing)
+fn emitCtz(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    // RBIT Xd, Xn - reverse bits
+    try emitRbit(dst, src, size, buffer);
+    
+    // CLZ Xd, Xd - count leading zeros on reversed value
+    try emitClz(dst, dst, size, buffer);
 }
 
 /// REV16 - Reverse bytes in 16-bit halfwords
