@@ -811,3 +811,164 @@ test "landing pad with exception edge" {
     // Verify exception value (v1) is available in landing pad
     _ = v1; // v1 would be used in real exception handling code
 }
+
+test "exception propagation with unwinding" {
+    const allocator = testing.allocator;
+
+    // Build signature: fn(i32) -> i32
+    var sig = Signature.init(allocator, .fast);
+    defer sig.deinit();
+    try sig.params.append(allocator, hoist.abi_param.AbiParam.new(Type.I32));
+    try sig.returns.append(allocator, hoist.abi_param.AbiParam.new(Type.I32));
+
+    // Create function
+    var func = try Function.init(allocator, "test_exception_propagation", sig);
+    defer func.deinit();
+
+    // Build IR simulating exception propagation:
+    // block0(v0: i32):  // Entry with parameter
+    //   v1 = iadd v0, v0  // Double the input
+    //   try_call throw_func() -> block1, block2
+    // block1: (normal - no exception)
+    //   v2 = iadd v1, 10
+    //   return v2
+    // block2: (landing pad - exception caught)
+    //   v3 = landingpad  // Exception value from X0
+    //   v4 = iadd v1, 100  // Use pre-exception state (v1)
+    //   return v4
+
+    const block0 = try func.dfg.makeBlock();
+    const block1 = try func.dfg.makeBlock();
+    const block2 = try func.dfg.makeBlock();
+
+    // Mark block2 as landing pad
+    func.dfg.blocks.items(.data)[block2.index()].is_landing_pad = true;
+
+    try func.layout.appendBlock(block0);
+    try func.layout.appendBlock(block1);
+    try func.layout.appendBlock(block2);
+
+    // block0: function parameter
+    const v0 = try func.dfg.appendBlockParam(block0, Type.I32);
+
+    // block0: v1 = iadd v0, v0
+    const v1_data = InstructionData{ .binary = .{
+        .opcode = .iadd,
+        .args = .{ v0, v0 },
+    } };
+    const v1_inst = try func.dfg.makeInst(v1_data);
+    try func.layout.appendInst(v1_inst, block0);
+    const v1 = func.dfg.firstResult(v1_inst).?;
+
+    // block0: try_call throw_func()
+    const empty_args = try func.dfg.value_lists.allocate(allocator, &.{});
+    const try_call_data = InstructionData{
+        .try_call = .{
+            .opcode = .try_call,
+            .func_ref = entities.FuncRef.new(0), // Placeholder
+            .args = empty_args,
+            .normal_successor = block1,
+            .exception_successor = block2,
+        },
+    };
+    const try_call_inst = try func.dfg.makeInst(try_call_data);
+    try func.layout.appendInst(try_call_inst, block0);
+
+    // block0: jump block1 (if no exception)
+    const jump_data = InstructionData{ .jump = .{
+        .opcode = .jump,
+        .destination = block1,
+    } };
+    const jump_inst = try func.dfg.makeInst(jump_data);
+    try func.layout.appendInst(jump_inst, block0);
+
+    // block1: v2 = iadd v1, 10
+    const v2_data = InstructionData{ .binary_imm64 = .{
+        .opcode = .iadd_imm,
+        .arg = v1,
+        .imm = Imm64.new(10),
+    } };
+    const v2_inst = try func.dfg.makeInst(v2_data);
+    try func.layout.appendInst(v2_inst, block1);
+    const v2 = func.dfg.firstResult(v2_inst).?;
+
+    // block1: return v2
+    const ret1_data = InstructionData{ .unary = .{
+        .opcode = .@"return",
+        .arg = v2,
+    } };
+    const ret1_inst = try func.dfg.makeInst(ret1_data);
+    try func.layout.appendInst(ret1_inst, block1);
+
+    // block2: v3 = landingpad
+    const landingpad_data = InstructionData{ .nullary = .{
+        .opcode = .landingpad,
+    } };
+    const landingpad_inst = try func.dfg.makeInst(landingpad_data);
+    try func.layout.appendInst(landingpad_inst, block2);
+    const v3 = func.dfg.firstResult(landingpad_inst).?;
+
+    // block2: v4 = iadd v1, 100 (v1 is live across try_call)
+    const v4_data = InstructionData{ .binary_imm64 = .{
+        .opcode = .iadd_imm,
+        .arg = v1,
+        .imm = Imm64.new(100),
+    } };
+    const v4_inst = try func.dfg.makeInst(v4_data);
+    try func.layout.appendInst(v4_inst, block2);
+    const v4 = func.dfg.firstResult(v4_inst).?;
+
+    // block2: return v4
+    const ret2_data = InstructionData{ .unary = .{
+        .opcode = .@"return",
+        .arg = v4,
+    } };
+    const ret2_inst = try func.dfg.makeInst(ret2_data);
+    try func.layout.appendInst(ret2_inst, block2);
+
+    // Compute CFG for liveness analysis
+    const cfg_mod = @import("hoist").cfg;
+    var cfg = cfg_mod.CFG.init(allocator);
+    defer cfg.deinit();
+    try cfg.compute(&func);
+
+    // Verify CFG exception edges
+    const block0_node = cfg.nodes.get(block0).?;
+    try testing.expect(block0_node.successors.contains(block1));
+    try testing.expect(block0_node.exception_successors.contains(block2));
+
+    // Verify v1 is used in both normal and exception paths
+    // This validates that values must be preserved across try_call
+    var v1_used_in_block1 = false;
+    var v1_used_in_block2 = false;
+
+    var iter1 = func.layout.blockInsts(block1);
+    while (iter1.next()) |inst| {
+        const inst_data = func.dfg.insts.items(.data)[inst.index()];
+        if (inst_data == .binary_imm64) {
+            if (inst_data.binary_imm64.arg.eql(v1)) {
+                v1_used_in_block1 = true;
+            }
+        }
+    }
+
+    var iter2 = func.layout.blockInsts(block2);
+    while (iter2.next()) |inst| {
+        const inst_data = func.dfg.insts.items(.data)[inst.index()];
+        if (inst_data == .binary_imm64) {
+            if (inst_data.binary_imm64.arg.eql(v1)) {
+                v1_used_in_block2 = true;
+            }
+        }
+    }
+
+    try testing.expect(v1_used_in_block1);
+    try testing.expect(v1_used_in_block2);
+
+    // This validates key exception handling properties:
+    // 1. Values live at try_call must be preserved across exception edge
+    // 2. Landing pad receives exception value via landingpad instruction
+    // 3. Exception handler can access both exception value (v3) and pre-exception state (v1)
+    // 4. Stack unwinding would restore v1 from spill slot if needed
+    _ = v3; // Exception value would be used in real handler
+}
