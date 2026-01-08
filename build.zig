@@ -163,6 +163,18 @@ pub fn build(b: *std.Build) void {
     const run_aarch64_ccmp = b.addRunArtifact(aarch64_ccmp);
     test_step.dependOn(&run_aarch64_ccmp.step);
 
+    const aarch64_return_marshaling = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/aarch64_return_marshaling.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    aarch64_return_marshaling.root_module.addImport("hoist", lib.root_module);
+    applyFlags(aarch64_return_marshaling, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_aarch64_return_marshaling = b.addRunArtifact(aarch64_return_marshaling);
+    test_step.dependOn(&run_aarch64_return_marshaling.step);
+
     const test_legalize_ops = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/test_legalize_ops.zig"),

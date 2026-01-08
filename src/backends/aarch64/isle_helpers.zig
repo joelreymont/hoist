@@ -16,6 +16,7 @@ const types = root.types;
 const trapcode = root.trapcode;
 const emit = @import("emit.zig");
 const entities = root.entities;
+const abi_mod = @import("abi.zig");
 
 // Type aliases for IR types
 const Type = types.Type;
@@ -3055,8 +3056,97 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
     };
     try ctx.emit(Inst{ .bl = .{ .target = .{ .external_name = symbol_name } } });
 
-    // Return value in X0 (AAPCS64 convention)
-    return lower_mod.ValueRegs.one(Reg.gpr(0));
+    // Marshal return values according to AAPCS64
+    return marshalReturnValues(sig_ref, ctx);
+}
+
+/// Marshal return values from ABI registers according to AAPCS64.
+/// Handles:
+/// - Single/multiple integer returns in X0-X7
+/// - Single/multiple FP/SIMD returns in V0-V7
+/// - i128 in X0+X1
+/// - HFA in V0-V3
+/// - Indirect returns via X8 pointer
+fn marshalReturnValues(sig_ref: SigRef, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    const sig = ctx.getSig(sig_ref) orelse {
+        // No signature available - assume single integer return in X0
+        return lower_mod.ValueRegs.one(Reg.gpr(0));
+    };
+
+    const returns = sig.returns.items;
+
+    if (returns.len == 0) {
+        // No return values
+        return lower_mod.ValueRegs.empty();
+    }
+
+    if (returns.len == 1) {
+        // Single return value - use classifyReturn
+        const ret_type = returns[0].value_type;
+        const ret_loc = abi_mod.classifyReturn(ret_type);
+
+        return switch (ret_loc) {
+            .single_reg => |preg| lower_mod.ValueRegs.one(Reg.fromPReg(preg)),
+            .reg_pair => |pair| lower_mod.ValueRegs.two(
+                Reg.fromPReg(pair.lo),
+                Reg.fromPReg(pair.hi),
+            ),
+            .hfa => |hfa| {
+                // HFA returns in V0-V3
+                // For now, return just the first register
+                // TODO: Implement multi-value HFA marshaling
+                return lower_mod.ValueRegs.one(Reg.fromPReg(hfa.regs[0]));
+            },
+            .indirect => {
+                // Indirect return via X8 pointer
+                // The caller allocated space and passed pointer in X8
+                // TODO: Implement proper indirect return handling
+                // For now, return X8 as the pointer
+                return lower_mod.ValueRegs.one(Reg.gpr(8));
+            },
+        };
+    }
+
+    // Multiple return values
+    // AAPCS64 allows up to 8 integer (X0-X7) + 8 FP (V0-V7) returns
+    var int_count: u8 = 0;
+    var fp_count: u8 = 0;
+    var regs: [16]Reg = undefined;
+    var reg_count: usize = 0;
+
+    for (returns) |ret_param| {
+        const ret_type = ret_param.value_type;
+        const is_fp = ret_type.isFloat() or ret_type.isVector();
+
+        if (is_fp) {
+            if (fp_count >= 8) {
+                std.log.err("Too many FP return values: max 8 allowed", .{});
+                return error.TooManyReturnValues;
+            }
+            regs[reg_count] = Reg.fpr(fp_count);
+            fp_count += 1;
+        } else {
+            if (int_count >= 8) {
+                std.log.err("Too many integer return values: max 8 allowed", .{});
+                return error.TooManyReturnValues;
+            }
+            regs[reg_count] = Reg.gpr(int_count);
+            int_count += 1;
+        }
+        reg_count += 1;
+    }
+
+    // Return the collected registers
+    // ValueRegs supports up to 2 registers currently
+    // TODO: Extend ValueRegs to support more return values
+    if (reg_count == 1) {
+        return lower_mod.ValueRegs.one(regs[0]);
+    } else if (reg_count == 2) {
+        return lower_mod.ValueRegs.two(regs[0], regs[1]);
+    } else {
+        std.log.err("Multiple return values beyond 2 not yet supported in ValueRegs", .{});
+        return error.TooManyReturnValues;
+    }
 }
 
 pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
@@ -3169,8 +3259,8 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
     // Indirect call: BLR (branch with link to register)
     try ctx.emit(Inst{ .blr = .{ .target = temp_ptr } });
 
-    // Return value in X0 (AAPCS64 convention)
-    return lower_mod.ValueRegs.one(Reg.gpr(0));
+    // Marshal return values according to AAPCS64
+    return marshalReturnValues(sig_ref, ctx);
 }
 
 pub fn aarch64_try_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {

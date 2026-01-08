@@ -3400,8 +3400,14 @@ pub fn classifyReturn(ty: Type) ReturnLocation {
         return .{ .single_reg = PReg.new(.vector, 0) };
     }
 
-    // TODO: Struct classification (HFA detection, indirect for large structs)
+    // Struct types require full AAPCS64 classification
+    // TODO: Wire up struct type introspection when Type system supports it
     // For now, assume small structs fit in X0
+    // When implemented:
+    // 1. Check size: >16 bytes -> indirect (via X8)
+    // 2. Check HFA: 1-4 same float types -> V0-V3
+    // 3. Check HVA: 1-4 same vector types -> V0-V3
+    // 4. Otherwise: general registers X0-X1 for <=16 bytes
     return .{ .single_reg = PReg.new(.int, 0) };
 }
 
