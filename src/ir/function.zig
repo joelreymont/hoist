@@ -23,6 +23,7 @@ const StackSlotData = stack_slot_data.StackSlotData;
 const GlobalValueData = global_value_data.GlobalValueData;
 const JumpTableData = jump_table_data.JumpTableData;
 const PrimaryMap = maps.PrimaryMap;
+const SigRef = entities.SigRef;
 
 /// Function - a unit of code with signature, blocks, instructions, and data.
 pub const Function = struct {
@@ -40,6 +41,8 @@ pub const Function = struct {
     global_values: PrimaryMap(GlobalValue, GlobalValueData),
     /// Jump table definitions.
     jump_tables: PrimaryMap(JumpTable, JumpTableData),
+    /// Signature references used in this function (for calls, etc).
+    signatures: PrimaryMap(SigRef, Signature),
 
     allocator: Allocator,
 
@@ -55,6 +58,7 @@ pub const Function = struct {
             .stack_slots = PrimaryMap(StackSlot, StackSlotData).init(allocator),
             .global_values = PrimaryMap(GlobalValue, GlobalValueData).init(allocator),
             .jump_tables = PrimaryMap(JumpTable, JumpTableData).init(allocator),
+            .signatures = PrimaryMap(SigRef, Signature).init(allocator),
             .allocator = allocator,
         };
     }
@@ -71,6 +75,12 @@ pub const Function = struct {
             jt.deinit();
         }
         self.jump_tables.deinit();
+
+        // Signatures need deinit for their params/returns
+        for (self.signatures.elems.items) |*sig| {
+            sig.deinit();
+        }
+        self.signatures.deinit();
     }
 
     pub fn entryBlock(self: *const Self) ?Block {
