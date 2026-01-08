@@ -1034,6 +1034,40 @@ pub fn aarch64_cbnz(
     } });
 }
 
+/// Constructor: TBZ - Test bit and branch if zero.
+/// Emits a TBZ instruction that branches to target if bit N of x is zero.
+pub fn aarch64_tbz(
+    ctx: *IsleContext,
+    x: Value,
+    bit: u8,
+    target: Block,
+) !void {
+    const reg = try ctx.getValueReg(x, .int);
+
+    try ctx.emit(.{ .tbz = .{
+        .reg = reg,
+        .bit = bit,
+        .target = target,
+    } });
+}
+
+/// Constructor: TBNZ - Test bit and branch if non-zero.
+/// Emits a TBNZ instruction that branches to target if bit N of x is non-zero.
+pub fn aarch64_tbnz(
+    ctx: *IsleContext,
+    x: Value,
+    bit: u8,
+    target: Block,
+) !void {
+    const reg = try ctx.getValueReg(x, .int);
+
+    try ctx.emit(.{ .tbnz = .{
+        .reg = reg,
+        .bit = bit,
+        .target = target,
+    } });
+}
+
 /// Constructor: stack_addr - compute address of stack slot.
 /// Returns SP/FP + offset for accessing stack-allocated data.
 pub fn aarch64_stack_addr(

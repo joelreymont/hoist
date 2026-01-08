@@ -139,6 +139,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .b_cond => |i| try emitBCond(@intFromEnum(i.cond), i.target.label, buffer),
         .cbz => |i| try emitCbz(i.reg, i.target.label, i.size, buffer),
         .cbnz => |i| try emitCbnz(i.reg, i.target.label, i.size, buffer),
+        .tbz => |i| try emitTbz(i.reg, i.bit, i.target.label, buffer),
+        .tbnz => |i| try emitTbnz(i.reg, i.bit, i.target.label, buffer),
         .bl => |i| switch (i.target) {
             .external_name => |name| try emitBLExternal(name, buffer),
             .label => |label| try emitBL(label, buffer),
@@ -3003,6 +3005,44 @@ fn emitCbnz(reg: Reg, label: u32, size: OperandSize, buffer: *buffer_mod.MachBuf
     try buffer.put4(insn);
 
     // Add label use for fixup
+    try buffer.useLabel(
+        MachLabel.new(label),
+        buffer_mod.LabelUseKind.branch19,
+    );
+}
+
+/// TBZ (test bit and branch if zero)
+fn emitTbz(reg: Reg, bit: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void {
+    // TBZ: b5|011011|b40|imm14|Rt
+    // b5 (bit 31): bit[5] - upper bit of bit index (for 64-bit regs)
+    // b40 (bits 23-19): bit[4:0] - lower 5 bits of bit index
+    const b5: u32 = @intCast((bit >> 5) & 1);
+    const b40: u32 = @intCast(bit & 0x1F);
+    const rt = hwEnc(reg);
+    const insn: u32 = (b5 << 31) | (0b011011 << 25) | (b40 << 19) | rt;
+
+    try buffer.put4(insn);
+
+    // Add label use for fixup (14-bit branch offset)
+    try buffer.useLabel(
+        MachLabel.new(label),
+        buffer_mod.LabelUseKind.branch19,
+    );
+}
+
+/// TBNZ (test bit and branch if non-zero)
+fn emitTbnz(reg: Reg, bit: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void {
+    // TBNZ: b5|011011|1|b40|imm14|Rt
+    // b5 (bit 31): bit[5] - upper bit of bit index (for 64-bit regs)
+    // b40 (bits 23-19): bit[4:0] - lower 5 bits of bit index
+    const b5: u32 = @intCast((bit >> 5) & 1);
+    const b40: u32 = @intCast(bit & 0x1F);
+    const rt = hwEnc(reg);
+    const insn: u32 = (b5 << 31) | (0b011011 << 25) | (1 << 24) | (b40 << 19) | rt;
+
+    try buffer.put4(insn);
+
+    // Add label use for fixup (14-bit branch offset)
     try buffer.useLabel(
         MachLabel.new(label),
         buffer_mod.LabelUseKind.branch19,
