@@ -163,11 +163,12 @@ pub const JumpTable = struct {
     alignment: u32,
 
     pub fn init(allocator: Allocator, default_target: Block, alignment: u32) JumpTable {
+        _ = allocator;
         return .{
-            .targets = std.ArrayList(JumpTableEntry).init(allocator),
+            .targets = std.ArrayList(JumpTableEntry){},
             .default_target = default_target,
-            .default_label = 0, // Set during emission
-            .table_label = 0, // Set during emission
+            .default_label = MachLabel.new(0), // Set during emission
+            .table_label = MachLabel.new(0), // Set during emission
             .alignment = alignment,
         };
     }
@@ -176,8 +177,8 @@ pub const JumpTable = struct {
         self.targets.deinit(allocator);
     }
 
-    pub fn addTarget(self: *JumpTable, target: Block, label: MachLabel) !void {
-        try self.targets.append(.{
+    pub fn addTarget(self: *JumpTable, allocator: Allocator, target: Block, label: MachLabel) !void {
+        try self.targets.append(allocator, .{
             .target = target,
             .label = label,
         });
@@ -372,7 +373,7 @@ pub const MachBuffer = struct {
 
     /// Add a target to an existing jump table.
     pub fn addJumpTableTarget(self: *MachBuffer, jt_index: u32, target: Block, label: MachLabel) !void {
-        try self.jump_tables.items[jt_index].addTarget(target, label);
+        try self.jump_tables.items[jt_index].addTarget(self.allocator, target, label);
     }
 
     /// Get the label for a jump table (for PC-relative addressing).

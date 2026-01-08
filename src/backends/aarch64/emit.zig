@@ -3156,18 +3156,50 @@ fn emitJtSequence(
     target: Reg,
     buffer: *buffer_mod.MachBuffer,
 ) !void {
-    _ = targets; // Jump table data handled separately
-    _ = buffer; // Will be used for ADR/LDR/ADD/BR sequence
+    // Create jump table in buffer and get its label
+    // Note: targets[0] is used as default (bounds check ensures we never overflow)
+    const jt_index = try buffer.createJumpTable(targets[0], 4); // 4-byte alignment
+    for (targets) |block| {
+        const block_label = MachLabel.new(@intCast(block.toIndex()));
+        try buffer.addJumpTableTarget(jt_index, block, block_label);
+    }
+    const table_label = buffer.getJumpTableLabel(jt_index);
+
     const rd = hwEnc(table_base);
     const rn = hwEnc(index);
     const rt = hwEnc(target);
 
-    // TODO: Implement jump table emission
-    // For now, panic because we need jump table infrastructure in buffer.zig
-    _ = rd;
-    _ = rn;
-    _ = rt;
-    @panic("TODO: Implement jump table emission infrastructure in MachBuffer");
+    // ADR table_base, .LJT<N>
+    // ADR: 0|immlo|10000|immhi|Rd
+    const adr_insn: u32 = (@as(u32, 0b10000) << 24) | rd;
+    try buffer.put4(adr_insn);
+    try buffer.useLabel(table_label, buffer_mod.LabelUseKind.adr21);
+
+    // LDR target, [table_base, index, LSL #2]
+    // LDR (register): 11|111|0|00|01|1|Rm|opt|S|10|Rn|Rt
+    // opt=011 (LSL), S=1 (shift amount = 2)
+    const ldr_insn: u32 = (0b11111000 << 24) |
+        (0b011 << 21) | // register offset
+        (@as(u32, rn) << 16) | // Rm = index
+        (0b011 << 13) | // option = LSL
+        (1 << 12) | // S = 1 (shift by 2)
+        (0b10 << 10) | // size = 10 (32-bit load)
+        (@as(u32, rd) << 5) | // Rn = table_base
+        rt; // Rt = target
+    try buffer.put4(ldr_insn);
+
+    // ADD target, table_base, target
+    // ADD (shifted register): 0|00|01011|00|0|Rm|000000|Rn|Rd
+    const add_insn: u32 = (0b00001011 << 24) |
+        (@as(u32, rt) << 16) | // Rm = target
+        (@as(u32, rd) << 5) | // Rn = table_base
+        rt; // Rd = target
+    try buffer.put4(add_insn);
+
+    // BR target
+    // BR: 1101011000011111000000|Rn|00000
+    const br_insn: u32 = (0b1101011000011111000000 << 10) | (@as(u32, rt) << 5);
+    try buffer.put4(br_insn);
 }
 
 /// NOP
