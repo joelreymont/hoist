@@ -282,6 +282,18 @@ pub fn build(b: *std.Build) void {
     const run_isle_bitwise_tests = b.addRunArtifact(isle_bitwise_tests);
     test_step.dependOn(&run_isle_bitwise_tests.step);
 
+    const isle_conversions_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/isle_conversions.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    isle_conversions_tests.root_module.addImport("hoist", lib.root_module);
+    applyFlags(isle_conversions_tests, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_isle_conversions_tests = b.addRunArtifact(isle_conversions_tests);
+    test_step.dependOn(&run_isle_conversions_tests.step);
+
     const test_legalize_ops = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/test_legalize_ops.zig"),
