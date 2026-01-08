@@ -6,13 +6,14 @@ const Function = hoist.function.Function;
 const Signature = hoist.signature.Signature;
 const CallConv = hoist.signature.CallConv;
 const AbiParam = hoist.signature.AbiParam;
-const Type = hoist.types.Type;
+const Type = hoist.Type;
 const Block = hoist.entities.Block;
 const JumpTable = hoist.entities.JumpTable;
 const ContextBuilder = hoist.context.ContextBuilder;
 const InstructionData = hoist.instruction_data.InstructionData;
 const Imm64 = hoist.immediates.Imm64;
 const Verifier = hoist.verifier.Verifier;
+const CompileContext = hoist.compile.CompileContext;
 const IntCC = hoist.condcodes.IntCC;
 const JumpTableData = hoist.jump_table_data.JumpTableData;
 const BlockCall = hoist.block_call.BlockCall;
@@ -253,22 +254,14 @@ test "E2E: br_table switch statement" {
 
     try testing.expect(code.code.items.len > 0);
 }
-const std = @import("std");
-const testing = std.testing;
-const Signature = @import("src/ir/signature.zig").Signature;
-const Function = @import("src/ir/function.zig").Function;
-const InstructionData = @import("src/ir/instruction_data.zig").InstructionData;
-const entities = @import("src/ir/entities.zig");
-const types = @import("src/ir/types.zig");
-const CompileContext = @import("src/codegen/compile.zig").CompileContext;
 
 test "E2E: brz branch if zero" {
     var sig = Signature.init(testing.allocator, .system_v);
     defer sig.deinit();
     
     // Function signature: fn(i64) -> i64
-    try sig.params.append(testing.allocator, types.Type.int(64));
-    try sig.returns.append(testing.allocator, types.Type.int(64));
+    try sig.params.append(testing.allocator, Type.int(64));
+    try sig.returns.append(testing.allocator, Type.int(64));
 
     var func = try Function.init(testing.allocator, "test_brz", sig);
     defer func.deinit();
@@ -290,7 +283,7 @@ test "E2E: brz branch if zero" {
             .condition = param,
             .destination = zero_block,
         },
-    }, types.Type.void());
+    }, Type.void());
     func.layout.appendInst(entry_block, brz_inst);
 
     // Also add fallthrough jump to nonzero_block
@@ -299,27 +292,27 @@ test "E2E: brz branch if zero" {
             .opcode = .jump,
             .destination = nonzero_block,
         },
-    }, types.Type.void());
+    }, Type.void());
     func.layout.appendInst(entry_block, jump_inst);
 
     // zero_block: return 0
-    const zero_val = try func.dfg.makeIconst(types.Type.int(64), 0);
+    const zero_val = try func.dfg.makeIconst(Type.int(64), 0);
     const ret0_inst = try func.dfg.createInst(.{
         .unary = .{
             .opcode = .@"return",
             .arg = zero_val,
         },
-    }, types.Type.void());
+    }, Type.void());
     func.layout.appendInst(zero_block, ret0_inst);
 
     // nonzero_block: return 1
-    const one_val = try func.dfg.makeIconst(types.Type.int(64), 1);
+    const one_val = try func.dfg.makeIconst(Type.int(64), 1);
     const ret1_inst = try func.dfg.createInst(.{
         .unary = .{
             .opcode = .@"return",
             .arg = one_val,
         },
-    }, types.Type.void());
+    }, Type.void());
     func.layout.appendInst(nonzero_block, ret1_inst);
 
     var ctx = CompileContext
