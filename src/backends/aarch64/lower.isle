@@ -3175,6 +3175,10 @@
 (rule (lower (tls_value offset))
       (tls_local_exec offset))
 
+;; TLS Initial-Exec model: Load TLS variable via GOT
+(decl tls_init_exec (ExternalName) Aarch64Inst)
+(extern constructor tls_init_exec tls_init_exec)
+
 ;; global_value: Load address of global value
 (decl aarch64_global_value (GlobalValue) Aarch64Inst)
 (rule (lower (global_value gv))

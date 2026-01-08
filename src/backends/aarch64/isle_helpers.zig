@@ -2221,6 +2221,53 @@ pub fn tls_local_exec(offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     }
 }
 
+pub fn tls_init_exec(extname: ExternalName, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Initial-exec TLS model: TLS offset loaded from GOT
+    // Sequence: ADRP + LDR + MRS + ADD
+    //   ADRP Xtmp, :gottprel:symbol   // Load GOT page address
+    //   LDR  Xtmp, [Xtmp, :gottprel_lo12:symbol]  // Load TLS offset from GOT
+    //   MRS  Xd, TPIDR_EL0            // Read thread pointer
+    //   ADD  Xd, Xd, Xtmp             // Add TLS offset to thread pointer
+
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    const tmp = lower_mod.WritableReg.allocReg(.int, ctx);
+
+    // ADRP: Load GOT page containing TLS offset
+    try ctx.emit(Inst{
+        .adrp = .{
+            .dst = tmp,
+            .symbol = extname,
+            // Note: relocation will be aarch64_tlsie_adr_gottprel_page21
+        },
+    });
+
+    // LDR: Load TLS offset from GOT entry
+    try ctx.emit(Inst{
+        .ldr_imm = .{
+            .dst = tmp,
+            .base = tmp.toReg(),
+            .offset = 0, // Will be filled by relocation
+            .size = .size64,
+            .sign_extend = false,
+            // Note: relocation will be aarch64_tlsie_ld64_gottprel_lo12_nc
+        },
+    });
+
+    // MRS: Read thread pointer
+    try ctx.emit(Inst{ .mrs = .{
+        .dst = dst,
+        .sysreg = Inst.SystemReg.tpidr_el0,
+    } });
+
+    // ADD: Add TLS offset to thread pointer to get variable address
+    return Inst{ .add_rr = .{
+        .dst = dst,
+        .src1 = dst.toReg(),
+        .src2 = tmp.toReg(),
+        .size = .size64,
+    } };
+}
+
 /// Dynamic stack operations (ISLE constructors)
 pub fn dynamic_stack_addr(offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Get dynamic stack pointer register (X19)
