@@ -1,9 +1,10 @@
 ---
 title: edit
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-01-08T06:15:08.169145+02:00"
+created-at: "\"2026-01-08T06:15:08.169145+02:00\""
+closed-at: "2026-01-08T06:40:06.129937+02:00"
 ---
 
 File: tests/e2e_jit.zig - CRITICAL memory corruption during ctx.compileFunction().
