@@ -215,6 +215,15 @@ test "JIT: compile and execute return constant i32" {
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
+    // Debug: Print generated machine code
+    std.debug.print("\nGenerated code ({d} bytes):\n", .{code.code.items.len});
+    for (code.code.items, 0..) |byte, i| {
+        if (i % 4 == 0) std.debug.print("{x:0>8}: ", .{i});
+        std.debug.print("{x:0>2} ", .{byte});
+        if (i % 4 == 3) std.debug.print("\n", .{});
+    }
+    std.debug.print("\n", .{});
+
     // Allocate executable memory
     const exec_mem = try allocExecutableMemory(testing.allocator, code.code.items.len);
     defer freeExecutableMemory(exec_mem);
