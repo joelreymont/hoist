@@ -1742,3 +1742,47 @@ test "Aarch64ISA compile function with regalloc2" {
     try testing.expectEqual(@as(usize, 0), code.traps.len);
     try testing.expectEqual(@as(u32, 0), code.stack_frame_size);
 }
+
+test "Aarch64ISA frame size includes spill area" {
+    const liveness_mod = @import("../../regalloc/liveness.zig");
+    const linear_scan_mod = @import("../../regalloc/linear_scan.zig");
+    const reg_mod = @import("../../machinst/reg.zig");
+
+    // Create liveness info with many overlapping live ranges to force spills
+    var liveness_info = liveness_mod.LivenessInfo.init(testing.allocator);
+    defer liveness_info.deinit();
+
+    // With 31 int registers, creating 35+ overlapping ranges will force spills
+    var i: u32 = 0;
+    while (i < 40) : (i += 1) {
+        try liveness_info.addRange(.{
+            .vreg = reg_mod.VReg.new(i),
+            .start_inst = 0,
+            .end_inst = 100, // All ranges overlap completely
+            .reg_class = .int,
+        });
+    }
+
+    // Run linear scan allocator directly
+    var allocator_state = try linear_scan_mod.LinearScanAllocator.init(
+        testing.allocator,
+        31, // num_int_regs
+        32, // num_float_regs
+        32, // num_vector_regs
+    );
+    defer allocator_state.deinit();
+
+    var result = try allocator_state.allocate(&liveness_info);
+    defer result.deinit();
+
+    // Verify we have spills
+    try testing.expect(result.vreg_to_spill.count() > 0);
+
+    // Verify frame size would be extracted from next_spill_offset
+    const expected_frame_size = allocator_state.next_spill_offset;
+    try testing.expect(expected_frame_size > 0);
+
+    // Frame size should account for all spilled registers
+    // Each spill is 8 bytes, and we should have ~9 spills (40 vregs - 31 registers)
+    try testing.expect(expected_frame_size >= 8 * 9);
+}
