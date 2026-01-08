@@ -681,6 +681,17 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Store pair of registers with immediate offset (STP Xt1, Xt2, [Xn, #imm]).
+    /// Stores two registers to adjacent memory locations.
+    /// Offset is signed 7-bit value scaled by size (8 for 64-bit, 4 for 32-bit).
+    stp_imm: struct {
+        rt1: Reg, // First source register
+        rt2: Reg, // Second source register
+        rn: Reg, // Base address register
+        offset: i7, // Signed offset in multiples of register size
+        size: OperandSize,
+    },
+
     /// Store register to memory with extended register offset (STR Xt, [Xn, Wm, SXTW]).
     str_ext: struct {
         src: Reg,
@@ -2190,6 +2201,7 @@ pub const Inst = union(enum) {
             .ldr_shifted => |i| try writer.print("ldr.{} {}, [{}, {}, {} #{d}]", .{ i.size, i.dst, i.base, i.offset, i.shift_op, i.shift_amt }),
             .ldr_literal => |i| try writer.print("ldr.{} {}, label{}", .{ i.size, i.dst, i.label.index }),
             .str => |i| try writer.print("str.{} {}, [{}, #{d}]", .{ i.size, i.src, i.base, i.offset }),
+            .stp_imm => |i| try writer.print("stp.{} {}, {}, [{}, #{d}]", .{ i.size, i.rt1, i.rt2, i.rn, i.offset }),
             .str_reg => |i| try writer.print("str.{} {}, [{}, {}]", .{ i.size, i.src, i.base, i.offset }),
             .str_ext => |i| try writer.print("str.{} {}, [{}, {}, {}]", .{ i.size, i.src, i.base, i.offset, i.extend }),
             .str_shifted => |i| try writer.print("str.{} {}, [{}, {}, {} #{d}]", .{ i.size, i.src, i.base, i.offset, i.shift_op, i.shift_amt }),
@@ -2691,6 +2703,11 @@ pub const Inst = union(enum) {
             .str => |*i| {
                 try collector.regUse(i.src);
                 try collector.regUse(i.base);
+            },
+            .stp_imm => |*i| {
+                try collector.regUse(i.rt1);
+                try collector.regUse(i.rt2);
+                try collector.regUse(i.rn);
             },
             .str_ext => |*i| {
                 try collector.regUse(i.src);
