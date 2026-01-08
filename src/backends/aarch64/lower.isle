@@ -1278,6 +1278,49 @@
 (rule (lower (band ty x y))
       (aarch64_and_rr ty x y))
 
+;; band with left-shifted operand (higher priority than generic)
+;; Pattern: band(x, ishl(y, iconst(shift))) => AND Xd, Xn, Xm, LSL #shift
+(rule 3 (lower (band ty x (ishl shift_ty y (iconst (u64_from_imm64 shift)))))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (aarch64_and_shifted ty x y ShiftOp.lsl (u64_to_u6 shift)))
+
+;; band with commuted left-shifted operand
+(rule 3 (lower (band ty (ishl shift_ty y (iconst (u64_from_imm64 shift))) x))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (aarch64_and_shifted ty x y ShiftOp.lsl (u64_to_u6 shift)))
+
+;; band with right-shifted operand (logical)
+;; Pattern: band(x, ushr(y, iconst(shift))) => AND Xd, Xn, Xm, LSR #shift
+(rule 3 (lower (band ty x (ushr shift_ty y (iconst (u64_from_imm64 shift)))))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if (u64_nonzero shift))
+      (aarch64_and_shifted ty x y ShiftOp.lsr (u64_to_u6 shift)))
+
+;; band with commuted right-shifted operand (logical)
+(rule 3 (lower (band ty (ushr shift_ty y (iconst (u64_from_imm64 shift))) x))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if (u64_nonzero shift))
+      (aarch64_and_shifted ty x y ShiftOp.lsr (u64_to_u6 shift)))
+
+;; band with arithmetic right-shifted operand
+;; Pattern: band(x, sshr(y, iconst(shift))) => AND Xd, Xn, Xm, ASR #shift
+(rule 3 (lower (band ty x (sshr shift_ty y (iconst (u64_from_imm64 shift)))))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if (u64_nonzero shift))
+      (aarch64_and_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
+
+;; band with commuted arithmetic right-shifted operand
+(rule 3 (lower (band ty (sshr shift_ty y (iconst (u64_from_imm64 shift))) x))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if (u64_nonzero shift))
+      (aarch64_and_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
+
 ;; band: Bitwise AND (immediate form with logical immediate)
 (rule 1 (lower (band ty x (iconst k)))
       (if-let imm (imm_logic_from_u64 ty k))
@@ -1347,6 +1390,49 @@
       (if-let imm (imm_logic_from_u64 ty k))
       (aarch64_orr_imm ty x imm))
 
+;; bor with left-shifted operand
+;; Pattern: bor(x, ishl(y, iconst(shift))) => ORR Xd, Xn, Xm, LSL #shift
+(rule 3 (lower (bor ty x (ishl shift_ty y (iconst (u64_from_imm64 shift)))))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (aarch64_orr_shifted ty x y ShiftOp.lsl (u64_to_u6 shift)))
+
+;; bor with commuted left-shifted operand
+(rule 3 (lower (bor ty (ishl shift_ty y (iconst (u64_from_imm64 shift))) x))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (aarch64_orr_shifted ty x y ShiftOp.lsl (u64_to_u6 shift)))
+
+;; bor with right-shifted operand (logical)
+;; Pattern: bor(x, ushr(y, iconst(shift))) => ORR Xd, Xn, Xm, LSR #shift
+(rule 3 (lower (bor ty x (ushr shift_ty y (iconst (u64_from_imm64 shift)))))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if (u64_nonzero shift))
+      (aarch64_orr_shifted ty x y ShiftOp.lsr (u64_to_u6 shift)))
+
+;; bor with commuted right-shifted operand (logical)
+(rule 3 (lower (bor ty (ushr shift_ty y (iconst (u64_from_imm64 shift))) x))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if (u64_nonzero shift))
+      (aarch64_orr_shifted ty x y ShiftOp.lsr (u64_to_u6 shift)))
+
+;; bor with arithmetic right-shifted operand
+;; Pattern: bor(x, sshr(y, iconst(shift))) => ORR Xd, Xn, Xm, ASR #shift
+(rule 3 (lower (bor ty x (sshr shift_ty y (iconst (u64_from_imm64 shift)))))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if (u64_nonzero shift))
+      (aarch64_orr_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
+
+;; bor with commuted arithmetic right-shifted operand
+(rule 3 (lower (bor ty (sshr shift_ty y (iconst (u64_from_imm64 shift))) x))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if (u64_nonzero shift))
+      (aarch64_orr_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
+
 ;; bor: Fusion with bnot -> ORN instruction
 ;; bor(x, bnot(y)) -> bor_not(x, y) -> ORN
 (rule 2 (lower (has_type ty @ (fits_in_64 _) (bor x (bnot _ y))))
@@ -1392,6 +1478,49 @@
 (rule 1 (lower (bxor_imm ty x k))
       (if-let imm (imm_logic_from_u64 ty k))
       (aarch64_eor_imm ty x imm))
+
+;; bxor with left-shifted operand
+;; Pattern: bxor(x, ishl(y, iconst(shift))) => EOR Xd, Xn, Xm, LSL #shift
+(rule 3 (lower (bxor ty x (ishl shift_ty y (iconst (u64_from_imm64 shift)))))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (aarch64_eor_shifted ty x y ShiftOp.lsl (u64_to_u6 shift)))
+
+;; bxor with commuted left-shifted operand
+(rule 3 (lower (bxor ty (ishl shift_ty y (iconst (u64_from_imm64 shift))) x))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (aarch64_eor_shifted ty x y ShiftOp.lsl (u64_to_u6 shift)))
+
+;; bxor with right-shifted operand (logical)
+;; Pattern: bxor(x, ushr(y, iconst(shift))) => EOR Xd, Xn, Xm, LSR #shift
+(rule 3 (lower (bxor ty x (ushr shift_ty y (iconst (u64_from_imm64 shift)))))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if (u64_nonzero shift))
+      (aarch64_eor_shifted ty x y ShiftOp.lsr (u64_to_u6 shift)))
+
+;; bxor with commuted right-shifted operand (logical)
+(rule 3 (lower (bxor ty (ushr shift_ty y (iconst (u64_from_imm64 shift))) x))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if (u64_nonzero shift))
+      (aarch64_eor_shifted ty x y ShiftOp.lsr (u64_to_u6 shift)))
+
+;; bxor with arithmetic right-shifted operand
+;; Pattern: bxor(x, sshr(y, iconst(shift))) => EOR Xd, Xn, Xm, ASR #shift
+(rule 3 (lower (bxor ty x (sshr shift_ty y (iconst (u64_from_imm64 shift)))))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if (u64_nonzero shift))
+      (aarch64_eor_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
+
+;; bxor with commuted arithmetic right-shifted operand
+(rule 3 (lower (bxor ty (sshr shift_ty y (iconst (u64_from_imm64 shift))) x))
+      (if (ty_int_ref_scalar_64_from_ty ty))
+      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if (u64_nonzero shift))
+      (aarch64_eor_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
 
 ;; bxor: Fusion with bnot -> EON instruction
 ;; bxor(x, bnot(y)) -> bxor_not(x, y) -> EON
@@ -2459,6 +2588,9 @@
 (decl aarch64_orr_imm (Type Value ImmLogic) Aarch64Inst)
 (decl aarch64_eor_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_eor_imm (Type Value ImmLogic) Aarch64Inst)
+(decl aarch64_and_shifted (Type Value Value ShiftOp u6) Aarch64Inst)
+(decl aarch64_orr_shifted (Type Value Value ShiftOp u6) Aarch64Inst)
+(decl aarch64_eor_shifted (Type Value Value ShiftOp u6) Aarch64Inst)
 (decl aarch64_mvn_rr (Type Value) Aarch64Inst)
 (decl aarch64_bic_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_orn_rr (Type Value Value) Aarch64Inst)

@@ -65,6 +65,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .orr_imm => |i| try emitOrrImm(i.dst.toReg(), i.src, i.imm, buffer),
         .eor_rr => |i| try emitEorRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .eor_imm => |i| try emitEorImm(i.dst.toReg(), i.src, i.imm, buffer),
+        .and_shifted => |i| try emitAndShifted(i.dst.toReg(), i.src1, i.src2, i.shift_op, i.shift_amt, i.size, buffer),
+        .orr_shifted => |i| try emitOrrShifted(i.dst.toReg(), i.src1, i.src2, i.shift_op, i.shift_amt, i.size, buffer),
+        .eor_shifted => |i| try emitEorShifted(i.dst.toReg(), i.src1, i.src2, i.shift_op, i.shift_amt, i.size, buffer),
         .mvn_rr => |i| try emitMvnRR(i.dst.toReg(), i.src, i.size, buffer),
         .bic_rr => |i| try emitBicRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
         .orn_rr => |i| try emitOrnRR(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -1164,6 +1167,69 @@ fn emitEorImm(dst: Reg, src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_
         (@as(u32, n) << 22) |
         (@as(u32, immr) << 16) |
         (@as(u32, imms) << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    try buffer.put4(insn);
+}
+
+/// AND Xd, Xn, Xm, shift #amt (bitwise AND with shifted register)
+fn emitAndShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: inst_mod.ShiftOp, shift_amt: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const shift: u32 = @intFromEnum(shift_op);
+    const imm6: u32 = @intCast(shift_amt);
+
+    // AND (shifted register): sf|00|01010|shift|0|Rm|imm6|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b00001010 << 21) |
+        (shift << 22) |
+        (@as(u32, rm) << 16) |
+        (imm6 << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    try buffer.put4(insn);
+}
+
+/// ORR Xd, Xn, Xm, shift #amt (bitwise OR with shifted register)
+fn emitOrrShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: inst_mod.ShiftOp, shift_amt: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const shift: u32 = @intFromEnum(shift_op);
+    const imm6: u32 = @intCast(shift_amt);
+
+    // ORR (shifted register): sf|01|01010|shift|0|Rm|imm6|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b01001010 << 21) |
+        (shift << 22) |
+        (@as(u32, rm) << 16) |
+        (imm6 << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
+    try buffer.put4(insn);
+}
+
+/// EOR Xd, Xn, Xm, shift #amt (bitwise XOR with shifted register)
+fn emitEorShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: inst_mod.ShiftOp, shift_amt: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src1);
+    const rm = hwEnc(src2);
+    const shift: u32 = @intFromEnum(shift_op);
+    const imm6: u32 = @intCast(shift_amt);
+
+    // EOR (shifted register): sf|10|01010|shift|0|Rm|imm6|Rn|Rd
+    const insn: u32 = (sf_bit << 31) |
+        (0b10001010 << 21) |
+        (shift << 22) |
+        (@as(u32, rm) << 16) |
+        (imm6 << 10) |
         (@as(u32, rn) << 5) |
         rd;
 

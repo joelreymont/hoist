@@ -363,6 +363,39 @@ pub const Inst = union(enum) {
         imm: ImmLogic,
     },
 
+    /// Bitwise AND with shifted register (AND Xd, Xn, Xm, shift #amt).
+    /// Emits: dst = src1 & (src2 << amt)
+    and_shifted: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        shift_op: ShiftOp,
+        shift_amt: u6,
+        size: OperandSize,
+    },
+
+    /// Bitwise OR with shifted register (ORR Xd, Xn, Xm, shift #amt).
+    /// Emits: dst = src1 | (src2 << amt)
+    orr_shifted: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        shift_op: ShiftOp,
+        shift_amt: u6,
+        size: OperandSize,
+    },
+
+    /// Bitwise XOR with shifted register (EOR Xd, Xn, Xm, shift #amt).
+    /// Emits: dst = src1 ^ (src2 << amt)
+    eor_shifted: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        shift_op: ShiftOp,
+        shift_amt: u6,
+        size: OperandSize,
+    },
+
     /// Bit clear (BIC Xd, Xn, Xm).
     /// Computes Xd = Xn & ~Xm.
     bic_rr: struct {
@@ -2444,6 +2477,21 @@ pub const Inst = union(enum) {
                 try collector.regDef(i.dst);
             },
             .sub_shifted => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .and_shifted => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .orr_shifted => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .eor_shifted => |*i| {
                 try collector.regUse(i.src1);
                 try collector.regUse(i.src2);
                 try collector.regDef(i.dst);

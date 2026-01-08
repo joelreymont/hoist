@@ -575,6 +575,87 @@ pub fn aarch64_eor_imm(
     return dst;
 }
 
+/// Constructor: AND with shifted register (AND Xd, Xn, Xm, shift #amt).
+/// Emits: dst = src1 & (src2 << shift_amt)
+pub fn aarch64_and_shifted(
+    ctx: *IsleContext,
+    ty: Type,
+    x: Value,
+    y: Value,
+    shift_op: ShiftOp,
+    shift_amt: u6,
+) !WritableReg {
+    const size = ctx.typeToSize(ty);
+    const reg_x = try ctx.getValueReg(x, .int);
+    const reg_y = try ctx.getValueReg(y, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(.{ .and_shifted = .{
+        .dst = dst,
+        .src1 = reg_x,
+        .src2 = reg_y,
+        .shift_op = shift_op,
+        .shift_amt = shift_amt,
+        .size = size,
+    } });
+
+    return dst;
+}
+
+/// Constructor: ORR with shifted register (ORR Xd, Xn, Xm, shift #amt).
+/// Emits: dst = src1 | (src2 << shift_amt)
+pub fn aarch64_orr_shifted(
+    ctx: *IsleContext,
+    ty: Type,
+    x: Value,
+    y: Value,
+    shift_op: ShiftOp,
+    shift_amt: u6,
+) !WritableReg {
+    const size = ctx.typeToSize(ty);
+    const reg_x = try ctx.getValueReg(x, .int);
+    const reg_y = try ctx.getValueReg(y, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(.{ .orr_shifted = .{
+        .dst = dst,
+        .src1 = reg_x,
+        .src2 = reg_y,
+        .shift_op = shift_op,
+        .shift_amt = shift_amt,
+        .size = size,
+    } });
+
+    return dst;
+}
+
+/// Constructor: EOR with shifted register (EOR Xd, Xn, Xm, shift #amt).
+/// Emits: dst = src1 ^ (src2 << shift_amt)
+pub fn aarch64_eor_shifted(
+    ctx: *IsleContext,
+    ty: Type,
+    x: Value,
+    y: Value,
+    shift_op: ShiftOp,
+    shift_amt: u6,
+) !WritableReg {
+    const size = ctx.typeToSize(ty);
+    const reg_x = try ctx.getValueReg(x, .int);
+    const reg_y = try ctx.getValueReg(y, .int);
+    const dst = ctx.allocOutputReg(.int);
+
+    try ctx.emit(.{ .eor_shifted = .{
+        .dst = dst,
+        .src1 = reg_x,
+        .src2 = reg_y,
+        .shift_op = shift_op,
+        .shift_amt = shift_amt,
+        .size = size,
+    } });
+
+    return dst;
+}
+
 // ============================================================================
 // ISLE Constructors - Shift Operations
 // ============================================================================
