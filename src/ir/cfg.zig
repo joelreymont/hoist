@@ -122,6 +122,12 @@ pub const ControlFlowGraph = struct {
                         try self.addEdge(block, last_inst, else_dest);
                     }
                 },
+                .try_call => {
+                    // Wire normal successor as regular control flow edge
+                    try self.addEdge(block, last_inst, inst_data.try_call.normal_successor);
+                    // Wire exception successor as exception edge
+                    try self.addExceptionEdge(block, inst_data.try_call.exception_successor);
+                },
                 .br_table => {
                     // TODO: Look up jump table destinations from function.jump_tables
                     // For now, skip adding edges for br_table
@@ -140,6 +146,13 @@ pub const ControlFlowGraph = struct {
 
         // Add to predecessors of 'to'
         try self.data.items[to_idx].predecessors.put(from_inst, from);
+    }
+
+    pub fn addExceptionEdge(self: *ControlFlowGraph, from: Block, to: Block) !void {
+        const from_idx = from.toIndex();
+
+        // Add exception successor edge
+        try self.data.items[from_idx].exception_successors.put(to, {});
     }
 
     /// Invalidate successors of a block (for recomputation).

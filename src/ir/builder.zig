@@ -14,6 +14,7 @@ const Function = function.Function;
 const Block = entities.Block;
 const Inst = entities.Inst;
 const Value = entities.Value;
+const FuncRef = entities.FuncRef;
 const Type = types.Type;
 const Opcode = opcodes.Opcode;
 const InstructionData = instruction_data.InstructionData;
@@ -27,6 +28,7 @@ const FloatCompareData = instruction_data.FloatCompareData;
 const BranchData = instruction_data.BranchData;
 const LoadData = instruction_data.LoadData;
 const StoreData = instruction_data.StoreData;
+const TryCallData = instruction_data.TryCallData;
 const Imm64 = @import("immediates.zig").Imm64;
 const IntCC = @import("condcodes.zig").IntCC;
 const FloatCC = @import("condcodes.zig").FloatCC;
@@ -345,6 +347,38 @@ pub const FunctionBuilder = struct {
         const inst = try self.func.dfg.makeInst(inst_data);
 
         try self.func.layout.appendInst(inst, block);
+    }
+
+    pub fn instTryCall(
+        self: *Self,
+        callee: FuncRef,
+        args: []const Value,
+        normal_block: Block,
+        exception_block: Block,
+    ) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        // Create empty args list and populate with provided arguments
+        var args_list = instruction_data.ValueList.default();
+        try self.func.dfg.value_lists.extend(&args_list, args);
+
+        // Create try_call instruction with both successors
+        const inst_data = InstructionData{
+            .try_call = TryCallData{
+                .opcode = .try_call,
+                .func_ref = callee,
+                .args = args_list,
+                .normal_successor = normal_block,
+                .exception_successor = exception_block,
+            },
+        };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        // Append instruction to current block
+        try self.func.layout.appendInst(inst, block);
+
+        // Return the call result value
+        return try self.func.dfg.appendInstResult(inst, types.Type.I64);
     }
 };
 
