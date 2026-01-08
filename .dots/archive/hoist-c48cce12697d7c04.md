@@ -1,9 +1,10 @@
 ---
 title: Implement FP constant loading with ADRP+LDR
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-01-07T23:39:51.620139+02:00"
+created-at: "\"2026-01-07T23:39:51.620139+02:00\""
+closed-at: "2026-01-08T12:58:16.256067+02:00"
 ---
 
 Implementing FP constant loading
