@@ -2907,7 +2907,24 @@ fn vectorSizeFromType(ty: types.Type) emit.VectorSize {
 
 /// Call operations (ISLE constructors)
 pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
-    _ = sig_ref; // TODO: Use to validate argument count and types
+    // Validate signature if available
+    if (ctx.getSig(sig_ref)) |sig| {
+        // Check argument count matches
+        if (args.len != sig.params.items.len) {
+            std.log.err("Call argument count mismatch: got {}, expected {}", .{ args.len, sig.params.items.len });
+            return error.SignatureArgumentCountMismatch;
+        }
+
+        // Check argument types match
+        for (args, 0..) |arg_value, i| {
+            const arg_type = ctx.func.dfg.valueType(arg_value);
+            const param_type = sig.params.items[i].value_type;
+            if (!arg_type.eq(param_type)) {
+                std.log.err("Call argument {} type mismatch: got {}, expected {}", .{ i, arg_type, param_type });
+                return error.SignatureArgumentTypeMismatch;
+            }
+        }
+    }
 
     // AAPCS64 calling convention:
     // - First 8 integer args in X0-X7
@@ -3003,7 +3020,24 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
 }
 
 pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
-    _ = sig_ref; // TODO: Use to validate argument count and types
+    // Validate signature if available
+    if (ctx.getSig(sig_ref)) |sig| {
+        // Check argument count matches
+        if (args.len != sig.params.items.len) {
+            std.log.err("Call_indirect argument count mismatch: got {}, expected {}", .{ args.len, sig.params.items.len });
+            return error.SignatureArgumentCountMismatch;
+        }
+
+        // Check argument types match
+        for (args, 0..) |arg_value, i| {
+            const arg_type = ctx.func.dfg.valueType(arg_value);
+            const param_type = sig.params.items[i].value_type;
+            if (!arg_type.eq(param_type)) {
+                std.log.err("Call_indirect argument {} type mismatch: got {}, expected {}", .{ i, arg_type, param_type });
+                return error.SignatureArgumentTypeMismatch;
+            }
+        }
+    }
 
     // AAPCS64 calling convention:
     // - First 8 integer args in X0-X7
