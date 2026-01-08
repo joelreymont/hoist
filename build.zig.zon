@@ -6,6 +6,10 @@
         .ohsnap = .{
             .path = "deps/ohsnap",
         },
+        .zcheck = .{
+            .url = "https://github.com/joelreymont/zcheck/archive/refs/heads/master.tar.gz",
+            .hash = "zcheck-0.1.0-Px1bihTWAAAkvAodyD2kta9DXdUztoCIfdS1s6TzqghA",
+        },
     },
     .paths = .{
         "build.zig",

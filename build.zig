@@ -77,6 +77,12 @@ pub fn build(b: *std.Build) void {
     applyFlags(lib, enable_lto, debug_info, strip_debug, pic, single_threaded);
     b.installArtifact(lib);
 
+    // Dependencies
+    const zcheck = b.dependency("zcheck", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     // Unit tests
     const tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -85,6 +91,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    tests.root_module.addImport("zcheck", zcheck.module("zcheck"));
     applyFlags(tests, enable_lto, debug_info, strip_debug, pic, single_threaded);
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");
