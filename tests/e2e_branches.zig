@@ -253,3 +253,83 @@ test "E2E: br_table switch statement" {
 
     try testing.expect(code.code.items.len > 0);
 }
+const std = @import("std");
+const testing = std.testing;
+const Signature = @import("src/ir/signature.zig").Signature;
+const Function = @import("src/ir/function.zig").Function;
+const InstructionData = @import("src/ir/instruction_data.zig").InstructionData;
+const entities = @import("src/ir/entities.zig");
+const types = @import("src/ir/types.zig");
+const CompileContext = @import("src/codegen/compile.zig").CompileContext;
+
+test "E2E: brz branch if zero" {
+    var sig = Signature.init(testing.allocator, .system_v);
+    defer sig.deinit();
+    
+    // Function signature: fn(i64) -> i64
+    try sig.params.append(testing.allocator, types.Type.int(64));
+    try sig.returns.append(testing.allocator, types.Type.int(64));
+
+    var func = try Function.init(testing.allocator, "test_brz", sig);
+    defer func.deinit();
+
+    const entry_block = try func.dfg.createBlock();
+    const zero_block = try func.dfg.createBlock();
+    const nonzero_block = try func.dfg.createBlock();
+
+    func.layout.appendBlock(entry_block);
+    func.layout.appendBlock(zero_block);
+    func.layout.appendBlock(nonzero_block);
+
+    const param = func.dfg.blockParams(entry_block)[0];
+
+    // entry: brz param, zero_block
+    const brz_inst = try func.dfg.createInst(.{
+        .branch_z = .{
+            .opcode = .brz,
+            .condition = param,
+            .destination = zero_block,
+        },
+    }, types.Type.void());
+    func.layout.appendInst(entry_block, brz_inst);
+
+    // Also add fallthrough jump to nonzero_block
+    const jump_inst = try func.dfg.createInst(.{
+        .jump = .{
+            .opcode = .jump,
+            .destination = nonzero_block,
+        },
+    }, types.Type.void());
+    func.layout.appendInst(entry_block, jump_inst);
+
+    // zero_block: return 0
+    const zero_val = try func.dfg.makeIconst(types.Type.int(64), 0);
+    const ret0_inst = try func.dfg.createInst(.{
+        .unary = .{
+            .opcode = .@"return",
+            .arg = zero_val,
+        },
+    }, types.Type.void());
+    func.layout.appendInst(zero_block, ret0_inst);
+
+    // nonzero_block: return 1
+    const one_val = try func.dfg.makeIconst(types.Type.int(64), 1);
+    const ret1_inst = try func.dfg.createInst(.{
+        .unary = .{
+            .opcode = .@"return",
+            .arg = one_val,
+        },
+    }, types.Type.void());
+    func.layout.appendInst(nonzero_block, ret1_inst);
+
+    var ctx = CompileContext
+        .forTarget(.aarch64)
+        .optLevel(.none)
+        .build();
+
+    const code = try ctx.compileFunction(&func);
+    var code_copy = code;
+    defer code_copy.deinit();
+
+    try testing.expect(code.code.items.len > 0);
+}
