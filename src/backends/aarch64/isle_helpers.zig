@@ -2390,25 +2390,11 @@ pub fn constant_f32(bits: u32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
 pub fn constant_f64(bits: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const dst_fpr = lower_mod.WritableVReg.allocVReg(.float, ctx);
 
-    // Check for special values that can be encoded directly with FMOV immediate
-    // TODO: Check if bits can be encoded as FMOV immediate (abcdefgh pattern)
-
-    // For now, use GPR + FMOV approach (works but not optimal)
-    // TODO: Optimize by loading from constant pool for large constants:
-    //   1. Add constant to pool: pool_id = addConstantToPool(bits)
-    //   2. Load address: ADRP + ADD for constant pool base
-    //   3. Load value: LDR dst_fpr, [pool_base, offset]
-
-    const tmp_gpr = lower_mod.WritableReg.allocReg(.int, ctx);
-    try ctx.emit(Inst{ .mov_imm = .{
-        .dst = tmp_gpr,
-        .imm = bits,
-        .is_64 = true,
-    } });
-
-    return Inst{ .fmov_from_gpr = .{
+    // Load from constant pool using LDR literal
+    // During emission, the constant is added to the pool and LDR literal is emitted
+    return Inst{ .fpload_const = .{
         .dst = dst_fpr,
-        .src = tmp_gpr.toReg(),
+        .bits = bits,
         .size = .size64,
     } };
 }
