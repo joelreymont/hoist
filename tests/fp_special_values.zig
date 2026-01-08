@@ -11,12 +11,12 @@ const Ieee32 = hoist.immediates.Ieee32;
 const Ieee64 = hoist.immediates.Ieee64;
 const compile_mod = @import("hoist").codegen.compile;
 
-/// Test that f32 NaN constant can be compiled.
+// Test that f32 NaN constant can be compiled.
 test "FP special values: f32 NaN" {
     var sig = Signature.init(testing.allocator, .fast);
     defer sig.deinit();
 
-    const f32_type = Type{ .float = .{ .width = 32 } };
+    const f32_type = Type.F32;
     try sig.returns.append(AbiParam.new(f32_type));
 
     var func = try Function.init(testing.allocator, "test_f32_nan", sig);
@@ -55,12 +55,12 @@ test "FP special values: f32 NaN" {
     try testing.expect(result.code.len > 0);
 }
 
-/// Test that f32 positive infinity constant can be compiled.
+// Test that f32 positive infinity constant can be compiled.
 test "FP special values: f32 positive infinity" {
     var sig = Signature.init(testing.allocator, .fast);
     defer sig.deinit();
 
-    const f32_type = Type{ .float = .{ .width = 32 } };
+    const f32_type = Type.F32;
     try sig.returns.append(AbiParam.new(f32_type));
 
     var func = try Function.init(testing.allocator, "test_f32_inf", sig);
@@ -99,12 +99,12 @@ test "FP special values: f32 positive infinity" {
     try testing.expect(result.code.len > 0);
 }
 
-/// Test that f32 negative infinity constant can be compiled.
+// Test that f32 negative infinity constant can be compiled.
 test "FP special values: f32 negative infinity" {
     var sig = Signature.init(testing.allocator, .fast);
     defer sig.deinit();
 
-    const f32_type = Type{ .float = .{ .width = 32 } };
+    const f32_type = Type.F32;
     try sig.returns.append(AbiParam.new(f32_type));
 
     var func = try Function.init(testing.allocator, "test_f32_neg_inf", sig);
@@ -143,12 +143,12 @@ test "FP special values: f32 negative infinity" {
     try testing.expect(result.code.len > 0);
 }
 
-/// Test that f64 NaN constant can be compiled.
+// Test that f64 NaN constant can be compiled.
 test "FP special values: f64 NaN" {
     var sig = Signature.init(testing.allocator, .fast);
     defer sig.deinit();
 
-    const f64_type = Type{ .float = .{ .width = 64 } };
+    const f64_type = Type.F64;
     try sig.returns.append(AbiParam.new(f64_type));
 
     var func = try Function.init(testing.allocator, "test_f64_nan", sig);
@@ -187,12 +187,12 @@ test "FP special values: f64 NaN" {
     try testing.expect(result.code.len > 0);
 }
 
-/// Test that f64 positive infinity constant can be compiled.
+// Test that f64 positive infinity constant can be compiled.
 test "FP special values: f64 positive infinity" {
     var sig = Signature.init(testing.allocator, .fast);
     defer sig.deinit();
 
-    const f64_type = Type{ .float = .{ .width = 64 } };
+    const f64_type = Type.F64;
     try sig.returns.append(AbiParam.new(f64_type));
 
     var func = try Function.init(testing.allocator, "test_f64_inf", sig);
@@ -231,12 +231,12 @@ test "FP special values: f64 positive infinity" {
     try testing.expect(result.code.len > 0);
 }
 
-/// Test that f64 negative infinity constant can be compiled.
+// Test that f64 negative infinity constant can be compiled.
 test "FP special values: f64 negative infinity" {
     var sig = Signature.init(testing.allocator, .fast);
     defer sig.deinit();
 
-    const f64_type = Type{ .float = .{ .width = 64 } };
+    const f64_type = Type.F64;
     try sig.returns.append(AbiParam.new(f64_type));
 
     var func = try Function.init(testing.allocator, "test_f64_neg_inf", sig);
@@ -275,12 +275,12 @@ test "FP special values: f64 negative infinity" {
     try testing.expect(result.code.len > 0);
 }
 
-/// Test that f32 zero (both +0.0 and -0.0) can be compiled.
+// Test that f32 zero (both +0.0 and -0.0) can be compiled.
 test "FP special values: f32 signed zeros" {
     var sig = Signature.init(testing.allocator, .fast);
     defer sig.deinit();
 
-    const f32_type = Type{ .float = .{ .width = 32 } };
+    const f32_type = Type.F32;
     try sig.returns.append(AbiParam.new(f32_type));
 
     // Test +0.0

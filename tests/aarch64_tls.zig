@@ -10,14 +10,14 @@ const InstructionData = hoist.instruction_data.InstructionData;
 const Imm64 = hoist.immediates.Imm64;
 const compile_mod = @import("hoist").codegen.compile;
 
-/// Test TLS Local-Exec model with small offset (<4096 bytes).
-/// Local-Exec: MRS x0, TPIDR_EL0; ADD x0, x0, #offset
+// Test TLS Local-Exec model with small offset (<4096 bytes).
+// Local-Exec: MRS x0, TPIDR_EL0; ADD x0, x0, #offset
 test "TLS: Local-Exec model small offset" {
     // Create function: fn() -> i64
     var sig = Signature.init(testing.allocator, .fast);
     defer sig.deinit();
 
-    const i64_type = Type{ .int = .{ .width = 64 } };
+    const i64_type = Type.I64;
     try sig.returns.append(AbiParam.new(i64_type));
 
     var func = try Function.init(testing.allocator, "tls_le_small", sig);
@@ -60,14 +60,14 @@ test "TLS: Local-Exec model small offset" {
     // 3. RET instruction present
 }
 
-/// Test TLS Local-Exec model with large offset (>4095 bytes).
-/// Large offsets require multi-instruction materialization (MOVZ/MOVK sequence + ADD).
+// Test TLS Local-Exec model with large offset (>4095 bytes).
+// Large offsets require multi-instruction materialization (MOVZ/MOVK sequence + ADD).
 test "TLS: Local-Exec model large offset" {
     // Create function: fn() -> i64
     var sig = Signature.init(testing.allocator, .fast);
     defer sig.deinit();
 
-    const i64_type = Type{ .int = .{ .width = 64 } };
+    const i64_type = Type.I64;
     try sig.returns.append(AbiParam.new(i64_type));
 
     var func = try Function.init(testing.allocator, "tls_le_large", sig);
@@ -111,13 +111,13 @@ test "TLS: Local-Exec model large offset" {
     // 4. RET instruction present
 }
 
-/// Test TLS Local-Exec model with zero offset (thread pointer itself).
+// Test TLS Local-Exec model with zero offset (thread pointer itself).
 test "TLS: Local-Exec model zero offset" {
     // Create function: fn() -> i64
     var sig = Signature.init(testing.allocator, .fast);
     defer sig.deinit();
 
-    const i64_type = Type{ .int = .{ .width = 64 } };
+    const i64_type = Type.I64;
     try sig.returns.append(AbiParam.new(i64_type));
 
     var func = try Function.init(testing.allocator, "tls_le_zero", sig);

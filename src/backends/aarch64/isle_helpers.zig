@@ -251,12 +251,15 @@ pub fn intccToCondCode(cc: root.condcodes.IntCC) root.aarch64_inst.CondCode {
         .sge => .ge,
         .sgt => .gt,
         .sle => .le,
-        .ult => .lo,
-        .uge => .hs,
+        .ult => .cc, // lo/cc are same: carry clear
+        .uge => .cs, // hs/cs are same: carry set
         .ugt => .hi,
         .ule => .ls,
     };
 }
+
+/// ISLE snake_case alias for intccToCondCode
+pub const intcc_to_cond_code = intccToCondCode;
 
 /// Constructor: Create CMP instruction (register, register).
 /// CMP is an alias for SUBS with XZR as destination.
@@ -335,6 +338,43 @@ pub fn aarch64_cmn_imm(ty: root.types.Type, x: lower_mod.Value, imm: i64, ctx: *
     return Inst{ .cmn_imm = .{
         .src = reg_x,
         .imm = @intCast(imm),
+        .size = size,
+    } };
+}
+
+/// Constructor: Create CSEL (conditional select) with flags-producing instruction.
+/// This emits the flags-producing instruction (e.g., CMP or CCMP), then emits CSEL.
+/// Used for select patterns where we have a comparison and want to choose between two values.
+pub fn aarch64_csel(
+    ty: root.types.Type,
+    true_val: lower_mod.Value,
+    false_val: lower_mod.Value,
+    flags_inst: Inst,
+    cc: root.condcodes.IntCC,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    // Emit the flags-producing instruction (CMP, CCMP, etc.)
+    try ctx.emit(flags_inst);
+
+    // Get registers for true/false values
+    const true_reg = try getValueReg(ctx, true_val);
+    const false_reg = try getValueReg(ctx, false_val);
+
+    // Allocate destination register
+    const dst = lower_mod.WritableVReg.allocVReg(.int, ctx);
+
+    // Convert IntCC to CondCode
+    const cond = intccToCondCode(cc);
+
+    // Determine operand size based on result type
+    const size = typeToOperandSize(ty);
+
+    // Emit CSEL instruction
+    return Inst{ .csel = .{
+        .dst = dst,
+        .src1 = true_reg,
+        .src2 = false_reg,
+        .cond = cond,
         .size = size,
     } };
 }
@@ -5622,4 +5662,47 @@ pub fn aarch64_f64const(value: f64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
         .label = label,
         .size = .size64,
     } };
+}
+
+/// Compute NZCV value that makes the given condition fail.
+/// Used for CCMP in AND patterns: if first condition fails, set flags to make second fail too.
+///
+/// NZCV format (4 bits): N Z C V
+/// - N (Negative): bit 3
+/// - Z (Zero): bit 2
+/// - C (Carry): bit 1
+/// - V (Overflow): bit 0
+pub fn nzcv_for_ccmp_and_fail(cond: root.aarch64_inst.CondCode) u4 {
+    return switch (cond) {
+        // EQ (Z==1): To fail, set Z=0. Use NZCV=0b0000
+        .eq => 0b0000,
+        // NE (Z==0): To fail, set Z=1. Use NZCV=0b0100
+        .ne => 0b0100,
+        // CS/HS (C==1): To fail, set C=0. Use NZCV=0b0000
+        .cs => 0b0000,
+        // CC/LO (C==0): To fail, set C=1. Use NZCV=0b0010
+        .cc => 0b0010,
+        // MI (N==1): To fail, set N=0. Use NZCV=0b0000
+        .mi => 0b0000,
+        // PL (N==0): To fail, set N=1. Use NZCV=0b1000
+        .pl => 0b1000,
+        // VS (V==1): To fail, set V=0. Use NZCV=0b0000
+        .vs => 0b0000,
+        // VC (V==0): To fail, set V=1. Use NZCV=0b0001
+        .vc => 0b0001,
+        // HI (C==1 && Z==0): To fail, set Z=1 (or C=0). Use NZCV=0b0100
+        .hi => 0b0100,
+        // LS (C==0 || Z==1): To fail, set C=1 and Z=0. Use NZCV=0b0010
+        .ls => 0b0010,
+        // GE (N==V): To fail, set N!=V. Use NZCV=0b1000 (N=1,V=0)
+        .ge => 0b1000,
+        // LT (N!=V): To fail, set N==V. Use NZCV=0b0000 (N=0,V=0)
+        .lt => 0b0000,
+        // GT (Z==0 && N==V): To fail, set Z=1 (or N!=V). Use NZCV=0b0100
+        .gt => 0b0100,
+        // LE (Z==1 || N!=V): To fail, set Z=0 and N==V. Use NZCV=0b0000
+        .le => 0b0000,
+        // AL (always): Cannot fail, use 0b0000
+        .al => 0b0000,
+    };
 }

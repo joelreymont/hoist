@@ -260,8 +260,8 @@ test "E2E: brz branch if zero" {
     defer sig.deinit();
 
     // Function signature: fn(i64) -> i64
-    try sig.params.append(testing.allocator, Type.int(64));
-    try sig.returns.append(testing.allocator, Type.int(64));
+    try sig.params.append(testing.allocator, AbiParam.new(Type.int(64).?));
+    try sig.returns.append(testing.allocator, AbiParam.new(Type.int(64).?));
 
     var func = try Function.init(testing.allocator, "test_brz", sig);
     defer func.deinit();

@@ -1652,19 +1652,20 @@
       (let ((cmp_inst Aarch64Inst (aarch64_cmp_rr cmp_ty x y cc)))
             (aarch64_csel ty true_val false_val cmp_inst cc)))
 
-;; TODO: Add CCMP patterns for chained comparisons
-;; Pattern: select with AND of two icmp conditions
-;; Example: select((a < b) && (c < d), true_val, false_val)
-;; Lower to: CMP a, b; CCMP c, d, #nzcv, cond; CSEL
+;; CCMP pattern for AND of two icmp conditions
+;; Pattern: select((a < b) && (c < d), true_val, false_val)
+;; Lower to: CMP a, b; CCMP c, d, #nzcv, cond1; CSEL result, true_val, false_val, cond2
 ;;
-;; (rule (lower (select ty (band (icmp cc1 cmp_ty1 x1 y1) (icmp cc2 cmp_ty2 x2 y2)) true_val false_val))
-;;       ;; First comparison sets flags normally
-;;       ;; Second comparison only executes if first succeeded (conditional on cc1)
-;;       ;; Need to determine nzcv value to set if condition fails
-;;       (let ((cmp1 Aarch64Inst (aarch64_cmp_rr cmp_ty1 x1 y1 cc1))
-;;             (ccmp2 Aarch64Inst (aarch64_ccmp_rr cmp_ty2 x2 y2 0 cc1))  ;; nzcv=0 means all flags clear
-;;             (result (aarch64_csel ty true_val false_val ccmp2 cc2))))
-;;       result))
+;; For AND: if first condition fails, set flags to make second fail too
+;; Both conditions must use the same comparison type
+(rule (lower (select ty (band (icmp cc1 cmp_ty1 x1 y1) (icmp cc2 cmp_ty2 x2 y2)) true_val false_val))
+      (if-let $true (ty_equal cmp_ty1 cmp_ty2))  ;; Both comparisons must be same type
+      (let ((cond1 CondCode (intcc_to_cond_code cc1))
+            (cond2 CondCode (intcc_to_cond_code cc2))
+            (nzcv u4 (nzcv_for_ccmp_and_fail cond2))  ;; NZCV that makes cond2 fail
+            (_cmp1 Aarch64Inst (aarch64_cmp_rr cmp_ty1 x1 y1 cc1))
+            (ccmp2 Aarch64Inst (aarch64_ccmp_rr cmp_ty2 x2 y2 nzcv cond1)))
+            (aarch64_csel ty true_val false_val ccmp2 cc2)))
 
 ;;;; Rules for `select_spectre_guard` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -2504,6 +2505,13 @@
 (decl aarch64_cmp_rr (Type Value Value IntCC) Aarch64Inst)
 (decl aarch64_cmp_imm (Type Value i64 IntCC) Aarch64Inst)
 (decl aarch64_tst_imm (Type Value i64) Aarch64Inst)
+
+;; Conditional compare operations (CCMP)
+(decl aarch64_ccmp_rr (Type Value Value u4 CondCode) Aarch64Inst)
+(decl aarch64_ccmp_imm (Type Value u5 u4 CondCode) Aarch64Inst)
+
+;; NZCV helper for CCMP AND patterns
+(decl nzcv_for_ccmp_and_fail (CondCode) u4)
 
 ;; Conditional select operations
 (decl aarch64_csel (Type Value Value Value IntCC) Aarch64Inst)
@@ -3538,6 +3546,10 @@
 
 (decl icmp_zero_cond_not_eq (IntCC) IntCC)
 (extern extractor icmp_zero_cond_not_eq icmp_zero_cond_not_eq)
+
+;; Convert IntCC to AArch64 CondCode
+(decl intcc_to_cond_code (IntCC) CondCode)
+(extern constructor intcc_to_cond_code intcc_to_cond_code)
 
 ;; Helper for generating float compare equal to zero instruction
 (decl fcmeq0 (Reg VectorSize) Reg)

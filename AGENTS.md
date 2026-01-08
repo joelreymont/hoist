@@ -1,6 +1,57 @@
 ### Reference
 - Cranelift source: `~/Work/wasmtime/cranelift/`
 - Zig 0.15 API changes: `docs/zig-0.15-io-api.md`
+- Project status: `docs/COMPLETION_STATUS.md`
+
+### Test Status
+- **28 test files** with **325+ test cases** passing
+- Test suite registered in `build.zig` (lines 80-220+)
+- Key test files:
+  - `tests/e2e_jit.zig` - End-to-end JIT compilation (including 40+ live value spilling test)
+  - `tests/aarch64_tls.zig` - TLS Local-Exec model (small/large/zero offsets)
+  - `tests/fp_special_values.zig` - IEEE 754 special values (NaN, Inf, signed zeros)
+  - `tests/aarch64_varargs.zig` - 50+ varargs tests in `src/backends/aarch64/abi.zig`
+  - `tests/e2e_branches.zig` - Control flow and branch instructions
+
+### Key Implementation Entry Points
+
+#### TLS (Thread-Local Storage)
+**Location**: `src/backends/aarch64/isle_helpers.zig`
+- Local Exec: line 2179 (`aarch64_tls_local_exec`)
+- Initial Exec: line 2224 (`aarch64_tls_initial_exec`)
+- General Dynamic: line 2271 (`aarch64_tls_general_dynamic`)
+- All three models fully implemented with proper relocations
+
+#### FP Constant Loading
+**Location**: `src/backends/aarch64/isle_helpers.zig` lines 5562-5625
+- `aarch64_f32const` / `aarch64_f64const` constructors
+- FMOV immediate optimization for encodable values
+- Constant pool fallback for special values (NaN, Inf, etc.)
+- PC-relative literal loading
+
+#### Tail Calls
+**Location**: `src/backends/aarch64/isle_helpers.zig`
+- BR emission: line 2769 (register indirect)
+- B emission: line 2793 (direct branch)
+- Frame deallocation infrastructure exists
+- **Note**: Argument marshaling not yet implemented (tracked in dots)
+
+#### VaList (Varargs)
+**Location**: `src/backends/aarch64/abi.zig` lines 251-323
+- Complete AAPCS64-compliant implementation
+- GP and FP register save areas
+- Stack overflow handling
+- 50+ comprehensive tests
+
+#### Call Returns
+**Location**: `src/backends/aarch64/isle_helpers.zig` line 3019
+- Currently returns single X0 register only
+- **Note**: Multi-return and FP return marshaling tracked in dots
+
+### Module Export Paths
+- **Types**: `hoist.types.Type` (NOT `hoist.Type`)
+- **Signature**: `hoist.function.signature` (made public in `src/ir/function.zig:6`)
+- **Imm64 API**: Use `.new()` constructor (NOT `.from()`)
 
 ### ISLE (Instruction Selection Lowering Expressions)
 
