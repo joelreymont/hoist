@@ -86,6 +86,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .ldr_shifted => |i| try emitLdrShifted(i.dst.toReg(), i.base, i.offset, i.shift_op, i.shift_amt, i.size, buffer),
         .vldr => |i| try emitVldr(i.dst.toReg(), i.base, i.offset, i.size, buffer),
         .ld1r => |i| try emitLd1r(i.dst.toReg(), i.base, i.size, buffer),
+        .fpload_const => |i| try emitFploadConst(i.dst.toReg(), i.bits, i.size, buffer),
         .load_ext_name_got => |i| try emitLoadExtNameGot(i.dst.toReg(), i.symbol, buffer),
         .jt_sequence => |i| try emitJtSequence(i.index, i.targets, i.table_base.toReg(), i.target.toReg(), buffer),
         .str => |i| try emitStr(i.src, i.base, i.offset, i.size, buffer),
@@ -12755,4 +12756,38 @@ fn emitVecInsertLane(dst: Reg, vec: Reg, src: Reg, lane: u8, size: VecElemSize, 
         @as(u32, rd);
 
     try buffer.put4(insn);
+}
+
+/// Load FP constant from constant pool (LDR Vt, =imm).
+/// Adds constant to pool and emits LDR literal instruction.
+fn emitFploadConst(dst: Reg, bits: u64, fp_size: FpuOperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const rt = hwEnc(dst);
+
+    // Determine size for constant pool entry
+    const const_size: u8 = switch (fp_size) {
+        .size32 => 4,
+        .size64 => 8,
+        .size128 => 16,
+    };
+
+    // Add constant to pool and get its label
+    const const_label = try buffer.addConstant(bits, const_size);
+
+    // LDR literal encoding for SIMD/FP: opc|011|V=1|00|imm19|Rt
+    // opc: 00=32-bit, 01=64-bit, 10=128-bit
+    const opc: u32 = switch (fp_size) {
+        .size32 => 0b00,
+        .size64 => 0b01,
+        .size128 => 0b10,
+    };
+
+    // LDR literal: opc|011|V=1|00|imm19|Rt
+    const insn: u32 = (opc << 30) |
+        (0b011 << 27) |
+        (0b1 << 26) | // V=1 for SIMD/FP
+        rt;
+
+    try buffer.put4(insn);
+    // Register label use for PC-relative offset fixup
+    try buffer.useLabel(const_label, buffer_mod.LabelUseKind.ldr_literal19);
 }

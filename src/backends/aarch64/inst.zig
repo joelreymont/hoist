@@ -1278,6 +1278,14 @@ pub const Inst = union(enum) {
         size: FpuOperandSize,
     },
 
+    /// Load FP constant from constant pool (LDR Vd, =imm).
+    /// During emission, adds constant to pool and emits LDR literal.
+    fpload_const: struct {
+        dst: WritableReg,
+        bits: u64,
+        size: FpuOperandSize,
+    },
+
     /// Floating-point add (FADD).
     fadd: struct {
         dst: WritableReg,
@@ -2231,6 +2239,7 @@ pub const Inst = union(enum) {
             .fmov_imm => |i| try writer.print("fmov.{} {}, #{}", .{ i.size, i.dst, i.imm }),
             .fmov_from_gpr => |i| try writer.print("fmov.{} {}, {}", .{ i.size, i.dst, i.src }),
             .fmov_to_gpr => |i| try writer.print("fmov.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .fpload_const => |i| try writer.print("ldr.{} {}, =0x{x}", .{ i.size, i.dst, i.bits }),
             .fadd => |i| try writer.print("fadd.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .fsub => |i| try writer.print("fsub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
             .fmul => |i| try writer.print("fmul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
@@ -3168,6 +3177,9 @@ pub const Inst = union(enum) {
             },
             .fmov_to_gpr => |*i| {
                 try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .fpload_const => |*i| {
                 try collector.regDef(i.dst);
             },
             .frintm => |*i| {
