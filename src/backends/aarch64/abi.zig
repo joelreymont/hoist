@@ -13,6 +13,8 @@ const buffer_mod = @import("../../machinst/buffer.zig");
 const vcode_mod = @import("../../machinst/vcode.zig");
 const types = @import("../../ir/types.zig");
 const Type = types.Type;
+const signature_mod = @import("../../ir/signature.zig");
+const AbiParam = signature_mod.AbiParam;
 
 /// Platform-specific ABI variant.
 pub const Platform = enum {
@@ -1252,6 +1254,116 @@ pub const Aarch64ABICallee = struct {
         try self.clobbered_callee_saves.append(self.allocator, preg);
     }
 };
+
+/// Argument location according to AAPCS64.
+pub const ArgLoc = union(enum) {
+    /// Argument in a single register.
+    reg: PReg,
+    /// Argument in register pair (for 16-byte aligned structs or i128).
+    reg_pair: struct { lo: PReg, hi: PReg },
+    /// Argument on stack at given offset.
+    stack: u32,
+    /// HFA: multiple FP registers V0-V7.
+    hfa: struct { base_reg: u8, count: u8 },
+    /// Indirect: pointer in register, actual data elsewhere.
+    indirect_reg: PReg,
+};
+
+/// Compute argument locations for a function signature per AAPCS64.
+/// Allocates registers X0-X7 for integers, V0-V7 for floats/vectors.
+/// Handles 16-byte alignment by rounding NGRN to even number.
+/// Returns array of ArgLoc (caller must free).
+pub fn computeArgLocs(
+    allocator: std.mem.Allocator,
+    params: []const AbiParam,
+) ![]ArgLoc {
+    var locs = std.ArrayList(ArgLoc).init(allocator);
+    errdefer locs.deinit();
+
+    var next_gpr: u8 = 0; // Next general-purpose register (X0-X7)
+    var next_fpr: u8 = 0; // Next floating-point register (V0-V7)
+    var next_stack: u32 = 0; // Next stack offset (bytes)
+
+    for (params) |param| {
+        const ty = param.value_type;
+
+        // Classify the type
+        if (ty.isInt()) {
+            const bits = ty.bits();
+            if (bits <= 64) {
+                // Single register
+                if (next_gpr < 8) {
+                    try locs.append(.{ .reg = PReg.new(.int, next_gpr) });
+                    next_gpr += 1;
+                } else {
+                    try locs.append(.{ .stack = next_stack });
+                    next_stack += 8;
+                }
+            } else if (bits == 128) {
+                // i128 requires register pair with 16-byte alignment
+                // AAPCS64 B.3: "If the argument requires double-word alignment,
+                // the NGRN is rounded up to the next even number"
+                if (next_gpr % 2 == 1) {
+                    next_gpr += 1; // Skip to even register
+                }
+
+                if (next_gpr + 1 < 8) {
+                    try locs.append(.{ .reg_pair = .{
+                        .lo = PReg.new(.int, next_gpr),
+                        .hi = PReg.new(.int, next_gpr + 1),
+                    } });
+                    next_gpr += 2;
+                } else {
+                    // Stack must be 16-byte aligned for i128
+                    next_stack = std.mem.alignForward(u32, next_stack, 16);
+                    try locs.append(.{ .stack = next_stack });
+                    next_stack += 16;
+                }
+            } else {
+                // Larger integers: indirect
+                if (next_gpr < 8) {
+                    try locs.append(.{ .indirect_reg = PReg.new(.int, next_gpr) });
+                    next_gpr += 1;
+                } else {
+                    try locs.append(.{ .stack = next_stack });
+                    next_stack += 8; // Pointer size
+                }
+            }
+        } else if (ty.isFloat()) {
+            // Float/double in FP register
+            if (next_fpr < 8) {
+                try locs.append(.{ .reg = PReg.new(.float, next_fpr) });
+                next_fpr += 1;
+            } else {
+                try locs.append(.{ .stack = next_stack });
+                next_stack += ty.bytes();
+            }
+        } else if (ty.isVector()) {
+            // Vector in FP register
+            if (next_fpr < 8) {
+                try locs.append(.{ .reg = PReg.new(.vector, next_fpr) });
+                next_fpr += 1;
+            } else {
+                // Stack alignment for vectors (typically 16 bytes)
+                next_stack = std.mem.alignForward(u32, next_stack, 16);
+                try locs.append(.{ .stack = next_stack });
+                next_stack += ty.bytes();
+            }
+        } else {
+            // TODO: Struct handling with proper HFA/HVA detection
+            // For now, treat as small struct in GPR or stack
+            if (next_gpr < 8) {
+                try locs.append(.{ .reg = PReg.new(.int, next_gpr) });
+                next_gpr += 1;
+            } else {
+                try locs.append(.{ .stack = next_stack });
+                next_stack += 8;
+            }
+        }
+    }
+
+    return locs.toOwnedSlice();
+}
 
 test "Aarch64ABICallee prologue/epilogue" {
     const args = [_]abi_mod.Type{.i64};
