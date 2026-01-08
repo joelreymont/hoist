@@ -448,3 +448,115 @@ test "JIT: executable memory boundaries" {
         @memset(mem, 0xCC); // INT3 on x86
     }
 }
+
+test "JIT: register spilling with 40+ live values" {
+    // Skip on unsupported platforms
+    if (builtin.os.tag != .linux and builtin.os.tag != .macos and builtin.os.tag != .windows) {
+        return error.SkipZigTest;
+    }
+
+    // Create function with 40+ intermediate values that are all live simultaneously
+    // This forces register spilling since AArch64 only has 31 integer registers.
+    // Function computes: f(x) = v0 + v1 + v2 + ... + v39
+    // where each vi is derived from x through different operations.
+    var sig = Signature.init(testing.allocator, .system_v);
+    defer sig.deinit();
+
+    try sig.params.append(testing.allocator, hoist.signature.AbiParam.new(Type.I64));
+    try sig.returns.append(testing.allocator, hoist.signature.AbiParam.new(Type.I64));
+
+    var func = try Function.init(testing.allocator, "spill_test", sig);
+    defer func.deinit();
+
+    const entry = try func.dfg.makeBlock();
+    try func.layout.appendBlock(entry);
+
+    // Function parameter
+    const param = try func.dfg.appendBlockParam(entry, Type.I64);
+
+    // Create 40 intermediate values, each derived from the parameter
+    // All values will be live at the same time when we sum them
+    var values: [40]hoist.entities.Value = undefined;
+
+    // Generate values: v[i] = param + i
+    var i: u32 = 0;
+    while (i < 40) : (i += 1) {
+        const const_data = InstructionData{
+            .unary_imm = .{
+                .opcode = .iconst,
+                .imm = Imm64.from(@as(i64, @intCast(i))),
+            },
+        };
+        const const_inst = try func.dfg.makeInst(const_data);
+        const const_val = try func.dfg.appendInstResult(const_inst, Type.I64);
+        try func.layout.appendInst(const_inst, entry);
+
+        const add_data = InstructionData{
+            .binary = .{
+                .opcode = .iadd,
+                .args = .{ param, const_val },
+            },
+        };
+        const add_inst = try func.dfg.makeInst(add_data);
+        values[i] = try func.dfg.appendInstResult(add_inst, Type.I64);
+        try func.layout.appendInst(add_inst, entry);
+    }
+
+    // Now sum all 40 values together (all become live)
+    var sum = values[0];
+    i = 1;
+    while (i < 40) : (i += 1) {
+        const sum_data = InstructionData{
+            .binary = .{
+                .opcode = .iadd,
+                .args = .{ sum, values[i] },
+            },
+        };
+        const sum_inst = try func.dfg.makeInst(sum_data);
+        sum = try func.dfg.appendInstResult(sum_inst, Type.I64);
+        try func.layout.appendInst(sum_inst, entry);
+    }
+
+    // Return the sum
+    const ret_data = InstructionData{
+        .unary = .{
+            .opcode = .@"return",
+            .arg = sum,
+        },
+    };
+    const ret_inst = try func.dfg.makeInst(ret_data);
+    try func.layout.appendInst(ret_inst, entry);
+
+    // Compile function
+    var builder = ContextBuilder.init(testing.allocator);
+    var ctx = builder
+        .targetNative()
+        .optLevel(.none)
+        .build();
+
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
+
+    // Allocate executable memory
+    const exec_mem = try allocExecutableMemory(testing.allocator, code.code.items.len);
+    defer freeExecutableMemory(exec_mem);
+
+    // Copy machine code to executable memory
+    @memcpy(exec_mem[0..code.code.items.len], code.code.items);
+
+    // Make memory executable
+    try makeExecutable(exec_mem);
+
+    // Execute compiled code
+    // Expected result: sum of (x+0) + (x+1) + ... + (x+39)
+    // = 40*x + (0+1+2+...+39)
+    // = 40*x + (39*40/2)
+    // = 40*x + 780
+    const FnType = *const fn (i64) callconv(.c) i64;
+    const jit_fn: FnType = @ptrCast(exec_mem.ptr);
+
+    try testing.expectEqual(@as(i64, 780), jit_fn(0)); // 40*0 + 780
+    try testing.expectEqual(@as(i64, 820), jit_fn(1)); // 40*1 + 780
+    try testing.expectEqual(@as(i64, 1780), jit_fn(25)); // 40*25 + 780
+    try testing.expectEqual(@as(i64, 4780), jit_fn(100)); // 40*100 + 780
+}
