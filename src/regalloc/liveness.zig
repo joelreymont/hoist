@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const machinst = @import("../machinst/machinst.zig");
+const cfg_mod = @import("../ir/cfg.zig");
 
 /// A live range represents the span of instructions where a virtual register is live.
 ///
@@ -194,6 +195,255 @@ pub fn computeLiveness(
             .start_inst = start,
             .end_inst = vinfo.last_use,
             .reg_class = vinfo.reg_class,
+        });
+    }
+
+    return info;
+}
+
+/// Compute liveness information using control flow graph aware dataflow analysis.
+///
+/// This performs a backward dataflow analysis on the CFG:
+/// - Computes live_out[B] = ∪(live_in[all successors including exception_successors])
+/// - Computes live_in[B] = uses[B] ∪ (live_out[B] - defs[B])
+/// - Iterates until a fixed point is reached
+///
+/// This version properly handles exception edges from try_call instructions,
+/// ensuring that values live at the try_call are propagated to exception
+/// landing pad blocks. Exception edges transfer liveness just like normal edges.
+///
+/// The Inst type must have methods:
+/// - getDefs(allocator) ![]machinst.VReg - returns defined vregs
+/// - getUses(allocator) ![]machinst.VReg - returns used vregs
+pub fn computeLivenessWithCFG(
+    comptime Inst: type,
+    blocks: []const cfg_mod.CFGNode,
+    block_insns: std.AutoHashMap(u32, []const Inst),
+    allocator: std.mem.Allocator,
+) !LivenessInfo {
+    var info = LivenessInfo.init(allocator);
+    errdefer info.deinit();
+
+    // Track per-vreg information for all blocks
+    var block_live_in = std.AutoHashMap(u32, std.AutoHashMap(u32, void)).init(allocator);
+    defer {
+        var it = block_live_in.valueIterator();
+        while (it.next()) |set| {
+            set.deinit();
+        }
+        block_live_in.deinit();
+    }
+
+    var block_live_out = std.AutoHashMap(u32, std.AutoHashMap(u32, void)).init(allocator);
+    defer {
+        var it = block_live_out.valueIterator();
+        while (it.next()) |set| {
+            set.deinit();
+        }
+        block_live_out.deinit();
+    }
+
+    // Initialize live_in and live_out sets for all blocks
+    for (0..blocks.len) |block_idx| {
+        const block_id: u32 = @intCast(block_idx);
+        const live_in_set = std.AutoHashMap(u32, void).init(allocator);
+        const live_out_set = std.AutoHashMap(u32, void).init(allocator);
+        try block_live_in.put(block_id, live_in_set);
+        try block_live_out.put(block_id, live_out_set);
+    }
+
+    // Iteratively compute liveness until fixed point
+    var changed = true;
+    while (changed) {
+        changed = false;
+
+        // Process blocks in reverse order (backward analysis)
+        var block_idx: i32 = @intCast(blocks.len - 1);
+        while (block_idx >= 0) : (block_idx -= 1) {
+            const block_id: u32 = @intCast(block_idx);
+            const block = &blocks[block_idx];
+
+            // Compute live_out[B] = ∪(live_in[normal_successors ∪ exception_successors])
+            var new_live_out = std.AutoHashMap(u32, void).init(allocator);
+            defer new_live_out.deinit();
+
+            // Add live_in from all normal successors
+            var succ_iter = block.successors.keyIterator();
+            while (succ_iter.next()) |succ_block| {
+                const succ_id = succ_block.toIndex();
+                if (block_live_in.get(@intCast(succ_id))) |succ_live_in| {
+                    var vreg_iter = succ_live_in.keyIterator();
+                    while (vreg_iter.next()) |vreg_id| {
+                        try new_live_out.put(vreg_id.*, {});
+                    }
+                }
+            }
+
+            // Add live_in from all exception successors (exception edges)
+            var exc_succ_iter = block.exception_successors.keyIterator();
+            while (exc_succ_iter.next()) |exc_succ_block| {
+                const exc_succ_id = exc_succ_block.toIndex();
+                if (block_live_in.get(@intCast(exc_succ_id))) |exc_succ_live_in| {
+                    var vreg_iter = exc_succ_live_in.keyIterator();
+                    while (vreg_iter.next()) |vreg_id| {
+                        try new_live_out.put(vreg_id.*, {});
+                    }
+                }
+            }
+
+            // Check if live_out changed
+            var old_live_out = block_live_out.getPtr(block_id) orelse continue;
+            if (old_live_out.count() != new_live_out.count()) {
+                changed = true;
+            } else {
+                var iter = new_live_out.keyIterator();
+                while (iter.next()) |vreg_id| {
+                    if (!old_live_out.contains(vreg_id.*)) {
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+
+            // Update live_out
+            old_live_out.clearRetainingCapacity();
+            var iter = new_live_out.keyIterator();
+            while (iter.next()) |vreg_id| {
+                try old_live_out.put(vreg_id.*, {});
+            }
+
+            // Compute live_in[B] = uses[B] ∪ (live_out[B] - defs[B])
+            const insns = block_insns.get(block_id) orelse continue;
+
+            var new_live_in = std.AutoHashMap(u32, void).init(allocator);
+            defer new_live_in.deinit();
+
+            // Start with live_out
+            var live_out = old_live_out;
+            var lo_iter = live_out.keyIterator();
+            while (lo_iter.next()) |vreg_id| {
+                try new_live_in.put(vreg_id.*, {});
+            }
+
+            // Process instructions in reverse order
+            var inst_idx: i32 = @intCast(insns.len - 1);
+            while (inst_idx >= 0) : (inst_idx -= 1) {
+                const inst = insns[@intCast(inst_idx)];
+
+                // Remove defs from live_in
+                const defs = try inst.getDefs(allocator);
+                defer allocator.free(defs);
+                for (defs) |def| {
+                    _ = new_live_in.remove(def.index);
+                }
+
+                // Add uses to live_in
+                const uses = try inst.getUses(allocator);
+                defer allocator.free(uses);
+                for (uses) |use| {
+                    try new_live_in.put(use.index, {});
+                }
+            }
+
+            // Check if live_in changed
+            var old_live_in = block_live_in.getPtr(block_id) orelse continue;
+            if (old_live_in.count() != new_live_in.count()) {
+                changed = true;
+            } else {
+                var in_iter = new_live_in.keyIterator();
+                while (in_iter.next()) |vreg_id| {
+                    if (!old_live_in.contains(vreg_id.*)) {
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+
+            // Update live_in
+            old_live_in.clearRetainingCapacity();
+            var in_iter = new_live_in.keyIterator();
+            while (in_iter.next()) |vreg_id| {
+                try old_live_in.put(vreg_id.*, {});
+            }
+        }
+    }
+
+    // Convert liveness info to live ranges
+    // For each vreg, find the first block where it's live_in and last block where it's live_out
+    var vreg_ranges = std.AutoHashMap(u32, struct { start: u32, end: u32, class: machinst.RegClass }).init(allocator);
+    defer vreg_ranges.deinit();
+
+    for (0..blocks.len) |block_idx| {
+        const block_id: u32 = @intCast(block_idx);
+        const insns = block_insns.get(block_id) orelse continue;
+
+        if (insns.len == 0) continue;
+
+        // Get starting instruction index for this block
+        var start_inst: u32 = 0;
+        for (0..block_idx) |prev_idx| {
+            if (block_insns.get(@intCast(prev_idx))) |prev_insns| {
+                start_inst += @intCast(prev_insns.len);
+            }
+        }
+
+        if (block_live_in.get(block_id)) |live_in| {
+            var vreg_iter = live_in.keyIterator();
+            while (vreg_iter.next()) |vreg_id| {
+                const entry = try vreg_ranges.getOrPut(vreg_id.*);
+                if (!entry.found_existing) {
+                    // Infer reg_class from first use/def
+                    var reg_class = machinst.RegClass.int;
+                    var found_class = false;
+
+                    for (insns) |inst| {
+                        const uses = try inst.getUses(allocator);
+                        defer allocator.free(uses);
+                        for (uses) |use| {
+                            if (use.index == vreg_id.*) {
+                                reg_class = use.class;
+                                found_class = true;
+                                break;
+                            }
+                        }
+                        if (found_class) break;
+
+                        const defs = try inst.getDefs(allocator);
+                        defer allocator.free(defs);
+                        for (defs) |def| {
+                            if (def.index == vreg_id.*) {
+                                reg_class = def.class;
+                                found_class = true;
+                                break;
+                            }
+                        }
+                        if (found_class) break;
+                    }
+
+                    entry.value_ptr.* = .{
+                        .start = start_inst,
+                        .end = start_inst + @as(u32, @intCast(insns.len)) - 1,
+                        .class = reg_class,
+                    };
+                } else {
+                    // Extend existing range
+                    entry.value_ptr.start = @min(entry.value_ptr.start, start_inst);
+                    entry.value_ptr.end = @max(entry.value_ptr.end, start_inst + @as(u32, @intCast(insns.len)) - 1);
+                }
+            }
+        }
+    }
+
+    // Convert to LiveRange objects
+    var iter = vreg_ranges.iterator();
+    while (iter.next()) |entry| {
+        const vreg_id = entry.key_ptr.*;
+        const range_info = entry.value_ptr.*;
+        try info.addRange(.{
+            .vreg = machinst.VReg.new(vreg_id, range_info.class),
+            .start_inst = range_info.start,
+            .end_inst = range_info.end,
+            .reg_class = range_info.class,
         });
     }
 

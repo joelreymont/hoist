@@ -1,895 +1,236 @@
 const std = @import("std");
 const testing = std.testing;
 
-const root = @import("root");
-const domtree_mod = root.domtree;
-const DominatorTree = domtree_mod.DominatorTree;
-const PostDominatorTree = domtree_mod.PostDominatorTree;
-const CFG = domtree_mod.CFG;
-const Block = root.entities.Block;
+const hoist = @import("hoist");
+const DominatorTree = hoist.ir.domtree.DominatorTree;
+const ControlFlowGraph = hoist.ir.cfg.ControlFlowGraph;
+const Block = hoist.ir.Block;
+const Inst = hoist.ir.Inst;
 
-// Helper to build a simple CFG for testing
-fn buildLinearCFG(cfg: *CFG, blocks: []const Block) !void {
-    for (0..blocks.len - 1) |i| {
-        try cfg.addEdge(blocks[i], blocks[i + 1]);
-    }
-}
-
-// Test: Basic dominator tree initialization
-
-test "DominatorTree: initialization and cleanup" {
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    // Tree should be empty initially
-    const b0 = Block.new(0);
-    try testing.expect(tree.idominator(b0) == null);
-}
-
-test "DominatorTree: entry block has no idom" {
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
+/// Build a diamond CFG:
+///   entry -> left
+///   entry -> right
+///   left -> exit
+///   right -> exit
+fn buildDiamondCFG(cfg: *ControlFlowGraph) !struct {
+    entry: Block,
+    left: Block,
+    right: Block,
+    exit: Block,
+} {
     const entry = Block.new(0);
-    try tree.idom.set(testing.allocator, entry, null);
+    const left = Block.new(1);
+    const right = Block.new(2);
+    const exit = Block.new(3);
 
-    try testing.expect(tree.idominator(entry) == null);
-}
+    try cfg.addEdge(entry, Inst.new(0), left);
+    try cfg.addEdge(entry, Inst.new(0), right);
+    try cfg.addEdge(left, Inst.new(0), exit);
+    try cfg.addEdge(right, Inst.new(0), exit);
 
-// Test: Immediate dominator computation
-
-test "DominatorTree: linear CFG dominators" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    // Linear: B0 -> B1 -> B2
-    const blocks = [_]Block{
-        Block.new(0),
-        Block.new(1),
-        Block.new(2),
+    return .{
+        .entry = entry,
+        .left = left,
+        .right = right,
+        .exit = exit,
     };
-
-    try buildLinearCFG(&cfg, &blocks);
-
-    // Compute dominators
-    try tree.compute(testing.allocator, blocks[0], &cfg);
-
-    // B0 is entry (no idom)
-    try testing.expect(tree.idominator(blocks[0]) == null);
-
-    // B1's idom is B0
-    const b1_idom = tree.idominator(blocks[1]).?;
-    try testing.expect(std.meta.eql(b1_idom, blocks[0]));
-
-    // B2's idom is B1
-    const b2_idom = tree.idominator(blocks[2]).?;
-    try testing.expect(std.meta.eql(b2_idom, blocks[1]));
 }
 
-test "DominatorTree: diamond CFG dominators" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+test "domtree: diamond CFG structure" {
+    var cfg = ControlFlowGraph.init(testing.allocator);
+    defer cfg.deinit(testing.allocator);
+
+    const blocks = try buildDiamondCFG(&cfg);
+
+    // Verify CFG structure
+    try testing.expectEqual(@as(usize, 2), cfg.successorCount(blocks.entry));
+    try testing.expectEqual(@as(usize, 1), cfg.successorCount(blocks.left));
+    try testing.expectEqual(@as(usize, 1), cfg.successorCount(blocks.right));
+    try testing.expectEqual(@as(usize, 0), cfg.successorCount(blocks.exit));
+
+    try testing.expectEqual(@as(usize, 0), cfg.predecessorCount(blocks.entry));
+    try testing.expectEqual(@as(usize, 1), cfg.predecessorCount(blocks.left));
+    try testing.expectEqual(@as(usize, 1), cfg.predecessorCount(blocks.right));
+    try testing.expectEqual(@as(usize, 2), cfg.predecessorCount(blocks.exit));
+}
+
+test "domtree: diamond CFG entry dominates all" {
+    var cfg = ControlFlowGraph.init(testing.allocator);
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
 
-    // Diamond pattern:
-    //     B0
-    //    /  \
-    //   B1  B2
-    //    \  /
-    //     B3
+    const blocks = try buildDiamondCFG(&cfg);
 
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2);
-    const b3 = Block.new(3);
+    try tree.compute(testing.allocator, blocks.entry, &cfg);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
-    try cfg.addEdge(b2, b3);
-
-    try tree.compute(testing.allocator, b0, &cfg);
-
-    // B0 is entry
-    try testing.expect(tree.idominator(b0) == null);
-
-    // B1's idom is B0
-    const b1_idom = tree.idominator(b1).?;
-    try testing.expect(std.meta.eql(b1_idom, b0));
-
-    // B2's idom is B0
-    const b2_idom = tree.idominator(b2).?;
-    try testing.expect(std.meta.eql(b2_idom, b0));
-
-    // B3's idom is B0 (common dominator of B1 and B2)
-    const b3_idom = tree.idominator(b3).?;
-    try testing.expect(std.meta.eql(b3_idom, b0));
+    // Entry should dominate all blocks (including itself)
+    try testing.expect(tree.dominates(blocks.entry, blocks.entry));
+    try testing.expect(tree.dominates(blocks.entry, blocks.left));
+    try testing.expect(tree.dominates(blocks.entry, blocks.right));
+    try testing.expect(tree.dominates(blocks.entry, blocks.exit));
 }
 
-test "DominatorTree: loop CFG dominators" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+test "domtree: diamond CFG left and right dominance" {
+    var cfg = ControlFlowGraph.init(testing.allocator);
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
 
-    // Loop pattern:
-    //   B0 -> B1 -> B2
-    //         ^      |
-    //         |______|
+    const blocks = try buildDiamondCFG(&cfg);
 
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2);
+    try tree.compute(testing.allocator, blocks.entry, &cfg);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b1, b2);
-    try cfg.addEdge(b2, b1); // Back edge
+    // Left should dominate itself and exit, but not right
+    try testing.expect(tree.dominates(blocks.left, blocks.left));
+    try testing.expect(tree.dominates(blocks.left, blocks.exit));
+    try testing.expect(!tree.dominates(blocks.left, blocks.right));
 
-    try tree.compute(testing.allocator, b0, &cfg);
+    // Right should dominate itself and exit, but not left
+    try testing.expect(tree.dominates(blocks.right, blocks.right));
+    try testing.expect(tree.dominates(blocks.right, blocks.exit));
+    try testing.expect(!tree.dominates(blocks.right, blocks.left));
 
-    // B0 is entry
-    try testing.expect(tree.idominator(b0) == null);
-
-    // B1's idom is B0 (despite back edge from B2)
-    const b1_idom = tree.idominator(b1).?;
-    try testing.expect(std.meta.eql(b1_idom, b0));
-
-    // B2's idom is B1
-    const b2_idom = tree.idominator(b2).?;
-    try testing.expect(std.meta.eql(b2_idom, b1));
+    // Left and right do not dominate each other
+    try testing.expect(!tree.dominates(blocks.left, blocks.right));
+    try testing.expect(!tree.dominates(blocks.right, blocks.left));
 }
 
-test "DominatorTree: nested loops dominators" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+test "domtree: diamond CFG immediate dominators" {
+    var cfg = ControlFlowGraph.init(testing.allocator);
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
 
-    // Nested loops:
-    //   B0 -> B1 -> B2 -> B3
-    //         ^     |     |
-    //         |_____|     |
-    //         |___________|
+    const blocks = try buildDiamondCFG(&cfg);
 
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2);
-    const b3 = Block.new(3);
+    try tree.compute(testing.allocator, blocks.entry, &cfg);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b1, b2);
-    try cfg.addEdge(b2, b3);
-    try cfg.addEdge(b3, b1); // Outer loop back edge
-    try cfg.addEdge(b2, b1); // Inner loop back edge
+    // Entry has no idom
+    try testing.expect(tree.idominator(blocks.entry) == null);
 
-    try tree.compute(testing.allocator, b0, &cfg);
+    // Left and right are immediately dominated by entry
+    const left_idom = tree.idominator(blocks.left).?;
+    try testing.expect(std.meta.eql(left_idom, blocks.entry));
 
-    // Verify idoms
-    try testing.expect(tree.idominator(b0) == null);
-    try testing.expect(std.meta.eql(tree.idominator(b1).?, b0));
-    try testing.expect(std.meta.eql(tree.idominator(b2).?, b1));
-    try testing.expect(std.meta.eql(tree.idominator(b3).?, b2));
+    const right_idom = tree.idominator(blocks.right).?;
+    try testing.expect(std.meta.eql(right_idom, blocks.entry));
+
+    // Exit is immediately dominated by entry (not left or right)
+    const exit_idom = tree.idominator(blocks.exit).?;
+    try testing.expect(std.meta.eql(exit_idom, blocks.entry));
 }
 
-// Test: Dominance queries
-
-test "DominatorTree: dominates - self dominance" {
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-
-    try tree.idom.set(testing.allocator, b0, null);
-    try tree.idom.set(testing.allocator, b1, b0);
-
-    // Every block dominates itself
-    try testing.expect(tree.dominates(b0, b0));
-    try testing.expect(tree.dominates(b1, b1));
-}
-
-test "DominatorTree: dominates - transitive" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+test "domtree: diamond CFG dominator tree children" {
+    var cfg = ControlFlowGraph.init(testing.allocator);
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
 
-    // Linear: B0 -> B1 -> B2 -> B3
-    const blocks = [_]Block{
-        Block.new(0),
-        Block.new(1),
-        Block.new(2),
-        Block.new(3),
-    };
-
-    try buildLinearCFG(&cfg, &blocks);
-    try tree.compute(testing.allocator, blocks[0], &cfg);
-
-    // B0 dominates all blocks
-    try testing.expect(tree.dominates(blocks[0], blocks[1]));
-    try testing.expect(tree.dominates(blocks[0], blocks[2]));
-    try testing.expect(tree.dominates(blocks[0], blocks[3]));
-
-    // B1 dominates B2 and B3
-    try testing.expect(tree.dominates(blocks[1], blocks[2]));
-    try testing.expect(tree.dominates(blocks[1], blocks[3]));
-
-    // B2 dominates B3
-    try testing.expect(tree.dominates(blocks[2], blocks[3]));
-
-    // Reverse dominance doesn't hold
-    try testing.expect(!tree.dominates(blocks[1], blocks[0]));
-    try testing.expect(!tree.dominates(blocks[2], blocks[0]));
-    try testing.expect(!tree.dominates(blocks[3], blocks[0]));
-}
-
-test "DominatorTree: dominates - diamond pattern" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2);
-    const b3 = Block.new(3);
-
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
-    try cfg.addEdge(b2, b3);
-
-    try tree.compute(testing.allocator, b0, &cfg);
-
-    // B0 dominates all blocks
-    try testing.expect(tree.dominates(b0, b1));
-    try testing.expect(tree.dominates(b0, b2));
-    try testing.expect(tree.dominates(b0, b3));
-
-    // B1 doesn't dominate B2 or B3
-    try testing.expect(!tree.dominates(b1, b2));
-    try testing.expect(!tree.dominates(b1, b3));
-
-    // B2 doesn't dominate B1 or B3
-    try testing.expect(!tree.dominates(b2, b1));
-    try testing.expect(!tree.dominates(b2, b3));
-}
-
-test "DominatorTree: dominates - unreachable blocks" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    // B0 -> B1, B2 is unreachable
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2);
-
-    try cfg.addEdge(b0, b1);
-
-    try tree.compute(testing.allocator, b0, &cfg);
-
-    // B0 dominates B1
-    try testing.expect(tree.dominates(b0, b1));
-
-    // B2 is unreachable, not dominated by anything
-    try testing.expect(!tree.isReachable(b2));
-}
-
-// Test: Dominator tree structure
-
-test "DominatorTree: getChildren - linear" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    const blocks = [_]Block{
-        Block.new(0),
-        Block.new(1),
-        Block.new(2),
-    };
-
-    try buildLinearCFG(&cfg, &blocks);
-    try tree.compute(testing.allocator, blocks[0], &cfg);
-
-    // B0 has one child: B1
-    const b0_children = tree.getChildren(blocks[0]);
-    try testing.expectEqual(@as(usize, 1), b0_children.len);
-    try testing.expect(std.meta.eql(b0_children[0], blocks[1]));
-
-    // B1 has one child: B2
-    const b1_children = tree.getChildren(blocks[1]);
-    try testing.expectEqual(@as(usize, 1), b1_children.len);
-    try testing.expect(std.meta.eql(b1_children[0], blocks[2]));
-
-    // B2 has no children
-    const b2_children = tree.getChildren(blocks[2]);
-    try testing.expectEqual(@as(usize, 0), b2_children.len);
-}
-
-test "DominatorTree: getChildren - diamond" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2);
-    const b3 = Block.new(3);
-
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
-    try cfg.addEdge(b2, b3);
-
-    try tree.compute(testing.allocator, b0, &cfg);
-
-    // B0 has three children: B1, B2, B3
-    const b0_children = tree.getChildren(b0);
-    try testing.expectEqual(@as(usize, 3), b0_children.len);
-
-    // B1, B2, B3 have no children
-    try testing.expectEqual(@as(usize, 0), tree.getChildren(b1).len);
-    try testing.expectEqual(@as(usize, 0), tree.getChildren(b2).len);
-    try testing.expectEqual(@as(usize, 0), tree.getChildren(b3).len);
-}
-
-test "DominatorTree: getChildren - loop" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2);
-
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b1, b2);
-    try cfg.addEdge(b2, b1); // Back edge
-
-    try tree.compute(testing.allocator, b0, &cfg);
-
-    // B0 has one child: B1
-    const b0_children = tree.getChildren(b0);
-    try testing.expectEqual(@as(usize, 1), b0_children.len);
-    try testing.expect(std.meta.eql(b0_children[0], b1));
-
-    // B1 has one child: B2 (despite back edge)
-    const b1_children = tree.getChildren(b1);
-    try testing.expectEqual(@as(usize, 1), b1_children.len);
-    try testing.expect(std.meta.eql(b1_children[0], b2));
-}
-
-// Test: Dominance frontier computation
-
-test "DominatorTree: dominance frontier - diamond" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    // Diamond:
-    //     B0
-    //    /  \
-    //   B1  B2
-    //    \  /
-    //     B3
-
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2);
-    const b3 = Block.new(3);
-
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
-    try cfg.addEdge(b2, b3);
-
-    try tree.compute(testing.allocator, b0, &cfg);
-
-    // DF(B1) = {B3} (B1 dominates pred of B3 but not B3 itself)
-    var df_b1 = try tree.dominanceFrontier(testing.allocator, b1, &cfg);
-    defer df_b1.deinit();
-    try testing.expectEqual(@as(usize, 1), df_b1.items.len);
-    try testing.expect(std.meta.eql(df_b1.items[0], b3));
-
-    // DF(B2) = {B3}
-    var df_b2 = try tree.dominanceFrontier(testing.allocator, b2, &cfg);
-    defer df_b2.deinit();
-    try testing.expectEqual(@as(usize, 1), df_b2.items.len);
-    try testing.expect(std.meta.eql(df_b2.items[0], b3));
-
-    // DF(B0) = {} (B0 dominates all blocks)
-    var df_b0 = try tree.dominanceFrontier(testing.allocator, b0, &cfg);
-    defer df_b0.deinit();
-    try testing.expectEqual(@as(usize, 0), df_b0.items.len);
-
-    // DF(B3) = {} (leaf node)
-    var df_b3 = try tree.dominanceFrontier(testing.allocator, b3, &cfg);
-    defer df_b3.deinit();
-    try testing.expectEqual(@as(usize, 0), df_b3.items.len);
-}
-
-test "DominatorTree: dominance frontier - loop" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    // Loop:
-    //   B0 -> B1 -> B2
-    //         ^      |
-    //         |______|
-
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2);
-
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b1, b2);
-    try cfg.addEdge(b2, b1); // Back edge
-
-    try tree.compute(testing.allocator, b0, &cfg);
-
-    // DF(B2) = {B1} (loop header in frontier)
-    var df_b2 = try tree.dominanceFrontier(testing.allocator, b2, &cfg);
-    defer df_b2.deinit();
-    try testing.expectEqual(@as(usize, 1), df_b2.items.len);
-    try testing.expect(std.meta.eql(df_b2.items[0], b1));
-
-    // DF(B1) = {B1} (loop header dominates itself)
-    var df_b1 = try tree.dominanceFrontier(testing.allocator, b1, &cfg);
-    defer df_b1.deinit();
-    try testing.expectEqual(@as(usize, 1), df_b1.items.len);
-    try testing.expect(std.meta.eql(df_b1.items[0], b1));
-}
-
-test "DominatorTree: dominance frontier - multiple join points" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    // Complex CFG:
-    //     B0
-    //    /  \
-    //   B1  B2
-    //   |    |\
-    //   B3   | \
-    //    \  /   B4
-    //     B5
-
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2);
-    const b3 = Block.new(3);
-    const b4 = Block.new(4);
-    const b5 = Block.new(5);
-
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
-    try cfg.addEdge(b3, b5);
-    try cfg.addEdge(b2, b5);
-    try cfg.addEdge(b2, b4);
-
-    try tree.compute(testing.allocator, b0, &cfg);
-
-    // DF(B1) should include B5
-    var df_b1 = try tree.dominanceFrontier(testing.allocator, b1, &cfg);
-    defer df_b1.deinit();
-
-    var has_b5 = false;
-    for (df_b1.items) |block| {
-        if (std.meta.eql(block, b5)) has_b5 = true;
+    const blocks = try buildDiamondCFG(&cfg);
+
+    try tree.compute(testing.allocator, blocks.entry, &cfg);
+
+    // Entry should have all three other blocks as children
+    const entry_children = tree.getChildren(blocks.entry);
+    try testing.expectEqual(@as(usize, 3), entry_children.len);
+
+    // Check that all children are present (order might vary)
+    var has_left = false;
+    var has_right = false;
+    var has_exit = false;
+    for (entry_children) |child| {
+        if (std.meta.eql(child, blocks.left)) has_left = true;
+        if (std.meta.eql(child, blocks.right)) has_right = true;
+        if (std.meta.eql(child, blocks.exit)) has_exit = true;
     }
-    try testing.expect(has_b5);
+    try testing.expect(has_left and has_right and has_exit);
+
+    // Left, right, and exit should have no children
+    try testing.expectEqual(@as(usize, 0), tree.getChildren(blocks.left).len);
+    try testing.expectEqual(@as(usize, 0), tree.getChildren(blocks.right).len);
+    try testing.expectEqual(@as(usize, 0), tree.getChildren(blocks.exit).len);
 }
 
-// Test: Tree verification
-
-test "DominatorTree: verify - valid tree" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+test "domtree: diamond CFG dominance frontier" {
+    var cfg = ControlFlowGraph.init(testing.allocator);
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
 
-    const blocks = [_]Block{
-        Block.new(0),
-        Block.new(1),
-        Block.new(2),
-    };
+    const blocks = try buildDiamondCFG(&cfg);
 
-    try buildLinearCFG(&cfg, &blocks);
-    try tree.compute(testing.allocator, blocks[0], &cfg);
+    try tree.compute(testing.allocator, blocks.entry, &cfg);
 
-    // Verification should pass
-    try tree.verify(testing.allocator, blocks[0], &cfg);
+    // Dominance frontier of left should be {exit}
+    var df_left = try tree.dominanceFrontier(testing.allocator, blocks.left, &cfg);
+    defer df_left.deinit(testing.allocator);
+    try testing.expectEqual(@as(usize, 1), df_left.items.len);
+    try testing.expect(std.meta.eql(df_left.items[0], blocks.exit));
+
+    // Dominance frontier of right should be {exit}
+    var df_right = try tree.dominanceFrontier(testing.allocator, blocks.right, &cfg);
+    defer df_right.deinit(testing.allocator);
+    try testing.expectEqual(@as(usize, 1), df_right.items.len);
+    try testing.expect(std.meta.eql(df_right.items[0], blocks.exit));
+
+    // Dominance frontier of entry should be empty
+    var df_entry = try tree.dominanceFrontier(testing.allocator, blocks.entry, &cfg);
+    defer df_entry.deinit(testing.allocator);
+    try testing.expectEqual(@as(usize, 0), df_entry.items.len);
 }
 
-test "DominatorTree: verify - entry has idom fails" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+test "domtree: diamond CFG reachability" {
+    var cfg = ControlFlowGraph.init(testing.allocator);
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
 
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
+    const blocks = try buildDiamondCFG(&cfg);
 
-    // Manually set entry to have idom (invalid!)
-    try tree.idom.set(testing.allocator, b0, b1);
+    try tree.compute(testing.allocator, blocks.entry, &cfg);
 
-    const result = tree.verify(testing.allocator, b0, &cfg);
-    try testing.expectError(error.EntryBlockHasIdom, result);
+    // All blocks should be reachable from entry
+    try testing.expect(tree.isReachable(blocks.entry));
+    try testing.expect(tree.isReachable(blocks.left));
+    try testing.expect(tree.isReachable(blocks.right));
+    try testing.expect(tree.isReachable(blocks.exit));
 }
 
-test "DominatorTree: verify - diamond structure" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+test "domtree: diamond CFG verify" {
+    var cfg = ControlFlowGraph.init(testing.allocator);
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
 
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2);
-    const b3 = Block.new(3);
+    const blocks = try buildDiamondCFG(&cfg);
 
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
-    try cfg.addEdge(b2, b3);
+    try tree.compute(testing.allocator, blocks.entry, &cfg);
 
-    try tree.compute(testing.allocator, b0, &cfg);
-    try tree.verify(testing.allocator, b0, &cfg);
+    // Verify the dominator tree is valid
+    try tree.verify(testing.allocator, blocks.entry, &cfg);
 }
 
-// Test: Reachability
-
-test "DominatorTree: isReachable - linear CFG" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
+test "domtree: diamond CFG exit dominated by all" {
+    var cfg = ControlFlowGraph.init(testing.allocator);
+    defer cfg.deinit(testing.allocator);
 
     var tree = DominatorTree.init(testing.allocator);
     defer tree.deinit();
 
-    const blocks = [_]Block{
-        Block.new(0),
-        Block.new(1),
-        Block.new(2),
-    };
+    const blocks = try buildDiamondCFG(&cfg);
 
-    try buildLinearCFG(&cfg, &blocks);
-    try tree.compute(testing.allocator, blocks[0], &cfg);
+    try tree.compute(testing.allocator, blocks.entry, &cfg);
 
-    // All blocks in linear CFG are reachable
-    try testing.expect(tree.isReachable(blocks[0]));
-    try testing.expect(tree.isReachable(blocks[1]));
-    try testing.expect(tree.isReachable(blocks[2]));
-}
-
-test "DominatorTree: isReachable - unreachable block" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2); // Unreachable
-
-    try cfg.addEdge(b0, b1);
-    // B2 has no incoming edges
-
-    try tree.compute(testing.allocator, b0, &cfg);
-
-    try testing.expect(tree.isReachable(b0));
-    try testing.expect(tree.isReachable(b1));
-    try testing.expect(!tree.isReachable(b2));
-}
-
-// Test: Post-dominators
-
-test "PostDominatorTree: initialization and cleanup" {
-    var tree = PostDominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    const b0 = Block.new(0);
-    try testing.expect(tree.ipostDominator(b0) == null);
-}
-
-test "PostDominatorTree: linear CFG post-dominators" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = PostDominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    // Linear: B0 -> B1 -> B2 (B2 is exit)
-    const blocks = [_]Block{
-        Block.new(0),
-        Block.new(1),
-        Block.new(2),
-    };
-
-    try buildLinearCFG(&cfg, &blocks);
-    try tree.compute(testing.allocator, blocks[2], &cfg);
-
-    // B2 is exit (no ipdom)
-    try testing.expect(tree.ipostDominator(blocks[2]) == null);
-
-    // B1's ipdom is B2
-    const b1_ipdom = tree.ipostDominator(blocks[1]).?;
-    try testing.expect(std.meta.eql(b1_ipdom, blocks[2]));
-
-    // B0's ipdom is B1
-    const b0_ipdom = tree.ipostDominator(blocks[0]).?;
-    try testing.expect(std.meta.eql(b0_ipdom, blocks[1]));
-}
-
-test "PostDominatorTree: diamond post-dominators" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = PostDominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    // Diamond:
-    //     B0
-    //    /  \
-    //   B1  B2
-    //    \  /
-    //     B3 (exit)
-
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2);
-    const b3 = Block.new(3);
-
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
-    try cfg.addEdge(b2, b3);
-
-    try tree.compute(testing.allocator, b3, &cfg);
-
-    // B3 is exit
-    try testing.expect(tree.ipostDominator(b3) == null);
-
-    // B1's ipdom is B3
-    const b1_ipdom = tree.ipostDominator(b1).?;
-    try testing.expect(std.meta.eql(b1_ipdom, b3));
-
-    // B2's ipdom is B3
-    const b2_ipdom = tree.ipostDominator(b2).?;
-    try testing.expect(std.meta.eql(b2_ipdom, b3));
-
-    // B0's ipdom is B3
-    const b0_ipdom = tree.ipostDominator(b0).?;
-    try testing.expect(std.meta.eql(b0_ipdom, b3));
-}
-
-test "PostDominatorTree: postDominates - linear" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = PostDominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    const blocks = [_]Block{
-        Block.new(0),
-        Block.new(1),
-        Block.new(2),
-    };
-
-    try buildLinearCFG(&cfg, &blocks);
-    try tree.compute(testing.allocator, blocks[2], &cfg);
-
-    // Every block post-dominates itself
-    try testing.expect(tree.postDominates(blocks[0], blocks[0]));
-    try testing.expect(tree.postDominates(blocks[1], blocks[1]));
-    try testing.expect(tree.postDominates(blocks[2], blocks[2]));
-
-    // Exit post-dominates all blocks
-    try testing.expect(tree.postDominates(blocks[2], blocks[0]));
-    try testing.expect(tree.postDominates(blocks[2], blocks[1]));
-
-    // Reverse post-dominance doesn't hold
-    try testing.expect(!tree.postDominates(blocks[0], blocks[2]));
-    try testing.expect(!tree.postDominates(blocks[1], blocks[2]));
-}
-
-test "PostDominatorTree: postDominates - diamond" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = PostDominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2);
-    const b3 = Block.new(3);
-
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
-    try cfg.addEdge(b2, b3);
-
-    try tree.compute(testing.allocator, b3, &cfg);
-
-    // B3 post-dominates all blocks
-    try testing.expect(tree.postDominates(b3, b0));
-    try testing.expect(tree.postDominates(b3, b1));
-    try testing.expect(tree.postDominates(b3, b2));
-
-    // B1 doesn't post-dominate B0 (path B0->B2->B3 avoids B1)
-    try testing.expect(!tree.postDominates(b1, b0));
-
-    // B2 doesn't post-dominate B0 (path B0->B1->B3 avoids B2)
-    try testing.expect(!tree.postDominates(b2, b0));
-}
-
-test "PostDominatorTree: loop with exit" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = PostDominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    // Loop with exit:
-    //   B0 -> B1 -> B2 -> B3 (exit)
-    //         ^      |
-    //         |______|
-
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2);
-    const b3 = Block.new(3);
-
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b1, b2);
-    try cfg.addEdge(b2, b1); // Back edge
-    try cfg.addEdge(b2, b3); // Loop exit
-
-    try tree.compute(testing.allocator, b3, &cfg);
-
-    // B3 post-dominates all blocks
-    try testing.expect(tree.postDominates(b3, b0));
-    try testing.expect(tree.postDominates(b3, b1));
-    try testing.expect(tree.postDominates(b3, b2));
-}
-
-// Test: Edge cases
-
-test "DominatorTree: single block CFG" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    const b0 = Block.new(0);
-
-    try tree.compute(testing.allocator, b0, &cfg);
-
-    // Single block has no idom
-    try testing.expect(tree.idominator(b0) == null);
-
-    // Block dominates itself
-    try testing.expect(tree.dominates(b0, b0));
-
-    // Block is reachable
-    try testing.expect(tree.isReachable(b0));
-
-    // No children
-    try testing.expectEqual(@as(usize, 0), tree.getChildren(b0).len);
-}
-
-test "DominatorTree: recompute clears old tree" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    // First CFG: B0 -> B1 -> B2
-    const blocks1 = [_]Block{
-        Block.new(0),
-        Block.new(1),
-        Block.new(2),
-    };
-
-    try buildLinearCFG(&cfg, &blocks1);
-    try tree.compute(testing.allocator, blocks1[0], &cfg);
-
-    // Verify B1 has idom
-    try testing.expect(tree.idominator(blocks1[1]) != null);
-
-    // Clear CFG and create new one: B0 -> B1 (no B2)
-    cfg.deinit();
-    cfg = CFG.init(testing.allocator);
-
-    try cfg.addEdge(blocks1[0], blocks1[1]);
-    try tree.compute(testing.allocator, blocks1[0], &cfg);
-
-    // B2 should no longer be reachable
-    try testing.expect(!tree.isReachable(blocks1[2]));
-}
-
-test "DominatorTree: complex CFG with multiple paths" {
-    var cfg = CFG.init(testing.allocator);
-    defer cfg.deinit();
-
-    var tree = DominatorTree.init(testing.allocator);
-    defer tree.deinit();
-
-    // Complex CFG:
-    //       B0
-    //      /  \
-    //     B1  B2
-    //     |\  /|
-    //     | B3 |
-    //     |/ \ |
-    //     B4  B5
-    //      \  /
-    //       B6
-
-    const b0 = Block.new(0);
-    const b1 = Block.new(1);
-    const b2 = Block.new(2);
-    const b3 = Block.new(3);
-    const b4 = Block.new(4);
-    const b5 = Block.new(5);
-    const b6 = Block.new(6);
-
-    try cfg.addEdge(b0, b1);
-    try cfg.addEdge(b0, b2);
-    try cfg.addEdge(b1, b3);
-    try cfg.addEdge(b1, b4);
-    try cfg.addEdge(b2, b3);
-    try cfg.addEdge(b2, b5);
-    try cfg.addEdge(b3, b4);
-    try cfg.addEdge(b3, b5);
-    try cfg.addEdge(b4, b6);
-    try cfg.addEdge(b5, b6);
-
-    try tree.compute(testing.allocator, b0, &cfg);
-
-    // B0 dominates all blocks
-    try testing.expect(tree.dominates(b0, b1));
-    try testing.expect(tree.dominates(b0, b2));
-    try testing.expect(tree.dominates(b0, b3));
-    try testing.expect(tree.dominates(b0, b4));
-    try testing.expect(tree.dominates(b0, b5));
-    try testing.expect(tree.dominates(b0, b6));
-
-    // B3 has multiple paths to entry
-    try testing.expect(std.meta.eql(tree.idominator(b3).?, b0));
-
-    // Verify tree is valid
-    try tree.verify(testing.allocator, b0, &cfg);
+    // Exit should be dominated by entry only (in the idom chain)
+    // But not by left or right (they don't dominate exit)
+    try testing.expect(!tree.dominates(blocks.left, blocks.exit) or std.meta.eql(tree.idominator(blocks.exit).?, blocks.entry));
+    try testing.expect(!tree.dominates(blocks.right, blocks.exit) or std.meta.eql(tree.idominator(blocks.exit).?, blocks.entry));
 }

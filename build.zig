@@ -318,6 +318,30 @@ pub fn build(b: *std.Build) void {
     const run_test_legalize_ops = b.addRunArtifact(test_legalize_ops);
     test_step.dependOn(&run_test_legalize_ops.step);
 
+    const domtree_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/domtree.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    domtree_tests.root_module.addImport("hoist", lib.root_module);
+    applyFlags(domtree_tests, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_domtree_tests = b.addRunArtifact(domtree_tests);
+    test_step.dependOn(&run_domtree_tests.step);
+
+    const interference_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/interference.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    interference_tests.root_module.addImport("hoist", lib.root_module);
+    applyFlags(interference_tests, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_interference_tests = b.addRunArtifact(interference_tests);
+    test_step.dependOn(&run_interference_tests.step);
+
     // Integration tests (future: full pipeline tests)
     const integration_step = b.step("test-integration", "Run integration tests");
     integration_step.dependOn(&run_tests.step);

@@ -16,6 +16,137 @@ const Type = types.Type;
 const signature_mod = @import("../../ir/signature.zig");
 const AbiParam = signature_mod.AbiParam;
 
+/// ============================================================================
+/// EXCEPTION HANDLING ABI (ARM64 AAPCS64)
+/// ============================================================================
+///
+/// Exception Handling Overview:
+/// ============================
+///
+/// The exception handling ABI on ARM64 uses the AAPCS64 convention where X0
+/// (the primary return value register) serves dual purpose during exception
+/// handling:
+///
+/// - Normal function return: X0 contains the return value
+/// - Exception case: X0 contains an exception pointer (non-null)
+/// - No exception: X0 contains null (0)
+///
+/// This design eliminates the need for separate exception status registers
+/// and keeps exception handling aligned with standard calling conventions.
+///
+/// Exception Detection After try_call:
+/// ====================================
+///
+/// After a try_call instruction (which is lowered to a BL call + exception
+/// check), the following sequence is used:
+///
+/// 1. BL instruction transfers control to the callee
+/// 2. Callee returns with X0 containing either:
+///    - Null (0): No exception occurred; X0 is the normal return value
+///    - Non-null: An exception occurred; X0 is a pointer to the exception
+/// 3. Exception check: Compare X0 against null
+/// 4. Conditional branch:
+///    - If X0 != 0: Jump to landing pad with exception pointer in X0
+///    - If X0 == 0: Continue to next instruction with normal return value
+///
+/// This approach:
+/// - Requires only one register (X0) for both return and exception
+/// - Minimizes branching overhead in normal execution (no exception case)
+/// - Aligns with AAPCS64 calling convention without extension
+/// - Preserves all AAPCS64 register guarantees
+///
+/// AAPCS64 Register Convention:
+/// =============================
+///
+/// Register X0 (0th integer register):
+/// - Parameter/Return Register: Used as first integer argument and return value
+/// - In standard AAPCS64 calls: Contains return value
+/// - In try_call exception handling: Contains return value or exception pointer
+/// - Cannot be reliably used for other purposes after try_call without
+///   explicit exception detection first
+///
+/// Exception Pointer Representation:
+/// ==================================
+///
+/// Exception values passed in X0:
+/// - Null (0x0000000000000000): Indicates no exception; normal return occurred
+/// - Non-null (any other value): Pointer to exception object in language runtime
+///
+/// The exception pointer is opaque to generated code and is only passed to:
+/// - Landing pad handler (via X0)
+/// - Runtime exception dispatch mechanism
+/// - User-defined exception handling code
+///
+/// Landing Pad Receiving Exception:
+/// =================================
+///
+/// When control flow transfers to a landing pad block:
+///
+/// 1. Control Transfer: Conditional branch to landing pad (from try_call site)
+/// 2. Exception Value Location: X0 contains the exception pointer
+/// 3. Register State: All callee-save registers (X19-X30, V8-V15) are preserved
+///    from the try_call caller's context
+/// 4. Stack State: Stack pointer (SP/X31) is in the state left by try_call
+/// 5. Handler Semantics: Landing pad code can:
+///    - Read exception pointer from X0
+///    - Call runtime functions to dispatch/handle exception
+///    - Perform cleanup before resuming or propagating exception
+///    - Use standard AAPCS64 calling convention for nested calls
+///
+/// Calling Convention for Exception Handlers:
+/// ===========================================
+///
+/// Exception handler code (landing pad blocks) follows standard AAPCS64:
+///
+/// 1. If handler calls other functions (exception dispatch, cleanup):
+///    - Use X0-X7 for arguments (X0 already contains exception pointer)
+///    - X0-X7, V0-V7 are caller-save; save if needed across calls
+///    - X19-X30, V8-V15 are preserved by callees
+///    - Call via BL; return via RET
+///
+/// 2. If handler returns to caller (re-throws or propagates):
+///    - If propagating exception: Place exception pointer in X0
+///    - Use RET instruction (via X30 LR)
+///    - Ensure callee-saves are restored before return
+///
+/// 3. If handler transitions to a different control flow:
+///    - Must manually restore callee-save registers if modified
+///    - Exception pointer in X0 is available for dispatch decisions
+///    - Can branch to resume block with exception in X0
+///
+/// Example Scenario:
+/// =================
+///
+/// Call site (try_call to func):
+/// ```
+///   BL func              ; Call with return/exception in X0
+///   CMP X0, #0          ; Test for exception (null vs non-null)
+///   BNE .L_landing_pad  ; If exception, jump to handler
+///   ; Normal path - X0 contains return value
+///   ... continue ...
+/// .L_landing_pad:
+///   ; Exception path - X0 contains exception pointer
+///   ; Can call runtime dispatch or cleanup
+///   LDR X7, [X0]        ; Example: Load exception type
+///   ... handle ...
+/// ```
+///
+/// Design Rationale:
+/// =================
+///
+/// Why use X0 for both return and exception?
+/// - Simplicity: Single register path, no status codes needed
+/// - Efficiency: Zero overhead in normal (no-exception) case
+/// - Conformance: Follows AAPCS64 standard without extension
+/// - Scalability: Same approach works for all return types
+///
+/// Why not use W0 status + X1 value?
+/// - Requires 2 registers per exception path
+/// - Non-standard; requires custom exception ABI convention
+/// - Adds overhead to normal returns (must preserve/check status)
+/// - Breaks AAPCS64 calling convention assumptions
+///
+/// ============================================================================
 /// Platform-specific ABI variant.
 pub const Platform = enum {
     /// Apple platforms (macOS, iOS, etc.) - X18 reserved, no red zone.
