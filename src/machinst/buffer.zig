@@ -3,7 +3,7 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
 const machinst = @import("machinst.zig");
-const MachLabel = machinst.MachLabel;
+pub const MachLabel = machinst.MachLabel;
 const Block = @import("../ir/entities.zig").Block;
 
 /// Code offset in bytes from the start of the function.

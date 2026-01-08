@@ -3,6 +3,7 @@ const testing = std.testing;
 
 const reg_mod = @import("../../machinst/reg.zig");
 const entities = @import("../../ir/entities.zig");
+const machinst = @import("../../machinst/machinst.zig");
 
 pub const Reg = reg_mod.Reg;
 pub const PReg = reg_mod.PReg;
@@ -620,6 +621,14 @@ pub const Inst = union(enum) {
         offset: Reg,
         shift_op: ShiftOp,
         shift_amt: u8, // Shift amount: 0-3 (log2 of access size for LSL)
+        size: OperandSize,
+    },
+
+    /// Load register from PC-relative literal pool (LDR Xt, label).
+    /// Used for loading constants from constant pool.
+    ldr_literal: struct {
+        dst: WritableReg,
+        label: machinst.MachLabel,
         size: OperandSize,
     },
 
@@ -2146,6 +2155,7 @@ pub const Inst = union(enum) {
             .ldr_reg => |i| try writer.print("ldr.{} {}, [{}, {}]", .{ i.size, i.dst, i.base, i.offset }),
             .ldr_ext => |i| try writer.print("ldr.{} {}, [{}, {}, {}]", .{ i.size, i.dst, i.base, i.offset, i.extend }),
             .ldr_shifted => |i| try writer.print("ldr.{} {}, [{}, {}, {} #{d}]", .{ i.size, i.dst, i.base, i.offset, i.shift_op, i.shift_amt }),
+            .ldr_literal => |i| try writer.print("ldr.{} {}, label{}", .{ i.size, i.dst, i.label.index }),
             .str => |i| try writer.print("str.{} {}, [{}, #{d}]", .{ i.size, i.src, i.base, i.offset }),
             .str_reg => |i| try writer.print("str.{} {}, [{}, {}]", .{ i.size, i.src, i.base, i.offset }),
             .str_ext => |i| try writer.print("str.{} {}, [{}, {}, {}]", .{ i.size, i.src, i.base, i.offset, i.extend }),
@@ -2625,6 +2635,9 @@ pub const Inst = union(enum) {
             .ldr_shifted => |*i| {
                 try collector.regUse(i.base);
                 try collector.regUse(i.offset);
+                try collector.regDef(i.dst);
+            },
+            .ldr_literal => |*i| {
                 try collector.regDef(i.dst);
             },
             .str => |*i| {

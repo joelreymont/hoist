@@ -5558,3 +5558,68 @@ pub fn aarch64_ld1r(ty: types.Type, addr: lower_mod.Value, ctx: *lower_mod.Lower
         .size = size,
     } };
 }
+
+/// Floating-point constant constructors
+/// Check if f32 can be encoded as FMOV immediate.
+/// For now, only support exact 0.0 (most common case).
+/// TODO: Support full VFPExpandImm encoding (±n/16 × 2^r).
+fn canEncodeFMovImmF32(value: f32) bool {
+    return value == 0.0;
+}
+
+/// Check if f64 can be encoded as FMOV immediate.
+/// For now, only support exact 0.0 (most common case).
+/// TODO: Support full VFPExpandImm encoding (±n/16 × 2^r).
+fn canEncodeFMovImmF64(value: f64) bool {
+    return value == 0.0;
+}
+
+/// Constructor: aarch64_f32const - Load 32-bit float constant
+/// Uses FMOV immediate if possible, otherwise loads from constant pool
+pub fn aarch64_f32const(value: f32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Try FMOV immediate for common values
+    if (canEncodeFMovImmF32(value)) {
+        return Inst{ .fmov_imm = .{
+            .dst = lower_mod.WritableReg.allocReg(.float, ctx),
+            .imm = value,
+            .size = .size32,
+        } };
+    }
+
+    // Fall back to constant pool
+    const bits: u32 = @bitCast(value);
+    const label = try ctx.buffer.addConstant(bits, 4);
+    const dst = lower_mod.WritableReg.allocReg(.float, ctx);
+
+    // LDR Sd, [PC, #offset] - literal load from constant pool
+    return Inst{ .ldr_literal = .{
+        .dst = dst,
+        .label = label,
+        .size = .size32,
+    } };
+}
+
+/// Constructor: aarch64_f64const - Load 64-bit float constant
+/// Uses FMOV immediate if possible, otherwise loads from constant pool
+pub fn aarch64_f64const(value: f64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    // Try FMOV immediate for common values
+    if (canEncodeFMovImmF64(value)) {
+        return Inst{ .fmov_imm = .{
+            .dst = lower_mod.WritableReg.allocReg(.float, ctx),
+            .imm = value,
+            .size = .size64,
+        } };
+    }
+
+    // Fall back to constant pool
+    const bits: u64 = @bitCast(value);
+    const label = try ctx.buffer.addConstant(bits, 8);
+    const dst = lower_mod.WritableReg.allocReg(.float, ctx);
+
+    // LDR Dd, [PC, #offset] - literal load from constant pool
+    return Inst{ .ldr_literal = .{
+        .dst = dst,
+        .label = label,
+        .size = .size64,
+    } };
+}

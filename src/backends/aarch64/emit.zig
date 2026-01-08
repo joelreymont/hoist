@@ -102,6 +102,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .ldr_reg => |i| try emitLdrReg(i.dst.toReg(), i.base, i.offset, i.size, buffer),
         .ldr_ext => |i| try emitLdrExt(i.dst.toReg(), i.base, i.offset, i.extend, i.size, buffer),
         .ldr_shifted => |i| try emitLdrShifted(i.dst.toReg(), i.base, i.offset, i.shift_op, i.shift_amt, i.size, buffer),
+        .ldr_literal => |i| try emitLdrLiteral(i.dst.toReg(), i.label, i.size, buffer),
         .vldr => |i| try emitVldr(i.dst.toReg(), i.base, i.offset, i.size, buffer),
         .ld1r => |i| try emitLd1r(i.dst.toReg(), i.base, i.size, buffer),
         .fpload_const => |i| try emitFploadConst(i.dst.toReg(), i.bits, i.size, buffer),
@@ -1363,7 +1364,7 @@ fn emitRbit(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffe
 fn emitCtz(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // RBIT Xd, Xn - reverse bits
     try emitRbit(dst, src, size, buffer);
-    
+
     // CLZ Xd, Xd - count leading zeros on reversed value
     try emitClz(dst, dst, size, buffer);
 }
@@ -1474,16 +1475,16 @@ fn emitCinc(dst: Reg, src: Reg, cond: CondCode, size: OperandSize, buffer: *buff
     const rm = rn; // CINC uses same register for both operands
     const cond_inv = cond.invert(); // Inverted condition
     const cond_bits: u32 = @intFromEnum(cond_inv);
-    
+
     // CSINC encoding: sf|0|0|11010100|Rm|cond|01|Rn|Rd
-    const insn: u32 = (sf_bit << 31) | 
-                      (0b11010100 << 21) | 
-                      (@as(u32, rm) << 16) | 
-                      (cond_bits << 12) | 
-                      (0b01 << 10) | 
-                      (@as(u32, rn) << 5) | 
-                      rd;
-    
+    const insn: u32 = (sf_bit << 31) |
+        (0b11010100 << 21) |
+        (@as(u32, rm) << 16) |
+        (cond_bits << 12) |
+        (0b01 << 10) |
+        (@as(u32, rn) << 5) |
+        rd;
+
     try buffer.put4(insn);
 }
 
@@ -12469,7 +12470,7 @@ pub fn emitLdrLiteral(dst: Reg, label: buffer_mod.MachLabel, size: OperandSize, 
     // - For 64-bit: opc=01
     // - For 32-bit: opc=00
     // Format: opc|011|V=0|00|imm19|Rt
-    const opc: u32 = if (size == .size_64) 0b01 else 0b00;
+    const opc: u32 = if (size == .size64) 0b01 else 0b00;
     const insn: u32 = (opc << 30) | (0b011 << 27) | (0b00 << 24) | rt;
 
     try buffer.put4(insn);
