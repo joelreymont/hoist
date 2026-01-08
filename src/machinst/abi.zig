@@ -30,6 +30,7 @@ pub const VectorElementType = enum {
 pub const Type = union(enum) {
     i32,
     i64,
+    i128,
     f32,
     f64,
     /// 64-bit SIMD vector (e.g., D register on ARM64).
@@ -46,7 +47,7 @@ pub const Type = union(enum) {
 
     pub fn regClass(self: Type) RegClass {
         return switch (self) {
-            .i32, .i64 => .int,
+            .i32, .i64, .i128 => .int,
             .f32, .f64 => .float,
             .v64, .v128 => .vector,
             .@"struct" => .int, // Default to int, caller should use classifyStruct
@@ -57,6 +58,7 @@ pub const Type = union(enum) {
         return switch (self) {
             .i32, .f32 => 4,
             .i64, .f64 => 8,
+            .i128 => 16,
             .v64 => 8,
             .v128 => 16,
             .@"struct" => |fields| blk: {
@@ -685,7 +687,6 @@ test "vector type v128 properties" {
     try testing.expectEqual(@as(u8, 4), vec_ty.vectorLaneCount().?);
 }
 
-
 test "vectorElementBytes helper function" {
     try testing.expectEqual(@as(u32, 1), Type.vectorElementBytes(.i8));
     try testing.expectEqual(@as(u32, 2), Type.vectorElementBytes(.i16));
@@ -949,4 +950,69 @@ test "AAPCS64 vector arguments in float registers" {
     try testing.expect(arg_locs[2].slots[0] == .reg);
     try testing.expectEqual(PReg.new(.float, 2), arg_locs[2].slots[0].reg.preg);
     try testing.expectEqual(RegClass.vector, arg_locs[2].slots[0].reg.ty.regClass());
+}
+
+test "AAPCS64 i128 return in register pair" {
+    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+    const abi = aarch64_abi.aapcs64();
+
+    // i128 should be returned in X0:X1 register pair
+    const args = [_]Type{};
+    const rets = [_]Type{.i128};
+    const sig = ABISignature.init(&args, &rets, .aapcs64);
+
+    const ret_locs = try abi.computeRetLocs(sig, testing.allocator);
+    defer {
+        for (ret_locs) |ret| {
+            testing.allocator.free(ret.slots);
+        }
+        testing.allocator.free(ret_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 1), ret_locs.len);
+
+    // i128 should span two slots: X0 (low 64) and X1 (high 64)
+    try testing.expectEqual(@as(usize, 2), ret_locs[0].slots.len);
+
+    // First slot in X0
+    try testing.expect(ret_locs[0].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.int, 0), ret_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(Type.i64, ret_locs[0].slots[0].reg.ty);
+
+    // Second slot in X1
+    try testing.expect(ret_locs[0].slots[1] == .reg);
+    try testing.expectEqual(PReg.new(.int, 1), ret_locs[0].slots[1].reg.preg);
+    try testing.expectEqual(Type.i64, ret_locs[0].slots[1].reg.ty);
+}
+
+test "AAPCS64 i128 argument in register pair" {
+    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+    const abi = aarch64_abi.aapcs64();
+
+    // i128 should be passed in X0:X1 register pair
+    const args = [_]Type{.i128};
+    const sig = ABISignature.init(&args, &.{}, .aapcs64);
+
+    const arg_locs = try abi.computeArgLocs(sig, testing.allocator);
+    defer {
+        for (arg_locs) |arg| {
+            testing.allocator.free(arg.slots);
+        }
+        testing.allocator.free(arg_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 1), arg_locs.len);
+
+    // i128 should span two slots: X0 (low 64) and X1 (high 64)
+    try testing.expectEqual(@as(usize, 2), arg_locs[0].slots.len);
+
+    // First slot in X0
+    try testing.expect(arg_locs[0].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.int, 0), arg_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(Type.i64, arg_locs[0].slots[0].reg.ty);
+
+    // Second slot in X1
+    try testing.expect(arg_locs[0].slots[1] == .reg);
+    try testing.expectEqual(PReg.new(.int, 1), arg_locs[0].slots[1].reg.preg);
+    try testing.expectEqual(Type.i64, arg_locs[0].slots[1].reg.ty);
 }
