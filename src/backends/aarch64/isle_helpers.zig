@@ -17,6 +17,7 @@ const trapcode = root.trapcode;
 const emit = @import("emit.zig");
 const entities = root.entities;
 const abi_mod = @import("abi.zig");
+const signature_mod = root.function.signature;
 
 // Type aliases for IR types
 const Type = types.Type;
@@ -3115,14 +3116,53 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
     // - First 8 integer args in X0-X7
     // - First 8 FP/SIMD args in V0-V7
     // - Remaining args on stack (8-byte aligned, pushed in order)
+    // - X8 used for indirect return pointer (sret) if needed
+
+    // Check if callee uses indirect return (sret) and pass pointer in X8
+    const sig = ctx.getSig(sig_ref);
+    const needs_sret = if (sig) |s| abi_mod.needsStructReturnPointer(s.returns.items) else false;
+
+    var sret_param_index: ?usize = null;
+    if (needs_sret) {
+        // Find the .struct_return parameter (should be first if present)
+        if (sig) |s| {
+            for (s.params.items, 0..) |param, i| {
+                if (std.meta.eql(param.purpose, signature_mod.ArgumentPurpose.struct_return)) {
+                    sret_param_index = i;
+                    break;
+                }
+            }
+        }
+    }
 
     // Marshal arguments to ABI registers and stack
     var int_count: u32 = 0;
     var fp_count: u32 = 0;
     var stack_offset: u32 = 0;
 
-    for (args) |arg_value| {
+    for (args, 0..) |arg_value, arg_idx| {
         const arg_type = ctx.func.dfg.valueType(arg_value);
+
+        // Handle sret parameter specially - goes in X8, not X0
+        if (sret_param_index) |sret_idx| {
+            if (arg_idx == sret_idx) {
+                const sret_ptr_reg = try ctx.getValueReg(arg_value, .int);
+                const x8 = Reg.gpr(8);
+
+                // Move sret pointer to X8
+                if (!sret_ptr_reg.toReg().eq(x8)) {
+                    try ctx.emit(Inst{ .mov_rr = .{
+                        .dst = lower_mod.WritableReg.fromReg(x8),
+                        .src = sret_ptr_reg.toReg(),
+                        .size = .size64,
+                    } });
+                }
+
+                // Don't count this as a regular argument
+                continue;
+            }
+        }
+
         const is_fp = arg_type.isFloat() or arg_type.isVector();
 
         if (is_fp) {
@@ -3317,6 +3357,24 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
     // - First 8 integer args in X0-X7
     // - First 8 FP args in V0-V7
     // - Remaining args on stack (8-byte aligned, pushed in order)
+    // - X8 used for indirect return pointer (sret) if needed
+
+    // Check if callee uses indirect return (sret) and pass pointer in X8
+    const sig = ctx.getSig(sig_ref);
+    const needs_sret = if (sig) |s| abi_mod.needsStructReturnPointer(s.returns.items) else false;
+
+    var sret_param_index: ?usize = null;
+    if (needs_sret) {
+        // Find the .struct_return parameter (should be first if present)
+        if (sig) |s| {
+            for (s.params.items, 0..) |param, i| {
+                if (std.meta.eql(param.purpose, signature_mod.ArgumentPurpose.struct_return)) {
+                    sret_param_index = i;
+                    break;
+                }
+            }
+        }
+    }
 
     // Get function pointer into a temporary register (not X0-X7 to avoid conflicts)
     // Use X9 as temp (caller-saved, safe to use)
@@ -3335,8 +3393,29 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
     var fp_count: u32 = 0;
     var stack_offset: u32 = 0;
 
-    for (args) |arg_value| {
+    for (args, 0..) |arg_value, arg_idx| {
         const arg_type = ctx.func.dfg.valueType(arg_value);
+
+        // Handle sret parameter specially - goes in X8, not X0
+        if (sret_param_index) |sret_idx| {
+            if (arg_idx == sret_idx) {
+                const sret_ptr_reg = try ctx.getValueReg(arg_value, .int);
+                const x8 = Reg.gpr(8);
+
+                // Move sret pointer to X8
+                if (!sret_ptr_reg.toReg().eq(x8)) {
+                    try ctx.emit(Inst{ .mov_rr = .{
+                        .dst = lower_mod.WritableReg.fromReg(x8),
+                        .src = sret_ptr_reg.toReg(),
+                        .size = .size64,
+                    } });
+                }
+
+                // Don't count this as a regular argument
+                continue;
+            }
+        }
+
         const is_fp = arg_type.isFloat() or arg_type.isVector();
 
         if (is_fp) {
