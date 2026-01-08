@@ -33,6 +33,14 @@ pub const SpillSlot = struct {
     pub fn new(index: u32) SpillSlot {
         return .{ .index = index };
     }
+
+    pub fn eql(self: SpillSlot, other: SpillSlot) bool {
+        return self.index == other.index;
+    }
+
+    pub fn hash(self: SpillSlot) u64 {
+        return @as(u64, self.index);
+    }
 };
 
 /// Allocation result - either a physical register or a spill slot.
@@ -58,6 +66,12 @@ const LiveRange = struct {
     end: u32,
 };
 
+/// Pair of adjacent spill slots for STP optimization.
+const AdjacentSlots = struct {
+    first: SpillSlot,
+    second: SpillSlot,
+};
+
 /// Trivial linear-scan register allocator with spilling support.
 pub const TrivialAllocator = struct {
     /// Mapping from virtual register to allocation (physical reg or spill slot).
@@ -74,6 +88,10 @@ pub const TrivialAllocator = struct {
     /// Next free spill slot index.
     next_spill_slot: u32,
 
+    /// Tracks adjacent spill slot pairs for STP coalescing.
+    /// Maps first slot to its adjacent pair.
+    adjacent_spill_slots: std.AutoHashMap(SpillSlot, AdjacentSlots),
+
     /// Allocator.
     allocator: std.mem.Allocator,
 
@@ -86,6 +104,7 @@ pub const TrivialAllocator = struct {
             .int_regs = [_]?VReg{null} ** 30,
             .float_regs = [_]?VReg{null} ** 32,
             .next_spill_slot = 0,
+            .adjacent_spill_slots = std.AutoHashMap(SpillSlot, AdjacentSlots).init(allocator),
             .allocator = allocator,
         };
     }
@@ -93,6 +112,7 @@ pub const TrivialAllocator = struct {
     pub fn deinit(self: *Self) void {
         self.vreg_to_allocation.deinit();
         self.live_ranges.deinit(self.allocator);
+        self.adjacent_spill_slots.deinit();
     }
 
     /// Free physical registers for vregs whose live ranges have ended.
