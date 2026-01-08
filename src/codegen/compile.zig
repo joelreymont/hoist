@@ -3282,10 +3282,12 @@ fn emitAArch64WithAllocation(ctx: *Context, vcode: anytype, allocator: anytype) 
             else => .abs8, // Default fallback
         };
 
+        // Duplicate the name string since buffer will be deinitialized
+        const owned_name = try ctx.allocator.dupe(u8, mach_reloc.name);
         try compiled.relocs.append(ctx.allocator, .{
             .offset = mach_reloc.offset,
             .kind = reloc_kind,
-            .name = mach_reloc.name,
+            .name = owned_name,
             .addend = mach_reloc.addend,
         });
     }

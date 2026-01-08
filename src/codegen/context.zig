@@ -123,6 +123,10 @@ pub const CompiledCode = struct {
 
     pub fn deinit(self: *CompiledCode) void {
         self.code.deinit(self.allocator);
+        // Free relocation name strings
+        for (self.relocs.items) |reloc| {
+            self.allocator.free(reloc.name);
+        }
         self.relocs.deinit(self.allocator);
         if (self.disasm) |*d| {
             d.deinit(self.allocator);

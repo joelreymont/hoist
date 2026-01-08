@@ -227,6 +227,10 @@ pub const MachBuffer = struct {
 
     pub fn deinit(self: *MachBuffer) void {
         self.data.deinit(self.allocator);
+        // Free relocation name strings before deiniting relocs array
+        for (self.relocs.items) |reloc| {
+            self.allocator.free(reloc.name);
+        }
         self.relocs.deinit(self.allocator);
         self.traps.deinit(self.allocator);
         self.fixups.deinit(self.allocator);
