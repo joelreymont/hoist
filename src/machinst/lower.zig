@@ -23,6 +23,8 @@ pub const Block = root.entities.Block;
 pub const Inst = root.entities.Inst;
 pub const Value = root.entities.Value;
 pub const StackSlot = root.entities.StackSlot;
+pub const SigRef = root.entities.SigRef;
+pub const Signature = root.ir.signature.Signature;
 
 pub const VReg = reg_mod.VReg;
 pub const Reg = reg_mod.Reg;
@@ -152,6 +154,12 @@ pub fn LowerCtx(comptime MachInst: type) type {
         /// Get the type of an IR value.
         pub fn getValueType(self: *const Self, value: Value) root.types.Type {
             return self.func.dfg.valueType(value) orelse unreachable; // Value must have type
+        }
+
+        /// Get a signature from the function's signature table.
+        /// Returns null if the signature reference is not found.
+        pub fn getSig(self: *const Self, sig_ref: SigRef) ?Signature {
+            return self.func.signatures.get(sig_ref);
         }
 
         /// Compute value use counts for dead code elimination.
@@ -397,8 +405,6 @@ test "LowerCtx basic" {
         opcode: u32,
     };
 
-    const Signature = root.signature.Signature;
-
     // Create minimal stub function
     const sig = Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
@@ -426,7 +432,6 @@ test "SSA VReg pre-allocation" {
         opcode: u32,
     };
 
-    const Signature = root.signature.Signature;
     //     const Type = root.types.Type;
     const InstructionData = root.instruction_data.InstructionData;
 
@@ -474,7 +479,6 @@ test "Value use state computation" {
         opcode: u32,
     };
 
-    const Signature = root.signature.Signature;
     //     const Type = root.types.Type;
     const InstructionData = root.instruction_data.InstructionData;
 
