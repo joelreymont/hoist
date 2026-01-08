@@ -73,6 +73,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .ccmp => |i| try emitCcmp(i.src1, i.src2, i.nzcv, i.cond, i.size, buffer),
         .ccmp_imm => |i| try emitCcmpImm(i.src, i.imm, i.nzcv, i.cond, i.size, buffer),
         .cset => |i| try emitCset(i.dst.toReg(), i.cond, i.size, buffer),
+        .cinc => |i| try emitCinc(i.dst.toReg(), i.src, i.cond, i.size, buffer),
         .tst_rr => |i| try emitTstRR(i.src1, i.src2, i.size, buffer),
         .tst_imm => |i| try emitTstImm(i.src, i.imm, buffer),
         .sxtb => |i| try emitSxtb(i.dst.toReg(), i.src, i.dst_size, buffer),
@@ -1379,6 +1380,29 @@ fn emitCset(dst: Reg, cond: CondCode, size: OperandSize, buffer: *buffer_mod.Mac
         (xzr << 5) | // Rn = XZR
         rd;
 
+    try buffer.put4(insn);
+}
+
+/// CINC (conditional increment)
+/// CINC is an alias for CSINC Xd, Xn, Xn, invert(cond)
+/// CSINC: sf|0|0|11010100|Rm|cond|0|1|Rn|Rd
+fn emitCinc(dst: Reg, src: Reg, cond: CondCode, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rd = hwEnc(dst);
+    const rn = hwEnc(src);
+    const rm = rn; // CINC uses same register for both operands
+    const cond_inv = cond.invert(); // Inverted condition
+    const cond_bits: u32 = @intFromEnum(cond_inv);
+    
+    // CSINC encoding: sf|0|0|11010100|Rm|cond|01|Rn|Rd
+    const insn: u32 = (sf_bit << 31) | 
+                      (0b11010100 << 21) | 
+                      (@as(u32, rm) << 16) | 
+                      (cond_bits << 12) | 
+                      (0b01 << 10) | 
+                      (@as(u32, rn) << 5) | 
+                      rd;
+    
     try buffer.put4(insn);
 }
 
