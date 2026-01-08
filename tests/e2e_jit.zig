@@ -484,7 +484,7 @@ test "JIT: register spilling with 40+ live values" {
         const const_data = InstructionData{
             .unary_imm = .{
                 .opcode = .iconst,
-                .imm = Imm64.from(@as(i64, @intCast(i))),
+                .imm = Imm64.new(@as(i64, @intCast(i))),
             },
         };
         const const_inst = try func.dfg.makeInst(const_data);

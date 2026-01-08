@@ -6,7 +6,7 @@ const Function = hoist.function.Function;
 const Signature = hoist.signature.Signature;
 const CallConv = hoist.signature.CallConv;
 const AbiParam = hoist.signature.AbiParam;
-const Type = hoist.Type;
+const Type = hoist.types.Type;
 const Block = hoist.entities.Block;
 const JumpTable = hoist.entities.JumpTable;
 const ContextBuilder = hoist.context.ContextBuilder;
@@ -258,7 +258,7 @@ test "E2E: br_table switch statement" {
 test "E2E: brz branch if zero" {
     var sig = Signature.init(testing.allocator, .system_v);
     defer sig.deinit();
-    
+
     // Function signature: fn(i64) -> i64
     try sig.params.append(testing.allocator, Type.int(64));
     try sig.returns.append(testing.allocator, Type.int(64));

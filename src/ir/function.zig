@@ -3,7 +3,7 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
 const root = @import("../root.zig");
-const signature = @import("signature.zig");
+pub const signature = @import("signature.zig");
 const dfg_mod = @import("dfg.zig");
 const layout_mod = @import("layout.zig");
 const entities = @import("entities.zig");
