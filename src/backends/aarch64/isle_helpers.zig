@@ -5628,6 +5628,50 @@ pub fn aarch64_vec_mul(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value,
     } };
 }
 
+/// Vector SDOT: signed dot product (3-operand accumulating)
+/// SDOT Vd.4S, Vn.16B, Vm.16B - dst[i] += src1[4*i:4*i+3] · src2[4*i:4*i+3]
+/// Requires FEAT_DotProd
+pub fn aarch64_vec_sdot(acc: lower_mod.Value, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const acc_reg = try getValueReg(ctx, acc);
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+
+    // Emit mov to copy accumulator to dst (3-operand form requires explicit copy)
+    try ctx.emit(Inst{ .mov64 = .{
+        .dst = dst,
+        .src = acc_reg,
+    } });
+
+    return Inst{ .vec_udot = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+    } };
+}
+
+/// Vector UDOT: unsigned dot product (3-operand accumulating)
+/// UDOT Vd.4S, Vn.16B, Vm.16B - dst[i] += src1[4*i:4*i+3] · src2[4*i:4*i+3]
+/// Requires FEAT_DotProd
+pub fn aarch64_vec_udot(acc: lower_mod.Value, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    const acc_reg = try getValueReg(ctx, acc);
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+
+    // Emit mov to copy accumulator to dst (3-operand form requires explicit copy)
+    try ctx.emit(Inst{ .mov64 = .{
+        .dst = dst,
+        .src = acc_reg,
+    } });
+
+    return Inst{ .vec_udot = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+    } };
+}
+
 /// Vector FADD: element-wise FP addition
 pub fn aarch64_vec_fadd(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const x_reg = try getValueReg(ctx, x);

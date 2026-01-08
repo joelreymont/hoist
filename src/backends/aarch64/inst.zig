@@ -4495,6 +4495,28 @@ pub fn aarch64_vec_mul(dst: WritableReg, src1: Reg, src2: Reg, size: VecElemSize
     } };
 }
 
+/// Create vector signed dot product instruction: SDOT Vd.4S, Vn.16B, Vm.16B
+/// Computes dst[i] += src1[4*i:4*i+3] · src2[4*i:4*i+3] (4-way signed dot product).
+/// Requires FEAT_DotProd. Accumulating 3-operand instruction.
+pub fn aarch64_vec_sdot(dst: WritableReg, src1: Reg, src2: Reg) Inst {
+    return .{ .vec_sdot = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+    } };
+}
+
+/// Create vector unsigned dot product instruction: UDOT Vd.4S, Vn.16B, Vm.16B
+/// Computes dst[i] += src1[4*i:4*i+3] · src2[4*i:4*i+3] (4-way unsigned dot product).
+/// Requires FEAT_DotProd. Accumulating 3-operand instruction.
+pub fn aarch64_vec_udot(dst: WritableReg, src1: Reg, src2: Reg) Inst {
+    return .{ .vec_udot = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+    } };
+}
+
 /// Create vector add across lanes instruction: ADDV
 /// Reduces vector to scalar by adding all lanes: dst = sum(src[i]).
 pub fn aarch64_addv(dst: WritableReg, src: Reg, size: VecElemSize) Inst {

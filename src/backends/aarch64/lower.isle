@@ -2769,6 +2769,8 @@
 (decl aarch64_vec_add (VectorSize Value Value) Aarch64Inst)
 (decl aarch64_vec_sub (VectorSize Value Value) Aarch64Inst)
 (decl aarch64_vec_mul (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_sdot (Value Value Value) Aarch64Inst)  ;; Signed dot product (3-operand accumulating)
+(decl aarch64_vec_udot (Value Value Value) Aarch64Inst)  ;; Unsigned dot product (3-operand accumulating)
 (decl aarch64_vec_smin (VectorSize Value Value) Aarch64Inst)
 (decl aarch64_vec_smax (VectorSize Value Value) Aarch64Inst)
 (decl aarch64_vec_umin (VectorSize Value Value) Aarch64Inst)
