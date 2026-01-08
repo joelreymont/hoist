@@ -183,6 +183,19 @@ pub fn build(b: *std.Build) void {
     const run_e2e_tail_calls = b.addRunArtifact(e2e_tail_calls);
     test_step.dependOn(&run_e2e_tail_calls.step);
 
+    const aarch64_struct_args = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/aarch64_struct_args.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    aarch64_struct_args.root_module.addImport("hoist", lib.root_module);
+    aarch64_struct_args.root_module.addImport("zcheck", zcheck.module("zcheck"));
+    applyFlags(aarch64_struct_args, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_aarch64_struct_args = b.addRunArtifact(aarch64_struct_args);
+    test_step.dependOn(&run_aarch64_struct_args.step);
+
     const aarch64_return_marshaling = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/aarch64_return_marshaling.zig"),
