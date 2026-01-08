@@ -2786,16 +2786,93 @@ pub fn aarch64_ssub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
 
 /// Tail call operations (ISLE constructors)
 pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    // Tail call: marshal args, deallocate frame, branch (not call)
-    _ = sig_ref;
-    _ = args;
+    // Tail call: marshal args, restore frame, branch (not call)
+    //
+    // AAPCS64 tail call requirements:
+    // 1. Marshal arguments to ABI locations (X0-X7, V0-V7, stack)
+    // 2. If callee needs MORE stack args than we have, adjust frame FIRST
+    // 3. Restore callee-saved registers and frame pointer
+    // 4. Branch (B/BR) not call (BL/BLR) - no link register update
+    //
+    // Key challenge: Stack argument overlap
+    // - Caller's stack args are at [SP + caller_frame_size]
+    // - Callee expects args at [SP + 0]
+    // - We must copy args BEFORE deallocating frame to avoid corruption
 
-    // TODO: Proper ABI argument marshaling
-    // For now, emit simple sequence:
+    // Validate signature if available
+    const sig = ctx.getSig(sig_ref) orelse {
+        std.log.err("Tail call requires signature", .{});
+        return error.MissingSignature;
+    };
 
-    // 1. Deallocate stack frame (restore SP)
+    if (args.len != sig.params.items.len) {
+        std.log.err("Tail call argument count mismatch: got {}, expected {}", .{ args.len, sig.params.items.len });
+        return error.ArgumentCountMismatch;
+    }
+
+    // Marshal arguments to ABI registers and stack
+    // This is ALMOST the same as regular calls, but with critical differences:
+    // - We're reusing the current frame's incoming arg area
+    // - Stack args go to [SP + 0] not [SP + frame_size]
+    // - Must handle overlap between old and new stack args
+
+    var int_count: u32 = 0;
+    var fp_count: u32 = 0;
+    var stack_offset: u32 = 0;
+
+    // First pass: Marshal register arguments
+    // These are safe because they don't conflict with frame deallocation
+    for (args) |arg_value| {
+        const arg_type = ctx.func.dfg.valueType(arg_value);
+        const is_fp = arg_type.isFloat() or arg_type.isVector();
+
+        if (is_fp) {
+            if (fp_count < 8) {
+                const arg_reg = try ctx.getValueReg(arg_value, .float);
+                const abi_reg = Reg.fpr(@intCast(fp_count));
+                if (!arg_reg.toReg().eq(abi_reg)) {
+                    try ctx.emit(Inst{ .fmov_rr = .{
+                        .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                        .src = arg_reg.toReg(),
+                        .size = typeToFpuOperandSize(arg_type),
+                    } });
+                }
+                fp_count += 1;
+            } else {
+                stack_offset += 8; // Count stack space needed
+            }
+        } else {
+            if (int_count < 8) {
+                const arg_reg = try ctx.getValueReg(arg_value, .int);
+                const abi_reg = Reg.gpr(@intCast(int_count));
+                if (!arg_reg.toReg().eq(abi_reg)) {
+                    try ctx.emit(Inst{ .mov_rr = .{
+                        .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                        .src = arg_reg.toReg(),
+                        .size = .size64,
+                    } });
+                }
+                int_count += 1;
+            } else {
+                stack_offset += 8; // Count stack space needed
+            }
+        }
+    }
+
+    // TODO: Second pass: Handle stack arguments
+    // This is complex because we must avoid corrupting arguments during frame deallocation
+    // For now, only support tail calls where all args fit in registers
+    if (stack_offset > 0) {
+        std.log.err("Tail calls with stack arguments not yet implemented", .{});
+        return error.TailCallStackArgsNotSupported;
+    }
+
+    // Restore frame: deallocate stack, restore FP/LR
     const frame_size = ctx.getFrameSize();
     if (frame_size > 0) {
+        // TODO: Restore callee-saved registers
+        // TODO: Restore FP/LR from stack
+        // For now, just adjust SP
         try ctx.emit(Inst{
             .add_imm = .{
                 .dst = lower_mod.WritableReg.fromReg(Reg.gpr(31)), // SP
@@ -2806,18 +2883,85 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
         });
     }
 
-    // 2. Branch to target (B, not BL - no link)
+    // Branch to target (B, not BL - no link register update)
     return Inst{ .b = .{ .target = .{ .symbol = name } } };
 }
 
 pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    // Indirect tail call: marshal args, deallocate frame, branch via register
-    _ = sig_ref;
-    _ = args;
+    // Indirect tail call: marshal args, restore frame, branch via register
+    // Same requirements as direct tail call, but branch through register instead of symbol
 
+    // Validate signature
+    const sig = ctx.getSig(sig_ref) orelse {
+        std.log.err("Tail call requires signature", .{});
+        return error.MissingSignature;
+    };
+
+    if (args.len != sig.params.items.len) {
+        std.log.err("Tail call argument count mismatch: got {}, expected {}", .{ args.len, sig.params.items.len });
+        return error.ArgumentCountMismatch;
+    }
+
+    // Get function pointer into a safe register (X9 - caller-saved, not used for args)
     const ptr_reg = try ctx.getValueReg(ptr, .int);
+    const target_reg = Reg.gpr(9);
+    if (!ptr_reg.toReg().eq(target_reg)) {
+        try ctx.emit(Inst{ .mov_rr = .{
+            .dst = lower_mod.WritableReg.fromReg(target_reg),
+            .src = ptr_reg.toReg(),
+            .size = .size64,
+        } });
+    }
 
-    // Deallocate stack frame
+    // Marshal arguments (identical to direct tail call)
+    var int_count: u32 = 0;
+    var fp_count: u32 = 0;
+    var stack_offset: u32 = 0;
+
+    for (args) |arg_value| {
+        const arg_type = ctx.func.dfg.valueType(arg_value);
+        const is_fp = arg_type.isFloat() or arg_type.isVector();
+
+        if (is_fp) {
+            if (fp_count < 8) {
+                const arg_reg = try ctx.getValueReg(arg_value, .float);
+                const abi_reg = Reg.fpr(@intCast(fp_count));
+                if (!arg_reg.toReg().eq(abi_reg)) {
+                    try ctx.emit(Inst{ .fmov_rr = .{
+                        .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                        .src = arg_reg.toReg(),
+                        .size = typeToFpuOperandSize(arg_type),
+                    } });
+                }
+                fp_count += 1;
+            } else {
+                stack_offset += 8;
+            }
+        } else {
+            if (int_count < 8) {
+                const arg_reg = try ctx.getValueReg(arg_value, .int);
+                const abi_reg = Reg.gpr(@intCast(int_count));
+                if (!arg_reg.toReg().eq(abi_reg)) {
+                    try ctx.emit(Inst{ .mov_rr = .{
+                        .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                        .src = arg_reg.toReg(),
+                        .size = .size64,
+                    } });
+                }
+                int_count += 1;
+            } else {
+                stack_offset += 8;
+            }
+        }
+    }
+
+    // TODO: Handle stack arguments
+    if (stack_offset > 0) {
+        std.log.err("Tail calls with stack arguments not yet implemented", .{});
+        return error.TailCallStackArgsNotSupported;
+    }
+
+    // Restore frame
     const frame_size = ctx.getFrameSize();
     if (frame_size > 0) {
         try ctx.emit(Inst{
@@ -2830,8 +2974,8 @@ pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args:
         });
     }
 
-    // Branch via register (BR, not BLR - no link)
-    return Inst{ .br = .{ .target = ptr_reg } };
+    // Branch via register (BR, not BLR - no link register update)
+    return Inst{ .br = .{ .target = target_reg } };
 }
 
 /// Vector test operations (ISLE constructors)
