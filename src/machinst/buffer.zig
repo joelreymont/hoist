@@ -417,7 +417,8 @@ pub const MachBuffer = struct {
     /// Returns null if block not registered or label not yet bound.
     pub fn getBlockOffset(self: *const MachBuffer, block: Block) ?CodeOffset {
         const label = self.block_labels.get(block) orelse return null;
-        const offset = self.getLabelOffset(label);
+        if (label.index >= self.label_offsets.items.len) return null;
+        const offset = self.label_offsets.items[label.index];
         if (offset == UNKNOWN_OFFSET) return null;
         return offset;
     }

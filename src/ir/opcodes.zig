@@ -179,6 +179,10 @@ pub const Opcode = enum(u16) {
     // Type conversions - float width
     fpromote,
     fdemote,
+    // Type conversions - bitwise reinterpretation
+    bitcast,
+    // Boolean operations - convert to mask
+    bmask,
     // Atomic operations
     atomic_load,
     atomic_store,

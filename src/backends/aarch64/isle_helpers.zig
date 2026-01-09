@@ -11,6 +11,7 @@ const ImmLogic = root.aarch64_inst.ImmLogic;
 const ExtendOp = root.aarch64_inst.ExtendOp;
 const VecALUOp = root.aarch64_inst.VecALUOp;
 const VecMisc2 = root.aarch64_inst.VecMisc2;
+const OperandSize = root.aarch64_inst.OperandSize;
 const lower_mod = root.lower;
 const types = root.types;
 const trapcode = root.trapcode;
@@ -576,6 +577,71 @@ pub fn aarch64_fdemote(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !In
     return Inst{ .fcvt_f64_to_f32 = .{
         .dst = ctx.newTempReg(.float),
         .src = src_reg,
+    } };
+}
+
+/// Constructor: Bitcast - bitwise reinterpret between int and float (FMOV).
+pub fn aarch64_bitcast(dst_ty: root.types.Type, src_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_bitcast");
+
+    const dst_is_float = dst_ty.isFloat();
+    const src_is_float = src_ty.isFloat();
+
+    if (src_is_float and !dst_is_float) {
+        // Float to int: fmov wN, sN or fmov xN, dN
+        const src_reg = try getValueRegFloat(ctx, src);
+        const size = if (dst_ty.bits() == 32) OperandSize.size32 else OperandSize.size64;
+        return Inst{ .fmov_to_gpr = .{
+            .dst = ctx.newTempReg(.int),
+            .src = src_reg,
+            .size = size,
+        } };
+    } else if (!src_is_float and dst_is_float) {
+        // Int to float: fmov sN, wN or fmov dN, xN
+        const src_reg = try getValueReg(ctx, src);
+        const size = if (src_ty.bits() == 32) OperandSize.size32 else OperandSize.size64;
+        return Inst{ .fmov_from_gpr = .{
+            .dst = ctx.newTempReg(.float),
+            .src = src_reg,
+            .size = size,
+        } };
+    } else {
+        // Same type family - this shouldn't happen for bitcast
+        return error.InvalidBitcast;
+    }
+}
+
+/// Constructor: Bmask - convert to integer mask (CSET + NEG).
+/// Non-zero -> all 1s (-1), zero -> all 0s (0)
+pub fn aarch64_bmask(dst_ty: root.types.Type, src_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_bmask");
+
+    const src_reg = try getValueReg(ctx, src);
+    const cmp_size = if (src_ty.bits() == 32) OperandSize.size32 else OperandSize.size64;
+    const dst_size = if (dst_ty.bits() == 32) OperandSize.size32 else OperandSize.size64;
+
+    // Emit: CMP src, #0
+    const cmp_inst = Inst{ .cmp_imm = .{
+        .src = src_reg,
+        .imm = 0,
+        .size = cmp_size,
+    } };
+    try ctx.emit(cmp_inst);
+
+    // Emit: CSET temp, NE (temp = src != 0 ? 1 : 0)
+    const temp = ctx.newTempReg(.int);
+    const cset_inst = Inst{ .cset = .{
+        .dst = temp,
+        .cond = .NE,
+        .size = dst_size,
+    } };
+    try ctx.emit(cset_inst);
+
+    // Emit: NEG dst, temp (dst = -temp = src != 0 ? -1 : 0)
+    return Inst{ .neg = .{
+        .dst = ctx.newTempReg(.int),
+        .src = temp.toReg(),
+        .size = dst_size,
     } };
 }
 

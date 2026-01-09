@@ -839,6 +839,29 @@
       (if-let 32 (ty_bits dst_ty))
       (aarch64_fdemote x))
 
+;; bitcast: Bitwise reinterpretation (FMOV between scalar and vector)
+;; i32 <-> f32
+(rule (lower (bitcast dst_ty src_ty x))
+      (if-let 32 (ty_bits src_ty))
+      (if-let 32 (ty_bits dst_ty))
+      (aarch64_bitcast dst_ty src_ty x))
+
+;; i64 <-> f64
+(rule (lower (bitcast dst_ty src_ty x))
+      (if-let 64 (ty_bits src_ty))
+      (if-let 64 (ty_bits dst_ty))
+      (aarch64_bitcast dst_ty src_ty x))
+
+;; bmask: Convert to integer mask (non-zero -> all 1s, zero -> all 0s)
+;; For 32/64-bit integers, use CSETM directly
+(rule (lower (bmask dst_ty src_ty x))
+      (if-let 32 (ty_bits dst_ty))
+      (aarch64_bmask dst_ty src_ty x))
+
+(rule (lower (bmask dst_ty src_ty x))
+      (if-let 64 (ty_bits dst_ty))
+      (aarch64_bmask dst_ty src_ty x))
+
 ;; nearest: Round to nearest (FRINTN)
 (rule (lower (nearest ty x))
       (aarch64_nearest ty x))

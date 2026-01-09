@@ -273,6 +273,16 @@ pub const FunctionBuilder = struct {
         return try self.func.dfg.appendInstResult(inst, ty);
     }
 
+    pub fn bmask(self: *Self, ty: Type, val: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .unary = UnaryData.init(.bmask, val) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
     pub fn icmp(self: *Self, ty: Type, cond: IntCC, lhs: Value, rhs: Value) !Value {
         const block = self.current_block orelse return error.NoCurrentBlock;
 
