@@ -158,11 +158,32 @@ These are NOT gaps, just different design choices:
 - ✅ ABI coverage: 70% → **~85%** (HFA/HVA classification complete, 8 calling conventions defined)
 - 🎯 Overall: **85-90%** → **~91%** current (IR 100%, Opt 87.5%, ABI 85%)
 
+## Research Phase Complete (2026-01-09)
+
+All gap analysis and research tasks completed:
+
+**Documentation Added:**
+- [x86-simd-opcodes.md](./x86-simd-opcodes.md) - x86 opcodes marked N/A for AArch64
+- [missing-optimization-passes.md](./missing-optimization-passes.md) - Cranelift e-graph vs Hoist passes
+- [calling-conventions.md](./calling-conventions.md) - 8 calling conventions surveyed
+- [aggregate-abi.md](./aggregate-abi.md) - Struct passing rules and status
+
+**Findings:**
+- IR opcodes: 100% complete for AArch64 (x86-specific opcodes N/A)
+- Optimizations: 87.5% (missing Spectre mitigation, spaceship operator)
+- ABI: Classification 100%, lowering ~20% (needs 4-5 weeks)
+- 27 redundant dots closed (already implemented features)
+- 23 dots remain for Phase 3-4 implementation
+
 ## References
 
 - [cranelift-gap-analysis.md](./cranelift-gap-analysis.md) - Detailed gap analysis
 - [feature_gap_analysis.md](./feature_gap_analysis.md) - Original feature assessment
 - [exception-handling-abi.md](./exception-handling-abi.md) - Exception handling design
+- [x86-simd-opcodes.md](./x86-simd-opcodes.md) - x86 opcode analysis
+- [missing-optimization-passes.md](./missing-optimization-passes.md) - Optimization survey
+- [calling-conventions.md](./calling-conventions.md) - Calling convention requirements
+- [aggregate-abi.md](./aggregate-abi.md) - Struct passing ABI
 
 ## Dot Tracking
 
