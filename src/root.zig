@@ -106,6 +106,8 @@ pub const codegen = struct {
 pub const ir_ns = struct {
     pub const types = @import("ir/types.zig");
     pub const entities = @import("ir/entities.zig");
+    pub const egraph = @import("ir/egraph.zig");
+    pub const egraph_rules = @import("ir/egraph_rules.zig");
 };
 
 // Codegen tests

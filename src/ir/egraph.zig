@@ -205,17 +205,23 @@ pub const EGraph = struct {
     }
 
     pub fn deinit(self: *EGraph) void {
-        var class_iter = self.classes.valueIterator();
-        while (class_iter.next()) |eclass| {
-            eclass.deinit(self.allocator);
-        }
-        self.classes.deinit();
-
+        // Free children slices only from hashcons (canonical storage)
         var hashcons_iter = self.hashcons.keyIterator();
         while (hashcons_iter.next()) |node| {
             self.allocator.free(node.children);
         }
         self.hashcons.deinit(self.allocator);
+
+        // Free e-classes without freeing children (already freed above)
+        var class_iter = self.classes.valueIterator();
+        while (class_iter.next()) |eclass| {
+            eclass.nodes.deinit(self.allocator);
+            for (eclass.parents.items) |parent| {
+                self.allocator.free(parent.children);
+            }
+            eclass.parents.deinit(self.allocator);
+        }
+        self.classes.deinit();
 
         self.uf.deinit();
         self.worklist.deinit(self.allocator);
@@ -528,14 +534,31 @@ pub const EqualitySaturation = struct {
     fn applyRule(self: *EqualitySaturation, rule: anytype) !bool {
         var changed = false;
 
-        // Iterate over all e-classes
+        const EClassSnapshot = struct {
+            id: EClassId,
+            nodes: []const ENode,
+        };
+
+        // Collect e-classes to process (snapshot to avoid iterator invalidation)
+        var eclasses = std.ArrayList(EClassSnapshot){};
+        defer {
+            for (eclasses.items) |ec| {
+                self.allocator.free(ec.nodes);
+            }
+            eclasses.deinit(self.allocator);
+        }
+
         var class_iter = self.eg.classes.iterator();
         while (class_iter.next()) |entry| {
             const eclass = entry.value_ptr;
+            const nodes_copy = try self.allocator.dupe(ENode, eclass.nodes.items);
+            try eclasses.append(self.allocator, .{ .id = eclass.id, .nodes = nodes_copy });
+        }
 
-            // Try each e-node in this e-class
-            for (eclass.nodes.items) |node| {
-                if (try self.matchAndRewrite(rule, node, eclass.id)) {
+        // Now iterate over snapshot
+        for (eclasses.items) |ec| {
+            for (ec.nodes) |node| {
+                if (try self.matchAndRewrite(rule, node, ec.id)) {
                     changed = true;
                 }
             }

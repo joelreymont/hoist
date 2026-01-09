@@ -134,6 +134,18 @@ pub fn build(b: *std.Build) void {
     const run_e2e_jit = b.addRunArtifact(e2e_jit);
     test_step.dependOn(&run_e2e_jit.step);
 
+    const egraph_opt = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/egraph_opt.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    egraph_opt.root_module.addImport("hoist", lib.root_module);
+    applyFlags(egraph_opt, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_egraph_opt = b.addRunArtifact(egraph_opt);
+    test_step.dependOn(&run_egraph_opt.step);
+
     const aarch64_tls = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/aarch64_tls.zig"),
