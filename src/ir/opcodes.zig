@@ -62,6 +62,8 @@ pub const Opcode = enum(u16) {
     dynamic_stack_load,
     dynamic_stack_store,
     dynamic_stack_addr,
+    struct_load,
+    struct_store,
     global_value,
     symbol_value,
     tls_value,

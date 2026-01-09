@@ -332,6 +332,25 @@ pub const FunctionBuilder = struct {
         try self.func.layout.appendInst(inst, block);
     }
 
+    pub fn structLoad(self: *Self, ty: Type, addr: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .unary = UnaryData.init(.struct_load, addr) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn structStore(self: *Self, val: Value, addr: Value) !void {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .binary = BinaryData.init(.struct_store, val, addr) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+    }
+
     pub fn brif(self: *Self, cond: Value, then_block: Block, else_block: Block) !void {
         const block = self.current_block orelse return error.NoCurrentBlock;
 
