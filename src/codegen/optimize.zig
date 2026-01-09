@@ -23,6 +23,7 @@ const licm = @import("opts/licm.zig");
 const simplifybranch = @import("opts/simplifybranch.zig");
 const sccp = @import("opts/sccp.zig");
 const unreachable_pass = @import("opts/unreachable.zig");
+const spectre = @import("opts/spectre.zig");
 
 /// Pass execution statistics.
 pub const PassStats = struct {
@@ -80,6 +81,7 @@ pub const PassManager = struct {
         try self.runPass(func, "CopyProp", runCopyProp);
         try self.runPass(func, "Strength", runStrength);
         try self.runPass(func, "LICM", runLICM);
+        try self.runPass(func, "Spectre", runSpectre);
         try self.runPass(func, "Peephole", runPeephole);
         try self.runPass(func, "DCE", runDCE);
     }
@@ -184,6 +186,12 @@ fn runSCCP(allocator: Allocator, func: *Function) !bool {
 /// Run UCE (Unreachable Code Elimination) pass.
 fn runUCE(allocator: Allocator, func: *Function) !bool {
     var pass = unreachable_pass.UCE.init(allocator);
+    defer pass.deinit();
+    return try pass.run(func);
+}
+
+fn runSpectre(allocator: Allocator, func: *Function) !bool {
+    var pass = spectre.SpectreMitigation.init(allocator);
     defer pass.deinit();
     return try pass.run(func);
 }
