@@ -3303,15 +3303,7 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
     // Get signature and calling convention
     const sig = ctx.getSig(sig_ref);
     const call_conv = if (sig) |s| s.call_conv else signature_mod.CallConv.system_v;
-
-    // Note: Currently all calling conventions use AAPCS64-like register allocation
-    // Fast/PreserveAll/etc. will be differentiated in later implementation
-    // For now, treat all as system_v (AAPCS64):
-    // - First 8 integer args in X0-X7
-    // - First 8 FP/SIMD args in V0-V7
-    // - Remaining args on stack (8-byte aligned, pushed in order)
-    // - X8 used for indirect return pointer (sret) if needed
-    _ = call_conv; // TODO: Use call_conv for register allocation differences
+    const abi_spec = abi_mod.abiSpecForCallConv(call_conv);
 
     // Check if callee uses indirect return (sret) and pass pointer in X8
     const needs_sret = if (sig) |s| abi_mod.needsStructReturnPointer(s.returns.items) else false;
@@ -3360,11 +3352,11 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
         const is_fp = arg_type.isFloat() or arg_type.isVector();
 
         if (is_fp) {
-            if (fp_count < 8) {
-                // FP/SIMD args in V0-V7
+            if (fp_count < abi_spec.float_arg_regs.len) {
+                // FP/SIMD args in registers per calling convention
                 const arg_reg = try ctx.getValueReg(arg_value, .float);
-                const abi_reg_num: u8 = @intCast(fp_count);
-                const abi_reg = Reg.fpr(abi_reg_num);
+                const abi_preg = abi_spec.float_arg_regs[fp_count];
+                const abi_reg = Reg.fpr(abi_preg.hw_enc);
 
                 // Emit move to ABI register if not already there
                 if (!arg_reg.toReg().eq(abi_reg)) {
@@ -3376,7 +3368,7 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                 }
                 fp_count += 1;
             } else {
-                // FP args beyond V7 go on stack
+                // FP args beyond register limit go on stack
                 const arg_reg = try ctx.getValueReg(arg_value, .float);
                 try ctx.emit(Inst{
                     .str_fp = .{
@@ -3389,11 +3381,11 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                 stack_offset += 8;
             }
         } else {
-            if (int_count < 8) {
-                // Integer args in X0-X7
+            if (int_count < abi_spec.int_arg_regs.len) {
+                // Integer args in registers per calling convention
                 const arg_reg = try ctx.getValueReg(arg_value, .int);
-                const abi_reg_num: u8 = @intCast(int_count);
-                const abi_reg = Reg.gpr(abi_reg_num);
+                const abi_preg = abi_spec.int_arg_regs[int_count];
+                const abi_reg = Reg.gpr(abi_preg.hw_enc);
 
                 // Emit move to ABI register if not already there
                 if (!arg_reg.toReg().eq(abi_reg)) {
@@ -3405,7 +3397,7 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                 }
                 int_count += 1;
             } else {
-                // Integer args beyond X7 go on stack
+                // Integer args beyond register limit go on stack
                 const arg_reg = try ctx.getValueReg(arg_value, .int);
                 try ctx.emit(Inst{
                     .str = .{
@@ -3547,14 +3539,12 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
         }
     }
 
-    // AAPCS64 calling convention:
-    // - First 8 integer args in X0-X7
-    // - First 8 FP args in V0-V7
-    // - Remaining args on stack (8-byte aligned, pushed in order)
-    // - X8 used for indirect return pointer (sret) if needed
+    // Get signature and calling convention
+    const sig = ctx.getSig(sig_ref);
+    const call_conv = if (sig) |s| s.call_conv else signature_mod.CallConv.system_v;
+    const abi_spec = abi_mod.abiSpecForCallConv(call_conv);
 
     // Check if callee uses indirect return (sret) and pass pointer in X8
-    const sig = ctx.getSig(sig_ref);
     const needs_sret = if (sig) |s| abi_mod.needsStructReturnPointer(s.returns.items) else false;
 
     var sret_param_index: ?usize = null;
@@ -3613,11 +3603,11 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
         const is_fp = arg_type.isFloat() or arg_type.isVector();
 
         if (is_fp) {
-            if (fp_count < 8) {
-                // FP/SIMD args in V0-V7
+            if (fp_count < abi_spec.float_arg_regs.len) {
+                // FP/SIMD args in registers per calling convention
                 const arg_reg = try ctx.getValueReg(arg_value, .float);
-                const abi_reg_num: u8 = @intCast(fp_count);
-                const abi_reg = Reg.fpr(abi_reg_num);
+                const abi_preg = abi_spec.float_arg_regs[fp_count];
+                const abi_reg = Reg.fpr(abi_preg.hw_enc);
 
                 // Emit move to ABI register if not already there
                 if (!arg_reg.toReg().eq(abi_reg)) {
@@ -3629,7 +3619,7 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                 }
                 fp_count += 1;
             } else {
-                // FP args beyond V7 go on stack
+                // FP args beyond register limit go on stack
                 const arg_reg = try ctx.getValueReg(arg_value, .float);
                 try ctx.emit(Inst{
                     .str_fp = .{
@@ -3642,11 +3632,11 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                 stack_offset += 8;
             }
         } else {
-            if (int_count < 8) {
-                // Integer args in X0-X7
+            if (int_count < abi_spec.int_arg_regs.len) {
+                // Integer args in registers per calling convention
                 const arg_reg = try ctx.getValueReg(arg_value, .int);
-                const abi_reg_num: u8 = @intCast(int_count);
-                const abi_reg = Reg.gpr(abi_reg_num);
+                const abi_preg = abi_spec.int_arg_regs[int_count];
+                const abi_reg = Reg.gpr(abi_preg.hw_enc);
 
                 // Emit move to ABI register if not already there
                 if (!arg_reg.toReg().eq(abi_reg)) {
@@ -3658,7 +3648,7 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                 }
                 int_count += 1;
             } else {
-                // Integer args beyond X7 go on stack
+                // Integer args beyond register limit go on stack
                 const arg_reg = try ctx.getValueReg(arg_value, .int);
                 try ctx.emit(Inst{
                     .str = .{

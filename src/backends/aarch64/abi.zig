@@ -369,6 +369,16 @@ pub fn preserveAll() abi_mod.ABIMachineSpec(u64) {
     };
 }
 
+/// Get ABI specification for a given calling convention.
+pub fn abiSpecForCallConv(call_conv: signature_mod.CallConv) abi_mod.ABIMachineSpec(u64) {
+    return switch (call_conv) {
+        .fast => fast(),
+        .system_v, .tail, .apple_aarch64 => aapcs64(),
+        .preserve_all => preserveAll(),
+        .windows_fastcall, .probestack, .winch => aapcs64(), // Fallback to system_v
+    };
+}
+
 /// Round up size to 16-byte alignment as required by AAPCS64.
 fn alignTo16(size: u32) u32 {
     return (size + 15) & ~@as(u32, 15);
