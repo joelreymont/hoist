@@ -229,6 +229,8 @@ pub const MachBuffer = struct {
     const_pool_map: std.AutoHashMap(u64, u32),
     /// Jump tables for br_table instructions.
     jump_tables: std.ArrayList(JumpTable),
+    /// Map from IR Block to MachLabel for exception handling.
+    block_labels: std.AutoHashMap(Block, MachLabel),
     /// Allocator for dynamic allocations.
     allocator: Allocator,
 
@@ -244,6 +246,7 @@ pub const MachBuffer = struct {
             .const_pool = std.ArrayList(ConstPoolEntry){},
             .const_pool_map = std.AutoHashMap(u64, u32).init(allocator),
             .jump_tables = std.ArrayList(JumpTable){},
+            .block_labels = std.AutoHashMap(Block, MachLabel).init(allocator),
             .allocator = allocator,
         };
     }
@@ -264,6 +267,7 @@ pub const MachBuffer = struct {
             jt.deinit(self.allocator);
         }
         self.jump_tables.deinit(self.allocator);
+        self.block_labels.deinit();
     }
 
     /// Get current code offset.
@@ -401,6 +405,21 @@ pub const MachBuffer = struct {
     /// Get the label for a jump table (for PC-relative addressing).
     pub fn getJumpTableLabel(self: *const MachBuffer, jt_index: u32) MachLabel {
         return self.jump_tables.items[jt_index].table_label;
+    }
+
+    /// Register a mapping from IR block to MachLabel.
+    /// Used for exception handling to track landing pad locations.
+    pub fn registerBlockLabel(self: *MachBuffer, block: Block, label: MachLabel) !void {
+        try self.block_labels.put(block, label);
+    }
+
+    /// Get the code offset for a block (if label has been bound).
+    /// Returns null if block not registered or label not yet bound.
+    pub fn getBlockOffset(self: *const MachBuffer, block: Block) ?CodeOffset {
+        const label = self.block_labels.get(block) orelse return null;
+        const offset = self.getLabelOffset(label);
+        if (offset == UNKNOWN_OFFSET) return null;
+        return offset;
     }
 
     /// Emit the constant pool at the current offset.
