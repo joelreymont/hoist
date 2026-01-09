@@ -3135,9 +3135,48 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
                         continue;
                     }
                 }
+            } else if (classification.class == .indirect) {
+                // Structs >16 bytes: allocate stack space, copy struct, pass pointer
+                const struct_size = arg_type.bytes();
+                const struct_ptr = try ctx.getValueReg(arg_value, .int);
+
+                // Allocate stack slot for struct copy
+                const stack_slot = try ctx.allocStackSlot(struct_size, arg_type.minAlignBytes());
+                const stack_slot_addr = ctx.stackSlotAddr(stack_slot);
+
+                // Generate struct copy instructions using generateStructCopy
+                const copy_insts = try abi_mod.generateStructCopy(
+                    ctx.allocator(),
+                    stack_slot_addr,
+                    struct_ptr.toReg(),
+                    struct_size,
+                );
+                defer copy_insts.deinit();
+
+                // Emit copy instructions
+                for (copy_insts.items) |inst| {
+                    try ctx.emit(inst);
+                }
+
+                // Pass pointer to struct copy in int register
+                if (int_count < abi_spec.int_arg_regs.len) {
+                    const abi_preg = abi_spec.int_arg_regs[int_count];
+                    const abi_reg = Reg.gpr(abi_preg.hw_enc);
+
+                    if (!stack_slot_addr.eq(abi_reg)) {
+                        try ctx.emit(Inst{ .mov_rr = .{
+                            .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                            .src = stack_slot_addr,
+                            .size = .size64,
+                        } });
+                    }
+
+                    int_count += 1;
+                    continue;
+                }
             }
 
-            // TODO: Handle HVA and indirect struct classes
+            // TODO: Handle HVA struct class
         }
 
         const is_fp = arg_type.isFloat() or arg_type.isVector();
@@ -3604,9 +3643,48 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                         continue;
                     }
                 }
+            } else if (classification.class == .indirect) {
+                // Structs >16 bytes: allocate stack space, copy struct, pass pointer
+                const struct_size = arg_type.bytes();
+                const struct_ptr = try ctx.getValueReg(arg_value, .int);
+
+                // Allocate stack slot for struct copy
+                const stack_slot = try ctx.allocStackSlot(struct_size, arg_type.minAlignBytes());
+                const stack_slot_addr = ctx.stackSlotAddr(stack_slot);
+
+                // Generate struct copy instructions using generateStructCopy
+                const copy_insts = try abi_mod.generateStructCopy(
+                    ctx.allocator(),
+                    stack_slot_addr,
+                    struct_ptr.toReg(),
+                    struct_size,
+                );
+                defer copy_insts.deinit();
+
+                // Emit copy instructions
+                for (copy_insts.items) |inst| {
+                    try ctx.emit(inst);
+                }
+
+                // Pass pointer to struct copy in int register
+                if (int_count < abi_spec.int_arg_regs.len) {
+                    const abi_preg = abi_spec.int_arg_regs[int_count];
+                    const abi_reg = Reg.gpr(abi_preg.hw_enc);
+
+                    if (!stack_slot_addr.eq(abi_reg)) {
+                        try ctx.emit(Inst{ .mov_rr = .{
+                            .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                            .src = stack_slot_addr,
+                            .size = .size64,
+                        } });
+                    }
+
+                    int_count += 1;
+                    continue;
+                }
             }
 
-            // TODO: Handle HVA and indirect struct classes
+            // TODO: Handle HVA struct class
         }
 
         const is_fp = arg_type.isFloat() or arg_type.isVector();
@@ -4009,7 +4087,48 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                 }
             }
 
-            // TODO: Handle HVA and indirect struct classes
+            // Handle indirect struct (>16 bytes) - allocate, copy, pass pointer
+            if (classification.class == .indirect) {
+                const struct_size = arg_type.bytes();
+                const struct_ptr = try ctx.getValueReg(arg_value, .int);
+
+                // Allocate stack slot for struct copy
+                const stack_slot = try ctx.allocStackSlot(struct_size, arg_type.minAlignBytes());
+                const stack_slot_addr = ctx.stackSlotAddr(stack_slot);
+
+                // Generate struct copy instructions
+                const copy_insts = try abi_mod.generateStructCopy(
+                    ctx.allocator(),
+                    stack_slot_addr,
+                    struct_ptr.toReg(),
+                    struct_size,
+                );
+                defer copy_insts.deinit();
+
+                // Emit copy instructions
+                for (copy_insts.items) |inst| {
+                    try ctx.emit(inst);
+                }
+
+                // Pass pointer to struct copy in int register
+                if (int_count < abi_spec.int_arg_regs.len) {
+                    const abi_preg = abi_spec.int_arg_regs[int_count];
+                    const abi_reg = Reg.gpr(abi_preg.hw_enc);
+
+                    if (!stack_slot_addr.eq(abi_reg)) {
+                        try ctx.emit(Inst{ .mov_rr = .{
+                            .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                            .src = stack_slot_addr,
+                            .size = .size64,
+                        } });
+                    }
+
+                    int_count += 1;
+                    continue;
+                }
+            }
+
+            // TODO: Handle HVA struct class
         }
 
         const is_fp = arg_type.isFloat() or arg_type.isVector();
