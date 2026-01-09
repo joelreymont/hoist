@@ -3058,9 +3058,86 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
                     // Fall through to stack handling
                     // TODO: Stack HFA handling
                 }
+            } else if (classification.class == .general) {
+                // Non-HFA structs ≤16 bytes: load as 1-2 i64 values in X0-X7
+                const struct_size = arg_type.bytes();
+                const struct_ptr = try ctx.getValueReg(arg_value, .int);
+
+                if (struct_size <= 8) {
+                    // Single i64: load and pass in one int register
+                    if (int_count < abi_spec.int_arg_regs.len) {
+                        const val_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+                        try ctx.emit(Inst{ .ldr = .{
+                            .dst = val_reg,
+                            .base = struct_ptr.toReg(),
+                            .offset = 0,
+                            .size = .size64,
+                        } });
+
+                        const abi_preg = abi_spec.int_arg_regs[int_count];
+                        const abi_reg = Reg.gpr(abi_preg.hw_enc);
+
+                        if (!val_reg.toReg().eq(abi_reg)) {
+                            try ctx.emit(Inst{ .mov_rr = .{
+                                .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                                .src = val_reg.toReg(),
+                                .size = .size64,
+                            } });
+                        }
+
+                        int_count += 1;
+                        continue;
+                    }
+                } else if (struct_size <= 16) {
+                    // Two i64 values: load and pass in two int registers
+                    if (int_count + 1 < abi_spec.int_arg_regs.len) {
+                        // Load first 8 bytes
+                        const val1_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+                        try ctx.emit(Inst{ .ldr = .{
+                            .dst = val1_reg,
+                            .base = struct_ptr.toReg(),
+                            .offset = 0,
+                            .size = .size64,
+                        } });
+
+                        const abi_preg1 = abi_spec.int_arg_regs[int_count];
+                        const abi_reg1 = Reg.gpr(abi_preg1.hw_enc);
+
+                        if (!val1_reg.toReg().eq(abi_reg1)) {
+                            try ctx.emit(Inst{ .mov_rr = .{
+                                .dst = lower_mod.WritableReg.fromReg(abi_reg1),
+                                .src = val1_reg.toReg(),
+                                .size = .size64,
+                            } });
+                        }
+
+                        // Load second 8 bytes
+                        const val2_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+                        try ctx.emit(Inst{ .ldr = .{
+                            .dst = val2_reg,
+                            .base = struct_ptr.toReg(),
+                            .offset = 8,
+                            .size = .size64,
+                        } });
+
+                        const abi_preg2 = abi_spec.int_arg_regs[int_count + 1];
+                        const abi_reg2 = Reg.gpr(abi_preg2.hw_enc);
+
+                        if (!val2_reg.toReg().eq(abi_reg2)) {
+                            try ctx.emit(Inst{ .mov_rr = .{
+                                .dst = lower_mod.WritableReg.fromReg(abi_reg2),
+                                .src = val2_reg.toReg(),
+                                .size = .size64,
+                            } });
+                        }
+
+                        int_count += 2;
+                        continue;
+                    }
+                }
             }
 
-            // TODO: Handle HVA, general, and indirect struct classes
+            // TODO: Handle HVA and indirect struct classes
         }
 
         const is_fp = arg_type.isFloat() or arg_type.isVector();
@@ -3450,9 +3527,86 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                     // Fall through to stack handling
                     // TODO: Stack HFA handling
                 }
+            } else if (classification.class == .general) {
+                // Non-HFA structs ≤16 bytes: load as 1-2 i64 values in X0-X7
+                const struct_size = arg_type.bytes();
+                const struct_ptr = try ctx.getValueReg(arg_value, .int);
+
+                if (struct_size <= 8) {
+                    // Single i64: load and pass in one int register
+                    if (int_count < abi_spec.int_arg_regs.len) {
+                        const val_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+                        try ctx.emit(Inst{ .ldr = .{
+                            .dst = val_reg,
+                            .base = struct_ptr.toReg(),
+                            .offset = 0,
+                            .size = .size64,
+                        } });
+
+                        const abi_preg = abi_spec.int_arg_regs[int_count];
+                        const abi_reg = Reg.gpr(abi_preg.hw_enc);
+
+                        if (!val_reg.toReg().eq(abi_reg)) {
+                            try ctx.emit(Inst{ .mov_rr = .{
+                                .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                                .src = val_reg.toReg(),
+                                .size = .size64,
+                            } });
+                        }
+
+                        int_count += 1;
+                        continue;
+                    }
+                } else if (struct_size <= 16) {
+                    // Two i64 values: load and pass in two int registers
+                    if (int_count + 1 < abi_spec.int_arg_regs.len) {
+                        // Load first 8 bytes
+                        const val1_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+                        try ctx.emit(Inst{ .ldr = .{
+                            .dst = val1_reg,
+                            .base = struct_ptr.toReg(),
+                            .offset = 0,
+                            .size = .size64,
+                        } });
+
+                        const abi_preg1 = abi_spec.int_arg_regs[int_count];
+                        const abi_reg1 = Reg.gpr(abi_preg1.hw_enc);
+
+                        if (!val1_reg.toReg().eq(abi_reg1)) {
+                            try ctx.emit(Inst{ .mov_rr = .{
+                                .dst = lower_mod.WritableReg.fromReg(abi_reg1),
+                                .src = val1_reg.toReg(),
+                                .size = .size64,
+                            } });
+                        }
+
+                        // Load second 8 bytes
+                        const val2_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+                        try ctx.emit(Inst{ .ldr = .{
+                            .dst = val2_reg,
+                            .base = struct_ptr.toReg(),
+                            .offset = 8,
+                            .size = .size64,
+                        } });
+
+                        const abi_preg2 = abi_spec.int_arg_regs[int_count + 1];
+                        const abi_reg2 = Reg.gpr(abi_preg2.hw_enc);
+
+                        if (!val2_reg.toReg().eq(abi_reg2)) {
+                            try ctx.emit(Inst{ .mov_rr = .{
+                                .dst = lower_mod.WritableReg.fromReg(abi_reg2),
+                                .src = val2_reg.toReg(),
+                                .size = .size64,
+                            } });
+                        }
+
+                        int_count += 2;
+                        continue;
+                    }
+                }
             }
 
-            // TODO: Handle HVA, general, and indirect struct classes
+            // TODO: Handle HVA and indirect struct classes
         }
 
         const is_fp = arg_type.isFloat() or arg_type.isVector();
@@ -3776,9 +3930,86 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                     // Fall through to stack handling
                     // TODO: Stack HFA handling
                 }
+            } else if (classification.class == .general) {
+                // Non-HFA structs ≤16 bytes: load as 1-2 i64 values in X0-X7
+                const struct_size = arg_type.bytes();
+                const struct_ptr = try ctx.getValueReg(arg_value, .int);
+
+                if (struct_size <= 8) {
+                    // Single i64: load and pass in one int register
+                    if (int_count < abi_spec.int_arg_regs.len) {
+                        const val_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+                        try ctx.emit(Inst{ .ldr = .{
+                            .dst = val_reg,
+                            .base = struct_ptr.toReg(),
+                            .offset = 0,
+                            .size = .size64,
+                        } });
+
+                        const abi_preg = abi_spec.int_arg_regs[int_count];
+                        const abi_reg = Reg.gpr(abi_preg.hw_enc);
+
+                        if (!val_reg.toReg().eq(abi_reg)) {
+                            try ctx.emit(Inst{ .mov_rr = .{
+                                .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                                .src = val_reg.toReg(),
+                                .size = .size64,
+                            } });
+                        }
+
+                        int_count += 1;
+                        continue;
+                    }
+                } else if (struct_size <= 16) {
+                    // Two i64 values: load and pass in two int registers
+                    if (int_count + 1 < abi_spec.int_arg_regs.len) {
+                        // Load first 8 bytes
+                        const val1_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+                        try ctx.emit(Inst{ .ldr = .{
+                            .dst = val1_reg,
+                            .base = struct_ptr.toReg(),
+                            .offset = 0,
+                            .size = .size64,
+                        } });
+
+                        const abi_preg1 = abi_spec.int_arg_regs[int_count];
+                        const abi_reg1 = Reg.gpr(abi_preg1.hw_enc);
+
+                        if (!val1_reg.toReg().eq(abi_reg1)) {
+                            try ctx.emit(Inst{ .mov_rr = .{
+                                .dst = lower_mod.WritableReg.fromReg(abi_reg1),
+                                .src = val1_reg.toReg(),
+                                .size = .size64,
+                            } });
+                        }
+
+                        // Load second 8 bytes
+                        const val2_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+                        try ctx.emit(Inst{ .ldr = .{
+                            .dst = val2_reg,
+                            .base = struct_ptr.toReg(),
+                            .offset = 8,
+                            .size = .size64,
+                        } });
+
+                        const abi_preg2 = abi_spec.int_arg_regs[int_count + 1];
+                        const abi_reg2 = Reg.gpr(abi_preg2.hw_enc);
+
+                        if (!val2_reg.toReg().eq(abi_reg2)) {
+                            try ctx.emit(Inst{ .mov_rr = .{
+                                .dst = lower_mod.WritableReg.fromReg(abi_reg2),
+                                .src = val2_reg.toReg(),
+                                .size = .size64,
+                            } });
+                        }
+
+                        int_count += 2;
+                        continue;
+                    }
+                }
             }
 
-            // TODO: Handle HVA, general, and indirect struct classes
+            // TODO: Handle HVA and indirect struct classes
         }
 
         const is_fp = arg_type.isFloat() or arg_type.isVector();
