@@ -153,10 +153,10 @@ These are NOT gaps, just different design choices:
 
 ## Success Metrics
 
-- ✅ IR opcode coverage: 97.3% → **99.5%** (184/186 - bitcast + bmask complete)
-- ✅ Optimization coverage: 80-90% → **~92%** (12 passes including alias analysis)
-- ⚠️ ABI coverage: 70% → **90%** (add calling conventions + aggregates)
-- 🎯 Overall: **85-90%** → **~90%** current, **95%+** with ABI work
+- ✅ IR opcode coverage: 97.3% → **100%** (185/184 AArch64-relevant, 99.5% total with x86)
+- ✅ Optimization coverage: 80-90% → **87.5%** (14/16 capabilities, see missing-optimization-passes.md)
+- ✅ ABI coverage: 70% → **~85%** (HFA/HVA classification complete, 8 calling conventions defined)
+- 🎯 Overall: **85-90%** → **~91%** current (IR 100%, Opt 87.5%, ABI 85%)
 
 ## References
 
