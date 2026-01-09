@@ -110,11 +110,11 @@ Hoist is **85-90% feature-complete** compared to Cranelift for AArch64 JIT compi
 
 ### Phase 1: Critical Fixes (Week 1)
 1. ✅ Exception handling infrastructure (COMPLETE)
-2. 🔴 Bitcast opcode (hoist-5ab67bb96889a3f2)
-3. 🔴 Bmask opcode (hoist-2646dc944ca3be68)
+2. ✅ Bitcast opcode (COMPLETE - commit 95361326)
+3. ✅ Bmask opcode (COMPLETE - commit 95361326)
 
 ### Phase 2: High-Impact Optimizations (Weeks 2-4)
-4. Alias analysis (hoist-21c5bf62e04c6cd8)
+4. ✅ Alias analysis (COMPLETE - commits 48b9cd18, 2391dad4)
 
 ### Phase 3: ABI Completeness (Weeks 5-8)
 5. Multiple calling conventions
@@ -153,10 +153,10 @@ These are NOT gaps, just different design choices:
 
 ## Success Metrics
 
-- ✅ IR opcode coverage: 97.3% → **100%** (add bitcast + bmask)
-- ✅ Optimization coverage: 80-90% → **90-95%** (add alias analysis)
+- ✅ IR opcode coverage: 97.3% → **99.5%** (184/186 - bitcast + bmask complete)
+- ✅ Optimization coverage: 80-90% → **~92%** (12 passes including alias analysis)
 - ⚠️ ABI coverage: 70% → **90%** (add calling conventions + aggregates)
-- 🎯 Overall: **85-90%** → **95%+** feature parity
+- 🎯 Overall: **85-90%** → **~90%** current, **95%+** with ABI work
 
 ## References
 
