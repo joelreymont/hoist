@@ -1,176 +1,138 @@
-//! Memory operation flags.
+//! Memory flags and alias regions for load/store instructions.
 //!
-//! Flags for load/store operations that enable optimizations.
-//! Ported from cranelift-codegen memflags.rs.
+//! These flags enable alias analysis and memory-related optimizations.
 
 const std = @import("std");
-const TrapCode = @import("trapcode.zig").TrapCode;
 
-/// Endianness of a memory access.
-pub const Endianness = enum {
-    little,
-    big,
-};
-
-/// Disjoint region of aliasing memory.
-pub const AliasRegion = enum(u8) {
-    heap = 0b01,
-    table = 0b10,
-    vmctx = 0b11,
-};
-
-/// Flags for memory operations like load/store.
+/// Memory alias region - identifies which category of memory an access belongs to.
 ///
-/// Bit layout in u16:
-/// - 0: aligned flag
-/// - 1: readonly flag
-/// - 2: little endian flag
-/// - 3: big endian flag
-/// - 4: checked flag
-/// - 5-6: alias region
-/// - 7-14: trap code
-/// - 15: can_move flag
-pub const MemFlags = packed struct {
-    bits: u16 = 0,
+/// Memory accesses to different regions are guaranteed not to alias.
+/// This property must be ensured by the frontend during IR generation.
+pub const AliasRegion = enum(u8) {
+    /// Stack slots (stack_load/stack_store).
+    /// Stack accesses never alias with heap or global memory.
+    stack,
 
-    const BIT_ALIGNED: u16 = 1 << 0;
-    const BIT_READONLY: u16 = 1 << 1;
-    const BIT_LITTLE_ENDIAN: u16 = 1 << 2;
-    const BIT_BIG_ENDIAN: u16 = 1 << 3;
-    const BIT_CHECKED: u16 = 1 << 4;
-    const BITS_ALIAS_REGION: u16 = 0b11 << 5;
-    const BITS_TRAP_CODE: u16 = 0xFF << 7;
-    const BIT_CAN_MOVE: u16 = 1 << 15;
+    /// Heap memory (load/store with dynamically computed addresses).
+    /// General heap allocations and dynamically addressed memory.
+    heap,
 
-    /// Create default flags.
-    pub fn new() MemFlags {
-        return .{};
-    }
+    /// Global values (global_value accesses).
+    /// Read-only globals, function addresses, etc.
+    global,
 
-    /// Create flags with aligned bit set.
-    pub fn trusted() MemFlags {
-        return .{ .bits = BIT_ALIGNED | BIT_READONLY };
-    }
+    /// Unknown or mixed memory.
+    /// Conservative fallback when region cannot be determined.
+    unknown,
+};
 
-    /// Set the aligned flag.
-    pub fn withAligned(self: MemFlags) MemFlags {
-        return .{ .bits = self.bits | BIT_ALIGNED };
-    }
+/// Memory access flags.
+///
+/// Provides information about memory accesses to enable optimizations
+/// while maintaining correctness.
+pub const MemFlags = struct {
+    /// Which alias region this access belongs to.
+    alias_region: AliasRegion = .unknown,
 
-    /// Check if aligned flag is set.
-    pub fn aligned(self: MemFlags) bool {
-        return (self.bits & BIT_ALIGNED) != 0;
-    }
+    /// Whether this is a volatile access.
+    /// Volatile accesses cannot be reordered, eliminated, or optimized.
+    is_volatile: bool = false,
 
-    /// Set the readonly flag.
-    pub fn withReadonly(self: MemFlags) MemFlags {
-        return .{ .bits = self.bits | BIT_READONLY };
-    }
+    /// Whether this access is properly aligned.
+    /// Can enable faster code generation on some architectures.
+    aligned: bool = false,
 
-    /// Check if readonly flag is set.
-    pub fn readonly(self: MemFlags) bool {
-        return (self.bits & BIT_READONLY) != 0;
-    }
-
-    /// Set endianness.
-    pub fn withEndianness(self: MemFlags, endian: Endianness) MemFlags {
-        const cleared = self.bits & ~(BIT_LITTLE_ENDIAN | BIT_BIG_ENDIAN);
-        const bit = switch (endian) {
-            .little => BIT_LITTLE_ENDIAN,
-            .big => BIT_BIG_ENDIAN,
+    /// Create default memory flags (unknown region, non-volatile, unaligned).
+    pub fn default() MemFlags {
+        return .{
+            .alias_region = .unknown,
+            .is_volatile = false,
+            .aligned = false,
         };
-        return .{ .bits = cleared | bit };
     }
 
-    /// Get endianness (null means native).
-    pub fn endianness(self: MemFlags) ?Endianness {
-        if ((self.bits & BIT_LITTLE_ENDIAN) != 0) return .little;
-        if ((self.bits & BIT_BIG_ENDIAN) != 0) return .big;
-        return null;
-    }
-
-    /// Set the checked flag.
-    pub fn withChecked(self: MemFlags) MemFlags {
-        return .{ .bits = self.bits | BIT_CHECKED };
-    }
-
-    /// Check if checked flag is set.
-    pub fn checked(self: MemFlags) bool {
-        return (self.bits & BIT_CHECKED) != 0;
-    }
-
-    /// Set alias region.
-    pub fn withAliasRegion(self: MemFlags, region: ?AliasRegion) MemFlags {
-        const cleared = self.bits & ~BITS_ALIAS_REGION;
-        const bits = if (region) |r| (@as(u16, @intFromEnum(r)) << 5) else 0;
-        return .{ .bits = cleared | bits };
-    }
-
-    /// Get alias region.
-    pub fn aliasRegion(self: MemFlags) ?AliasRegion {
-        const bits = (self.bits & BITS_ALIAS_REGION) >> 5;
-        return switch (bits) {
-            0b00 => null,
-            0b01 => .heap,
-            0b10 => .table,
-            0b11 => .vmctx,
-            else => unreachable,
+    /// Create memory flags for a stack access.
+    pub fn stack() MemFlags {
+        return .{
+            .alias_region = .stack,
+            .is_volatile = false,
+            .aligned = true, // Stack is typically aligned
         };
+    }
+
+    /// Create memory flags for a heap access.
+    pub fn heap() MemFlags {
+        return .{
+            .alias_region = .heap,
+            .is_volatile = false,
+            .aligned = false,
+        };
+    }
+
+    /// Create memory flags for a global access.
+    pub fn global() MemFlags {
+        return .{
+            .alias_region = .global,
+            .is_volatile = false,
+            .aligned = true, // Globals are typically aligned
+        };
+    }
+
+    /// Returns true if this access may alias with another.
+    pub fn mayAlias(self: MemFlags, other: MemFlags) bool {
+        // Volatile accesses are always considered to alias
+        if (self.is_volatile or other.is_volatile) return true;
+
+        // Unknown region is conservative - may alias with anything
+        if (self.alias_region == .unknown or other.alias_region == .unknown) {
+            return true;
+        }
+
+        // Different non-unknown regions never alias
+        if (self.alias_region != other.alias_region) return false;
+
+        // Same non-unknown region - may alias
+        return true;
     }
 };
 
 // Tests
 const testing = std.testing;
 
-test "MemFlags default" {
-    const flags = MemFlags.new();
-    try testing.expect(!flags.aligned());
-    try testing.expect(!flags.readonly());
-    try testing.expect(!flags.checked());
-    try testing.expectEqual(@as(?Endianness, null), flags.endianness());
-    try testing.expectEqual(@as(?AliasRegion, null), flags.aliasRegion());
+test "MemFlags.default" {
+    const flags = MemFlags.default();
+    try testing.expectEqual(AliasRegion.unknown, flags.alias_region);
+    try testing.expectEqual(false, flags.is_volatile);
+    try testing.expectEqual(false, flags.aligned);
 }
 
-test "MemFlags aligned" {
-    const flags = MemFlags.new().withAligned();
-    try testing.expect(flags.aligned());
-    try testing.expect(!flags.readonly());
+test "MemFlags.stack" {
+    const flags = MemFlags.stack();
+    try testing.expectEqual(AliasRegion.stack, flags.alias_region);
+    try testing.expectEqual(true, flags.aligned);
 }
 
-test "MemFlags readonly" {
-    const flags = MemFlags.new().withReadonly();
-    try testing.expect(!flags.aligned());
-    try testing.expect(flags.readonly());
+test "MemFlags.mayAlias - different regions" {
+    const stack = MemFlags.stack();
+    const heap = MemFlags.heap();
+    try testing.expectEqual(false, stack.mayAlias(heap));
 }
 
-test "MemFlags endianness" {
-    const little = MemFlags.new().withEndianness(.little);
-    try testing.expectEqual(@as(?Endianness, .little), little.endianness());
-
-    const big = MemFlags.new().withEndianness(.big);
-    try testing.expectEqual(@as(?Endianness, .big), big.endianness());
+test "MemFlags.mayAlias - same region" {
+    const heap1 = MemFlags.heap();
+    const heap2 = MemFlags.heap();
+    try testing.expectEqual(true, heap1.mayAlias(heap2));
 }
 
-test "MemFlags alias region" {
-    const heap = MemFlags.new().withAliasRegion(.heap);
-    try testing.expectEqual(@as(?AliasRegion, .heap), heap.aliasRegion());
-
-    const table = MemFlags.new().withAliasRegion(.table);
-    try testing.expectEqual(@as(?AliasRegion, .table), table.aliasRegion());
-
-    const vmctx = MemFlags.new().withAliasRegion(.vmctx);
-    try testing.expectEqual(@as(?AliasRegion, .vmctx), vmctx.aliasRegion());
+test "MemFlags.mayAlias - volatile always aliases" {
+    var stack = MemFlags.stack();
+    const heap = MemFlags.heap();
+    stack.is_volatile = true;
+    try testing.expectEqual(true, stack.mayAlias(heap));
 }
 
-test "MemFlags chaining" {
-    const flags = MemFlags.new()
-        .withAligned()
-        .withReadonly()
-        .withEndianness(.little)
-        .withAliasRegion(.heap);
-
-    try testing.expect(flags.aligned());
-    try testing.expect(flags.readonly());
-    try testing.expectEqual(@as(?Endianness, .little), flags.endianness());
-    try testing.expectEqual(@as(?AliasRegion, .heap), flags.aliasRegion());
+test "MemFlags.mayAlias - unknown is conservative" {
+    const unknown = MemFlags.default();
+    const stack = MemFlags.stack();
+    try testing.expectEqual(true, unknown.mayAlias(stack));
 }
