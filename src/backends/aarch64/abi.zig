@@ -1,6 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const builtin = @import("builtin");
+const Allocator = std.mem.Allocator;
 
 const abi_mod = @import("../../machinst/abi.zig");
 const inst_mod = @import("inst.zig");
@@ -737,6 +738,93 @@ pub fn classifyStruct(ty: abi_mod.Type) struct { class: StructClass, elem_ty: ?a
 
     // Non-homogeneous struct <= 16 bytes: passed in general registers
     return .{ .class = .general, .elem_ty = null };
+}
+
+/// Generate struct copy instructions using LDP/STP pairs.
+/// Copies size bytes from src_reg to dst_reg using 16-byte loads/stores where possible.
+/// Returns list of instructions to emit.
+pub fn generateStructCopy(
+    allocator: Allocator,
+    dst_reg: inst_mod.Reg,
+    src_reg: inst_mod.Reg,
+    size: u32,
+) !std.ArrayList(Inst) {
+    var insts = std.ArrayList(Inst).init(allocator);
+    errdefer insts.deinit();
+
+    var offset: i32 = 0;
+    var remaining = size;
+
+    // Copy 16-byte chunks using LDP/STP
+    while (remaining >= 16) : ({
+        remaining -= 16;
+        offset += 16;
+    }) {
+        const tmp1 = WritableReg.fromReg(inst_mod.Reg.gpr(16)); // X16 temp
+        const tmp2 = WritableReg.fromReg(inst_mod.Reg.gpr(17)); // X17 temp
+
+        // LDP x16, x17, [src_reg, #offset]
+        try insts.append(Inst{ .ldp = .{
+            .dst1 = tmp1,
+            .dst2 = tmp2,
+            .base = src_reg,
+            .offset = offset,
+        } });
+
+        // STP x16, x17, [dst_reg, #offset]
+        try insts.append(Inst{ .stp = .{
+            .src1 = tmp1.toReg(),
+            .src2 = tmp2.toReg(),
+            .base = dst_reg,
+            .offset = offset,
+        } });
+    }
+
+    // Copy remaining 8-byte chunk using LDR/STR
+    if (remaining >= 8) {
+        const tmp = WritableReg.fromReg(inst_mod.Reg.gpr(16)); // X16 temp
+
+        try insts.append(Inst{ .ldr = .{
+            .dst = tmp,
+            .base = src_reg,
+            .offset = offset,
+            .size = .size64,
+        } });
+
+        try insts.append(Inst{ .str = .{
+            .src = tmp.toReg(),
+            .base = dst_reg,
+            .offset = offset,
+            .size = .size64,
+        } });
+
+        offset += 8;
+        remaining -= 8;
+    }
+
+    // Copy remaining bytes using LDRB/STRB
+    while (remaining > 0) : ({
+        remaining -= 1;
+        offset += 1;
+    }) {
+        const tmp = WritableReg.fromReg(inst_mod.Reg.gpr(16)); // X16 temp
+
+        try insts.append(Inst{ .ldr = .{
+            .dst = tmp,
+            .base = src_reg,
+            .offset = offset,
+            .size = .size8,
+        } });
+
+        try insts.append(Inst{ .str = .{
+            .src = tmp.toReg(),
+            .base = dst_reg,
+            .offset = offset,
+            .size = .size8,
+        } });
+    }
+
+    return insts;
 }
 
 /// Calculate total stack frame size including alignment.
