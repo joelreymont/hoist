@@ -323,12 +323,61 @@ pub const AliasAnalysis = struct {
         inst_data: *const ir.InstructionData,
         last_stores: *LastStores,
     ) !bool {
-        _ = self;
-        _ = func;
-        _ = inst;
-        _ = inst_data;
-        _ = last_stores;
-        // TODO: Implement load handling
+        // Extract load information based on instruction variant
+        const load_info: struct {
+            addr: Value,
+            flags: ?MemFlags,
+            extending_opcode: ?Opcode,
+        } = switch (inst_data.*) {
+            .load => |data| .{
+                .addr = data.arg,
+                .flags = data.flags,
+                .extending_opcode = null,
+            },
+            .uload8, .sload8, .uload16, .sload16, .uload32, .sload32 => |data| .{
+                .addr = data.arg,
+                .flags = data.flags,
+                .extending_opcode = inst_data.opcode(),
+            },
+            .stack_load => |_| {
+                // Stack loads use stack slots, not SSA addresses
+                // For now, skip optimization (conservative)
+                return false;
+            },
+            else => return false,
+        };
+
+        // Get the result value and type
+        const result = func.dfg.firstResult(inst) orelse return false;
+        const ty = func.dfg.valueType(result) orelse return false;
+
+        // Create memory location key
+        const last_store = last_stores.getLastStore(load_info.flags);
+        const mem_loc = if (load_info.extending_opcode) |opcode|
+            MemoryLoc.initExtending(last_store, load_info.addr, ty, opcode)
+        else
+            MemoryLoc.init(last_store, load_info.addr, ty);
+
+        // Check if we have this location in the table
+        if (self.mem_values.get(mem_loc)) |mem_value| {
+            // Check dominance for safety
+            const def_block = func.layout.instBlock(mem_value.defining_inst) orelse return false;
+            const use_block = func.layout.instBlock(inst) orelse return false;
+
+            if (self.domtree.dominates(def_block, use_block)) {
+                // Create alias: replace the load result with the stored/loaded value
+                const result_data = func.dfg.values.get(result) orelse return false;
+                result_data.* = ir.dfg.ValueData.alias(ty, mem_value.value);
+                return true;
+            }
+        }
+
+        // No optimization - record this load in the memory-values table
+        try self.mem_values.put(mem_loc, .{
+            .defining_inst = inst,
+            .value = result,
+        });
+
         return false;
     }
 
@@ -340,12 +389,41 @@ pub const AliasAnalysis = struct {
         inst_data: *const ir.InstructionData,
         last_stores: *LastStores,
     ) !void {
-        _ = self;
-        _ = func;
-        _ = inst;
-        _ = inst_data;
-        _ = last_stores;
-        // TODO: Implement store handling
+        // Extract store information based on instruction variant
+        const store_info: struct {
+            addr: Value,
+            data: Value,
+            flags: ?MemFlags,
+        } = switch (inst_data.*) {
+            .store => |data| .{
+                .addr = data.args[0],
+                .data = data.args[1],
+                .flags = data.flags,
+            },
+            .stack_store => |_| {
+                // Stack stores use stack slots, not SSA addresses
+                // Update last stores but skip memory-values table
+                last_stores.update(inst, inst_data.opcode(), null);
+                return;
+            },
+            else => return,
+        };
+
+        // Get the type of the stored data
+        const ty = func.dfg.valueType(store_info.data) orelse return;
+
+        // Create memory location key
+        const last_store = last_stores.getLastStore(store_info.flags);
+        const mem_loc = MemoryLoc.init(last_store, store_info.addr, ty);
+
+        // Record this store in the memory-values table
+        try self.mem_values.put(mem_loc, .{
+            .defining_inst = inst,
+            .value = store_info.data,
+        });
+
+        // Update last stores tracking
+        last_stores.update(inst, inst_data.opcode(), store_info.flags);
     }
 };
 
