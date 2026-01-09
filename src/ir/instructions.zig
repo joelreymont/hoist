@@ -217,11 +217,13 @@ pub const InstructionData = union(InstructionFormat) {
     load: struct {
         opcode: Opcode,
         addr: Value,
+        flags: ?@import("memflags.zig").MemFlags = null,
     },
     store: struct {
         opcode: Opcode,
         addr: Value,
         data: Value,
+        flags: ?@import("memflags.zig").MemFlags = null,
     },
     jump: struct {
         opcode: Opcode,
