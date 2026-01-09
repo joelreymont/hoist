@@ -183,6 +183,8 @@ pub const Opcode = enum(u16) {
     bitcast,
     // Boolean operations - convert to mask
     bmask,
+    // Debug metadata - source location marker
+    sequence_point,
     // Atomic operations
     atomic_load,
     atomic_store,
