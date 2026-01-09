@@ -330,6 +330,129 @@ pub const EGraph = struct {
     }
 };
 
+/// Builder for converting IR functions to e-graphs.
+pub const EGraphBuilder = struct {
+    eg: *EGraph,
+
+    /// Maps IR Value → E-class ID.
+    /// Tracks which e-class represents each SSA value.
+    value_map: AutoHashMap(Value, EClassId),
+
+    pub fn init(allocator: Allocator, eg: *EGraph) EGraphBuilder {
+        return .{
+            .eg = eg,
+            .value_map = AutoHashMap(Value, EClassId).init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *EGraphBuilder) void {
+        self.value_map.deinit();
+    }
+
+    /// Build e-graph from IR function.
+    /// Converts each instruction to e-nodes, creating e-classes for results.
+    pub fn buildFromFunction(self: *EGraphBuilder, func: anytype) !void {
+        const Function = @import("function.zig").Function;
+        const dfg_mod = @import("dfg.zig");
+
+        // Process blocks in layout order
+        var block_iter = func.layout.blockIter();
+        while (block_iter.next()) |block| {
+            // Process instructions in block
+            var inst_iter = func.layout.blockInsts(block);
+            while (inst_iter.next()) |inst| {
+                try self.addInstruction(func, inst);
+            }
+        }
+    }
+
+    /// Add single instruction to e-graph.
+    fn addInstruction(self: *EGraphBuilder, func: anytype, inst: Inst) !void {
+        const inst_data = func.dfg.insts.get(inst) orelse return;
+
+        // Get opcode
+        const op = inst_data.opcode();
+
+        // Collect operand e-class IDs
+        var operands = std.ArrayList(EClassId).init(self.value_map.allocator);
+        defer operands.deinit();
+
+        // Convert IR values to e-class IDs
+        switch (inst_data.*) {
+            .unary => |data| {
+                if (self.value_map.get(data.arg)) |arg_id| {
+                    try operands.append(arg_id);
+                } else {
+                    // Operand not yet in e-graph (block arg, constant, etc.)
+                    const arg_id = try self.eg.add(op, &.{});
+                    try self.value_map.put(data.arg, arg_id);
+                    try operands.append(arg_id);
+                }
+            },
+            .binary => |data| {
+                const lhs_id = try self.getOrCreateValue(data.lhs);
+                const rhs_id = try self.getOrCreateValue(data.rhs);
+                try operands.append(lhs_id);
+                try operands.append(rhs_id);
+            },
+            .ternary => |data| {
+                const arg0_id = try self.getOrCreateValue(data.args[0]);
+                const arg1_id = try self.getOrCreateValue(data.args[1]);
+                const arg2_id = try self.getOrCreateValue(data.args[2]);
+                try operands.append(arg0_id);
+                try operands.append(arg1_id);
+                try operands.append(arg2_id);
+            },
+            .int_compare => |data| {
+                const lhs_id = try self.getOrCreateValue(data.lhs);
+                const rhs_id = try self.getOrCreateValue(data.rhs);
+                try operands.append(lhs_id);
+                try operands.append(rhs_id);
+            },
+            .iconst => {
+                // Constant: create leaf e-node
+            },
+            .f32const, .f64const => {
+                // Float constant: create leaf e-node
+            },
+            .nullary => {
+                // No operands (nop, etc.)
+            },
+            else => {
+                // Other instruction formats - add as needed
+                return;
+            },
+        }
+
+        // Add e-node to e-graph
+        const eclass_id = try self.eg.add(op, operands.items);
+
+        // Map instruction result to e-class
+        if (func.dfg.instResults(inst)) |results| {
+            if (results.len > 0) {
+                try self.value_map.put(results[0], eclass_id);
+            }
+        }
+    }
+
+    /// Get e-class for value, creating leaf node if needed.
+    fn getOrCreateValue(self: *EGraphBuilder, value: Value) !EClassId {
+        if (self.value_map.get(value)) |id| {
+            return id;
+        }
+
+        // Create leaf node for unknown value (block param, constant, etc.)
+        const id = try self.eg.add(.nop, &.{});
+        try self.value_map.put(value, id);
+        return id;
+    }
+
+    /// Get e-class ID for IR value.
+    pub fn getValue(self: *EGraphBuilder, value: Value) ?EClassId {
+        return self.value_map.get(value);
+    }
+};
+
 // Tests
 const testing = std.testing;
 
