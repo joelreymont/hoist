@@ -135,6 +135,95 @@ fn hasMemoryFenceSemantics(opcode: Opcode) bool {
     };
 }
 
+/// A key that uniquely identifies a memory location.
+///
+/// For a load to be equivalent to another load or store, we need:
+/// 1. Same "version" of memory (same last store to the alias region)
+/// 2. Same address (same SSA value)
+/// 3. Same type being accessed
+/// 4. Same extending opcode (for extending loads like uload8, sload16)
+pub const MemoryLoc = struct {
+    /// Last store that affected this alias region
+    last_store: ?Inst,
+
+    /// Address SSA value
+    address: Value,
+
+    /// Type being accessed
+    ty: Type,
+
+    /// Extending opcode for loads like uload8, sload16, etc.
+    /// None for regular loads and stores.
+    extending_opcode: ?Opcode,
+
+    /// Create a MemoryLoc for a regular load or store.
+    pub fn init(last_store: ?Inst, address: Value, ty: Type) MemoryLoc {
+        return .{
+            .last_store = last_store,
+            .address = address,
+            .ty = ty,
+            .extending_opcode = null,
+        };
+    }
+
+    /// Create a MemoryLoc for an extending load (uload8, sload16, etc.).
+    pub fn initExtending(last_store: ?Inst, address: Value, ty: Type, opcode: Opcode) MemoryLoc {
+        return .{
+            .last_store = last_store,
+            .address = address,
+            .ty = ty,
+            .extending_opcode = opcode,
+        };
+    }
+
+    /// Hash function for use in HashMap.
+    pub fn hash(self: MemoryLoc) u64 {
+        var hasher = std.hash.Wyhash.init(0);
+
+        // Hash last_store
+        if (self.last_store) |ls| {
+            hasher.update(std.mem.asBytes(&ls.toU32()));
+        } else {
+            hasher.update(&[_]u8{ 0xFF, 0xFF, 0xFF, 0xFF });
+        }
+
+        // Hash address
+        hasher.update(std.mem.asBytes(&self.address.toU32()));
+
+        // Hash type
+        hasher.update(std.mem.asBytes(&self.ty.toU32()));
+
+        // Hash extending opcode
+        if (self.extending_opcode) |opcode| {
+            hasher.update(std.mem.asBytes(&@intFromEnum(opcode)));
+        } else {
+            hasher.update(&[_]u8{ 0xFF, 0xFF });
+        }
+
+        return hasher.final();
+    }
+
+    /// Equality function for use in HashMap.
+    pub fn eql(a: MemoryLoc, b: MemoryLoc) bool {
+        if (a.last_store != b.last_store) return false;
+        if (a.address.toU32() != b.address.toU32()) return false;
+        if (a.ty.toU32() != b.ty.toU32()) return false;
+        if (a.extending_opcode != b.extending_opcode) return false;
+        return true;
+    }
+
+    /// Context for HashMap.
+    pub const HashContext = struct {
+        pub fn hash(_: HashContext, key: MemoryLoc) u64 {
+            return key.hash();
+        }
+
+        pub fn eql(_: HashContext, a: MemoryLoc, b: MemoryLoc) bool {
+            return MemoryLoc.eql(a, b);
+        }
+    };
+};
+
 // Tests
 const testing = std.testing;
 
@@ -227,4 +316,88 @@ test "hasMemoryFenceSemantics" {
     try testing.expectEqual(true, hasMemoryFenceSemantics(.atomic_load));
     try testing.expectEqual(false, hasMemoryFenceSemantics(.store));
     try testing.expectEqual(false, hasMemoryFenceSemantics(.load));
+}
+
+test "MemoryLoc.init" {
+    const last_store = Inst.fromU32(10);
+    const address = Value.fromU32(100);
+    const ty = Type.I32;
+
+    const loc = MemoryLoc.init(last_store, address, ty);
+
+    try testing.expectEqual(last_store, loc.last_store.?);
+    try testing.expectEqual(address.toU32(), loc.address.toU32());
+    try testing.expectEqual(ty.toU32(), loc.ty.toU32());
+    try testing.expectEqual(@as(?Opcode, null), loc.extending_opcode);
+}
+
+test "MemoryLoc.initExtending" {
+    const last_store = Inst.fromU32(10);
+    const address = Value.fromU32(100);
+    const ty = Type.I32;
+
+    const loc = MemoryLoc.initExtending(last_store, address, ty, .uload8);
+
+    try testing.expectEqual(last_store, loc.last_store.?);
+    try testing.expectEqual(Opcode.uload8, loc.extending_opcode.?);
+}
+
+test "MemoryLoc.eql - same locations" {
+    const last_store = Inst.fromU32(10);
+    const address = Value.fromU32(100);
+    const ty = Type.I32;
+
+    const loc1 = MemoryLoc.init(last_store, address, ty);
+    const loc2 = MemoryLoc.init(last_store, address, ty);
+
+    try testing.expectEqual(true, MemoryLoc.eql(loc1, loc2));
+}
+
+test "MemoryLoc.eql - different addresses" {
+    const last_store = Inst.fromU32(10);
+    const ty = Type.I32;
+
+    const loc1 = MemoryLoc.init(last_store, Value.fromU32(100), ty);
+    const loc2 = MemoryLoc.init(last_store, Value.fromU32(200), ty);
+
+    try testing.expectEqual(false, MemoryLoc.eql(loc1, loc2));
+}
+
+test "MemoryLoc.eql - different types" {
+    const last_store = Inst.fromU32(10);
+    const address = Value.fromU32(100);
+
+    const loc1 = MemoryLoc.init(last_store, address, Type.I32);
+    const loc2 = MemoryLoc.init(last_store, address, Type.I64);
+
+    try testing.expectEqual(false, MemoryLoc.eql(loc1, loc2));
+}
+
+test "MemoryLoc.hash - different for different locations" {
+    const last_store = Inst.fromU32(10);
+    const address = Value.fromU32(100);
+
+    const loc1 = MemoryLoc.init(last_store, address, Type.I32);
+    const loc2 = MemoryLoc.init(last_store, address, Type.I64);
+
+    // Different types should have different hashes (not guaranteed but very likely)
+    try testing.expect(loc1.hash() != loc2.hash());
+}
+
+test "MemoryLoc.HashContext - can be used in HashMap" {
+    const last_store = Inst.fromU32(10);
+    const address = Value.fromU32(100);
+    const ty = Type.I32;
+
+    const loc = MemoryLoc.init(last_store, address, ty);
+
+    const ctx = MemoryLoc.HashContext{};
+    const hash1 = ctx.hash(loc);
+    const hash2 = ctx.hash(loc);
+
+    // Same location should hash to same value
+    try testing.expectEqual(hash1, hash2);
+
+    // Should be equal to itself
+    try testing.expectEqual(true, ctx.eql(loc, loc));
 }
