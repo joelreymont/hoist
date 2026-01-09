@@ -2994,6 +2994,10 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
         return error.ArgumentCountMismatch;
     }
 
+    // Get calling convention and ABI spec
+    const call_conv = sig.call_conv;
+    const abi_spec = abi_mod.abiSpecForCallConv(call_conv);
+
     // Marshal arguments to ABI registers and stack
     // This is ALMOST the same as regular calls, but with critical differences:
     // - We're reusing the current frame's incoming arg area
@@ -3008,6 +3012,57 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
     // These are safe because they don't conflict with frame deallocation
     for (args) |arg_value| {
         const arg_type = ctx.func.dfg.valueType(arg_value);
+        // Classify struct arguments for HFA/HVA handling
+        if (arg_type.isStruct()) {
+            const classification = abi_mod.classifyStruct(arg_type);
+
+            if (classification.class == .hfa) {
+                // HFA: 2-4 same-type FP fields passed in V0-V3
+                const elem_ty = classification.elem_ty.?;
+                const fields = arg_type.@"struct";
+                const field_count = fields.len;
+
+                if (fp_count + field_count <= abi_spec.float_arg_regs.len) {
+                    // Load struct address
+                    const struct_ptr = try ctx.getValueReg(arg_value, .int);
+
+                    // Extract each field and move to FP register
+                    for (0..field_count) |field_idx| {
+                        const offset: i32 = @intCast(field_idx * elem_ty.bytes());
+                        const field_reg = lower_mod.WritableReg.allocReg(.float, ctx);
+
+                        // Load field from struct
+                        try ctx.emit(Inst{ .ldr_fp = .{
+                            .dst = field_reg,
+                            .base = struct_ptr.toReg(),
+                            .offset = offset,
+                            .size = typeToFpuOperandSize(elem_ty),
+                        } });
+
+                        // Move to ABI FP register
+                        const abi_preg = abi_spec.float_arg_regs[fp_count + field_idx];
+                        const abi_reg = Reg.fpr(abi_preg.hw_enc);
+
+                        if (!field_reg.toReg().eq(abi_reg)) {
+                            try ctx.emit(Inst{ .fmov_rr = .{
+                                .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                                .src = field_reg.toReg(),
+                                .size = typeToFpuOperandSize(elem_ty),
+                            } });
+                        }
+                    }
+
+                    fp_count += @intCast(field_count);
+                    continue;
+                } else {
+                    // Fall through to stack handling
+                    // TODO: Stack HFA handling
+                }
+            }
+
+            // TODO: Handle HVA, general, and indirect struct classes
+        }
+
         const is_fp = arg_type.isFloat() or arg_type.isVector();
 
         if (is_fp) {
@@ -3349,6 +3404,57 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
             }
         }
 
+        // Classify struct arguments for HFA/HVA handling
+        if (arg_type.isStruct()) {
+            const classification = abi_mod.classifyStruct(arg_type);
+
+            if (classification.class == .hfa) {
+                // HFA: 2-4 same-type FP fields passed in V0-V3
+                const elem_ty = classification.elem_ty.?;
+                const fields = arg_type.@"struct";
+                const field_count = fields.len;
+
+                if (fp_count + field_count <= abi_spec.float_arg_regs.len) {
+                    // Load struct address
+                    const struct_ptr = try ctx.getValueReg(arg_value, .int);
+
+                    // Extract each field and move to FP register
+                    for (0..field_count) |field_idx| {
+                        const offset: i32 = @intCast(field_idx * elem_ty.bytes());
+                        const field_reg = lower_mod.WritableReg.allocReg(.float, ctx);
+
+                        // Load field from struct
+                        try ctx.emit(Inst{ .ldr_fp = .{
+                            .dst = field_reg,
+                            .base = struct_ptr.toReg(),
+                            .offset = offset,
+                            .size = typeToFpuOperandSize(elem_ty),
+                        } });
+
+                        // Move to ABI FP register
+                        const abi_preg = abi_spec.float_arg_regs[fp_count + field_idx];
+                        const abi_reg = Reg.fpr(abi_preg.hw_enc);
+
+                        if (!field_reg.toReg().eq(abi_reg)) {
+                            try ctx.emit(Inst{ .fmov_rr = .{
+                                .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                                .src = field_reg.toReg(),
+                                .size = typeToFpuOperandSize(elem_ty),
+                            } });
+                        }
+                    }
+
+                    fp_count += @intCast(field_count);
+                    continue;
+                } else {
+                    // Fall through to stack handling
+                    // TODO: Stack HFA handling
+                }
+            }
+
+            // TODO: Handle HVA, general, and indirect struct classes
+        }
+
         const is_fp = arg_type.isFloat() or arg_type.isVector();
 
         if (is_fp) {
@@ -3598,6 +3704,57 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                 // Don't count this as a regular argument
                 continue;
             }
+        }
+
+        // Classify struct arguments for HFA/HVA handling
+        if (arg_type.isStruct()) {
+            const classification = abi_mod.classifyStruct(arg_type);
+
+            if (classification.class == .hfa) {
+                // HFA: 2-4 same-type FP fields passed in V0-V3
+                const elem_ty = classification.elem_ty.?;
+                const fields = arg_type.@"struct";
+                const field_count = fields.len;
+
+                if (fp_count + field_count <= abi_spec.float_arg_regs.len) {
+                    // Load struct address
+                    const struct_ptr = try ctx.getValueReg(arg_value, .int);
+
+                    // Extract each field and move to FP register
+                    for (0..field_count) |field_idx| {
+                        const offset: i32 = @intCast(field_idx * elem_ty.bytes());
+                        const field_reg = lower_mod.WritableReg.allocReg(.float, ctx);
+
+                        // Load field from struct
+                        try ctx.emit(Inst{ .ldr_fp = .{
+                            .dst = field_reg,
+                            .base = struct_ptr.toReg(),
+                            .offset = offset,
+                            .size = typeToFpuOperandSize(elem_ty),
+                        } });
+
+                        // Move to ABI FP register
+                        const abi_preg = abi_spec.float_arg_regs[fp_count + field_idx];
+                        const abi_reg = Reg.fpr(abi_preg.hw_enc);
+
+                        if (!field_reg.toReg().eq(abi_reg)) {
+                            try ctx.emit(Inst{ .fmov_rr = .{
+                                .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                                .src = field_reg.toReg(),
+                                .size = typeToFpuOperandSize(elem_ty),
+                            } });
+                        }
+                    }
+
+                    fp_count += @intCast(field_count);
+                    continue;
+                } else {
+                    // Fall through to stack handling
+                    // TODO: Stack HFA handling
+                }
+            }
+
+            // TODO: Handle HVA, general, and indirect struct classes
         }
 
         const is_fp = arg_type.isFloat() or arg_type.isVector();
