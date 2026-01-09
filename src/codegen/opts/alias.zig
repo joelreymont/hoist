@@ -18,6 +18,7 @@ const Opcode = @import("../../ir/opcodes.zig").Opcode;
 const Type = ir.Type;
 const Function = ir.Function;
 const DominatorTree = ir.DominatorTree;
+const ValueData = @import("../../ir/dfg.zig").ValueData;
 
 const memflags = @import("../../ir/memflags.zig");
 const AliasRegion = memflags.AliasRegion;
@@ -302,7 +303,7 @@ pub const AliasAnalysis = struct {
     /// Check if an instruction is a load.
     fn isLoadOpcode(inst_data: *const ir.InstructionData) bool {
         return switch (inst_data.*) {
-            .load, .stack_load, .uload8, .sload8, .uload16, .sload16, .uload32, .sload32 => true,
+            .load, .stack_load => true,
             else => false,
         };
     }
@@ -329,15 +330,17 @@ pub const AliasAnalysis = struct {
             flags: ?MemFlags,
             extending_opcode: ?Opcode,
         } = switch (inst_data.*) {
-            .load => |data| .{
-                .addr = data.arg,
-                .flags = data.flags,
-                .extending_opcode = null,
-            },
-            .uload8, .sload8, .uload16, .sload16, .uload32, .sload32 => |data| .{
-                .addr = data.arg,
-                .flags = data.flags,
-                .extending_opcode = inst_data.opcode(),
+            .load => |data| blk: {
+                // Check if this is an extending load (uload8, sload8, etc.)
+                const is_extending = switch (data.opcode) {
+                    .uload8, .sload8, .uload16, .sload16, .uload32, .sload32 => true,
+                    else => false,
+                };
+                break :blk .{
+                    .addr = data.arg,
+                    .flags = data.flags,
+                    .extending_opcode = if (is_extending) data.opcode else null,
+                };
             },
             .stack_load => |_| {
                 // Stack loads use stack slots, not SSA addresses
@@ -366,8 +369,8 @@ pub const AliasAnalysis = struct {
 
             if (self.domtree.dominates(def_block, use_block)) {
                 // Create alias: replace the load result with the stored/loaded value
-                const result_data = func.dfg.values.get(result) orelse return false;
-                result_data.* = ir.dfg.ValueData.alias(ty, mem_value.value);
+                const result_data = func.dfg.values.getMut(result) orelse return false;
+                result_data.* = ValueData.alias(ty, mem_value.value);
                 return true;
             }
         }

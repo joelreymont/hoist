@@ -183,10 +183,13 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
     // 5. Remove constant phis
     _ = try removeConstantPhis(ctx);
 
-    // 6. Resolve value aliases
+    // 6. Alias analysis (redundant load elimination, store-to-load forwarding)
+    _ = try runAliasAnalysis(ctx);
+
+    // 7. Resolve value aliases
     ctx.func.dfg.resolveAllAliases();
 
-    // 7. E-graph optimization (if opt_level > 0)
+    // 8. E-graph optimization (if opt_level > 0)
     // TODO: Implement e-graph pass
 }
 
@@ -200,6 +203,24 @@ fn removeConstantPhis(ctx: *Context) CodegenError!bool {
     _ = ctx;
     _ = ctx;
     return false;
+}
+
+/// Run alias analysis optimization pass.
+///
+/// Performs redundant load elimination (RLE) and store-to-load forwarding
+/// by tracking memory locations and their values across the function.
+/// Returns true if any optimizations were applied.
+fn runAliasAnalysis(ctx: *Context) CodegenError!bool {
+    const AliasAnalysis = @import("opts/alias.zig").AliasAnalysis;
+
+    var analysis = AliasAnalysis.init(ctx.allocator, &ctx.domtree);
+    defer analysis.deinit();
+
+    return analysis.run(ctx.func) catch |err| {
+        return switch (err) {
+            error.OutOfMemory => CodegenError.OutOfMemory,
+        };
+    };
 }
 
 /// Eliminate unreachable code.
