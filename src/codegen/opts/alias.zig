@@ -14,8 +14,8 @@ const ir = @import("../../ir.zig");
 const Block = ir.Block;
 const Inst = ir.Inst;
 const Value = ir.Value;
-const Opcode = ir.Opcode;
-const Type = ir.types.Type;
+const Opcode = @import("../../ir/opcodes.zig").Opcode;
+const Type = ir.Type;
 const Function = ir.Function;
 const DominatorTree = ir.DominatorTree;
 
@@ -182,16 +182,16 @@ pub const MemoryLoc = struct {
 
         // Hash last_store
         if (self.last_store) |ls| {
-            hasher.update(std.mem.asBytes(&ls.toU32()));
+            hasher.update(std.mem.asBytes(&ls.asU32()));
         } else {
             hasher.update(&[_]u8{ 0xFF, 0xFF, 0xFF, 0xFF });
         }
 
         // Hash address
-        hasher.update(std.mem.asBytes(&self.address.toU32()));
+        hasher.update(std.mem.asBytes(&self.address.asU32()));
 
         // Hash type
-        hasher.update(std.mem.asBytes(&self.ty.toU32()));
+        hasher.update(std.mem.asBytes(&self.ty.raw));
 
         // Hash extending opcode
         if (self.extending_opcode) |opcode| {
@@ -206,8 +206,8 @@ pub const MemoryLoc = struct {
     /// Equality function for use in HashMap.
     pub fn eql(a: MemoryLoc, b: MemoryLoc) bool {
         if (a.last_store != b.last_store) return false;
-        if (a.address.toU32() != b.address.toU32()) return false;
-        if (a.ty.toU32() != b.ty.toU32()) return false;
+        if (a.address.asU32() != b.address.asU32()) return false;
+        if (a.ty.raw != b.ty.raw) return false;
         if (a.extending_opcode != b.extending_opcode) return false;
         return true;
     }
@@ -222,6 +222,54 @@ pub const MemoryLoc = struct {
             return MemoryLoc.eql(a, b);
         }
     };
+};
+
+/// Value information stored in the memory-values table.
+pub const MemoryValue = struct {
+    /// Instruction that defined this value (load or store)
+    defining_inst: Inst,
+    /// The SSA value (result of load, or data of store)
+    value: Value,
+};
+
+/// Alias analysis optimization pass.
+///
+/// Performs forward dataflow analysis to track memory locations and their values,
+/// enabling redundant load elimination and store-to-load forwarding.
+pub const AliasAnalysis = struct {
+    allocator: Allocator,
+    /// Dominance tree (borrowed from Function analysis)
+    domtree: *const DominatorTree,
+    /// Input last-store state for each block
+    block_input: std.AutoHashMap(Block, LastStores),
+    /// Memory location → value mapping for current program point
+    mem_values: std.HashMap(MemoryLoc, MemoryValue, MemoryLoc.HashContext, std.hash_map.default_max_load_percentage),
+
+    /// Initialize the alias analysis pass.
+    pub fn init(allocator: Allocator, domtree: *const DominatorTree) AliasAnalysis {
+        return .{
+            .allocator = allocator,
+            .domtree = domtree,
+            .block_input = std.AutoHashMap(Block, LastStores).init(allocator),
+            .mem_values = std.HashMap(MemoryLoc, MemoryValue, MemoryLoc.HashContext, std.hash_map.default_max_load_percentage).init(allocator),
+        };
+    }
+
+    /// Deinitialize the alias analysis pass.
+    pub fn deinit(self: *AliasAnalysis) void {
+        self.block_input.deinit();
+        self.mem_values.deinit();
+    }
+
+    /// Run the alias analysis pass on a function.
+    ///
+    /// Returns true if any optimizations were applied.
+    pub fn run(self: *AliasAnalysis, func: *Function) !bool {
+        _ = self;
+        _ = func;
+        // TODO: Implement dataflow analysis
+        return false;
+    }
 };
 
 // Tests
@@ -326,8 +374,8 @@ test "MemoryLoc.init" {
     const loc = MemoryLoc.init(last_store, address, ty);
 
     try testing.expectEqual(last_store, loc.last_store.?);
-    try testing.expectEqual(address.toU32(), loc.address.toU32());
-    try testing.expectEqual(ty.toU32(), loc.ty.toU32());
+    try testing.expectEqual(address.asU32(), loc.address.asU32());
+    try testing.expectEqual(ty.raw, loc.ty.raw);
     try testing.expectEqual(@as(?Opcode, null), loc.extending_opcode);
 }
 

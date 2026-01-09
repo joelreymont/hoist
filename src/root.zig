@@ -117,6 +117,7 @@ test {
     _ = @import("codegen/legalize_ops.zig");
     _ = @import("codegen/lower_helpers.zig");
     _ = @import("codegen/isle_ctx.zig");
+    _ = @import("codegen/opts/alias.zig");
 }
 
 // Backend tests
