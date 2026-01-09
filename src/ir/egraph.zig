@@ -453,6 +453,234 @@ pub const EGraphBuilder = struct {
     }
 };
 
+/// Equality saturation: apply rewrites until fixpoint.
+/// Core optimization algorithm from egg (POPL 2021).
+pub const EqualitySaturation = struct {
+    eg: *EGraph,
+    allocator: Allocator,
+
+    /// Maximum iterations before stopping.
+    max_iterations: u32,
+
+    /// Node limit: stop if e-graph exceeds this size.
+    node_limit: u32,
+
+    pub fn init(allocator: Allocator, eg: *EGraph) EqualitySaturation {
+        return .{
+            .eg = eg,
+            .allocator = allocator,
+            .max_iterations = 100,
+            .node_limit = 10000,
+        };
+    }
+
+    /// Run equality saturation with given rewrite rules.
+    /// Returns number of iterations performed.
+    pub fn saturate(self: *EqualitySaturation, rules: []const anytype) !u32 {
+        var iteration: u32 = 0;
+
+        while (iteration < self.max_iterations) : (iteration += 1) {
+            const initial_class_count = self.eg.classes.count();
+
+            // Apply all rewrite rules
+            var changed = false;
+            for (rules) |rule| {
+                if (try self.applyRule(rule)) {
+                    changed = true;
+                }
+            }
+
+            // Rebuild to restore invariants (congruence closure)
+            try self.eg.rebuild();
+
+            // Check termination conditions
+            if (!changed) {
+                // Fixpoint reached
+                break;
+            }
+
+            if (self.eg.classes.count() > self.node_limit) {
+                // E-graph too large, stop
+                break;
+            }
+
+            // No progress check: if no new e-classes created
+            if (self.eg.classes.count() == initial_class_count) {
+                // No structural changes
+                break;
+            }
+        }
+
+        return iteration + 1;
+    }
+
+    /// Apply single rewrite rule to all matching e-nodes.
+    fn applyRule(self: *EqualitySaturation, rule: anytype) !bool {
+        var changed = false;
+
+        // Iterate over all e-classes
+        var class_iter = self.eg.classes.iterator();
+        while (class_iter.next()) |entry| {
+            const eclass = entry.value_ptr;
+
+            // Try each e-node in this e-class
+            for (eclass.nodes.items) |node| {
+                if (try self.matchAndRewrite(rule, node, eclass.id)) {
+                    changed = true;
+                }
+            }
+        }
+
+        return changed;
+    }
+
+    /// Match pattern and apply rewrite if successful.
+    fn matchAndRewrite(self: *EqualitySaturation, rule: anytype, node: ENode, eclass_id: EClassId) !bool {
+        // Simple pattern matching - match identity rules first
+        const rule_name = rule.name;
+
+        // Identity: x + 0 → x
+        if (std.mem.eql(u8, rule_name, "iadd_zero_right")) {
+            if (node.op == .iadd and node.children.len == 2) {
+                // Check if right operand is zero
+                const right_id = self.eg.uf.find(node.children[1]);
+                if (try self.isConstantZero(right_id)) {
+                    // Merge with left operand
+                    const left_id = self.eg.uf.find(node.children[0]);
+                    _ = try self.eg.merge(eclass_id, left_id);
+                    return true;
+                }
+            }
+        }
+
+        // Identity: 0 + x → x
+        if (std.mem.eql(u8, rule_name, "iadd_zero_left")) {
+            if (node.op == .iadd and node.children.len == 2) {
+                const left_id = self.eg.uf.find(node.children[0]);
+                if (try self.isConstantZero(left_id)) {
+                    const right_id = self.eg.uf.find(node.children[1]);
+                    _ = try self.eg.merge(eclass_id, right_id);
+                    return true;
+                }
+            }
+        }
+
+        // Identity: x * 1 → x
+        if (std.mem.eql(u8, rule_name, "imul_one_right")) {
+            if (node.op == .imul and node.children.len == 2) {
+                const right_id = self.eg.uf.find(node.children[1]);
+                if (try self.isConstantOne(right_id)) {
+                    const left_id = self.eg.uf.find(node.children[0]);
+                    _ = try self.eg.merge(eclass_id, left_id);
+                    return true;
+                }
+            }
+        }
+
+        // Identity: 1 * x → x
+        if (std.mem.eql(u8, rule_name, "imul_one_left")) {
+            if (node.op == .imul and node.children.len == 2) {
+                const left_id = self.eg.uf.find(node.children[0]);
+                if (try self.isConstantOne(left_id)) {
+                    const right_id = self.eg.uf.find(node.children[1]);
+                    _ = try self.eg.merge(eclass_id, right_id);
+                    return true;
+                }
+            }
+        }
+
+        // Idempotence: x - x → 0
+        if (std.mem.eql(u8, rule_name, "isub_self")) {
+            if (node.op == .isub and node.children.len == 2) {
+                const left_id = self.eg.uf.find(node.children[0]);
+                const right_id = self.eg.uf.find(node.children[1]);
+                if (left_id == right_id) {
+                    // Create constant zero and merge
+                    const zero_id = try self.eg.add(.iconst, &.{});
+                    _ = try self.eg.merge(eclass_id, zero_id);
+                    return true;
+                }
+            }
+        }
+
+        // Idempotence: x ^ x → 0
+        if (std.mem.eql(u8, rule_name, "bxor_self")) {
+            if (node.op == .bxor and node.children.len == 2) {
+                const left_id = self.eg.uf.find(node.children[0]);
+                const right_id = self.eg.uf.find(node.children[1]);
+                if (left_id == right_id) {
+                    const zero_id = try self.eg.add(.iconst, &.{});
+                    _ = try self.eg.merge(eclass_id, zero_id);
+                    return true;
+                }
+            }
+        }
+
+        // Idempotence: x & x → x
+        if (std.mem.eql(u8, rule_name, "band_self")) {
+            if (node.op == .band and node.children.len == 2) {
+                const left_id = self.eg.uf.find(node.children[0]);
+                const right_id = self.eg.uf.find(node.children[1]);
+                if (left_id == right_id) {
+                    _ = try self.eg.merge(eclass_id, left_id);
+                    return true;
+                }
+            }
+        }
+
+        // Idempotence: x | x → x
+        if (std.mem.eql(u8, rule_name, "bor_self")) {
+            if (node.op == .bor and node.children.len == 2) {
+                const left_id = self.eg.uf.find(node.children[0]);
+                const right_id = self.eg.uf.find(node.children[1]);
+                if (left_id == right_id) {
+                    _ = try self.eg.merge(eclass_id, left_id);
+                    return true;
+                }
+            }
+        }
+
+        // Commutativity: x + y → y + x (assert equivalence)
+        if (std.mem.eql(u8, rule_name, "iadd_comm")) {
+            if (node.op == .iadd and node.children.len == 2) {
+                const left_id = self.eg.uf.find(node.children[0]);
+                const right_id = self.eg.uf.find(node.children[1]);
+                // Add commuted version to same e-class
+                const comm_id = try self.eg.add(.iadd, &.{ right_id, left_id });
+                _ = try self.eg.merge(eclass_id, comm_id);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// Check if e-class contains constant zero.
+    fn isConstantZero(self: *EqualitySaturation, id: EClassId) !bool {
+        const eclass = self.eg.getClass(id) orelse return false;
+        for (eclass.nodes.items) |node| {
+            if (node.op == .iconst and node.children.len == 0) {
+                // Assume iconst with no children is zero
+                // TODO: Store constant value in e-node
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Check if e-class contains constant one.
+    fn isConstantOne(self: *EqualitySaturation, id: EClassId) !bool {
+        const eclass = self.eg.getClass(id) orelse return false;
+        for (eclass.nodes.items) |node| {
+            if (node.op == .iconst and node.children.len == 0) {
+                // TODO: Distinguish constants - need value storage
+                return false; // Placeholder
+            }
+        }
+        return false;
+    }
+};
+
 // Tests
 const testing = std.testing;
 
