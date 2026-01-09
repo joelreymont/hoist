@@ -3300,14 +3300,20 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
         }
     }
 
-    // AAPCS64 calling convention:
+    // Get signature and calling convention
+    const sig = ctx.getSig(sig_ref);
+    const call_conv = if (sig) |s| s.call_conv else signature_mod.CallConv.system_v;
+
+    // Note: Currently all calling conventions use AAPCS64-like register allocation
+    // Fast/PreserveAll/etc. will be differentiated in later implementation
+    // For now, treat all as system_v (AAPCS64):
     // - First 8 integer args in X0-X7
     // - First 8 FP/SIMD args in V0-V7
     // - Remaining args on stack (8-byte aligned, pushed in order)
     // - X8 used for indirect return pointer (sret) if needed
+    _ = call_conv; // TODO: Use call_conv for register allocation differences
 
     // Check if callee uses indirect return (sret) and pass pointer in X8
-    const sig = ctx.getSig(sig_ref);
     const needs_sret = if (sig) |s| abi_mod.needsStructReturnPointer(s.returns.items) else false;
 
     var sret_param_index: ?usize = null;
