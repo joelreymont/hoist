@@ -221,7 +221,7 @@ pub fn compileAndExecuteI64I64ToI64(
 
     const jit_fn = result.mem.getFnI64I64ToI64();
     return jit_fn(arg1, arg2);
-};
+}
 
 test "JitMemory allocate and free" {
     if (builtin.os.tag != .macos and builtin.os.tag != .linux) {

@@ -3212,6 +3212,11 @@
 (rule (lower (sequence_point))
       (invalid_reg))
 
+;; spectre_fence: Spectre mitigation barrier (emits ISB)
+(decl aarch64_spectre_fence () Aarch64Inst)
+(rule (lower (spectre_fence))
+      (aarch64_spectre_fence))
+
 ;; bitcast: Type punning between same-size types
 ;; Float/Vector <-> Float/Vector: no-op (same register file)
 (decl aarch64_bitcast_noop (Value) Aarch64Inst)

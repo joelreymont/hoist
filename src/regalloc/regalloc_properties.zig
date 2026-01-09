@@ -111,11 +111,13 @@ test "property: overlapping vregs get different pregs or spills" {
 // Completeness: allocate() never leaves a vreg without assignment.
 test "property: allocated vregs always have allocation" {
     try zc.check(struct {
-        fn prop(args: struct {
-            vreg_count: u4, // 0-15 vregs
-            start_pos: u8,
-            length: u4,
-        }) bool {
+        fn prop(
+            args: struct {
+                vreg_count: u4, // 0-15 vregs
+                start_pos: u8,
+                length: u4,
+            },
+        ) bool {
             const allocator = testing.allocator;
             var alloc = TrivialAllocator.init(allocator);
             defer alloc.deinit();
@@ -222,9 +224,11 @@ test "property: float vregs never allocated to int pregs" {
 // Stress test: allocate more vregs than available pregs, verify spilling works.
 test "property: excessive pressure triggers spilling" {
     try zc.check(struct {
-        fn prop(args: struct {
-            extra_vregs: u4, // 0-15 extra vregs beyond available
-        }) bool {
+        fn prop(
+            args: struct {
+                extra_vregs: u4, // 0-15 extra vregs beyond available
+            },
+        ) bool {
             const allocator = testing.allocator;
             var alloc = TrivialAllocator.init(allocator);
             defer alloc.deinit();
@@ -274,9 +278,11 @@ test "property: excessive pressure triggers spilling" {
 // No two live values share the same spill slot.
 test "property: spill slots are unique for live vregs" {
     try zc.check(struct {
-        fn prop(args: struct {
-            spill_count: u4, // 1-16 spilled vregs
-        }) bool {
+        fn prop(
+            args: struct {
+                spill_count: u4, // 1-16 spilled vregs
+            },
+        ) bool {
             if (args.spill_count == 0) return true;
 
             const allocator = testing.allocator;
@@ -341,9 +347,11 @@ test "property: spill slots are unique for live vregs" {
 // Efficiency property: allocator reclaims registers when values die.
 test "property: registers reused after live range ends" {
     try zc.check(struct {
-        fn prop(args: struct {
-            gap_size: u8, // Gap between vreg1 end and vreg2 start
-        }) bool {
+        fn prop(
+            args: struct {
+                gap_size: u8, // Gap between vreg1 end and vreg2 start
+            },
+        ) bool {
             const allocator = testing.allocator;
             var alloc = TrivialAllocator.init(allocator);
             defer alloc.deinit();

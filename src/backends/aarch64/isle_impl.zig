@@ -3022,3 +3022,13 @@ pub fn aarch64_debugtrap(
     _ = ctx;
     return Inst{ .brk = .{ .imm = 0 } };
 }
+
+/// Emit Spectre mitigation fence (ISB instruction).
+/// ISB (Instruction Synchronization Barrier) prevents speculative execution
+/// across security boundaries, mitigating Spectre-style attacks.
+pub fn aarch64_spectre_fence(
+    ctx: *IsleContext,
+) !Inst {
+    _ = ctx;
+    return Inst{ .isb = {} };
+}

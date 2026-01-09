@@ -371,6 +371,18 @@ pub const FunctionBuilder = struct {
         try self.func.layout.appendInst(inst, block);
     }
 
+    /// Emit a Spectre mitigation fence.
+    /// Prevents speculative execution across security boundaries.
+    /// Has no runtime effect on non-vulnerable CPUs.
+    pub fn spectreFence(self: *Self) !void {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .nullary = NullaryData.init(.spectre_fence) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+    }
+
     pub fn instTryCall(
         self: *Self,
         callee: FuncRef,

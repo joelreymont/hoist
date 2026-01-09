@@ -185,6 +185,8 @@ pub const Opcode = enum(u16) {
     bmask,
     // Debug metadata - source location marker
     sequence_point,
+    // Security - Spectre mitigation
+    spectre_fence,
     // Atomic operations
     atomic_load,
     atomic_store,
