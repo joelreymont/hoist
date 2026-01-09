@@ -323,6 +323,7 @@ pub const AliasAnalysis = struct {
         inst_data: *const ir.InstructionData,
         last_stores: *LastStores,
     ) !bool {
+        _ = self;
         _ = func;
         _ = inst;
         _ = inst_data;
@@ -339,6 +340,7 @@ pub const AliasAnalysis = struct {
         inst_data: *const ir.InstructionData,
         last_stores: *LastStores,
     ) !void {
+        _ = self;
         _ = func;
         _ = inst;
         _ = inst_data;
