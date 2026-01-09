@@ -352,9 +352,6 @@ pub const EGraphBuilder = struct {
     /// Build e-graph from IR function.
     /// Converts each instruction to e-nodes, creating e-classes for results.
     pub fn buildFromFunction(self: *EGraphBuilder, func: anytype) !void {
-        const Function = @import("function.zig").Function;
-        const dfg_mod = @import("dfg.zig");
-
         // Process blocks in layout order
         var block_iter = func.layout.blockIter();
         while (block_iter.next()) |block| {
@@ -476,7 +473,7 @@ pub const EqualitySaturation = struct {
 
     /// Run equality saturation with given rewrite rules.
     /// Returns number of iterations performed.
-    pub fn saturate(self: *EqualitySaturation, rules: []const anytype) !u32 {
+    pub fn saturate(self: *EqualitySaturation, rules: anytype) !u32 {
         var iteration: u32 = 0;
 
         while (iteration < self.max_iterations) : (iteration += 1) {
@@ -681,6 +678,125 @@ pub const EqualitySaturation = struct {
     }
 };
 
+/// Extraction: find cheapest equivalent expression and convert back to IR.
+pub const Extractor = struct {
+    eg: *EGraph,
+    allocator: Allocator,
+    costs: AutoHashMap(EClassId, CostNode),
+
+    const CostNode = struct {
+        cost: u32,
+        node: ENode,
+    };
+
+    pub fn init(allocator: Allocator, eg: *EGraph) Extractor {
+        return .{
+            .eg = eg,
+            .allocator = allocator,
+            .costs = AutoHashMap(EClassId, CostNode).init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *Extractor) void {
+        self.costs.deinit();
+    }
+
+    /// Extract the cheapest e-node from an e-class.
+    pub fn extractBest(self: *Extractor, eclass_id: EClassId) !ENode {
+        const canon_id = self.eg.uf.find(eclass_id);
+
+        // Check memoized result
+        if (self.costs.get(canon_id)) |cached| {
+            return cached.node;
+        }
+
+        // Find minimum-cost e-node in this e-class
+        const eclass = self.eg.getClass(canon_id) orelse {
+            return error.EClassNotFound;
+        };
+
+        var min_cost: u32 = std.math.maxInt(u32);
+        var best_node: ?ENode = null;
+
+        for (eclass.nodes.items) |node| {
+            const cost = try self.computeCost(node);
+            if (cost < min_cost) {
+                min_cost = cost;
+                best_node = node;
+            }
+        }
+
+        const result = best_node orelse return error.EmptyEClass;
+
+        // Memoize
+        try self.costs.put(canon_id, .{ .cost = min_cost, .node = result });
+
+        return result;
+    }
+
+    /// Compute cost of an e-node (instruction count).
+    fn computeCost(self: *Extractor, node: ENode) !u32 {
+        // Base cost for this instruction
+        var cost = opcodeCost(node.op);
+
+        // Add costs of children
+        for (node.children) |child_id| {
+            const canon_child = self.eg.uf.find(child_id);
+            if (self.costs.get(canon_child)) |cached| {
+                cost += cached.cost;
+            } else {
+                // Recursively extract child
+                _ = try self.extractBest(canon_child);
+                const child_cost = self.costs.get(canon_child) orelse return error.CostNotFound;
+                cost += child_cost.cost;
+            }
+        }
+
+        return cost;
+    }
+
+    /// Cost model: simpler operations have lower cost.
+    fn opcodeCost(op: Opcode) u32 {
+        return switch (op) {
+            // Free operations
+            .nop => 0,
+
+            // Constants (cheap)
+            .iconst, .f32const, .f64const => 1,
+
+            // Simple arithmetic
+            .iadd, .isub, .band, .bor, .bxor => 1,
+
+            // Shifts (fast on most architectures)
+            .ishl, .ushr, .sshr, .rotl, .rotr => 1,
+
+            // Multiplication (more expensive)
+            .imul => 2,
+
+            // Division (most expensive)
+            .udiv, .sdiv, .urem, .srem => 4,
+
+            // Comparisons
+            .icmp => 1,
+
+            // Memory operations
+            .load => 2,
+            .store => 2,
+
+            // Control flow
+            .br, .br_table => 1,
+            .branch, .branch_z => 1,
+            .@"return" => 1,
+
+            // Function calls (expensive)
+            .call, .call_indirect => 5,
+
+            // Everything else: default cost
+            else => 1,
+        };
+    }
+};
+
 // Tests
 const testing = std.testing;
 
@@ -751,4 +867,47 @@ test "EGraph merge and congruence" {
     const x_plus_1_canon = eg.uf.find(x_plus_1);
     const y_plus_1_canon = eg.uf.find(y_plus_1);
     try testing.expectEqual(x_plus_1_canon, y_plus_1_canon);
+}
+
+test "Extractor basic cost" {
+    var eg = EGraph.init(testing.allocator);
+    defer eg.deinit();
+
+    // Add instructions with different costs
+    const x = try eg.add(.iconst, &.{}); // cost 1
+    const two = try eg.add(.iconst, &.{}); // cost 1
+    const x_times_2 = try eg.add(.imul, &.{ x, two }); // cost 1+1+2=4
+    const one = try eg.add(.iconst, &.{}); // cost 1
+    const x_shift_1 = try eg.add(.ishl, &.{ x, one }); // cost 1+1+1=3
+
+    // Merge x*2 with x<<1 (shift is cheaper)
+    _ = try eg.merge(x_times_2, x_shift_1);
+    try eg.rebuild();
+
+    var extractor = Extractor.init(testing.allocator, &eg);
+    defer extractor.deinit();
+
+    const best = try extractor.extractBest(x_times_2);
+    // Should select ishl (cost 3) over imul (cost 4)
+    try testing.expectEqual(Opcode.ishl, best.op);
+}
+
+test "Extractor memoization" {
+    var eg = EGraph.init(testing.allocator);
+    defer eg.deinit();
+
+    const x = try eg.add(.iconst, &.{});
+    const y = try eg.add(.iconst, &.{});
+    const x_plus_y = try eg.add(.iadd, &.{ x, y });
+
+    var extractor = Extractor.init(testing.allocator, &eg);
+    defer extractor.deinit();
+
+    // First extraction
+    const first = try extractor.extractBest(x_plus_y);
+    // Second extraction should use memoized result
+    const second = try extractor.extractBest(x_plus_y);
+
+    try testing.expectEqual(first.op, second.op);
+    try testing.expectEqual(first.children.len, second.children.len);
 }
