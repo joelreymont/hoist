@@ -587,6 +587,11 @@ pub const InstCombine = struct {
                     return;
                 }
 
+                // Spaceship pattern: select(a < b, -1, select(a > b, 1, 0)) => spaceship(a, b)
+                if (try self.simplifySpaceship(func, inst, cond, true_val, false_val)) {
+                    return;
+                }
+
                 // Transform select-of-icmp into {u,s}{min,max}
                 // select(x > y, x, y) => max(x, y), select(x < y, x, y) => min(x, y)
                 const cond_def = func.dfg.valueDef(cond) orelse return;
@@ -2782,4 +2787,78 @@ test "InstCombine: double negation -(-x) = x" {
     var ic = InstCombine.init(testing.allocator);
     defer ic.deinit();
     try testing.expect(!ic.changed);
+}
+
+/// Simplify spaceship pattern: select(a < b, -1, select(a > b, 1, 0))
+/// Detects three-way comparison idiom and optimizes to single compare + conditional moves.
+fn simplifySpaceship(self: *InstCombine, func: *Function, inst: Inst, cond: Value, true_val: Value, false_val: Value) !bool {
+    // Check if true_val is -1
+    const true_const = self.getConstant(func, true_val);
+    if (true_const == null or true_const.? != -1) return false;
+
+    // Check if false_val is a select instruction
+    const false_def = func.dfg.valueDef(false_val) orelse return false;
+    const false_inst = switch (false_def) {
+        .result => |r| r.inst,
+        else => return false,
+    };
+    const false_data = func.dfg.insts.get(false_inst) orelse return false;
+    if (false_data.* != .ternary) return false;
+    const inner_select = false_data.ternary;
+    if (inner_select.opcode != .select) return false;
+
+    const inner_cond = inner_select.args[0];
+    const inner_true = inner_select.args[1];
+    const inner_false = inner_select.args[2];
+
+    // Check if inner_true is 1 and inner_false is 0
+    const inner_true_const = self.getConstant(func, inner_true);
+    const inner_false_const = self.getConstant(func, inner_false);
+    if (inner_true_const == null or inner_true_const.? != 1) return false;
+    if (inner_false_const == null or inner_false_const.? != 0) return false;
+
+    // Check if outer condition is a < b
+    const outer_cond_def = func.dfg.valueDef(cond) orelse return false;
+    const outer_cond_inst = switch (outer_cond_def) {
+        .result => |r| r.inst,
+        else => return false,
+    };
+    const outer_cond_data = func.dfg.insts.get(outer_cond_inst) orelse return false;
+    if (outer_cond_data.* != .int_compare) return false;
+    const outer_icmp = outer_cond_data.int_compare;
+
+    // Check if inner condition is a > b
+    const inner_cond_def = func.dfg.valueDef(inner_cond) orelse return false;
+    const inner_cond_inst = switch (inner_cond_def) {
+        .result => |r| r.inst,
+        else => return false,
+    };
+    const inner_cond_data = func.dfg.insts.get(inner_cond_inst) orelse return false;
+    if (inner_cond_data.* != .int_compare) return false;
+    const inner_icmp = inner_cond_data.int_compare;
+
+    // Check that both comparisons use the same operands
+    const outer_a = outer_icmp.args[0];
+    const outer_b = outer_icmp.args[1];
+    const inner_a = inner_icmp.args[0];
+    const inner_b = inner_icmp.args[1];
+
+    if (outer_a.index != inner_a.index or outer_b.index != inner_b.index) return false;
+
+    // Check that outer is < and inner is >
+    const is_spaceship = switch (outer_icmp.cond) {
+        .slt => inner_icmp.cond == .sgt,
+        .ult => inner_icmp.cond == .ugt,
+        else => false,
+    };
+
+    if (!is_spaceship) return false;
+
+    // Pattern matched! Now emit optimized code.
+    // For now, keep the nested select but mark for future backend optimization.
+    // A proper implementation would emit a compare followed by CSEL/CSINC instructions.
+    // TODO: Add backend-specific lowering for spaceship pattern.
+    _ = inst;
+
+    return false; // No transformation yet - needs backend support
 }
