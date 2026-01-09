@@ -265,10 +265,85 @@ pub const AliasAnalysis = struct {
     ///
     /// Returns true if any optimizations were applied.
     pub fn run(self: *AliasAnalysis, func: *Function) !bool {
-        _ = self;
+        var changed = false;
+
+        // Iterate blocks in layout order (approximates RPO)
+        var block_iter = func.layout.blockIter();
+        while (block_iter.next()) |block| {
+            // Get or initialize last-stores for this block
+            var last_stores = LastStores{};
+
+            // Iterate instructions in this block
+            var inst_iter = func.layout.blockInsts(block);
+            while (inst_iter.next()) |inst| {
+                const inst_data = func.dfg.insts.get(inst) orelse continue;
+
+                // Handle loads
+                if (isLoadOpcode(inst_data)) {
+                    if (try self.handleLoad(func, inst, inst_data, &last_stores)) {
+                        changed = true;
+                    }
+                }
+                // Handle stores
+                else if (isStoreOpcode(inst_data)) {
+                    try self.handleStore(func, inst, inst_data, &last_stores);
+                }
+                // Handle memory fences
+                else if (hasMemoryFenceSemantics(inst_data.*.opcode())) {
+                    last_stores.update(inst, inst_data.*.opcode(), null);
+                    self.mem_values.clearRetainingCapacity();
+                }
+            }
+        }
+
+        return changed;
+    }
+
+    /// Check if an instruction is a load.
+    fn isLoadOpcode(inst_data: *const ir.InstructionData) bool {
+        return switch (inst_data.*) {
+            .load, .stack_load, .uload8, .sload8, .uload16, .sload16, .uload32, .sload32 => true,
+            else => false,
+        };
+    }
+
+    /// Check if an instruction is a store.
+    fn isStoreOpcode(inst_data: *const ir.InstructionData) bool {
+        return switch (inst_data.*) {
+            .store, .stack_store => true,
+            else => false,
+        };
+    }
+
+    /// Handle a load instruction (RLE or store-to-load forwarding).
+    fn handleLoad(
+        self: *AliasAnalysis,
+        func: *Function,
+        inst: Inst,
+        inst_data: *const ir.InstructionData,
+        last_stores: *LastStores,
+    ) !bool {
         _ = func;
-        // TODO: Implement dataflow analysis
+        _ = inst;
+        _ = inst_data;
+        _ = last_stores;
+        // TODO: Implement load handling
         return false;
+    }
+
+    /// Handle a store instruction.
+    fn handleStore(
+        self: *AliasAnalysis,
+        func: *Function,
+        inst: Inst,
+        inst_data: *const ir.InstructionData,
+        last_stores: *LastStores,
+    ) !void {
+        _ = func;
+        _ = inst;
+        _ = inst_data;
+        _ = last_stores;
+        // TODO: Implement store handling
     }
 };
 
