@@ -73,10 +73,11 @@ pub const EClass = struct {
     parents: ArrayList(ENode),
 
     pub fn init(allocator: Allocator, id: EClassId) EClass {
+        _ = allocator;
         return .{
             .id = id,
-            .nodes = ArrayList(ENode).init(allocator),
-            .parents = ArrayList(ENode).init(allocator),
+            .nodes = ArrayList(ENode){},
+            .parents = ArrayList(ENode){},
         };
     }
 
@@ -84,30 +85,32 @@ pub const EClass = struct {
         for (self.nodes.items) |node| {
             allocator.free(node.children);
         }
-        self.nodes.deinit();
+        self.nodes.deinit(allocator);
 
         for (self.parents.items) |parent| {
             allocator.free(parent.children);
         }
-        self.parents.deinit();
+        self.parents.deinit(allocator);
     }
 };
 
 /// Union-Find data structure for maintaining equivalence classes.
 /// Supports efficient union and find operations with path compression.
 pub const UnionFind = struct {
+    allocator: Allocator,
     /// Parent pointers: parent[i] is parent of e-class i.
     /// If parent[i] == i, then i is a root (canonical representative).
     parents: ArrayList(EClassId),
 
     pub fn init(allocator: Allocator) UnionFind {
         return .{
-            .parents = ArrayList(EClassId).init(allocator),
+            .allocator = allocator,
+            .parents = ArrayList(EClassId){},
         };
     }
 
     pub fn deinit(self: *UnionFind) void {
-        self.parents.deinit();
+        self.parents.deinit(self.allocator);
     }
 
     /// Create new e-class with given ID.
@@ -158,6 +161,18 @@ pub const UnionFind = struct {
 /// E-graph: stores congruence relation over IR operations.
 /// Compact representation of many equivalent expressions.
 pub const EGraph = struct {
+    const HashContext = struct {
+        pub fn hash(self: @This(), key: ENode) u64 {
+            _ = self;
+            return key.hash();
+        }
+
+        pub fn eql(self: @This(), a: ENode, b: ENode) bool {
+            _ = self;
+            return a.eql(b);
+        }
+    };
+
     allocator: Allocator,
 
     /// Union-find for equivalence class membership.
@@ -169,7 +184,7 @@ pub const EGraph = struct {
 
     /// Hash-consing: deduplicate e-nodes.
     /// Maps e-node → e-class ID containing that e-node.
-    hashcons: AutoHashMap(ENode, EClassId),
+    hashcons: std.HashMapUnmanaged(ENode, EClassId, HashContext, std.hash_map.default_max_load_percentage) = .{},
 
     /// Counter for generating fresh e-class IDs.
     next_id: u32,
@@ -183,9 +198,9 @@ pub const EGraph = struct {
             .allocator = allocator,
             .uf = UnionFind.init(allocator),
             .classes = AutoHashMap(EClassId, EClass).init(allocator),
-            .hashcons = AutoHashMap(ENode, EClassId).init(allocator),
+            .hashcons = .{},
             .next_id = 0,
-            .worklist = ArrayList(EClassId).init(allocator),
+            .worklist = ArrayList(EClassId){},
         };
     }
 
@@ -200,10 +215,10 @@ pub const EGraph = struct {
         while (hashcons_iter.next()) |node| {
             self.allocator.free(node.children);
         }
-        self.hashcons.deinit();
+        self.hashcons.deinit(self.allocator);
 
         self.uf.deinit();
-        self.worklist.deinit();
+        self.worklist.deinit(self.allocator);
     }
 
     /// Add e-node to e-graph, returning e-class ID.
@@ -236,7 +251,7 @@ pub const EGraph = struct {
         try eclass.nodes.append(self.allocator, node);
 
         try self.classes.put(id, eclass);
-        try self.hashcons.put(node, id);
+        try self.hashcons.put(self.allocator, node, id);
 
         // Add as parent to children
         for (canonical_children) |child_id| {
@@ -288,7 +303,7 @@ pub const EGraph = struct {
     /// Implements egg's rebuilding algorithm for congruence closure.
     pub fn rebuild(self: *EGraph) !void {
         while (self.worklist.items.len > 0) {
-            const id = self.worklist.pop();
+            const id = self.worklist.pop() orelse unreachable;
             const canon_id = self.uf.find(id);
 
             const eclass = self.classes.getPtr(canon_id) orelse continue;
@@ -332,6 +347,7 @@ pub const EGraph = struct {
 
 /// Builder for converting IR functions to e-graphs.
 pub const EGraphBuilder = struct {
+    allocator: Allocator,
     eg: *EGraph,
 
     /// Maps IR Value → E-class ID.
@@ -340,6 +356,7 @@ pub const EGraphBuilder = struct {
 
     pub fn init(allocator: Allocator, eg: *EGraph) EGraphBuilder {
         return .{
+            .allocator = allocator,
             .eg = eg,
             .value_map = AutoHashMap(Value, EClassId).init(allocator),
         };
@@ -371,46 +388,43 @@ pub const EGraphBuilder = struct {
         const op = inst_data.opcode();
 
         // Collect operand e-class IDs
-        var operands = std.ArrayList(EClassId).init(self.value_map.allocator);
-        defer operands.deinit();
+        var operands = std.ArrayList(EClassId){};
+        defer operands.deinit(self.allocator);
 
         // Convert IR values to e-class IDs
         switch (inst_data.*) {
             .unary => |data| {
                 if (self.value_map.get(data.arg)) |arg_id| {
-                    try operands.append(arg_id);
+                    try operands.append(self.allocator, arg_id);
                 } else {
                     // Operand not yet in e-graph (block arg, constant, etc.)
                     const arg_id = try self.eg.add(op, &.{});
                     try self.value_map.put(data.arg, arg_id);
-                    try operands.append(arg_id);
+                    try operands.append(self.allocator, arg_id);
                 }
             },
             .binary => |data| {
-                const lhs_id = try self.getOrCreateValue(data.lhs);
-                const rhs_id = try self.getOrCreateValue(data.rhs);
-                try operands.append(lhs_id);
-                try operands.append(rhs_id);
+                const lhs_id = try self.getOrCreateValue(data.args[0]);
+                const rhs_id = try self.getOrCreateValue(data.args[1]);
+                try operands.append(self.allocator, lhs_id);
+                try operands.append(self.allocator, rhs_id);
             },
             .ternary => |data| {
                 const arg0_id = try self.getOrCreateValue(data.args[0]);
                 const arg1_id = try self.getOrCreateValue(data.args[1]);
                 const arg2_id = try self.getOrCreateValue(data.args[2]);
-                try operands.append(arg0_id);
-                try operands.append(arg1_id);
-                try operands.append(arg2_id);
+                try operands.append(self.allocator, arg0_id);
+                try operands.append(self.allocator, arg1_id);
+                try operands.append(self.allocator, arg2_id);
             },
             .int_compare => |data| {
-                const lhs_id = try self.getOrCreateValue(data.lhs);
-                const rhs_id = try self.getOrCreateValue(data.rhs);
-                try operands.append(lhs_id);
-                try operands.append(rhs_id);
+                const lhs_id = try self.getOrCreateValue(data.args[0]);
+                const rhs_id = try self.getOrCreateValue(data.args[1]);
+                try operands.append(self.allocator, lhs_id);
+                try operands.append(self.allocator, rhs_id);
             },
-            .iconst => {
-                // Constant: create leaf e-node
-            },
-            .f32const, .f64const => {
-                // Float constant: create leaf e-node
+            .unary_imm => {
+                // Constant: create leaf e-node (iconst, f32const, f64const)
             },
             .nullary => {
                 // No operands (nop, etc.)
@@ -425,10 +439,9 @@ pub const EGraphBuilder = struct {
         const eclass_id = try self.eg.add(op, operands.items);
 
         // Map instruction result to e-class
-        if (func.dfg.instResults(inst)) |results| {
-            if (results.len > 0) {
-                try self.value_map.put(results[0], eclass_id);
-            }
+        const results = func.dfg.instResults(inst);
+        if (results.len > 0) {
+            try self.value_map.put(results[0], eclass_id);
         }
     }
 

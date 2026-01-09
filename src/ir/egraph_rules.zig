@@ -92,6 +92,7 @@ pub const RuleContext = struct {
 
     /// Match pattern and apply action if successful.
     fn matchAndApply(self: *RuleContext, rule: RewriteRule, node: ENode, eclass_id: EClassId) !bool {
+        _ = self;
         _ = rule;
         _ = node;
         _ = eclass_id;
@@ -106,22 +107,22 @@ pub const StandardRules = struct {
     rules: ArrayList(RewriteRule),
 
     pub fn init(allocator: Allocator) !StandardRules {
-        var rules = ArrayList(RewriteRule).init(allocator);
+        var rules = ArrayList(RewriteRule){};
 
         // Identity rules
-        try addIdentityRules(&rules);
+        try addIdentityRules(allocator, &rules);
 
         // Associativity rules
-        try addAssociativityRules(&rules);
+        try addAssociativityRules(allocator, &rules);
 
         // Commutativity rules
-        try addCommutativityRules(&rules);
+        try addCommutativityRules(allocator, &rules);
 
         // Strength reduction
-        try addStrengthReductionRules(&rules);
+        try addStrengthReductionRules(allocator, &rules);
 
         // Constant folding patterns
-        try addConstantFoldingRules(&rules);
+        try addConstantFoldingRules(allocator, &rules);
 
         return .{
             .allocator = allocator,
@@ -130,7 +131,7 @@ pub const StandardRules = struct {
     }
 
     pub fn deinit(self: *StandardRules) void {
-        self.rules.deinit();
+        self.rules.deinit(self.allocator);
     }
 
     /// Get all rules.
@@ -140,58 +141,58 @@ pub const StandardRules = struct {
 };
 
 /// Identity element rules: x op identity → x
-fn addIdentityRules(rules: *ArrayList(RewriteRule)) !void {
+fn addIdentityRules(allocator: Allocator, rules: *ArrayList(RewriteRule)) !void {
     // x + 0 → x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "iadd_zero_right",
         .pattern = .{ .op = .{ .opcode = .iadd, .vars = &.{ "x", "zero" } } },
         .action = .{ .var_ = "x" },
     });
 
     // 0 + x → x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "iadd_zero_left",
         .pattern = .{ .op = .{ .opcode = .iadd, .vars = &.{ "zero", "x" } } },
         .action = .{ .var_ = "x" },
     });
 
     // x * 1 → x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "imul_one_right",
         .pattern = .{ .op = .{ .opcode = .imul, .vars = &.{ "x", "one" } } },
         .action = .{ .var_ = "x" },
     });
 
     // 1 * x → x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "imul_one_left",
         .pattern = .{ .op = .{ .opcode = .imul, .vars = &.{ "one", "x" } } },
         .action = .{ .var_ = "x" },
     });
 
     // x - 0 → x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "isub_zero",
         .pattern = .{ .op = .{ .opcode = .isub, .vars = &.{ "x", "zero" } } },
         .action = .{ .var_ = "x" },
     });
 
     // x | 0 → x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "bor_zero",
         .pattern = .{ .op = .{ .opcode = .bor, .vars = &.{ "x", "zero" } } },
         .action = .{ .var_ = "x" },
     });
 
     // x & ~0 → x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "band_all_ones",
         .pattern = .{ .op = .{ .opcode = .band, .vars = &.{ "x", "all_ones" } } },
         .action = .{ .var_ = "x" },
     });
 
     // x ^ 0 → x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "bxor_zero",
         .pattern = .{ .op = .{ .opcode = .bxor, .vars = &.{ "x", "zero" } } },
         .action = .{ .var_ = "x" },
@@ -199,23 +200,23 @@ fn addIdentityRules(rules: *ArrayList(RewriteRule)) !void {
 }
 
 /// Absorbing element rules: x op absorber → absorber
-fn addAbsorbingRules(rules: *ArrayList(RewriteRule)) !void {
+fn addAbsorbingRules(allocator: Allocator, rules: *ArrayList(RewriteRule)) !void {
     // x * 0 → 0
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "imul_zero_right",
         .pattern = .{ .op = .{ .opcode = .imul, .vars = &.{ "x", "zero" } } },
         .action = .{ .constant = .{ .opcode = .iconst, .value = 0 } },
     });
 
     // 0 * x → 0
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "imul_zero_left",
         .pattern = .{ .op = .{ .opcode = .imul, .vars = &.{ "zero", "x" } } },
         .action = .{ .constant = .{ .opcode = .iconst, .value = 0 } },
     });
 
     // x & 0 → 0
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "band_zero",
         .pattern = .{ .op = .{ .opcode = .band, .vars = &.{ "x", "zero" } } },
         .action = .{ .constant = .{ .opcode = .iconst, .value = 0 } },
@@ -223,30 +224,30 @@ fn addAbsorbingRules(rules: *ArrayList(RewriteRule)) !void {
 }
 
 /// Idempotence rules: x op x → x or constant
-fn addIdempotenceRules(rules: *ArrayList(RewriteRule)) !void {
+fn addIdempotenceRules(allocator: Allocator, rules: *ArrayList(RewriteRule)) !void {
     // x - x → 0
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "isub_self",
         .pattern = .{ .op = .{ .opcode = .isub, .vars = &.{ "x", "x" } } },
         .action = .{ .constant = .{ .opcode = .iconst, .value = 0 } },
     });
 
     // x ^ x → 0
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "bxor_self",
         .pattern = .{ .op = .{ .opcode = .bxor, .vars = &.{ "x", "x" } } },
         .action = .{ .constant = .{ .opcode = .iconst, .value = 0 } },
     });
 
     // x & x → x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "band_self",
         .pattern = .{ .op = .{ .opcode = .band, .vars = &.{ "x", "x" } } },
         .action = .{ .var_ = "x" },
     });
 
     // x | x → x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "bor_self",
         .pattern = .{ .op = .{ .opcode = .bor, .vars = &.{ "x", "x" } } },
         .action = .{ .var_ = "x" },
@@ -254,37 +255,37 @@ fn addIdempotenceRules(rules: *ArrayList(RewriteRule)) !void {
 }
 
 /// Commutativity rules: x op y → y op x
-fn addCommutativityRules(rules: *ArrayList(RewriteRule)) !void {
+fn addCommutativityRules(allocator: Allocator, rules: *ArrayList(RewriteRule)) !void {
     // x + y → y + x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "iadd_comm",
         .pattern = .{ .op = .{ .opcode = .iadd, .vars = &.{ "x", "y" } } },
         .action = .{ .op = .{ .opcode = .iadd, .args = &.{ "y", "x" } } },
     });
 
     // x * y → y * x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "imul_comm",
         .pattern = .{ .op = .{ .opcode = .imul, .vars = &.{ "x", "y" } } },
         .action = .{ .op = .{ .opcode = .imul, .args = &.{ "y", "x" } } },
     });
 
     // x & y → y & x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "band_comm",
         .pattern = .{ .op = .{ .opcode = .band, .vars = &.{ "x", "y" } } },
         .action = .{ .op = .{ .opcode = .band, .args = &.{ "y", "x" } } },
     });
 
     // x | y → y | x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "bor_comm",
         .pattern = .{ .op = .{ .opcode = .bor, .vars = &.{ "x", "y" } } },
         .action = .{ .op = .{ .opcode = .bor, .args = &.{ "y", "x" } } },
     });
 
     // x ^ y → y ^ x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "bxor_comm",
         .pattern = .{ .op = .{ .opcode = .bxor, .vars = &.{ "x", "y" } } },
         .action = .{ .op = .{ .opcode = .bxor, .args = &.{ "y", "x" } } },
@@ -292,30 +293,30 @@ fn addCommutativityRules(rules: *ArrayList(RewriteRule)) !void {
 }
 
 /// Associativity rules: (x op y) op z → x op (y op z)
-fn addAssociativityRules(rules: *ArrayList(RewriteRule)) !void {
+fn addAssociativityRules(allocator: Allocator, rules: *ArrayList(RewriteRule)) !void {
     // (x + y) + z → x + (y + z)
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "iadd_assoc",
         .pattern = .{ .op = .{ .opcode = .iadd, .vars = &.{ "xy", "z" } } },
         .action = .{ .op = .{ .opcode = .iadd, .args = &.{ "x", "yz" } } },
     });
 
     // (x * y) * z → x * (y * z)
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "imul_assoc",
         .pattern = .{ .op = .{ .opcode = .imul, .vars = &.{ "xy", "z" } } },
         .action = .{ .op = .{ .opcode = .imul, .args = &.{ "x", "yz" } } },
     });
 
     // (x & y) & z → x & (y & z)
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "band_assoc",
         .pattern = .{ .op = .{ .opcode = .band, .vars = &.{ "xy", "z" } } },
         .action = .{ .op = .{ .opcode = .band, .args = &.{ "x", "yz" } } },
     });
 
     // (x | y) | z → x | (y | z)
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "bor_assoc",
         .pattern = .{ .op = .{ .opcode = .bor, .vars = &.{ "xy", "z" } } },
         .action = .{ .op = .{ .opcode = .bor, .args = &.{ "x", "yz" } } },
@@ -323,23 +324,23 @@ fn addAssociativityRules(rules: *ArrayList(RewriteRule)) !void {
 }
 
 /// Strength reduction: replace expensive ops with cheaper equivalents
-fn addStrengthReductionRules(rules: *ArrayList(RewriteRule)) !void {
+fn addStrengthReductionRules(allocator: Allocator, rules: *ArrayList(RewriteRule)) !void {
     // x * 2 → x << 1
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "imul_power_of_2",
         .pattern = .{ .op = .{ .opcode = .imul, .vars = &.{ "x", "two" } } },
         .action = .{ .op = .{ .opcode = .ishl, .args = &.{ "x", "one" } } },
     });
 
     // x / 2 → x >> 1 (unsigned)
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "udiv_power_of_2",
         .pattern = .{ .op = .{ .opcode = .udiv, .vars = &.{ "x", "two" } } },
         .action = .{ .op = .{ .opcode = .ushr, .args = &.{ "x", "one" } } },
     });
 
     // x % 2 → x & 1 (unsigned)
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "urem_power_of_2",
         .pattern = .{ .op = .{ .opcode = .urem, .vars = &.{ "x", "two" } } },
         .action = .{ .op = .{ .opcode = .band, .args = &.{ "x", "one" } } },
@@ -347,15 +348,15 @@ fn addStrengthReductionRules(rules: *ArrayList(RewriteRule)) !void {
 }
 
 /// Constant folding patterns (to be implemented with actual constant values)
-fn addConstantFoldingRules(rules: *ArrayList(RewriteRule)) !void {
-    // Constant folding requires runtime values, implemented during application
+fn addConstantFoldingRules(allocator: Allocator, rules: *ArrayList(RewriteRule)) !void {
+    _ = allocator; // Constant folding requires runtime values, implemented during application
     _ = rules;
 }
 
 /// Distributivity rules: x * (y + z) → (x * y) + (x * z)
-fn addDistributivityRules(rules: *ArrayList(RewriteRule)) !void {
+fn addDistributivityRules(allocator: Allocator, rules: *ArrayList(RewriteRule)) !void {
     // x * (y + z) → (x * y) + (x * z)
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "imul_iadd_dist",
         .pattern = .{ .op = .{ .opcode = .imul, .vars = &.{ "x", "yz" } } },
         .action = .{ .op = .{ .opcode = .iadd, .args = &.{ "xy", "xz" } } },
@@ -363,16 +364,16 @@ fn addDistributivityRules(rules: *ArrayList(RewriteRule)) !void {
 }
 
 /// De Morgan's laws: !(x & y) → !x | !y
-fn addDeMorganRules(rules: *ArrayList(RewriteRule)) !void {
+fn addDeMorganRules(allocator: Allocator, rules: *ArrayList(RewriteRule)) !void {
     // !(x & y) → !x | !y
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "demorgan_and",
         .pattern = .{ .op = .{ .opcode = .bnot, .vars = &.{"xy"} } },
         .action = .{ .op = .{ .opcode = .bor, .args = &.{ "not_x", "not_y" } } },
     });
 
     // !(x | y) → !x & !y
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "demorgan_or",
         .pattern = .{ .op = .{ .opcode = .bnot, .vars = &.{"xy"} } },
         .action = .{ .op = .{ .opcode = .band, .args = &.{ "not_x", "not_y" } } },
@@ -380,16 +381,16 @@ fn addDeMorganRules(rules: *ArrayList(RewriteRule)) !void {
 }
 
 /// Negation rules
-fn addNegationRules(rules: *ArrayList(RewriteRule)) !void {
+fn addNegationRules(allocator: Allocator, rules: *ArrayList(RewriteRule)) !void {
     // -(-x) → x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "ineg_ineg",
         .pattern = .{ .op = .{ .opcode = .ineg, .vars = &.{"neg_x"} } },
         .action = .{ .var_ = "x" },
     });
 
     // ~(~x) → x
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "bnot_bnot",
         .pattern = .{ .op = .{ .opcode = .bnot, .vars = &.{"not_x"} } },
         .action = .{ .var_ = "x" },
@@ -397,23 +398,23 @@ fn addNegationRules(rules: *ArrayList(RewriteRule)) !void {
 }
 
 /// Comparison simplification
-fn addComparisonRules(rules: *ArrayList(RewriteRule)) !void {
+fn addComparisonRules(allocator: Allocator, rules: *ArrayList(RewriteRule)) !void {
     // x == x → true
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "icmp_eq_self",
         .pattern = .{ .op = .{ .opcode = .icmp, .vars = &.{ "x", "x" } } },
         .action = .{ .constant = .{ .opcode = .iconst, .value = 1 } },
     });
 
     // x != x → false
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "icmp_ne_self",
         .pattern = .{ .op = .{ .opcode = .icmp, .vars = &.{ "x", "x" } } },
         .action = .{ .constant = .{ .opcode = .iconst, .value = 0 } },
     });
 
     // x < x → false
-    try rules.append(.{
+    try rules.append(allocator, .{
         .name = "icmp_lt_self",
         .pattern = .{ .op = .{ .opcode = .icmp, .vars = &.{ "x", "x" } } },
         .action = .{ .constant = .{ .opcode = .iconst, .value = 0 } },

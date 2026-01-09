@@ -164,7 +164,7 @@ fn verifyIf(ctx: *Context, func: *Function, target: *const Target) CodegenError!
 /// - Constant phi removal
 /// - E-graph optimization (if opt level > 0)
 fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
-    _ = target;
+    const opt_level = target.opt_level;
 
     // 1. Legalize IR
     try legalize(ctx);
@@ -190,7 +190,9 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
     ctx.func.dfg.resolveAllAliases();
 
     // 8. E-graph optimization (if opt_level > 0)
-    // TODO: Implement e-graph pass
+    if (opt_level != .none) {
+        _ = try runEGraphOptimization(ctx);
+    }
 }
 
 /// Remove constant phi nodes.
@@ -221,6 +223,51 @@ fn runAliasAnalysis(ctx: *Context) CodegenError!bool {
             error.OutOfMemory => CodegenError.OutOfMemory,
         };
     };
+}
+
+/// Run e-graph optimization pass.
+///
+/// Performs equality saturation with algebraic rewrites,
+/// then extracts cheapest equivalent expressions.
+/// Returns true if any optimizations were applied.
+fn runEGraphOptimization(ctx: *Context) CodegenError!bool {
+    const egraph_mod = @import("../ir/egraph.zig");
+    const egraph_rules = @import("../ir/egraph_rules.zig");
+
+    var eg = egraph_mod.EGraph.init(ctx.allocator);
+    defer eg.deinit();
+
+    var builder = egraph_mod.EGraphBuilder.init(ctx.allocator, &eg);
+    defer builder.deinit();
+
+    // Build e-graph from IR
+    builder.buildFromFunction(ctx.func) catch |err| {
+        return switch (err) {
+            error.OutOfMemory => CodegenError.OutOfMemory,
+        };
+    };
+
+    // Apply algebraic rewrites
+    var rules = egraph_rules.StandardRules.init(ctx.allocator) catch |err| {
+        return switch (err) {
+            error.OutOfMemory => CodegenError.OutOfMemory,
+        };
+    };
+    defer rules.deinit();
+
+    var saturation = egraph_mod.EqualitySaturation.init(ctx.allocator, &eg);
+
+    const iterations = saturation.saturate(rules.rules.items) catch |err| {
+        return switch (err) {
+            error.OutOfMemory => CodegenError.OutOfMemory,
+        };
+    };
+
+    _ = iterations;
+
+    // TODO: Extract optimized IR back from e-graph
+    // For now, just return false (no changes applied)
+    return false;
 }
 
 /// Eliminate unreachable code.
