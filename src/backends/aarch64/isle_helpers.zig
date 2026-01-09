@@ -3568,10 +3568,34 @@ fn marshalReturnValues(sig_ref: SigRef, ctx: *lower_mod.LowerCtx(Inst)) !lower_m
                 Reg.fromPReg(pair.hi),
             ),
             .hfa => |hfa| {
-                // HFA returns in V0-V3
-                // For now, return just the first register
-                // TODO: Implement multi-value HFA marshaling
-                return lower_mod.ValueRegs.one(Reg.fromPReg(hfa.regs[0]));
+                // HFA returns in V0-V3 - assemble into struct
+                // Allocate memory for return struct
+                const struct_size = ret_type.bytes();
+                const stack_slot = try ctx.allocStackSlot(struct_size, ret_type.minAlignBytes());
+                const stack_slot_addr = ctx.stackSlotAddr(stack_slot);
+
+                // Store each FP register field to struct memory
+                const elem_ty = switch (ret_type) {
+                    .@"struct" => |fields| fields[0].ty,
+                    else => return error.ExpectedStructType,
+                };
+
+                for (hfa.regs, 0..) |preg, field_idx| {
+                    if (preg.hw_enc >= 32) break; // Stop at first invalid register
+
+                    const offset: i32 = @intCast(field_idx * elem_ty.bytes());
+                    const src_reg = Reg.fromPReg(preg);
+
+                    try ctx.emit(Inst{ .str_fp = .{
+                        .src = src_reg,
+                        .base = stack_slot_addr,
+                        .offset = offset,
+                        .size = typeToFpuOperandSize(elem_ty),
+                    } });
+                }
+
+                // Return pointer to assembled struct
+                return lower_mod.ValueRegs.one(stack_slot_addr);
             },
             .indirect => {
                 // Indirect return via X8 pointer
