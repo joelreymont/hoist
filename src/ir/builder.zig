@@ -359,6 +359,18 @@ pub const FunctionBuilder = struct {
         try self.func.layout.appendInst(inst, block);
     }
 
+    /// Emit a sequence point for debug information.
+    /// This marks a source location boundary for debuggers.
+    /// Has no runtime effect - purely metadata.
+    pub fn sequencePoint(self: *Self) !void {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .nullary = NullaryData.init(.sequence_point) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+    }
+
     pub fn instTryCall(
         self: *Self,
         callee: FuncRef,
