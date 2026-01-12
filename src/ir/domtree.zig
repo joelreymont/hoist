@@ -10,14 +10,22 @@ const ControlFlowGraph = @import("cfg.zig").ControlFlowGraph;
 
 /// Dominator tree for control flow analysis.
 /// Computes dominance relationships between basic blocks.
+/// Uses Keith D. Cooper's "Simple, Fast Dominator Algorithm."
 pub const DominatorTree = struct {
     /// Immediate dominator for each block.
     /// idom[b] is the block that immediately dominates b.
     idom: PrimaryMap(Block, ?Block),
 
+    /// RPO number for each block (used by intersect algorithm).
+    /// Higher number = later in RPO = comes after in traversal.
+    rpo_number: PrimaryMap(Block, u32),
+
     /// Dominator tree children.
     /// children[b] contains all blocks immediately dominated by b.
     children: std.AutoHashMap(Block, std.ArrayList(Block)),
+
+    /// CFG postorder (cached for iteration).
+    postorder: std.ArrayList(Block),
 
     /// Allocator.
     allocator: Allocator,
@@ -25,13 +33,17 @@ pub const DominatorTree = struct {
     pub fn init(allocator: Allocator) DominatorTree {
         return .{
             .idom = PrimaryMap(Block, ?Block).init(allocator),
+            .rpo_number = PrimaryMap(Block, u32).init(allocator),
             .children = std.AutoHashMap(Block, std.ArrayList(Block)).init(allocator),
+            .postorder = std.ArrayList(Block){},
             .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *DominatorTree) void {
         self.idom.deinit();
+        self.rpo_number.deinit();
+        self.postorder.deinit(self.allocator);
 
         var iter = self.children.valueIterator();
         while (iter.next()) |list| {
@@ -40,8 +52,8 @@ pub const DominatorTree = struct {
         self.children.deinit();
     }
 
-    /// Compute dominator tree using Semi-NCA algorithm.
-    /// Based on "A Simple, Fast Dominance Algorithm" by Cooper, Harvey, Kennedy.
+    /// Compute dominator tree using Cooper-Harvey-Kennedy algorithm.
+    /// "A Simple, Fast Dominance Algorithm" - Keith D. Cooper et al.
     pub fn compute(
         self: *DominatorTree,
         allocator: Allocator,
@@ -50,75 +62,63 @@ pub const DominatorTree = struct {
     ) !void {
         // Clear existing dominator tree
         self.idom.deinit();
+        self.rpo_number.deinit();
+        self.postorder.deinit(self.allocator);
         var child_iter = self.children.valueIterator();
         while (child_iter.next()) |list| {
             list.deinit(self.allocator);
         }
         self.children.clearRetainingCapacity();
         self.idom = PrimaryMap(Block, ?Block).init(allocator);
+        self.rpo_number = PrimaryMap(Block, u32).init(allocator);
+        self.postorder = std.ArrayList(Block){};
 
-        // Entry block has no immediate dominator
+        // Compute postorder via DFS - sets rpo_number to 1 for all reachable blocks
+        try self.computePostorder(allocator, entry, cfg);
+
+        if (self.postorder.items.len == 0) return;
+
+        // Entry gets RPO number 2 (first processed block)
+        // Then assign increasing RPO numbers in RPO order
+        // RPO order is reverse of postorder, so entry is at postorder[n-1]
+        try self.rpo_number.set(allocator, entry, 2);
         try self.idom.set(allocator, entry, null);
 
-        // Compute reverse postorder (approximated by iterating over blocks)
-        var blocks = std.ArrayList(Block){};
-        defer blocks.deinit(allocator);
+        // First pass: assign RPO numbers and initial idoms
+        // Iterate in RPO (reverse of postorder)
+        var rpo_num: u32 = 3;
+        var i = self.postorder.items.len;
+        while (i > 0) {
+            i -= 1;
+            const block = self.postorder.items[i];
+            if (std.meta.eql(block, entry)) continue;
 
-        // Collect all blocks reachable from entry via DFS
-        try self.collectReachableBlocks(allocator, &blocks, entry, cfg);
+            // Assign RPO number
+            try self.rpo_number.set(allocator, block, rpo_num);
+            rpo_num += 1;
 
-        if (blocks.items.len == 0) return;
-
-        // Initialize all blocks' idoms to null
-        for (blocks.items) |block| {
-            if (!std.meta.eql(block, entry)) {
-                try self.idom.set(allocator, block, null);
-            }
+            // Compute initial idom
+            const idom = self.computeIdom(block, cfg);
+            try self.idom.set(allocator, block, idom);
         }
 
-        // Iterate until convergence (simple fixed-point iteration)
+        // Iterate until convergence
         var changed = true;
         while (changed) {
             changed = false;
 
-            for (blocks.items) |block| {
+            // Iterate in RPO (reverse of postorder)
+            i = self.postorder.items.len;
+            while (i > 0) {
+                i -= 1;
+                const block = self.postorder.items[i];
                 if (std.meta.eql(block, entry)) continue;
 
-                // Find first processed predecessor
-                if (cfg.predecessorCount(block) == 0) continue;
+                const new_idom = self.computeIdom(block, cfg);
 
-                var new_idom: ?Block = null;
-                var pred_iter = cfg.predecessors(block);
-                while (pred_iter.next()) |pred_info| {
-                    const pred = pred_info.block;
-                    // Check if predecessor has been processed (has entry in idom map)
-                    if (self.idom.get(pred)) |_| {
-                        // Found a processed predecessor - use it as starting point
-                        new_idom = pred;
-                        break;
-                    }
-                }
-
-                // Intersect with all other processed predecessors
-                pred_iter = cfg.predecessors(block);
-                while (pred_iter.next()) |pred_info| {
-                    const pred = pred_info.block;
-                    if (new_idom) |idom| {
-                        // Check if this pred is processed and is different from current idom
-                        if (!std.meta.eql(pred, idom) and self.idom.get(pred) != null) {
-                            new_idom = self.intersect(pred, idom);
-                        }
-                    }
-                }
-
-                // Update if changed
                 if (new_idom) |idom| {
-                    const needs_update = if (self.idom.get(block)) |old_ptr|
-                        if (old_ptr.*) |old| !std.meta.eql(idom, old) else true
-                    else
-                        true;
-
-                    if (needs_update) {
+                    const old_idom = self.getIdom(block);
+                    if (old_idom == null or !std.meta.eql(old_idom.?, idom)) {
                         try self.idom.set(allocator, block, idom);
                         changed = true;
                     }
@@ -127,7 +127,7 @@ pub const DominatorTree = struct {
         }
 
         // Build dominator tree children
-        for (blocks.items) |block| {
+        for (self.postorder.items) |block| {
             if (self.idom.get(block)) |ptr| {
                 if (ptr.*) |idom_block| {
                     const entry_result = try self.children.getOrPut(idom_block);
@@ -140,125 +140,105 @@ pub const DominatorTree = struct {
         }
     }
 
-    fn collectReachableBlocks(
+    /// Compute postorder traversal of CFG.
+    fn computePostorder(
         self: *DominatorTree,
         allocator: Allocator,
-        blocks: *std.ArrayList(Block),
         entry: Block,
         cfg: *const CFG,
     ) !void {
+        // Use hashset for visited tracking (PrimaryMap doesn't zero-init on resize)
         var visited = std.AutoHashMap(Block, void).init(allocator);
         defer visited.deinit();
+        try self.dfsPostorder(allocator, entry, cfg, &visited);
+    }
 
-        var worklist = std.ArrayList(Block){};
-        defer worklist.deinit(self.allocator);
+    fn dfsPostorder(
+        self: *DominatorTree,
+        allocator: Allocator,
+        block: Block,
+        cfg: *const CFG,
+        visited: *std.AutoHashMap(Block, void),
+    ) !void {
+        if (visited.contains(block)) return;
+        try visited.put(block, {});
 
-        try worklist.append(allocator, entry);
-        try visited.put(entry, {});
+        // Mark as reachable (rpo_number = 1, will be overwritten with actual RPO later)
+        try self.rpo_number.set(allocator, block, 1);
 
-        while (worklist.items.len > 0) {
-            const block = worklist.pop() orelse break;
-            try blocks.append(allocator, block);
+        // Collect successors to avoid iterator issues during recursion
+        var succs: [16]Block = undefined;
+        var succ_count: usize = 0;
+        var succ_iter = cfg.successors(block);
+        while (succ_iter.next()) |succ| {
+            if (succ_count < 16) {
+                succs[succ_count] = succ;
+                succ_count += 1;
+            }
+        }
 
-            var succ_iter = cfg.successors(block);
-            while (succ_iter.next()) |succ| {
-                if (!visited.contains(succ)) {
-                    try visited.put(succ, {});
-                    try worklist.append(allocator, succ);
+        // Visit successors (DFS)
+        for (succs[0..succ_count]) |succ| {
+            try self.dfsPostorder(allocator, succ, cfg, visited);
+        }
+
+        // Add to postorder after visiting all successors
+        try self.postorder.append(allocator, block);
+    }
+
+    /// Compute immediate dominator for a block.
+    fn computeIdom(self: *const DominatorTree, block: Block, cfg: *const CFG) ?Block {
+        // Get first processed predecessor (one with RPO number > 1, meaning processed)
+        // rpo_number values: 0 = unreachable, 1 = reachable but not processed, 2+ = processed
+        var pred_iter = cfg.predecessors(block);
+        var idom: ?Block = null;
+
+        while (pred_iter.next()) |pred_info| {
+            const pred = pred_info.block;
+            // Check if predecessor has been processed (RPO number > 1)
+            const pred_rpo = self.getRpo(pred);
+            if (pred_rpo > 1) {
+                if (idom == null) {
+                    idom = pred;
+                } else {
+                    idom = self.intersect(idom.?, pred);
                 }
             }
         }
+
+        return idom;
     }
 
+    /// Intersect two blocks to find common dominator.
+    /// Uses RPO numbers: walks up dominator tree from both blocks until they meet.
+    /// This is the classic Cooper-Harvey-Kennedy intersect.
     fn intersect(self: *const DominatorTree, b1: Block, b2: Block) Block {
         var finger1 = b1;
         var finger2 = b2;
 
-        const max_iters = 1000; // Prevent infinite loops
-        var iters: usize = 0;
-
         while (!std.meta.eql(finger1, finger2)) {
-            iters += 1;
-            if (iters > max_iters) {
-                std.debug.panic("intersect: infinite loop detected", .{});
-            }
+            // Compare RPO numbers - higher number = later in RPO = further from entry
+            const rpo1 = self.getRpo(finger1);
+            const rpo2 = self.getRpo(finger2);
 
-            // Walk finger1 up until it's at same depth or shallower than finger2
-            while (self.blockDepth(finger1) > self.blockDepth(finger2)) {
-                const idom_opt = self.idom.get(finger1);
-                if (idom_opt) |ptr| {
-                    if (ptr.*) |idom_block| {
-                        finger1 = idom_block;
-                    } else {
-                        // Reached entry (null idom), finger1 is now at root
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            }
-
-            // Walk finger2 up until it's at same depth or shallower than finger1
-            while (self.blockDepth(finger2) > self.blockDepth(finger1)) {
-                const idom_opt = self.idom.get(finger2);
-                if (idom_opt) |ptr| {
-                    if (ptr.*) |idom_block| {
-                        finger2 = idom_block;
-                    } else {
-                        // Reached entry (null idom), finger2 is now at root
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            }
-
-            if (std.meta.eql(finger1, finger2)) break;
-
-            // Walk both up one level
-            const idom1_opt = self.idom.get(finger1);
-            const idom2_opt = self.idom.get(finger2);
-
-            if (idom1_opt) |ptr1| {
-                if (ptr1.*) |idom1| {
-                    finger1 = idom1;
-                } else {
-                    // finger1 is at entry, return it
-                    return finger1;
-                }
+            if (rpo1 > rpo2) {
+                // finger1 is later in RPO, walk it up
+                finger1 = self.getIdom(finger1) orelse return finger2;
             } else {
-                return finger1;
-            }
-
-            if (idom2_opt) |ptr2| {
-                if (ptr2.*) |idom2| {
-                    finger2 = idom2;
-                } else {
-                    // finger2 is at entry, return it
-                    return finger2;
-                }
-            } else {
-                return finger2;
+                // finger2 is later (or equal), walk it up
+                finger2 = self.getIdom(finger2) orelse return finger1;
             }
         }
 
         return finger1;
     }
 
-    fn blockDepth(self: *const DominatorTree, block: Block) u32 {
-        var depth: u32 = 0;
-        var current = block;
-        const max_depth = 10000; // Prevent infinite loops from malformed dominator trees
-        while (self.idom.get(current)) |ptr| {
-            const idom_block = ptr.* orelse return depth;
-            depth += 1;
-            if (depth > max_depth) {
-                // Cycle detected in dominator tree - this is a bug
-                std.debug.panic("Cycle detected in dominator tree at block {}", .{block.index});
-            }
-            current = idom_block;
-        }
-        return depth;
+    fn getRpo(self: *const DominatorTree, block: Block) u32 {
+        return if (self.rpo_number.get(block)) |ptr| ptr.* else 0;
+    }
+
+    fn getIdom(self: *const DominatorTree, block: Block) ?Block {
+        return if (self.idom.get(block)) |ptr| ptr.* else null;
     }
 
     /// Check if block `a` dominates block `b`.
@@ -488,9 +468,10 @@ test "CFG basic" {
     const b2 = Block.new(2);
 
     // Add edges: b0 -> b1, b0 -> b2, b1 -> b2
+    // Use different Inst values since predecessors map is keyed by Inst
     try cfg.addEdge(b0, Inst.new(0), b1);
-    try cfg.addEdge(b0, Inst.new(0), b2);
-    try cfg.addEdge(b1, Inst.new(0), b2);
+    try cfg.addEdge(b0, Inst.new(1), b2);
+    try cfg.addEdge(b1, Inst.new(2), b2);
 
     // Check successors of b0
     try testing.expectEqual(@as(usize, 2), cfg.successorCount(b0));
@@ -588,16 +569,17 @@ pub const PostDominatorTree = struct {
             for (rpo.items) |block| {
                 if (std.meta.eql(block, exit)) continue;
 
-                // Compute ipdom as intersection of successors' ipdoms
+                // Compute ipdom as intersection of successors (in reverse CFG)
+                // For post-dominance, we use CFG successors directly
                 if (cfg.successorCount(block) == 0) continue;
 
                 var new_ipdom: ?Block = null;
                 var succs = cfg.successors(block);
                 while (succs.next()) |succ| {
-                    if (self.ipdom.get(succ)) |ptr| {
-                        if (ptr.*) |s_ipdom| {
-                            new_ipdom = if (new_ipdom) |n| intersect(self, n, s_ipdom) else s_ipdom;
-                        }
+                    // Check if successor has been processed (has ipdom entry)
+                    if (self.ipdom.get(succ)) |_| {
+                        // Successor is processed, use it for intersection
+                        new_ipdom = if (new_ipdom) |n| intersect(self, n, succ) else succ;
                     }
                 }
 
@@ -753,9 +735,9 @@ test "DominatorTree: diamond CFG dominators" {
     const b3 = Block.new(3);
 
     try cfg.addEdge(b0, Inst.new(0), b1);
-    try cfg.addEdge(b0, Inst.new(0), b2);
-    try cfg.addEdge(b1, Inst.new(0), b3);
-    try cfg.addEdge(b2, Inst.new(0), b3);
+    try cfg.addEdge(b0, Inst.new(1), b2);
+    try cfg.addEdge(b1, Inst.new(2), b3);
+    try cfg.addEdge(b2, Inst.new(3), b3);
 
     try tree.compute(testing.allocator, b0, &cfg);
 
@@ -783,8 +765,8 @@ test "DominatorTree: loop CFG dominators" {
     const b2 = Block.new(2);
 
     try cfg.addEdge(b0, Inst.new(0), b1);
-    try cfg.addEdge(b1, Inst.new(0), b2);
-    try cfg.addEdge(b2, Inst.new(0), b1);
+    try cfg.addEdge(b1, Inst.new(1), b2);
+    try cfg.addEdge(b2, Inst.new(2), b1);
 
     try tree.compute(testing.allocator, b0, &cfg);
 
@@ -865,9 +847,9 @@ test "DominatorTree: getChildren - diamond" {
     const b3 = Block.new(3);
 
     try cfg.addEdge(b0, Inst.new(0), b1);
-    try cfg.addEdge(b0, Inst.new(0), b2);
-    try cfg.addEdge(b1, Inst.new(0), b3);
-    try cfg.addEdge(b2, Inst.new(0), b3);
+    try cfg.addEdge(b0, Inst.new(1), b2);
+    try cfg.addEdge(b1, Inst.new(2), b3);
+    try cfg.addEdge(b2, Inst.new(3), b3);
 
     try tree.compute(testing.allocator, b0, &cfg);
 
@@ -892,9 +874,9 @@ test "DominatorTree: dominance frontier - diamond" {
     const b3 = Block.new(3);
 
     try cfg.addEdge(b0, Inst.new(0), b1);
-    try cfg.addEdge(b0, Inst.new(0), b2);
-    try cfg.addEdge(b1, Inst.new(0), b3);
-    try cfg.addEdge(b2, Inst.new(0), b3);
+    try cfg.addEdge(b0, Inst.new(1), b2);
+    try cfg.addEdge(b1, Inst.new(2), b3);
+    try cfg.addEdge(b2, Inst.new(3), b3);
 
     try tree.compute(testing.allocator, b0, &cfg);
 
@@ -925,8 +907,8 @@ test "DominatorTree: dominance frontier - loop" {
     const b2 = Block.new(2);
 
     try cfg.addEdge(b0, Inst.new(0), b1);
-    try cfg.addEdge(b1, Inst.new(0), b2);
-    try cfg.addEdge(b2, Inst.new(0), b1);
+    try cfg.addEdge(b1, Inst.new(1), b2);
+    try cfg.addEdge(b2, Inst.new(2), b1);
 
     try tree.compute(testing.allocator, b0, &cfg);
 
@@ -1034,9 +1016,9 @@ test "PostDominatorTree: diamond" {
     const b3 = Block.new(3);
 
     try cfg.addEdge(b0, Inst.new(0), b1);
-    try cfg.addEdge(b0, Inst.new(0), b2);
-    try cfg.addEdge(b1, Inst.new(0), b3);
-    try cfg.addEdge(b2, Inst.new(0), b3);
+    try cfg.addEdge(b0, Inst.new(1), b2);
+    try cfg.addEdge(b1, Inst.new(2), b3);
+    try cfg.addEdge(b2, Inst.new(3), b3);
 
     try tree.compute(testing.allocator, b3, &cfg);
 
@@ -1085,6 +1067,9 @@ test "DominatorTree: single block CFG" {
 
     const b0 = Block.new(0);
 
+    // Add a self-loop edge so the block exists in CFG
+    try cfg.addEdge(b0, Inst.new(0), b0);
+
     try tree.compute(testing.allocator, b0, &cfg);
 
     try testing.expect(tree.idominator(b0) == null);
@@ -1109,15 +1094,15 @@ test "DominatorTree: complex CFG" {
     const b6 = Block.new(6);
 
     try cfg.addEdge(b0, Inst.new(0), b1);
-    try cfg.addEdge(b0, Inst.new(0), b2);
-    try cfg.addEdge(b1, Inst.new(0), b3);
-    try cfg.addEdge(b1, Inst.new(0), b4);
-    try cfg.addEdge(b2, Inst.new(0), b3);
-    try cfg.addEdge(b2, Inst.new(0), b5);
-    try cfg.addEdge(b3, Inst.new(0), b4);
-    try cfg.addEdge(b3, Inst.new(0), b5);
-    try cfg.addEdge(b4, Inst.new(0), b6);
-    try cfg.addEdge(b5, Inst.new(0), b6);
+    try cfg.addEdge(b0, Inst.new(1), b2);
+    try cfg.addEdge(b1, Inst.new(2), b3);
+    try cfg.addEdge(b1, Inst.new(3), b4);
+    try cfg.addEdge(b2, Inst.new(4), b3);
+    try cfg.addEdge(b2, Inst.new(5), b5);
+    try cfg.addEdge(b3, Inst.new(6), b4);
+    try cfg.addEdge(b3, Inst.new(7), b5);
+    try cfg.addEdge(b4, Inst.new(8), b6);
+    try cfg.addEdge(b5, Inst.new(9), b6);
 
     try tree.compute(testing.allocator, b0, &cfg);
 
