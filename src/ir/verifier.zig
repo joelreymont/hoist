@@ -133,6 +133,8 @@ pub const Verifier = struct {
         var defined = std.AutoHashMap(Value, void).init(self.allocator);
         defer defined.deinit();
 
+        var found_use_before_def = false;
+
         // Iterate through blocks in layout order
         var block_iter = self.func.layout.blockIter();
         while (block_iter.next()) |block| {
@@ -159,6 +161,7 @@ pub const Verifier = struct {
                                 .{ bin.args[0].index, inst.index },
                             );
                             try self.errors.append(self.allocator, msg);
+                            found_use_before_def = true;
                         }
                         if (!defined.contains(bin.args[1])) {
                             const msg = try std.fmt.allocPrint(
@@ -167,6 +170,7 @@ pub const Verifier = struct {
                                 .{ bin.args[1].index, inst.index },
                             );
                             try self.errors.append(self.allocator, msg);
+                            found_use_before_def = true;
                         }
                     },
                     .unary => |un| {
@@ -177,6 +181,7 @@ pub const Verifier = struct {
                                 .{ un.arg.index, inst.index },
                             );
                             try self.errors.append(self.allocator, msg);
+                            found_use_before_def = true;
                         }
                     },
                     else => {},
@@ -188,6 +193,10 @@ pub const Verifier = struct {
                     try defined.put(result, {});
                 }
             }
+        }
+
+        if (found_use_before_def) {
+            return error.UseBeforeDef;
         }
     }
 

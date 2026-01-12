@@ -17,7 +17,7 @@ test "FP special values: f32 NaN" {
     defer sig.deinit();
 
     const f32_type = Type.F32;
-    try sig.returns.append(AbiParam.new(f32_type));
+    try sig.returns.append(testing.allocator, AbiParam.new(f32_type));
 
     var func = try Function.init(testing.allocator, "test_f32_nan", sig);
     defer func.deinit();
@@ -61,7 +61,7 @@ test "FP special values: f32 positive infinity" {
     defer sig.deinit();
 
     const f32_type = Type.F32;
-    try sig.returns.append(AbiParam.new(f32_type));
+    try sig.returns.append(testing.allocator, AbiParam.new(f32_type));
 
     var func = try Function.init(testing.allocator, "test_f32_inf", sig);
     defer func.deinit();
@@ -105,7 +105,7 @@ test "FP special values: f32 negative infinity" {
     defer sig.deinit();
 
     const f32_type = Type.F32;
-    try sig.returns.append(AbiParam.new(f32_type));
+    try sig.returns.append(testing.allocator, AbiParam.new(f32_type));
 
     var func = try Function.init(testing.allocator, "test_f32_neg_inf", sig);
     defer func.deinit();
@@ -149,7 +149,7 @@ test "FP special values: f64 NaN" {
     defer sig.deinit();
 
     const f64_type = Type.F64;
-    try sig.returns.append(AbiParam.new(f64_type));
+    try sig.returns.append(testing.allocator, AbiParam.new(f64_type));
 
     var func = try Function.init(testing.allocator, "test_f64_nan", sig);
     defer func.deinit();
@@ -193,7 +193,7 @@ test "FP special values: f64 positive infinity" {
     defer sig.deinit();
 
     const f64_type = Type.F64;
-    try sig.returns.append(AbiParam.new(f64_type));
+    try sig.returns.append(testing.allocator, AbiParam.new(f64_type));
 
     var func = try Function.init(testing.allocator, "test_f64_inf", sig);
     defer func.deinit();
@@ -237,7 +237,7 @@ test "FP special values: f64 negative infinity" {
     defer sig.deinit();
 
     const f64_type = Type.F64;
-    try sig.returns.append(AbiParam.new(f64_type));
+    try sig.returns.append(testing.allocator, AbiParam.new(f64_type));
 
     var func = try Function.init(testing.allocator, "test_f64_neg_inf", sig);
     defer func.deinit();
@@ -281,7 +281,7 @@ test "FP special values: f32 signed zeros" {
     defer sig.deinit();
 
     const f32_type = Type.F32;
-    try sig.returns.append(AbiParam.new(f32_type));
+    try sig.returns.append(testing.allocator, AbiParam.new(f32_type));
 
     // Test +0.0
     {

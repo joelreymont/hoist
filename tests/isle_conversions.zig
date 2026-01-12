@@ -14,11 +14,11 @@ const AbiParam = hoist.function.signature.AbiParam;
 const Type = hoist.types.Type;
 const InstructionData = hoist.instruction_data.InstructionData;
 
-const aarch64_lower = @import("../src/generated/aarch64_lower_generated.zig");
+const aarch64_lower = hoist.aarch64_lower_generated;
 const lower_mod = hoist.lower;
 const Inst = hoist.aarch64_inst.Inst;
-const isle_helpers = @import("../src/backends/aarch64/isle_helpers.zig");
-const isle_coverage = @import("../src/backends/aarch64/isle_coverage.zig");
+const isle_helpers = hoist.aarch64_isle_helpers;
+const isle_coverage = hoist.aarch64_isle_coverage;
 
 test "ISLE coverage: sext i8 to i32" {
     const allocator = testing.allocator;
@@ -50,106 +50,6 @@ test "ISLE coverage: sext i8 to i32" {
     const v1_inst = try func.dfg.makeInst(sext_data);
     try func.layout.appendInst(v1_inst, block0);
     const v1 = func.dfg.firstResult(v1_inst).?;
-
-    const return_data = InstructionData{ .unary = .{
-        .opcode = .@"return",
-        .arg = v1,
-    } };
-    const ret_inst = try func.dfg.makeInst(return_data);
-    try func.layout.appendInst(ret_inst, block0);
-
-    const backend = lower_mod.LowerBackend(Inst){
-        .lowerInstFn = lowerInst,
-        .lowerBranchFn = lowerBranch,
-    };
-
-    var vcode = try lower_mod.lowerFunction(Inst, allocator, &func, backend);
-    defer vcode.deinit();
-
-    try testing.expect(vcode.insns.items.len > 0);
-    try testing.expect(coverage.uniqueRulesInvoked() > 0);
-}
-
-test "ISLE coverage: bmask i32" {
-    const allocator = testing.allocator;
-
-    var coverage = isle_coverage.IsleRuleCoverage.init(allocator);
-    defer coverage.deinit();
-    isle_helpers.setIsleCoverageTracker(&coverage);
-    defer isle_helpers.setIsleCoverageTracker(null);
-
-    // Build IR: fn(x: i32) -> i32 { return bmask(x) }
-    var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
-    try sig.params.append(allocator, AbiParam.new(Type.I32));
-    try sig.returns.append(allocator, AbiParam.new(Type.I32));
-
-    var func = try Function.init(allocator, "test_bmask_i32", sig);
-    defer func.deinit();
-
-    const block0 = try func.dfg.makeBlock();
-    try func.layout.appendBlock(block0);
-
-    const v0 = try func.dfg.appendBlockParam(block0, Type.I32);
-
-    // v1 = bmask.i32 v0
-    const bmask_data = InstructionData{ .unary = .{
-        .opcode = .bmask,
-        .arg = v0,
-    } };
-    const v1_inst = try func.dfg.makeInst(bmask_data);
-    try func.layout.appendInst(v1_inst, block0);
-    const v1 = try func.dfg.appendInstResult(v1_inst, Type.I32);
-
-    const return_data = InstructionData{ .unary = .{
-        .opcode = .@"return",
-        .arg = v1,
-    } };
-    const ret_inst = try func.dfg.makeInst(return_data);
-    try func.layout.appendInst(ret_inst, block0);
-
-    const backend = lower_mod.LowerBackend(Inst){
-        .lowerInstFn = lowerInst,
-        .lowerBranchFn = lowerBranch,
-    };
-
-    var vcode = try lower_mod.lowerFunction(Inst, allocator, &func, backend);
-    defer vcode.deinit();
-
-    try testing.expect(vcode.insns.items.len > 0);
-    try testing.expect(coverage.uniqueRulesInvoked() > 0);
-}
-
-test "ISLE coverage: bmask i64" {
-    const allocator = testing.allocator;
-
-    var coverage = isle_coverage.IsleRuleCoverage.init(allocator);
-    defer coverage.deinit();
-    isle_helpers.setIsleCoverageTracker(&coverage);
-    defer isle_helpers.setIsleCoverageTracker(null);
-
-    // Build IR: fn(x: i64) -> i64 { return bmask(x) }
-    var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
-    try sig.params.append(allocator, AbiParam.new(Type.I64));
-    try sig.returns.append(allocator, AbiParam.new(Type.I64));
-
-    var func = try Function.init(allocator, "test_bmask_i64", sig);
-    defer func.deinit();
-
-    const block0 = try func.dfg.makeBlock();
-    try func.layout.appendBlock(block0);
-
-    const v0 = try func.dfg.appendBlockParam(block0, Type.I64);
-
-    // v1 = bmask.i64 v0
-    const bmask_data = InstructionData{ .unary = .{
-        .opcode = .bmask,
-        .arg = v0,
-    } };
-    const v1_inst = try func.dfg.makeInst(bmask_data);
-    try func.layout.appendInst(v1_inst, block0);
-    const v1 = try func.dfg.appendInstResult(v1_inst, Type.I64);
 
     const return_data = InstructionData{ .unary = .{
         .opcode = .@"return",
@@ -965,107 +865,6 @@ test "ISLE coverage: bitcast f64 to i64" {
         .arg = v0,
     } };
     const v1_inst = try func.dfg.makeInst(bitcast_data);
-    try func.layout.appendInst(v1_inst, block0);
-    const v1 = try func.dfg.appendInstResult(v1_inst, Type.I64);
-    _ = v1;
-
-    const return_data = InstructionData{ .unary = .{
-        .opcode = .@"return",
-        .arg = v1,
-    } };
-    const ret_inst = try func.dfg.makeInst(return_data);
-    try func.layout.appendInst(ret_inst, block0);
-
-    const backend = lower_mod.LowerBackend(Inst){
-        .lowerInstFn = lowerInst,
-        .lowerBranchFn = lowerBranch,
-    };
-
-    var vcode = try lower_mod.lowerFunction(Inst, allocator, &func, backend);
-    defer vcode.deinit();
-
-    try testing.expect(vcode.insns.items.len > 0);
-    try testing.expect(coverage.uniqueRulesInvoked() > 0);
-}
-
-test "ISLE coverage: bmask i32" {
-    const allocator = testing.allocator;
-
-    var coverage = isle_coverage.IsleRuleCoverage.init(allocator);
-    defer coverage.deinit();
-    isle_helpers.setIsleCoverageTracker(&coverage);
-    defer isle_helpers.setIsleCoverageTracker(null);
-
-    // Build IR: fn(x: i32) -> i32 { return bmask(x) }
-    var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
-    try sig.params.append(allocator, AbiParam.new(Type.I32));
-    try sig.returns.append(allocator, AbiParam.new(Type.I32));
-
-    var func = try Function.init(allocator, "test_bmask_i32", sig);
-    defer func.deinit();
-
-    const block0 = try func.dfg.makeBlock();
-    try func.layout.appendBlock(block0);
-
-    const v0 = try func.dfg.appendBlockParam(block0, Type.I32);
-
-    // v1 = bmask.i32 v0
-    const bmask_data = InstructionData{ .unary = .{
-        .opcode = .bmask,
-        .arg = v0,
-    } };
-    const v1_inst = try func.dfg.makeInst(bmask_data);
-    try func.layout.appendInst(v1_inst, block0);
-    const v1 = try func.dfg.appendInstResult(v1_inst, Type.I32);
-
-    const return_data = InstructionData{ .unary = .{
-        .opcode = .@"return",
-        .arg = v1,
-    } };
-    const ret_inst = try func.dfg.makeInst(return_data);
-    try func.layout.appendInst(ret_inst, block0);
-
-    const backend = lower_mod.LowerBackend(Inst){
-        .lowerInstFn = lowerInst,
-        .lowerBranchFn = lowerBranch,
-    };
-
-    var vcode = try lower_mod.lowerFunction(Inst, allocator, &func, backend);
-    defer vcode.deinit();
-
-    try testing.expect(vcode.insns.items.len > 0);
-    try testing.expect(coverage.uniqueRulesInvoked() > 0);
-}
-
-test "ISLE coverage: bmask i64" {
-    const allocator = testing.allocator;
-
-    var coverage = isle_coverage.IsleRuleCoverage.init(allocator);
-    defer coverage.deinit();
-    isle_helpers.setIsleCoverageTracker(&coverage);
-    defer isle_helpers.setIsleCoverageTracker(null);
-
-    // Build IR: fn(x: i64) -> i64 { return bmask(x) }
-    var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
-    try sig.params.append(allocator, AbiParam.new(Type.I64));
-    try sig.returns.append(allocator, AbiParam.new(Type.I64));
-
-    var func = try Function.init(allocator, "test_bmask_i64", sig);
-    defer func.deinit();
-
-    const block0 = try func.dfg.makeBlock();
-    try func.layout.appendBlock(block0);
-
-    const v0 = try func.dfg.appendBlockParam(block0, Type.I64);
-
-    // v1 = bmask.i64 v0
-    const bmask_data = InstructionData{ .unary = .{
-        .opcode = .bmask,
-        .arg = v0,
-    } };
-    const v1_inst = try func.dfg.makeInst(bmask_data);
     try func.layout.appendInst(v1_inst, block0);
     const v1 = try func.dfg.appendInstResult(v1_inst, Type.I64);
 

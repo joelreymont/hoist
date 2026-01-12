@@ -433,14 +433,14 @@ test "BranchTableData" {
 }
 
 test "LoadData" {
-    const flags = MemFlags.new();
+    const flags = MemFlags.default();
     const data = LoadData.init(.load, flags, Value.new(10), 0);
     try testing.expectEqual(Opcode.load, data.opcode);
     try testing.expectEqual(Value.new(10), data.arg);
 }
 
 test "StoreData" {
-    const flags = MemFlags.new();
+    const flags = MemFlags.default();
     const data = StoreData.init(.store, flags, Value.new(10), Value.new(20), 8);
     try testing.expectEqual(Opcode.store, data.opcode);
     try testing.expectEqual(Value.new(10), data.args[0]);

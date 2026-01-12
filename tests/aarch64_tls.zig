@@ -18,7 +18,7 @@ test "TLS: Local-Exec model small offset" {
     defer sig.deinit();
 
     const i64_type = Type.I64;
-    try sig.returns.append(AbiParam.new(i64_type));
+    try sig.returns.append(testing.allocator, AbiParam.new(i64_type));
 
     var func = try Function.init(testing.allocator, "tls_le_small", sig);
     defer func.deinit();
@@ -68,7 +68,7 @@ test "TLS: Local-Exec model large offset" {
     defer sig.deinit();
 
     const i64_type = Type.I64;
-    try sig.returns.append(AbiParam.new(i64_type));
+    try sig.returns.append(testing.allocator, AbiParam.new(i64_type));
 
     var func = try Function.init(testing.allocator, "tls_le_large", sig);
     defer func.deinit();
@@ -118,7 +118,7 @@ test "TLS: Local-Exec model zero offset" {
     defer sig.deinit();
 
     const i64_type = Type.I64;
-    try sig.returns.append(AbiParam.new(i64_type));
+    try sig.returns.append(testing.allocator, AbiParam.new(i64_type));
 
     var func = try Function.init(testing.allocator, "tls_le_zero", sig);
     defer func.deinit();

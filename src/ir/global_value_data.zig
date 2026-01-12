@@ -99,7 +99,7 @@ test "GlobalValueData load" {
         GlobalValue.new(0),
         Offset32.new(16),
         Type.I64,
-        MemFlags.new(),
+        MemFlags.default(),
     );
     const data = GlobalValueData{ .load = load };
     try testing.expectEqual(GlobalValue.new(0), data.load.base);

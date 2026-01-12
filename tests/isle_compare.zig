@@ -15,11 +15,11 @@ const InstructionData = hoist.instruction_data.InstructionData;
 const IntCC = hoist.condcodes.IntCC;
 const FloatCC = hoist.condcodes.FloatCC;
 
-const aarch64_lower = @import("../src/generated/aarch64_lower_generated.zig");
+const aarch64_lower = hoist.aarch64_lower_generated;
 const lower_mod = hoist.lower;
 const Inst = hoist.aarch64_inst.Inst;
-const isle_helpers = @import("../src/backends/aarch64/isle_helpers.zig");
-const isle_coverage = @import("../src/backends/aarch64/isle_coverage.zig");
+const isle_helpers = hoist.aarch64_isle_helpers;
+const isle_coverage = hoist.aarch64_isle_coverage;
 
 test "ISLE coverage: icmp eq (i64)" {
     const allocator = testing.allocator;
@@ -53,7 +53,7 @@ test "ISLE coverage: icmp eq (i64)" {
     } };
     const v2_inst = try func.dfg.makeInst(icmp_data);
     try func.layout.appendInst(v2_inst, block0);
-    const v2 = func.dfg.firstResult(v2_inst).?;
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I32);
 
     // return v2
     const return_data = InstructionData{ .unary = .{
@@ -107,7 +107,7 @@ test "ISLE coverage: icmp slt (i32)" {
     } };
     const v2_inst = try func.dfg.makeInst(icmp_data);
     try func.layout.appendInst(v2_inst, block0);
-    const v2 = func.dfg.firstResult(v2_inst).?;
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I32);
 
     const return_data = InstructionData{ .unary = .{
         .opcode = .@"return",
@@ -160,7 +160,7 @@ test "ISLE coverage: icmp ult (unsigned <)" {
     } };
     const v2_inst = try func.dfg.makeInst(icmp_data);
     try func.layout.appendInst(v2_inst, block0);
-    const v2 = func.dfg.firstResult(v2_inst).?;
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I32);
 
     const return_data = InstructionData{ .unary = .{
         .opcode = .@"return",
@@ -213,7 +213,7 @@ test "ISLE coverage: icmp ne (not equal)" {
     } };
     const v2_inst = try func.dfg.makeInst(icmp_data);
     try func.layout.appendInst(v2_inst, block0);
-    const v2 = func.dfg.firstResult(v2_inst).?;
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I32);
 
     const return_data = InstructionData{ .unary = .{
         .opcode = .@"return",
@@ -266,7 +266,7 @@ test "ISLE coverage: fcmp eq (f64)" {
     } };
     const v2_inst = try func.dfg.makeInst(fcmp_data);
     try func.layout.appendInst(v2_inst, block0);
-    const v2 = func.dfg.firstResult(v2_inst).?;
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I32);
 
     const return_data = InstructionData{ .unary = .{
         .opcode = .@"return",
@@ -319,7 +319,7 @@ test "ISLE coverage: fcmp lt (f32 <)" {
     } };
     const v2_inst = try func.dfg.makeInst(fcmp_data);
     try func.layout.appendInst(v2_inst, block0);
-    const v2 = func.dfg.firstResult(v2_inst).?;
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I32);
 
     const return_data = InstructionData{ .unary = .{
         .opcode = .@"return",
@@ -372,7 +372,7 @@ test "ISLE coverage: fcmp uno (unordered - NaN check)" {
     } };
     const v2_inst = try func.dfg.makeInst(fcmp_data);
     try func.layout.appendInst(v2_inst, block0);
-    const v2 = func.dfg.firstResult(v2_inst).?;
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I32);
 
     const return_data = InstructionData{ .unary = .{
         .opcode = .@"return",

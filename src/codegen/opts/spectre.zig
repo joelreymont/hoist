@@ -65,11 +65,12 @@ pub const SpectreMitigation = struct {
     }
 
     fn insertFenceAfter(self: *SpectreMitigation, func: *Function, block: Block, after: Inst) !void {
+        _ = block;
         const fence_data = InstructionData{ .nullary = .{ .opcode = .spectre_fence } };
         const fence_inst = try func.dfg.makeInst(fence_data);
 
         // Insert fence immediately after the target instruction
-        try func.layout.insertInstAfter(fence_inst, after, block);
+        try func.layout.insertInstAfter(fence_inst, after);
         self.changed = true;
     }
 };

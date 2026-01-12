@@ -15,11 +15,11 @@ const AbiParam = hoist.function.signature.AbiParam;
 const Type = hoist.types.Type;
 const InstructionData = hoist.instruction_data.InstructionData;
 
-const aarch64_lower = @import("../src/generated/aarch64_lower_generated.zig");
+const aarch64_lower = hoist.aarch64_lower_generated;
 const lower_mod = hoist.lower;
 const Inst = hoist.aarch64_inst.Inst;
-const isle_helpers = @import("../src/backends/aarch64/isle_helpers.zig");
-const isle_coverage = @import("../src/backends/aarch64/isle_coverage.zig");
+const isle_helpers = hoist.aarch64_isle_helpers;
+const isle_coverage = hoist.aarch64_isle_coverage;
 
 test "ISLE coverage: fadd f32" {
     const allocator = testing.allocator;

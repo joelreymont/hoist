@@ -266,13 +266,13 @@ test "E2E: brz branch if zero" {
     var func = try Function.init(testing.allocator, "test_brz", sig);
     defer func.deinit();
 
-    const entry_block = try func.dfg.createBlock();
-    const zero_block = try func.dfg.createBlock();
-    const nonzero_block = try func.dfg.createBlock();
+    const entry_block = try func.dfg.makeBlock();
+    const zero_block = try func.dfg.makeBlock();
+    const nonzero_block = try func.dfg.makeBlock();
 
-    func.layout.appendBlock(entry_block);
-    func.layout.appendBlock(zero_block);
-    func.layout.appendBlock(nonzero_block);
+    try func.layout.appendBlock(entry_block);
+    try func.layout.appendBlock(zero_block);
+    try func.layout.appendBlock(nonzero_block);
 
     const param = func.dfg.blockParams(entry_block)[0];
 
@@ -284,7 +284,7 @@ test "E2E: brz branch if zero" {
             .destination = zero_block,
         },
     }, Type.void());
-    func.layout.appendInst(entry_block, brz_inst);
+    try func.layout.appendInst(brz_inst, entry_block);
 
     // Also add fallthrough jump to nonzero_block
     const jump_inst = try func.dfg.createInst(.{
@@ -293,7 +293,7 @@ test "E2E: brz branch if zero" {
             .destination = nonzero_block,
         },
     }, Type.void());
-    func.layout.appendInst(entry_block, jump_inst);
+    try func.layout.appendInst(jump_inst, entry_block);
 
     // zero_block: return 0
     const zero_val = try func.dfg.makeIconst(Type.int(64), 0);
@@ -303,7 +303,7 @@ test "E2E: brz branch if zero" {
             .arg = zero_val,
         },
     }, Type.void());
-    func.layout.appendInst(zero_block, ret0_inst);
+    try func.layout.appendInst(ret0_inst, zero_block);
 
     // nonzero_block: return 1
     const one_val = try func.dfg.makeIconst(Type.int(64), 1);
@@ -313,7 +313,7 @@ test "E2E: brz branch if zero" {
             .arg = one_val,
         },
     }, Type.void());
-    func.layout.appendInst(nonzero_block, ret1_inst);
+    try func.layout.appendInst(ret1_inst, nonzero_block);
 
     var ctx = CompileContext
         .forTarget(.aarch64)

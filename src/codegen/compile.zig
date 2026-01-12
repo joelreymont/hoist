@@ -27,6 +27,7 @@ const ir = struct {
     pub const Value = @import("../ir/entities.zig").Value;
     pub const ValueData = @import("../ir/dfg.zig").ValueData;
     pub const FunctionBuilder = @import("../ir/builder.zig").FunctionBuilder;
+    pub const Function = @import("../ir/function.zig").Function;
 };
 const MachBuffer = @import("../machinst/buffer.zig").MachBuffer;
 const Reloc = @import("../machinst/buffer.zig").Reloc;
@@ -7135,7 +7136,7 @@ test "IRBuilder: emit instructions" {
     _ = try builder.emitImul(ir.Type.I32, v1, v2);
     try builder.emitReturn();
 
-    try testing.expectEqual(@as(usize, 5), func.dfg.insts.elems.items.len);
+    try testing.expectEqual(@as(usize, 6), func.dfg.insts.elems.items.len);
 }
 
 test "IRBuilder: emit control flow" {

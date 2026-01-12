@@ -14,11 +14,11 @@ const Type = hoist.types.Type;
 const InstructionData = hoist.instruction_data.InstructionData;
 const Opcode = hoist.opcodes.Opcode;
 
-const aarch64_lower = @import("../src/generated/aarch64_lower_generated.zig");
+const aarch64_lower = hoist.aarch64_lower_generated;
 const lower_mod = hoist.lower;
 const Inst = hoist.aarch64_inst.Inst;
-const isle_helpers = @import("../src/backends/aarch64/isle_helpers.zig");
-const isle_coverage = @import("../src/backends/aarch64/isle_coverage.zig");
+const isle_helpers = hoist.aarch64_isle_helpers;
+const isle_coverage = hoist.aarch64_isle_coverage;
 
 test "ISLE coverage: iadd i64 register + register" {
     const allocator = testing.allocator;
@@ -53,7 +53,7 @@ test "ISLE coverage: iadd i64 register + register" {
     } };
     const v2_inst = try func.dfg.makeInst(iadd_data);
     try func.layout.appendInst(v2_inst, block0);
-    const v2 = func.dfg.firstResult(v2_inst).?;
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I64);
 
     // return v2
     const return_data = InstructionData{ .unary = .{
@@ -114,7 +114,7 @@ test "ISLE coverage: iadd i32 register + immediate" {
     } };
     const v1_inst = try func.dfg.makeInst(iconst_data);
     try func.layout.appendInst(v1_inst, block0);
-    const v1 = func.dfg.firstResult(v1_inst).?;
+    const v1 = try func.dfg.appendInstResult(v1_inst, Type.I32);
 
     // v2 = iadd v0, v1
     const iadd_data = InstructionData{ .binary = .{
@@ -123,7 +123,7 @@ test "ISLE coverage: iadd i32 register + immediate" {
     } };
     const v2_inst = try func.dfg.makeInst(iadd_data);
     try func.layout.appendInst(v2_inst, block0);
-    const v2 = func.dfg.firstResult(v2_inst).?;
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I32);
 
     // return v2
     const return_data = InstructionData{ .unary = .{
@@ -176,7 +176,7 @@ test "ISLE coverage: isub i64 register - register" {
     } };
     const v2_inst = try func.dfg.makeInst(isub_data);
     try func.layout.appendInst(v2_inst, block0);
-    const v2 = func.dfg.firstResult(v2_inst).?;
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I64);
 
     // return v2
     const return_data = InstructionData{ .unary = .{
@@ -229,7 +229,7 @@ test "ISLE coverage: imul i32 register * register" {
     } };
     const v2_inst = try func.dfg.makeInst(imul_data);
     try func.layout.appendInst(v2_inst, block0);
-    const v2 = func.dfg.firstResult(v2_inst).?;
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I32);
 
     // return v2
     const return_data = InstructionData{ .unary = .{

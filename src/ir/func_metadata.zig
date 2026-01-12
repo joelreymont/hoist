@@ -134,9 +134,9 @@ test "FuncMetadataTable: multiple functions" {
     try testing.expectEqual(@as(usize, 3), table.metadata.items.len);
 
     // Verify each function
-    try testing.expectEqual(@as(u32, 0), func1.index());
-    try testing.expectEqual(@as(u32, 1), func2.index());
-    try testing.expectEqual(@as(u32, 2), func3.index());
+    try testing.expectEqual(@as(u32, 0), func1.index);
+    try testing.expectEqual(@as(u32, 1), func2.index);
+    try testing.expectEqual(@as(u32, 2), func3.index);
 
     const meta1 = table.getMetadata(func1).?;
     try testing.expectEqual(SigRef.new(0), meta1.sig_ref);
