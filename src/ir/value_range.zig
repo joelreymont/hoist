@@ -33,6 +33,14 @@ pub const ValueRange = struct {
     /// Full range (unknown value).
     pub fn full(bits: u8, signed: bool) ValueRange {
         if (signed) {
+            if (bits == 64) {
+                return .{
+                    .min = std.math.minInt(i64),
+                    .max = std.math.maxInt(i64),
+                    .bits = bits,
+                    .signed = true,
+                };
+            }
             const half: i64 = @as(i64, 1) << @intCast(bits - 1);
             return .{
                 .min = -half,
@@ -41,6 +49,15 @@ pub const ValueRange = struct {
                 .signed = true,
             };
         } else {
+            if (bits == 64) {
+                // u64 max doesn't fit in i64, use i64 max
+                return .{
+                    .min = 0,
+                    .max = std.math.maxInt(i64),
+                    .bits = bits,
+                    .signed = false,
+                };
+            }
             return .{
                 .min = 0,
                 .max = (@as(i64, 1) << @intCast(bits)) - 1,
@@ -331,9 +348,8 @@ pub const ValueRange = struct {
             return empty(self.bits, self.signed);
         }
 
-        const shift_amt: i64 = @intCast(shift);
-        const new_min = self.min << shift_amt;
-        const new_max = self.max << shift_amt;
+        const new_min = self.min << shift;
+        const new_max = self.max << shift;
 
         const min_bound = self.minBound();
         const max_bound = self.maxBound();
@@ -356,9 +372,8 @@ pub const ValueRange = struct {
             return empty(self.bits, self.signed);
         }
 
-        const shift_amt: u6 = @intCast(shift);
-        const new_min = @as(u64, @bitCast(self.min)) >> shift_amt;
-        const new_max = @as(u64, @bitCast(self.max)) >> shift_amt;
+        const new_min = @as(u64, @bitCast(self.min)) >> shift;
+        const new_max = @as(u64, @bitCast(self.max)) >> shift;
 
         return .{
             .min = @bitCast(new_min),
@@ -374,9 +389,8 @@ pub const ValueRange = struct {
             return empty(self.bits, self.signed);
         }
 
-        const shift_amt: i64 = @intCast(shift);
-        const new_min = self.min >> shift_amt;
-        const new_max = self.max >> shift_amt;
+        const new_min = self.min >> shift;
+        const new_max = self.max >> shift;
 
         return .{
             .min = new_min,
@@ -579,225 +593,6 @@ pub const RangeAnalysis = struct {
             .bnot => ValueRange.fromType(ty), // Conservative
             else => arg_range,
         };
-    }
-
-    /// Check if two ranges are equal.
-    fn rangesEqual(a: ValueRange, b: ValueRange) bool {
-        return a.min == b.min and a.max == b.max and a.bits == b.bits and a.signed == b.signed;
-    }
-};
-
-const Allocator = std.mem.Allocator;
-const Function = @import("function.zig").Function;
-const Value = @import("entities.zig").Value;
-const Block = @import("entities.zig").Block;
-const Inst = @import("entities.zig").Inst;
-const InstructionData = @import("instruction_data.zig").InstructionData;
-const Opcode = @import("opcodes.zig").Opcode;
-
-/// Value range analysis pass.
-/// Computes possible value ranges for all SSA values via forward dataflow.
-pub const RangeAnalysis = struct {
-    allocator: Allocator,
-    function: *Function,
-
-    /// Ranges for each SSA value.
-    ranges: std.AutoHashMap(Value, ValueRange),
-
-    /// Block visit order (RPO for forward dataflow).
-    visit_order: std.ArrayList(Block),
-
-    pub fn init(allocator: Allocator, function: *Function) RangeAnalysis {
-        return .{
-            .allocator = allocator,
-            .function = function,
-            .ranges = std.AutoHashMap(Value, ValueRange).init(allocator),
-            .visit_order = std.ArrayList(Block).init(allocator),
-        };
-    }
-
-    pub fn deinit(self: *RangeAnalysis) void {
-        self.ranges.deinit();
-        self.visit_order.deinit(self.allocator);
-    }
-
-    /// Run range analysis to fixpoint.
-    pub fn analyze(self: *RangeAnalysis) !void {
-        // Compute RPO visit order
-        try self.computeVisitOrder();
-
-        // Initialize ranges for block parameters
-        try self.initializeRanges();
-
-        // Iterate to fixpoint
-        var changed = true;
-        var iteration: u32 = 0;
-        const max_iterations: u32 = 100;
-
-        while (changed and iteration < max_iterations) : (iteration += 1) {
-            changed = false;
-
-            for (self.visit_order.items) |block| {
-                if (try self.visitBlock(block)) {
-                    changed = true;
-                }
-            }
-        }
-    }
-
-    /// Get range for value.
-    pub fn getRange(self: *RangeAnalysis, value: Value) ?ValueRange {
-        return self.ranges.get(value);
-    }
-
-    /// Compute reverse postorder visit order.
-    fn computeVisitOrder(self: *RangeAnalysis) !void {
-        self.visit_order.clearRetainingCapacity();
-
-        // Use function layout order (approximation of RPO)
-        var block_iter = self.function.layout.blocks();
-        while (block_iter.next()) |block| {
-            try self.visit_order.append(self.allocator, block);
-        }
-    }
-
-    /// Initialize ranges for block parameters.
-    fn initializeRanges(self: *RangeAnalysis) !void {
-        var block_iter = self.function.layout.blocks();
-        while (block_iter.next()) |block| {
-            const params = self.function.dfg.blockParams(block);
-            for (params) |param| {
-                const ty = self.function.dfg.valueType(param);
-                const range = ValueRange.fromType(ty);
-                try self.ranges.put(param, range);
-            }
-        }
-    }
-
-    /// Visit block, propagate ranges through instructions.
-    /// Returns true if any range changed.
-    fn visitBlock(self: *RangeAnalysis, block: Block) !bool {
-        var changed = false;
-
-        var inst_iter = self.function.layout.blockInsts(block);
-        while (inst_iter.next()) |inst| {
-            if (try self.visitInst(inst)) {
-                changed = true;
-            }
-        }
-
-        return changed;
-    }
-
-    /// Visit instruction, compute result ranges.
-    fn visitInst(self: *RangeAnalysis, inst: Inst) !bool {
-        const data = self.function.dfg.insts.items[@intFromEnum(inst)];
-        const results = self.function.dfg.instResults(inst);
-
-        if (results.len == 0) return false;
-
-        const result = results[0];
-        const ty = self.function.dfg.valueType(result);
-
-        // Compute range based on opcode
-        const new_range = switch (data) {
-            .unary_imm => |u| blk: {
-                if (u.opcode == .iconst) {
-                    const bits = ty.bits() orelse 64;
-                    const signed = ty.isSigned();
-                    break :blk ValueRange.constant(u.imm.bits, bits, signed);
-                }
-                break :blk ValueRange.fromType(ty);
-            },
-            .binary => |b| try self.visitBinary(b.opcode, b.args, ty),
-            .binary_imm => |bi| try self.visitBinaryImm(bi.opcode, bi.arg, bi.imm, ty),
-            .unary => |u| try self.visitUnary(u.opcode, u.arg, ty),
-            .branch_icmp => |bi| try self.visitBranchIcmp(bi, inst),
-            else => ValueRange.fromType(ty),
-        };
-
-        // Update range if changed
-        if (self.ranges.get(result)) |old_range| {
-            const joined = old_range.join(new_range);
-            if (!rangesEqual(old_range, joined)) {
-                try self.ranges.put(result, joined);
-                return true;
-            }
-            return false;
-        } else {
-            try self.ranges.put(result, new_range);
-            return true;
-        }
-    }
-
-    /// Visit binary operation.
-    fn visitBinary(self: *RangeAnalysis, opcode: Opcode, args: [2]Value, ty: Type) !ValueRange {
-        const lhs_range = self.ranges.get(args[0]) orelse ValueRange.fromType(ty);
-        const rhs_range = self.ranges.get(args[1]) orelse ValueRange.fromType(ty);
-
-        return switch (opcode) {
-            .iadd => lhs_range.add(rhs_range),
-            .isub => lhs_range.sub(rhs_range),
-            .imul => lhs_range.mul(rhs_range),
-            .band => lhs_range.bitAnd(rhs_range),
-            .bor => lhs_range.bitOr(rhs_range),
-            .bxor => lhs_range.bitXor(rhs_range),
-            else => ValueRange.fromType(ty),
-        };
-    }
-
-    /// Visit binary operation with immediate.
-    fn visitBinaryImm(self: *RangeAnalysis, opcode: Opcode, arg: Value, imm: anytype, ty: Type) !ValueRange {
-        const arg_range = self.ranges.get(arg) orelse ValueRange.fromType(ty);
-        const bits = ty.bits() orelse 64;
-        const signed = ty.isSigned();
-
-        // Create range for immediate
-        const imm_val: i64 = if (@hasField(@TypeOf(imm), "bits"))
-            imm.bits
-        else if (@TypeOf(imm) == u8)
-            @intCast(imm)
-        else
-            return ValueRange.fromType(ty);
-
-        const imm_range = ValueRange.constant(imm_val, bits, signed);
-
-        return switch (opcode) {
-            .iadd_imm => arg_range.add(imm_range),
-            .ishl_imm => if (imm_val >= 0 and imm_val < 64)
-                arg_range.shl(@intCast(imm_val))
-            else
-                ValueRange.fromType(ty),
-            .ushr_imm => if (imm_val >= 0 and imm_val < 64)
-                arg_range.ushr(@intCast(imm_val))
-            else
-                ValueRange.fromType(ty),
-            .sshr_imm => if (imm_val >= 0 and imm_val < 64)
-                arg_range.sshr(@intCast(imm_val))
-            else
-                ValueRange.fromType(ty),
-            else => ValueRange.fromType(ty),
-        };
-    }
-
-    /// Visit unary operation.
-    fn visitUnary(self: *RangeAnalysis, opcode: Opcode, arg: Value, ty: Type) !ValueRange {
-        const arg_range = self.ranges.get(arg) orelse ValueRange.fromType(ty);
-
-        return switch (opcode) {
-            .bnot => ValueRange.fromType(ty), // Conservative
-            else => arg_range,
-        };
-    }
-
-    /// Visit branch with icmp, narrow ranges on true/false edges.
-    fn visitBranchIcmp(self: *RangeAnalysis, bi: anytype, inst: Inst) !ValueRange {
-        _ = self;
-        _ = bi;
-        _ = inst;
-        // TODO: Narrow ranges based on comparison condition
-        // This requires tracking edge-specific ranges
-        return ValueRange.full(32, true);
     }
 
     /// Check if two ranges are equal.

@@ -108,6 +108,7 @@ pub const ir_ns = struct {
     pub const entities = @import("ir/entities.zig");
     pub const egraph = @import("ir/egraph.zig");
     pub const egraph_rules = @import("ir/egraph_rules.zig");
+    pub const value_range = @import("ir/value_range.zig");
 };
 
 // Codegen tests

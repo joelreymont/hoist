@@ -340,6 +340,18 @@ pub fn build(b: *std.Build) void {
     const run_test_legalize_ops = b.addRunArtifact(test_legalize_ops);
     test_step.dependOn(&run_test_legalize_ops.step);
 
+    const value_range_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/value_range_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    value_range_tests.root_module.addImport("hoist", lib.root_module);
+    applyFlags(value_range_tests, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_value_range_tests = b.addRunArtifact(value_range_tests);
+    test_step.dependOn(&run_value_range_tests.step);
+
     // TODO: domtree.zig needs cfg export fix (hoist.ir.cfg)
     // const domtree_tests = b.addTest(.{
     //     .root_module = b.createModule(.{
