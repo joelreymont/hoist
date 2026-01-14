@@ -19,9 +19,7 @@ pub const SourceLoc = struct {
         };
     }
 
-    pub fn format(self: SourceLoc, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(self: SourceLoc, writer: anytype) !void {
         try writer.print("{s}:{d}:{d}", .{ self.file, self.line, self.column });
     }
 };
@@ -80,7 +78,7 @@ test "SourceLoc format" {
     const loc = SourceLoc.init("test.zig", 42, 10);
 
     var buf: [128]u8 = undefined;
-    const formatted = try std.fmt.bufPrint(&buf, "{}", .{loc});
+    const formatted = try std.fmt.bufPrint(&buf, "{f}", .{loc});
 
     try testing.expectEqualStrings("test.zig:42:10", formatted);
 }

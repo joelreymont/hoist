@@ -263,6 +263,8 @@ pub fn ABIMachineSpec(comptime WordSize: type) type {
         callee_saves: []const PReg,
         /// Stack alignment in bytes.
         stack_align: u32,
+        /// Whether integer register pairs require even alignment.
+        align_int_pairs: bool,
 
         const Self = @This();
 
@@ -356,6 +358,30 @@ pub fn ABIMachineSpec(comptime WordSize: type) type {
                             try handleRegClass(rc, arg_ty, &int_reg_idx, &float_reg_idx, &stack_offset, &slots, self, allocator);
                         },
                     }
+                } else if (arg_ty == .i128) {
+                    if (self.align_int_pairs and (int_reg_idx % 2 == 1)) {
+                        int_reg_idx += 1;
+                    }
+
+                    if (int_reg_idx + 1 < self.int_arg_regs.len) {
+                        const lo = self.int_arg_regs[int_reg_idx];
+                        const hi = self.int_arg_regs[int_reg_idx + 1];
+                        const pair = [_]ABIArgSlot{
+                            .{ .reg = .{ .preg = lo, .ty = .i64, .extension = .none } },
+                            .{ .reg = .{ .preg = hi, .ty = .i64, .extension = .none } },
+                        };
+                        try slots.appendSlice(allocator, &pair);
+                        int_reg_idx += 2;
+                    } else {
+                        stack_offset = std.mem.alignForward(i64, stack_offset, 16);
+                        const pair = [_]ABIArgSlot{
+                            .{ .stack = .{ .offset = stack_offset, .ty = .i64, .extension = .none } },
+                            .{ .stack = .{ .offset = stack_offset + 8, .ty = .i64, .extension = .none } },
+                        };
+                        try slots.appendSlice(allocator, &pair);
+                        stack_offset += 16;
+                        stack_offset = std.mem.alignForward(i64, stack_offset, self.stack_align);
+                    }
                 } else {
                     const rc = arg_ty.regClass();
                     try handleRegClass(rc, arg_ty, &int_reg_idx, &float_reg_idx, &stack_offset, &slots, self, allocator);
@@ -444,16 +470,35 @@ pub fn ABIMachineSpec(comptime WordSize: type) type {
 
                 switch (rc) {
                     .int => {
-                        if (int_reg_idx < self.int_ret_regs.len) {
-                            const preg = self.int_ret_regs[int_reg_idx];
-                            try slots.append(allocator, .{ .reg = .{
-                                .preg = preg,
-                                .ty = ret_ty,
-                                .extension = .none,
-                            } });
-                            int_reg_idx += 1;
+                        if (ret_ty == .i128) {
+                            if (self.align_int_pairs and (int_reg_idx % 2 == 1)) {
+                                int_reg_idx += 1;
+                            }
+
+                            if (int_reg_idx + 1 < self.int_ret_regs.len) {
+                                const lo = self.int_ret_regs[int_reg_idx];
+                                const hi = self.int_ret_regs[int_reg_idx + 1];
+                                const pair = [_]ABIArgSlot{
+                                    .{ .reg = .{ .preg = lo, .ty = .i64, .extension = .none } },
+                                    .{ .reg = .{ .preg = hi, .ty = .i64, .extension = .none } },
+                                };
+                                try slots.appendSlice(allocator, &pair);
+                                int_reg_idx += 2;
+                            } else {
+                                return error.TooManyReturns;
+                            }
                         } else {
-                            return error.TooManyReturns;
+                            if (int_reg_idx < self.int_ret_regs.len) {
+                                const preg = self.int_ret_regs[int_reg_idx];
+                                try slots.append(allocator, .{ .reg = .{
+                                    .preg = preg,
+                                    .ty = ret_ty,
+                                    .extension = .none,
+                                } });
+                                int_reg_idx += 1;
+                            } else {
+                                return error.TooManyReturns;
+                            }
                         }
                     },
                     .float, .vector => {
@@ -522,58 +567,54 @@ pub fn ABIMachineSpec(comptime WordSize: type) type {
 }
 
 /// System V AMD64 ABI specification.
+const sysv_int_args = [_]PReg{
+    PReg.new(.int, 7), // RDI
+    PReg.new(.int, 6), // RSI
+    PReg.new(.int, 2), // RDX
+    PReg.new(.int, 1), // RCX
+    PReg.new(.int, 8), // R8
+    PReg.new(.int, 9), // R9
+};
+
+const sysv_float_args = [_]PReg{
+    PReg.new(.float, 0),
+    PReg.new(.float, 1),
+    PReg.new(.float, 2),
+    PReg.new(.float, 3),
+    PReg.new(.float, 4),
+    PReg.new(.float, 5),
+    PReg.new(.float, 6),
+    PReg.new(.float, 7),
+};
+
+const sysv_int_rets = [_]PReg{
+    PReg.new(.int, 0), // RAX
+    PReg.new(.int, 2), // RDX
+};
+
+const sysv_float_rets = [_]PReg{
+    PReg.new(.float, 0),
+    PReg.new(.float, 1),
+};
+
+const sysv_callee_saves = [_]PReg{
+    PReg.new(.int, 3), // RBX
+    PReg.new(.int, 5), // RBP
+    PReg.new(.int, 12),
+    PReg.new(.int, 13),
+    PReg.new(.int, 14),
+    PReg.new(.int, 15),
+};
+
 pub fn sysv_amd64() ABIMachineSpec(u64) {
-    // System V argument registers: RDI, RSI, RDX, RCX, R8, R9
-    const int_args = [_]PReg{
-        PReg.new(.int, 7), // RDI
-        PReg.new(.int, 6), // RSI
-        PReg.new(.int, 2), // RDX
-        PReg.new(.int, 1), // RCX
-        PReg.new(.int, 8), // R8
-        PReg.new(.int, 9), // R9
-    };
-
-    // XMM0-XMM7 for float args
-    const float_args = [_]PReg{
-        PReg.new(.float, 0),
-        PReg.new(.float, 1),
-        PReg.new(.float, 2),
-        PReg.new(.float, 3),
-        PReg.new(.float, 4),
-        PReg.new(.float, 5),
-        PReg.new(.float, 6),
-        PReg.new(.float, 7),
-    };
-
-    // Return registers: RAX, RDX
-    const int_rets = [_]PReg{
-        PReg.new(.int, 0), // RAX
-        PReg.new(.int, 2), // RDX
-    };
-
-    // XMM0, XMM1 for float returns
-    const float_rets = [_]PReg{
-        PReg.new(.float, 0),
-        PReg.new(.float, 1),
-    };
-
-    // Callee-saves: RBX, RBP, R12-R15
-    const callee_saves = [_]PReg{
-        PReg.new(.int, 3), // RBX
-        PReg.new(.int, 5), // RBP
-        PReg.new(.int, 12),
-        PReg.new(.int, 13),
-        PReg.new(.int, 14),
-        PReg.new(.int, 15),
-    };
-
     return .{
-        .int_arg_regs = &int_args,
-        .float_arg_regs = &float_args,
-        .int_ret_regs = &int_rets,
-        .float_ret_regs = &float_rets,
-        .callee_saves = &callee_saves,
+        .int_arg_regs = &sysv_int_args,
+        .float_arg_regs = &sysv_float_args,
+        .int_ret_regs = &sysv_int_rets,
+        .float_ret_regs = &sysv_float_rets,
+        .callee_saves = &sysv_callee_saves,
         .stack_align = 16,
+        .align_int_pairs = false,
     };
 }
 

@@ -137,7 +137,20 @@ pub const ControlFlowGraph = struct {
         }
     }
 
+    fn ensureNode(self: *ControlFlowGraph, block: Block) !void {
+        const idx = block.toIndex();
+        if (idx < self.data.items.len) return;
+
+        const old_len = self.data.items.len;
+        try self.data.resize(self.allocator, idx + 1);
+        for (old_len..self.data.items.len) |i| {
+            self.data.items[i] = CFGNode.init(self.allocator);
+        }
+    }
+
     pub fn addEdge(self: *ControlFlowGraph, from: Block, from_inst: Inst, to: Block) !void {
+        try self.ensureNode(from);
+        try self.ensureNode(to);
         const from_idx = from.toIndex();
         const to_idx = to.toIndex();
 
@@ -146,13 +159,16 @@ pub const ControlFlowGraph = struct {
 
         // Add to predecessors of 'to'
         try self.data.items[to_idx].predecessors.put(from_inst, from);
+        self.valid = true;
     }
 
     pub fn addExceptionEdge(self: *ControlFlowGraph, from: Block, to: Block) !void {
+        try self.ensureNode(from);
         const from_idx = from.toIndex();
 
         // Add exception successor edge
         try self.data.items[from_idx].exception_successors.put(to, {});
+        self.valid = true;
     }
 
     /// Invalidate successors of a block (for recomputation).

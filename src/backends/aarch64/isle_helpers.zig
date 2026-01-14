@@ -723,12 +723,12 @@ pub fn aarch64_atomic_load_acquire(ty: root.types.Type, addr: lower_mod.Value, c
     if (size == .size64) {
         return Inst{ .ldar = .{
             .dst = ctx.newTempReg(.int),
-            .addr = addr_reg,
+            .base = addr_reg,
         } };
     } else {
         return Inst{ .ldar_w = .{
             .dst = ctx.newTempReg(.int),
-            .addr = addr_reg,
+            .base = addr_reg,
         } };
     }
 }
@@ -743,12 +743,12 @@ pub fn aarch64_atomic_store_release(ty: root.types.Type, addr: lower_mod.Value, 
     if (size == .size64) {
         return Inst{ .stlr = .{
             .src = val_reg,
-            .addr = addr_reg,
+            .base = addr_reg,
         } };
     } else {
         return Inst{ .stlr_w = .{
             .src = val_reg,
-            .addr = addr_reg,
+            .base = addr_reg,
         } };
     }
 }

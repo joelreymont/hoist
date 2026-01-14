@@ -274,32 +274,23 @@ pub fn nextPow2Width(ty: Type) ?Type {
 /// Split vector type in half.
 pub fn splitVectorHalf(ty: Type) ?Type {
     if (!ty.isVector()) return null;
-    if (ty.laneCount() <= 1) return null;
-    return ty.halfWidth();
+    const lanes = ty.laneCount();
+    if (lanes <= 1) return null;
+    return Type.vector(ty.laneType(), lanes / 2);
 }
 
 /// Double vector lane count.
 pub fn widenVector(ty: Type) ?Type {
     if (!ty.isVector()) return null;
     const lanes = ty.laneCount();
-    if (lanes >= 256) return null; // Max lanes
-    const double_lanes = lanes * 2;
-    const log2_double = std.math.log2_int(u32, double_lanes);
-    const lane_type = ty.laneType();
-    return Type{
-        .raw = (lane_type.raw & 0x0f) | (@as(u16, log2_double) << 4) | 0x80,
-    };
+    const double_lanes = std.math.mul(u32, lanes, 2) catch return null;
+    if (double_lanes > 256) return null; // Max lanes
+    return Type.vector(ty.laneType(), double_lanes);
 }
 
 /// Create vector type with specific lane count.
 pub fn vectorType(lane_type: Type, lane_count: u32) ?Type {
-    if (!lane_type.isLane()) return null;
-    if (lane_count < 2 or lane_count > 256) return null;
-    if (!std.math.isPowerOfTwo(lane_count)) return null;
-    const log2_lanes = std.math.log2_int(u32, lane_count);
-    return Type{
-        .raw = (lane_type.raw & 0x0f) | (@as(u16, log2_lanes) << 4) | 0x80,
-    };
+    return Type.vector(lane_type, lane_count);
 }
 
 // ============================================================================

@@ -37,8 +37,8 @@ pub const Type = packed struct {
     pub const F128 = Type{ .raw = 0x7c };
 
     // Common vector types
-    pub const I8X16 = Type{ .raw = 0xc4 };
-    pub const I16X8 = Type{ .raw = 0xb5 };
+    pub const I8X16 = Type{ .raw = 0xb4 };
+    pub const I16X8 = Type{ .raw = 0xa5 };
     pub const I32X4 = Type{ .raw = 0x96 };
     pub const I64X2 = Type{ .raw = 0x87 };
     pub const F32X4 = Type{ .raw = 0x9a };
@@ -158,6 +158,16 @@ pub const Type = packed struct {
     pub fn intWithByteSize(size: u16) ?Type {
         const bits_opt = std.math.mul(u16, size, 8) catch null;
         return if (bits_opt) |b| Type.int(b) else null;
+    }
+
+    /// Create a vector type with the given lane type and lane count.
+    pub fn vector(lane_type: Type, lane_count: u32) ?Type {
+        if (!lane_type.isLane()) return null;
+        if (lane_count < 2 or lane_count > 256) return null;
+        if (!std.math.isPowerOfTwo(lane_count)) return null;
+        const log2_lanes = std.math.log2_int(u32, lane_count);
+        const lane_bits: u16 = lane_type.raw & 0x0f;
+        return .{ .raw = LANE_BASE + (@as(u16, log2_lanes) << 4) + lane_bits };
     }
 
     /// Type with same lane count but different lane type.

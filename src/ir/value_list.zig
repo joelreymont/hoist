@@ -117,9 +117,10 @@ pub const ValueListPool = struct {
     fn free(self: *ValueListPool, block: usize, sclass: SizeClass) !void {
         const sc: usize = sclass;
         if (sc >= self.free_lists.items.len) {
+            const old_len = self.free_lists.items.len;
             try self.free_lists.resize(self.allocator, sc + 1);
-            var i = self.free_lists.items.len;
-            while (i <= sc) : (i += 1) {
+            var i = old_len;
+            while (i < self.free_lists.items.len) : (i += 1) {
                 self.free_lists.items[i] = 0;
             }
         }

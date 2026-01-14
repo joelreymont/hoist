@@ -13,6 +13,26 @@ const std = @import("std");
 const liveness = @import("liveness.zig");
 const machinst = @import("../machinst/machinst.zig");
 
+const reg_map_len: usize = 64;
+const invalid_reg_idx: u8 = 0xFF;
+const spill_size_int: u32 = 8;
+const spill_size_vec: u32 = 16;
+
+fn initRegIndex(map: *[reg_map_len]u8, regs: []const machinst.PReg) void {
+    for (regs, 0..) |reg, idx| {
+        const hw = reg.hwEnc();
+        std.debug.assert(map[hw] == invalid_reg_idx);
+        map[hw] = @intCast(idx);
+    }
+}
+
+fn spillSlotSize(reg_class: machinst.RegClass) u32 {
+    return switch (reg_class) {
+        .int, .float => spill_size_int,
+        .vector => spill_size_vec,
+    };
+}
+
 /// A spill slot represents a location on the stack for a spilled virtual register.
 /// The offset is in bytes from the stack frame base.
 pub const SpillSlot = struct {
@@ -48,22 +68,27 @@ pub const RegAllocResult = struct {
 
     /// Get the physical register allocated to a virtual register
     pub fn getPhysReg(self: *RegAllocResult, vreg: machinst.VReg) ?machinst.PReg {
-        return self.vreg_to_preg.get(vreg.index);
+        return self.vreg_to_preg.get(vreg.index());
     }
 
     /// Assign a physical register to a virtual register
     pub fn assign(self: *RegAllocResult, vreg: machinst.VReg, preg: machinst.PReg) !void {
-        try self.vreg_to_preg.put(vreg.index, preg);
+        try self.vreg_to_preg.put(vreg.index(), preg);
+    }
+
+    /// Clear any physical register assignment for a virtual register.
+    pub fn clearReg(self: *RegAllocResult, vreg: machinst.VReg) void {
+        _ = self.vreg_to_preg.remove(vreg.index());
     }
 
     /// Get the spill slot for a virtual register
     pub fn getSpillSlot(self: *RegAllocResult, vreg: machinst.VReg) ?SpillSlot {
-        return self.vreg_to_spill.get(vreg.index);
+        return self.vreg_to_spill.get(vreg.index());
     }
 
     /// Assign a spill slot to a virtual register
     pub fn assignSpillSlot(self: *RegAllocResult, vreg: machinst.VReg, slot: SpillSlot) !void {
-        try self.vreg_to_spill.put(vreg.index, slot);
+        try self.vreg_to_spill.put(vreg.index(), slot);
     }
 };
 
@@ -86,17 +111,23 @@ pub const LinearScanAllocator = struct {
     free_float_regs: std.DynamicBitSet,
     free_vector_regs: std.DynamicBitSet,
 
-    /// Number of physical registers per class
-    num_int_regs: u32,
-    num_float_regs: u32,
-    num_vector_regs: u32,
+    /// Allocatable physical registers per class
+    int_regs: std.ArrayList(machinst.PReg),
+    float_regs: std.ArrayList(machinst.PReg),
+    vector_regs: std.ArrayList(machinst.PReg),
+
+    /// Map from hardware register encoding to index in allocatable list
+    int_reg_index: [reg_map_len]u8,
+    float_reg_index: [reg_map_len]u8,
+    vector_reg_index: [reg_map_len]u8,
 
     /// Next available spill slot offset (in bytes)
     next_spill_offset: u32,
 
     /// Free spill slots that can be reused
     /// Stores offsets of slots that were allocated but are no longer in use
-    free_spill_slots: std.ArrayList(u32),
+    free_spill_slots_8: std.ArrayList(u32),
+    free_spill_slots_16: std.ArrayList(u32),
 
     /// Register allocation hints: preferred physical register for each virtual register
     /// Used to improve allocation quality by preferring certain registers when available
@@ -117,39 +148,129 @@ pub const LinearScanAllocator = struct {
         num_float_regs: u32,
         num_vector_regs: u32,
     ) !LinearScanAllocator {
-        var free_int = try std.DynamicBitSet.initFull(allocator, num_int_regs);
+        var int_regs = std.ArrayList(machinst.PReg){};
+        defer int_regs.deinit(allocator);
+        var float_regs = std.ArrayList(machinst.PReg){};
+        defer float_regs.deinit(allocator);
+        var vector_regs = std.ArrayList(machinst.PReg){};
+        defer vector_regs.deinit(allocator);
+
+        var i: u32 = 0;
+        while (i < num_int_regs) : (i += 1) {
+            try int_regs.append(allocator, machinst.PReg.new(.int, @intCast(i)));
+        }
+
+        i = 0;
+        while (i < num_float_regs) : (i += 1) {
+            try float_regs.append(allocator, machinst.PReg.new(.float, @intCast(i)));
+        }
+
+        i = 0;
+        while (i < num_vector_regs) : (i += 1) {
+            try vector_regs.append(allocator, machinst.PReg.new(.vector, @intCast(i)));
+        }
+
+        return initWithRegs(allocator, int_regs.items, float_regs.items, vector_regs.items);
+    }
+
+    /// Initialize the allocator with explicit allocatable registers per class.
+    pub fn initWithRegs(
+        allocator: std.mem.Allocator,
+        int_regs: []const machinst.PReg,
+        float_regs: []const machinst.PReg,
+        vector_regs: []const machinst.PReg,
+    ) !LinearScanAllocator {
+        var free_int = try std.DynamicBitSet.initFull(allocator, int_regs.len);
         errdefer free_int.deinit();
 
-        var free_float = try std.DynamicBitSet.initFull(allocator, num_float_regs);
+        var free_float = try std.DynamicBitSet.initFull(allocator, float_regs.len);
         errdefer free_float.deinit();
 
-        var free_vector = try std.DynamicBitSet.initFull(allocator, num_vector_regs);
+        var free_vector = try std.DynamicBitSet.initFull(allocator, vector_regs.len);
         errdefer free_vector.deinit();
 
+        var int_list = std.ArrayList(machinst.PReg){};
+        errdefer int_list.deinit(allocator);
+        try int_list.appendSlice(allocator, int_regs);
+
+        var float_list = std.ArrayList(machinst.PReg){};
+        errdefer float_list.deinit(allocator);
+        try float_list.appendSlice(allocator, float_regs);
+
+        var vector_list = std.ArrayList(machinst.PReg){};
+        errdefer vector_list.deinit(allocator);
+        try vector_list.appendSlice(allocator, vector_regs);
+
+        var int_reg_index = [_]u8{invalid_reg_idx} ** reg_map_len;
+        var float_reg_index = [_]u8{invalid_reg_idx} ** reg_map_len;
+        var vector_reg_index = [_]u8{invalid_reg_idx} ** reg_map_len;
+
+        initRegIndex(&int_reg_index, int_list.items);
+        initRegIndex(&float_reg_index, float_list.items);
+        initRegIndex(&vector_reg_index, vector_list.items);
+
         return .{
-            .active = std.ArrayList(liveness.LiveRange).init(allocator),
-            .inactive = std.ArrayList(liveness.LiveRange).init(allocator),
+            .active = std.ArrayList(liveness.LiveRange){},
+            .inactive = std.ArrayList(liveness.LiveRange){},
             .free_int_regs = free_int,
             .free_float_regs = free_float,
             .free_vector_regs = free_vector,
-            .num_int_regs = num_int_regs,
-            .num_float_regs = num_float_regs,
-            .num_vector_regs = num_vector_regs,
+            .int_regs = int_list,
+            .float_regs = float_list,
+            .vector_regs = vector_list,
+            .int_reg_index = int_reg_index,
+            .float_reg_index = float_reg_index,
+            .vector_reg_index = vector_reg_index,
             .next_spill_offset = 0,
-            .free_spill_slots = std.ArrayList(u32).init(allocator),
+            .free_spill_slots_8 = std.ArrayList(u32){},
+            .free_spill_slots_16 = std.ArrayList(u32){},
             .hints = std.AutoHashMap(u32, machinst.PReg).init(allocator),
             .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *LinearScanAllocator) void {
-        self.active.deinit();
-        self.inactive.deinit();
+        self.active.deinit(self.allocator);
+        self.inactive.deinit(self.allocator);
         self.free_int_regs.deinit();
         self.free_float_regs.deinit();
         self.free_vector_regs.deinit();
-        self.free_spill_slots.deinit();
+        self.int_regs.deinit(self.allocator);
+        self.float_regs.deinit(self.allocator);
+        self.vector_regs.deinit(self.allocator);
+        self.free_spill_slots_8.deinit(self.allocator);
+        self.free_spill_slots_16.deinit(self.allocator);
         self.hints.deinit();
+    }
+
+    fn regIndex(self: *LinearScanAllocator, preg: machinst.PReg) ?u32 {
+        const hw = preg.hwEnc();
+        const idx = switch (preg.class()) {
+            .int => self.int_reg_index[hw],
+            .float => self.float_reg_index[hw],
+            .vector => self.vector_reg_index[hw],
+        };
+        if (idx == invalid_reg_idx) return null;
+        return idx;
+    }
+
+    fn requireRegIndex(self: *LinearScanAllocator, preg: machinst.PReg) !u32 {
+        return self.regIndex(preg) orelse error.InvalidPhysReg;
+    }
+
+    fn regAt(self: *LinearScanAllocator, reg_class: machinst.RegClass, idx: u32) machinst.PReg {
+        return switch (reg_class) {
+            .int => self.int_regs.items[idx],
+            .float => self.float_regs.items[idx],
+            .vector => self.vector_regs.items[idx],
+        };
+    }
+
+    fn freeSpillSlots(self: *LinearScanAllocator, reg_class: machinst.RegClass) *std.ArrayList(u32) {
+        return switch (reg_class) {
+            .int, .float => &self.free_spill_slots_8,
+            .vector => &self.free_spill_slots_16,
+        };
     }
 
     /// Perform linear scan register allocation.
@@ -186,7 +307,8 @@ pub const LinearScanAllocator = struct {
                     // Successfully spilled - allocate the freed register
                     try result.assign(range.vreg, preg);
                     const free_regs = self.getFreeRegs(range.reg_class);
-                    free_regs.unset(preg.index);
+                    const reg_idx = try self.requireRegIndex(preg);
+                    free_regs.unset(reg_idx);
                     try self.active.append(self.allocator, range);
                 } else {
                     // No suitable spill candidate - out of registers
@@ -222,10 +344,11 @@ pub const LinearScanAllocator = struct {
                 if (result.getPhysReg(range.vreg)) |preg| {
                     // Had a register - mark it as free
                     const free_regs = self.getFreeRegs(range.reg_class);
-                    free_regs.set(preg.index);
+                    const reg_idx = try self.requireRegIndex(preg);
+                    free_regs.set(reg_idx);
                 } else if (result.getSpillSlot(range.vreg)) |slot| {
                     // Was spilled - free the spill slot for reuse
-                    try self.freeSpillSlot(slot);
+                    try self.freeSpillSlot(slot, range.reg_class);
                 }
 
                 // Remove from active list (swap with last element for O(1) removal)
@@ -256,14 +379,17 @@ pub const LinearScanAllocator = struct {
         const free_regs = self.getFreeRegs(range.reg_class);
 
         // Check hint first if one exists
-        if (self.hints.get(range.vreg.index)) |hint| {
-            // Hint must be the same register class
-            if (hint.class == range.reg_class and free_regs.isSet(hint.index)) {
-                // Hint is available! Use it
-                try result.assign(range.vreg, hint);
-                free_regs.unset(hint.index);
-                try self.active.append(self.allocator, range);
-                return hint;
+        if (self.hints.get(range.vreg.index())) |hint| {
+            if (hint.class() == range.reg_class) {
+                if (self.regIndex(hint)) |reg_idx| {
+                    if (free_regs.isSet(reg_idx)) {
+                        // Hint is available! Use it
+                        try result.assign(range.vreg, hint);
+                        free_regs.unset(reg_idx);
+                        try self.active.append(self.allocator, range);
+                        return hint;
+                    }
+                }
             }
         }
 
@@ -273,7 +399,7 @@ pub const LinearScanAllocator = struct {
         while (reg_idx < num_regs) : (reg_idx += 1) {
             if (free_regs.isSet(reg_idx)) {
                 // Found a free register!
-                const preg = machinst.PReg.new(range.reg_class, reg_idx);
+                const preg = self.regAt(range.reg_class, reg_idx);
 
                 // Assign it to the vreg
                 try result.assign(range.vreg, preg);
@@ -333,10 +459,12 @@ pub const LinearScanAllocator = struct {
 
         // Mark register as free
         const free_regs = self.getFreeRegs(spill_range.reg_class);
-        free_regs.set(preg.index);
+        const reg_idx = try self.requireRegIndex(preg);
+        free_regs.set(reg_idx);
 
         // Allocate a spill slot for the spilled vreg
-        const spill_slot = try self.allocateSpillSlot();
+        result.clearReg(spill_range.vreg);
+        const spill_slot = try self.allocateSpillSlot(spill_range.reg_class);
         try result.assignSpillSlot(spill_range.vreg, spill_slot);
 
         return preg;
@@ -347,16 +475,17 @@ pub const LinearScanAllocator = struct {
     /// Returns a SpillSlot with an available stack offset.
     /// Reuses freed slots when possible, otherwise allocates a new one.
     /// Spill slots are allocated in 8-byte increments to maintain alignment.
-    fn allocateSpillSlot(self: *LinearScanAllocator) !SpillSlot {
-        // Try to reuse a freed slot first
-        if (self.free_spill_slots.items.len > 0) {
-            const offset = self.free_spill_slots.pop();
+    fn allocateSpillSlot(self: *LinearScanAllocator, reg_class: machinst.RegClass) !SpillSlot {
+        const free_slots = self.freeSpillSlots(reg_class);
+        if (free_slots.items.len > 0) {
+            const offset = free_slots.pop() orelse unreachable;
             return SpillSlot.init(offset);
         }
 
-        // No free slots - allocate new one
-        const slot = SpillSlot.init(self.next_spill_offset);
-        self.next_spill_offset += 8; // 8-byte slots for all types
+        const size = spillSlotSize(reg_class);
+        const aligned_offset = std.mem.alignForward(u32, self.next_spill_offset, size);
+        const slot = SpillSlot.init(aligned_offset);
+        self.next_spill_offset = aligned_offset + size;
         return slot;
     }
 
@@ -364,8 +493,8 @@ pub const LinearScanAllocator = struct {
     ///
     /// Marks the slot as available for future allocations.
     /// Called when a spilled vreg's live range ends.
-    fn freeSpillSlot(self: *LinearScanAllocator, slot: SpillSlot) !void {
-        try self.free_spill_slots.append(self.allocator, slot.offset);
+    fn freeSpillSlot(self: *LinearScanAllocator, slot: SpillSlot, reg_class: machinst.RegClass) !void {
+        try self.freeSpillSlots(reg_class).append(self.allocator, slot.offset);
     }
 
     /// Get the bitset for free registers of a given class
@@ -380,21 +509,21 @@ pub const LinearScanAllocator = struct {
     /// Get the number of registers for a given class
     fn getNumRegs(self: *LinearScanAllocator, class: machinst.RegClass) u32 {
         return switch (class) {
-            .int => self.num_int_regs,
-            .float => self.num_float_regs,
-            .vector => self.num_vector_regs,
+            .int => @intCast(self.int_regs.items.len),
+            .float => @intCast(self.float_regs.items.len),
+            .vector => @intCast(self.vector_regs.items.len),
         };
     }
 
     /// Set a register allocation hint for a virtual register.
     /// The allocator will prefer the hinted physical register if it's available.
     pub fn setHint(self: *LinearScanAllocator, vreg: machinst.VReg, preg: machinst.PReg) !void {
-        try self.hints.put(vreg.index, preg);
+        try self.hints.put(vreg.index(), preg);
     }
 
     /// Get the hint for a virtual register, if one exists.
     pub fn getHint(self: *LinearScanAllocator, vreg: machinst.VReg) ?machinst.PReg {
-        return self.hints.get(vreg.index);
+        return self.hints.get(vreg.index());
     }
 };
 
@@ -404,9 +533,9 @@ test "LinearScanAllocator init/deinit" {
     var lsa = try LinearScanAllocator.init(allocator, 31, 32, 32);
     defer lsa.deinit();
 
-    try std.testing.expectEqual(@as(u32, 31), lsa.num_int_regs);
-    try std.testing.expectEqual(@as(u32, 32), lsa.num_float_regs);
-    try std.testing.expectEqual(@as(u32, 32), lsa.num_vector_regs);
+    try std.testing.expectEqual(@as(usize, 31), lsa.int_regs.items.len);
+    try std.testing.expectEqual(@as(usize, 32), lsa.float_regs.items.len);
+    try std.testing.expectEqual(@as(usize, 32), lsa.vector_regs.items.len);
 
     // All registers should be free initially
     try std.testing.expectEqual(@as(usize, 31), lsa.free_int_regs.count());
@@ -427,8 +556,8 @@ test "RegAllocResult basic operations" {
 
     const assigned = result.getPhysReg(vreg0);
     try std.testing.expect(assigned != null);
-    try std.testing.expectEqual(preg0.index, assigned.?.index);
-    try std.testing.expectEqual(preg0.class, assigned.?.class);
+    try std.testing.expectEqual(preg0.index(), assigned.?.index());
+    try std.testing.expectEqual(preg0.class(), assigned.?.class());
 }
 
 test "LinearScanAllocator non-overlapping ranges" {
@@ -469,8 +598,8 @@ test "LinearScanAllocator non-overlapping ranges" {
     try std.testing.expect(p1 != null);
 
     // Both should be int registers
-    try std.testing.expectEqual(machinst.RegClass.int, p0.?.class);
-    try std.testing.expectEqual(machinst.RegClass.int, p1.?.class);
+    try std.testing.expectEqual(machinst.RegClass.int, p0.?.class());
+    try std.testing.expectEqual(machinst.RegClass.int, p1.?.class());
 }
 
 test "LinearScanAllocator overlapping ranges get different registers" {
@@ -511,7 +640,7 @@ test "LinearScanAllocator overlapping ranges get different registers" {
     try std.testing.expect(p1 != null);
 
     // They should have different register indices (can't share)
-    try std.testing.expect(p0.?.index != p1.?.index);
+    try std.testing.expect(p0.?.index() != p1.?.index());
 }
 
 test "LinearScanAllocator register reuse after expiry" {
@@ -564,10 +693,10 @@ test "LinearScanAllocator register reuse after expiry" {
     try std.testing.expect(p2 != null);
 
     // v0 and v1 must be different (overlapping)
-    try std.testing.expect(p0.?.index != p1.?.index);
+    try std.testing.expect(p0.?.index() != p1.?.index());
 
     // v2 should reuse one of the registers from v0 or v1
-    try std.testing.expect(p2.?.index == p0.?.index or p2.?.index == p1.?.index);
+    try std.testing.expect(p2.?.index() == p0.?.index() or p2.?.index() == p1.?.index());
 }
 
 test "LinearScanAllocator different register classes independent" {
@@ -618,14 +747,14 @@ test "LinearScanAllocator different register classes independent" {
     try std.testing.expect(p2 != null);
 
     // Should have correct classes
-    try std.testing.expectEqual(machinst.RegClass.int, p0.?.class);
-    try std.testing.expectEqual(machinst.RegClass.float, p1.?.class);
-    try std.testing.expectEqual(machinst.RegClass.vector, p2.?.class);
+    try std.testing.expectEqual(machinst.RegClass.int, p0.?.class());
+    try std.testing.expectEqual(machinst.RegClass.float, p1.?.class());
+    try std.testing.expectEqual(machinst.RegClass.vector, p2.?.class());
 
     // Can all use index 0 (different register files)
-    try std.testing.expectEqual(@as(u32, 0), p0.?.index);
-    try std.testing.expectEqual(@as(u32, 0), p1.?.index);
-    try std.testing.expectEqual(@as(u32, 0), p2.?.index);
+    try std.testing.expectEqual(@as(u32, 0), p0.?.index());
+    try std.testing.expectEqual(@as(u32, 0), p1.?.index());
+    try std.testing.expectEqual(@as(u32, 0), p2.?.index());
 }
 
 test "LinearScanAllocator out of registers error" {
@@ -702,8 +831,8 @@ test "LinearScanAllocator register hints" {
     // Verify hint was set
     const retrieved_hint = lsa.getHint(v1);
     try std.testing.expect(retrieved_hint != null);
-    try std.testing.expectEqual(hint_preg.index, retrieved_hint.?.index);
-    try std.testing.expectEqual(hint_preg.class, retrieved_hint.?.class);
+    try std.testing.expectEqual(hint_preg.index(), retrieved_hint.?.index());
+    try std.testing.expectEqual(hint_preg.class(), retrieved_hint.?.class());
 
     // Allocate - v1 should get hint register X5
     var result = try lsa.allocate(&info);
@@ -711,6 +840,6 @@ test "LinearScanAllocator register hints" {
 
     const v1_preg = result.getPhysReg(v1);
     try std.testing.expect(v1_preg != null);
-    try std.testing.expectEqual(@as(u32, 5), v1_preg.?.index);
-    try std.testing.expectEqual(machinst.RegClass.int, v1_preg.?.class);
+    try std.testing.expectEqual(@as(u32, 5), v1_preg.?.index());
+    try std.testing.expectEqual(machinst.RegClass.int, v1_preg.?.class());
 }

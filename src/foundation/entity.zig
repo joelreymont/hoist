@@ -410,7 +410,7 @@ test "EntityRef format" {
     const b42 = Block.new(42);
 
     var buf: [32]u8 = undefined;
-    const result = std.fmt.bufPrint(&buf, "{any}", .{b42}) catch unreachable;
+    const result = std.fmt.bufPrint(&buf, "{f}", .{b42}) catch unreachable;
     try std.testing.expectEqualStrings("block42", result);
 }
 

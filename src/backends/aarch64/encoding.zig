@@ -158,6 +158,9 @@ pub fn encodeLogicalImmediate(value: u64, is_64bit: bool) ?u13 {
     if (value == 0 or (is_64bit and value == std.math.maxInt(u64)) or (!is_64bit and value == std.math.maxInt(u32))) {
         return null; // All zeros or all ones cannot be encoded
     }
+    if (!is_64bit and (value & ~@as(u64, std.math.maxInt(u32))) != 0) {
+        return null;
+    }
 
     const size: u7 = if (is_64bit) 64 else 32;
     var element_size: u7 = size;
@@ -244,17 +247,19 @@ pub fn encodeLogicalImmediate(value: u64, is_64bit: bool) ?u13 {
     // immr = (element_size - rotation) mod element_size
     const immr: u6 = @intCast((element_size - rotation) % element_size);
 
-    // imms encodes both element size and number of ones
-    // Pattern: NOT(size_bits) : (ones - 1)
-    // For element_size=16: imms = 0b110xxx (high 3 bits encode size via leading 1s)
-    // For element_size=8:  imms = 0b1110xx (4 leading 1s when inverted gives size)
+    // imms encodes both element size and number of ones.
+    // For element_size=32: imms = 0b0sssss
+    // For element_size=16: imms = 0b10ssss
+    // For element_size=8:  imms = 0b110sss
+    // For element_size=4:  imms = 0b1110ss
+    // For element_size=2:  imms = 0b11110s
     const size_encoding: u6 = switch (element_size) {
         64 => @intCast(ones - 1),
-        32 => @intCast((0b100000) | (ones - 1)),
-        16 => @intCast((0b110000) | (ones - 1)),
-        8 => @intCast((0b111000) | (ones - 1)),
-        4 => @intCast((0b111100) | (ones - 1)),
-        2 => @intCast((0b111110) | (ones - 1)),
+        32 => @intCast(ones - 1),
+        16 => @intCast((0b100000) | (ones - 1)),
+        8 => @intCast((0b110000) | (ones - 1)),
+        4 => @intCast((0b111000) | (ones - 1)),
+        2 => @intCast((0b111100) | (ones - 1)),
         else => return null,
     };
     const imms: u6 = size_encoding;
@@ -352,6 +357,13 @@ test "encodeLogicalImmediate: invalid values" {
 
     // All ones (32-bit)
     try testing.expectEqual(@as(?u13, null), encodeLogicalImmediate(std.math.maxInt(u32), false));
+}
+
+test "encodeLogicalImmediate: 32-bit patterns" {
+    try testing.expectEqual(@as(?u13, @as(u13, 3)), encodeLogicalImmediate(0xF, false));
+    try testing.expectEqual(@as(?u13, @as(u13, 7)), encodeLogicalImmediate(0xFF, false));
+    try testing.expectEqual(@as(?u13, @as(u13, 0x1007)), encodeLogicalImmediate(0xFF, true));
+    try testing.expectEqual(@as(?u13, null), encodeLogicalImmediate(0x1_0000_0000, false));
 }
 
 test "encodeArithmeticImmediate: without shift" {

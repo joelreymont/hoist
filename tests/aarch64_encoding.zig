@@ -350,7 +350,7 @@ test "encoding: FP load constant (64-bit)" {
     // Just verify instruction starts with correct pattern
     const insn = buffer.data.items;
     try testing.expect(insn.len >= 4);
-    
+
     // Check opcode pattern: opc=01, 011, V=1, 00 in upper bits
     // Binary pattern: 01|011|1|00|...
     // Upper byte should be 0x5C (01011100)
@@ -373,12 +373,12 @@ test "encoding: FP load constant (32-bit)" {
 
     const insn = buffer.data.items;
     try testing.expect(insn.len >= 4);
-    
+
     // Check opcode pattern: opc=00, 011, V=1, 00 in upper bits
     // Binary pattern: 00|011|1|00|...
     // Upper byte should be 0x1C (00011100)
     try testing.expectEqual(@as(u8, 0x1c), insn[3] & 0xFC);
-    
+
     // Check Rt=1 in lower byte
     try testing.expectEqual(@as(u8, 1), insn[0] & 0x1F);
 }

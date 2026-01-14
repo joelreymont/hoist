@@ -167,90 +167,113 @@ pub const Platform = enum {
     }
 };
 
+const aapcs64_int_args = [_]PReg{
+    PReg.new(.int, 0), // X0
+    PReg.new(.int, 1), // X1
+    PReg.new(.int, 2), // X2
+    PReg.new(.int, 3), // X3
+    PReg.new(.int, 4), // X4
+    PReg.new(.int, 5), // X5
+    PReg.new(.int, 6), // X6
+    PReg.new(.int, 7), // X7
+};
+
+const aapcs64_float_args = [_]PReg{
+    PReg.new(.float, 0),
+    PReg.new(.float, 1),
+    PReg.new(.float, 2),
+    PReg.new(.float, 3),
+    PReg.new(.float, 4),
+    PReg.new(.float, 5),
+    PReg.new(.float, 6),
+    PReg.new(.float, 7),
+};
+
+const aapcs64_int_rets = [_]PReg{
+    PReg.new(.int, 0), // X0
+    PReg.new(.int, 1), // X1
+    PReg.new(.int, 2), // X2
+    PReg.new(.int, 3), // X3
+    PReg.new(.int, 4), // X4
+    PReg.new(.int, 5), // X5
+    PReg.new(.int, 6), // X6
+    PReg.new(.int, 7), // X7
+};
+
+const aapcs64_float_rets = [_]PReg{
+    PReg.new(.float, 0),
+    PReg.new(.float, 1),
+    PReg.new(.float, 2),
+    PReg.new(.float, 3),
+    PReg.new(.float, 4),
+    PReg.new(.float, 5),
+    PReg.new(.float, 6),
+    PReg.new(.float, 7),
+};
+
+const aapcs64_callee_saves = [_]PReg{
+    PReg.new(.int, 19),
+    PReg.new(.int, 20),
+    PReg.new(.int, 21),
+    PReg.new(.int, 22),
+    PReg.new(.int, 23),
+    PReg.new(.int, 24),
+    PReg.new(.int, 25),
+    PReg.new(.int, 26),
+    PReg.new(.int, 27),
+    PReg.new(.int, 28),
+    PReg.new(.int, 29), // FP
+    PReg.new(.int, 30), // LR
+    PReg.new(.float, 8),
+    PReg.new(.float, 9),
+    PReg.new(.float, 10),
+    PReg.new(.float, 11),
+    PReg.new(.float, 12),
+    PReg.new(.float, 13),
+    PReg.new(.float, 14),
+    PReg.new(.float, 15),
+};
+
+const fast_int_args = [_]PReg{
+    PReg.new(.int, 0),  PReg.new(.int, 1),  PReg.new(.int, 2),  PReg.new(.int, 3),
+    PReg.new(.int, 4),  PReg.new(.int, 5),  PReg.new(.int, 6),  PReg.new(.int, 7),
+    PReg.new(.int, 8),  PReg.new(.int, 9),  PReg.new(.int, 10), PReg.new(.int, 11),
+    PReg.new(.int, 12), PReg.new(.int, 13), PReg.new(.int, 14), PReg.new(.int, 15),
+    PReg.new(.int, 16), PReg.new(.int, 17),
+};
+
+const fast_float_args = [_]PReg{
+    PReg.new(.float, 0),  PReg.new(.float, 1),  PReg.new(.float, 2),  PReg.new(.float, 3),
+    PReg.new(.float, 4),  PReg.new(.float, 5),  PReg.new(.float, 6),  PReg.new(.float, 7),
+    PReg.new(.float, 8),  PReg.new(.float, 9),  PReg.new(.float, 10), PReg.new(.float, 11),
+    PReg.new(.float, 12), PReg.new(.float, 13), PReg.new(.float, 14), PReg.new(.float, 15),
+};
+
+const preserve_all_saves = [_]PReg{
+    PReg.new(.int, 8),    PReg.new(.int, 9),    PReg.new(.int, 10),   PReg.new(.int, 11),
+    PReg.new(.int, 12),   PReg.new(.int, 13),   PReg.new(.int, 14),   PReg.new(.int, 15),
+    PReg.new(.int, 16),   PReg.new(.int, 17),   PReg.new(.int, 18),   PReg.new(.int, 19),
+    PReg.new(.int, 20),   PReg.new(.int, 21),   PReg.new(.int, 22),   PReg.new(.int, 23),
+    PReg.new(.int, 24),   PReg.new(.int, 25),   PReg.new(.int, 26),   PReg.new(.int, 27),
+    PReg.new(.int, 28),   PReg.new(.int, 29),   PReg.new(.int, 30),   PReg.new(.float, 8),
+    PReg.new(.float, 9),  PReg.new(.float, 10), PReg.new(.float, 11), PReg.new(.float, 12),
+    PReg.new(.float, 13), PReg.new(.float, 14), PReg.new(.float, 15), PReg.new(.float, 16),
+    PReg.new(.float, 17), PReg.new(.float, 18), PReg.new(.float, 19), PReg.new(.float, 20),
+    PReg.new(.float, 21), PReg.new(.float, 22), PReg.new(.float, 23), PReg.new(.float, 24),
+    PReg.new(.float, 25), PReg.new(.float, 26), PReg.new(.float, 27), PReg.new(.float, 28),
+    PReg.new(.float, 29), PReg.new(.float, 30), PReg.new(.float, 31),
+};
+
 /// ARM64 AAPCS ABI machine spec.
 pub fn aapcs64() abi_mod.ABIMachineSpec(u64) {
-    // AAPCS64 argument registers: X0-X7
-    const int_args = [_]PReg{
-        PReg.new(.int, 0), // X0
-        PReg.new(.int, 1), // X1
-        PReg.new(.int, 2), // X2
-        PReg.new(.int, 3), // X3
-        PReg.new(.int, 4), // X4
-        PReg.new(.int, 5), // X5
-        PReg.new(.int, 6), // X6
-        PReg.new(.int, 7), // X7
-    };
-
-    // V0-V7 for float args
-    const float_args = [_]PReg{
-        PReg.new(.float, 0),
-        PReg.new(.float, 1),
-        PReg.new(.float, 2),
-        PReg.new(.float, 3),
-        PReg.new(.float, 4),
-        PReg.new(.float, 5),
-        PReg.new(.float, 6),
-        PReg.new(.float, 7),
-    };
-
-    // Return registers: X0-X7 for integers
-    const int_rets = [_]PReg{
-        PReg.new(.int, 0), // X0
-        PReg.new(.int, 1), // X1
-        PReg.new(.int, 2), // X2
-        PReg.new(.int, 3), // X3
-        PReg.new(.int, 4), // X4
-        PReg.new(.int, 5), // X5
-        PReg.new(.int, 6), // X6
-        PReg.new(.int, 7), // X7
-    };
-
-    // V0-V7 for float returns
-    const float_rets = [_]PReg{
-        PReg.new(.float, 0),
-        PReg.new(.float, 1),
-        PReg.new(.float, 2),
-        PReg.new(.float, 3),
-        PReg.new(.float, 4),
-        PReg.new(.float, 5),
-        PReg.new(.float, 6),
-        PReg.new(.float, 7),
-    };
-
-    // Callee-saves: X19-X28, X29 (FP), X30 (LR), V8-V15
-    // AAPCS64 section 6.1.2: The registers v8-v15 must be preserved by a callee
-    // across subroutine calls; the remaining registers (v0-v7, v16-v31) do not
-    // need to be preserved (or should be preserved by the caller).
-    const callee_saves = [_]PReg{
-        PReg.new(.int, 19),
-        PReg.new(.int, 20),
-        PReg.new(.int, 21),
-        PReg.new(.int, 22),
-        PReg.new(.int, 23),
-        PReg.new(.int, 24),
-        PReg.new(.int, 25),
-        PReg.new(.int, 26),
-        PReg.new(.int, 27),
-        PReg.new(.int, 28),
-        PReg.new(.int, 29), // FP
-        PReg.new(.int, 30), // LR
-        PReg.new(.float, 8),
-        PReg.new(.float, 9),
-        PReg.new(.float, 10),
-        PReg.new(.float, 11),
-        PReg.new(.float, 12),
-        PReg.new(.float, 13),
-        PReg.new(.float, 14),
-        PReg.new(.float, 15),
-    };
-
     return .{
-        .int_arg_regs = &int_args,
-        .float_arg_regs = &float_args,
-        .int_ret_regs = &int_rets,
-        .float_ret_regs = &float_rets,
-        .callee_saves = &callee_saves,
+        .int_arg_regs = &aapcs64_int_args,
+        .float_arg_regs = &aapcs64_float_args,
+        .int_ret_regs = &aapcs64_int_rets,
+        .float_ret_regs = &aapcs64_float_rets,
+        .callee_saves = &aapcs64_callee_saves,
         .stack_align = 16,
+        .align_int_pairs = true,
     };
 }
 
@@ -260,52 +283,14 @@ pub fn aapcs64() abi_mod.ABIMachineSpec(u64) {
 /// - Float args: V0-V15 (vs V0-V7 in standard AAPCS64)
 /// Caller saves all volatile registers.
 pub fn fast() abi_mod.ABIMachineSpec(u64) {
-    // Fast convention int args: X0-X17 (excluding X18 on Darwin)
-    const int_args = [_]PReg{
-        PReg.new(.int, 0),  PReg.new(.int, 1),  PReg.new(.int, 2),  PReg.new(.int, 3),
-        PReg.new(.int, 4),  PReg.new(.int, 5),  PReg.new(.int, 6),  PReg.new(.int, 7),
-        PReg.new(.int, 8),  PReg.new(.int, 9),  PReg.new(.int, 10), PReg.new(.int, 11),
-        PReg.new(.int, 12), PReg.new(.int, 13), PReg.new(.int, 14), PReg.new(.int, 15),
-        PReg.new(.int, 16), PReg.new(.int, 17),
-    };
-
-    // V0-V15 for float args (doubles standard AAPCS64)
-    const float_args = [_]PReg{
-        PReg.new(.float, 0),  PReg.new(.float, 1),  PReg.new(.float, 2),  PReg.new(.float, 3),
-        PReg.new(.float, 4),  PReg.new(.float, 5),  PReg.new(.float, 6),  PReg.new(.float, 7),
-        PReg.new(.float, 8),  PReg.new(.float, 9),  PReg.new(.float, 10), PReg.new(.float, 11),
-        PReg.new(.float, 12), PReg.new(.float, 13), PReg.new(.float, 14), PReg.new(.float, 15),
-    };
-
-    // Return registers same as AAPCS64: X0-X7, V0-V7
-    const int_rets = [_]PReg{
-        PReg.new(.int, 0), PReg.new(.int, 1), PReg.new(.int, 2), PReg.new(.int, 3),
-        PReg.new(.int, 4), PReg.new(.int, 5), PReg.new(.int, 6), PReg.new(.int, 7),
-    };
-
-    const float_rets = [_]PReg{
-        PReg.new(.float, 0), PReg.new(.float, 1), PReg.new(.float, 2), PReg.new(.float, 3),
-        PReg.new(.float, 4), PReg.new(.float, 5), PReg.new(.float, 6), PReg.new(.float, 7),
-    };
-
-    // Callee-saves same as AAPCS64: X19-X30, V8-V15
-    // Note: V8-V15 are callee-save in standard ABI but used as args in fast convention
-    // This is acceptable as fast convention is for internal/optimized calls
-    const callee_saves = [_]PReg{
-        PReg.new(.int, 19),   PReg.new(.int, 20),   PReg.new(.int, 21),   PReg.new(.int, 22),
-        PReg.new(.int, 23),   PReg.new(.int, 24),   PReg.new(.int, 25),   PReg.new(.int, 26),
-        PReg.new(.int, 27),   PReg.new(.int, 28),   PReg.new(.int, 29),   PReg.new(.int, 30),
-        PReg.new(.float, 8),  PReg.new(.float, 9),  PReg.new(.float, 10), PReg.new(.float, 11),
-        PReg.new(.float, 12), PReg.new(.float, 13), PReg.new(.float, 14), PReg.new(.float, 15),
-    };
-
     return .{
-        .int_arg_regs = &int_args,
-        .float_arg_regs = &float_args,
-        .int_ret_regs = &int_rets,
-        .float_ret_regs = &float_rets,
-        .callee_saves = &callee_saves,
+        .int_arg_regs = &fast_int_args,
+        .float_arg_regs = &fast_float_args,
+        .int_ret_regs = &aapcs64_int_rets,
+        .float_ret_regs = &aapcs64_float_rets,
+        .callee_saves = &aapcs64_callee_saves,
         .stack_align = 16,
+        .align_int_pairs = true,
     };
 }
 
@@ -315,58 +300,14 @@ pub fn fast() abi_mod.ABIMachineSpec(u64) {
 /// - Callee-saves: ALL other GPRs (X8-X30) and FPRs (V8-V31)
 /// - Large prologue/epilogue required
 pub fn preserveAll() abi_mod.ABIMachineSpec(u64) {
-    // Argument registers same as AAPCS64
-    const int_args = [_]PReg{
-        PReg.new(.int, 0), PReg.new(.int, 1), PReg.new(.int, 2), PReg.new(.int, 3),
-        PReg.new(.int, 4), PReg.new(.int, 5), PReg.new(.int, 6), PReg.new(.int, 7),
-    };
-
-    const float_args = [_]PReg{
-        PReg.new(.float, 0), PReg.new(.float, 1), PReg.new(.float, 2), PReg.new(.float, 3),
-        PReg.new(.float, 4), PReg.new(.float, 5), PReg.new(.float, 6), PReg.new(.float, 7),
-    };
-
-    // Return registers same as AAPCS64
-    const int_rets = [_]PReg{
-        PReg.new(.int, 0), PReg.new(.int, 1), PReg.new(.int, 2), PReg.new(.int, 3),
-        PReg.new(.int, 4), PReg.new(.int, 5), PReg.new(.int, 6), PReg.new(.int, 7),
-    };
-
-    const float_rets = [_]PReg{
-        PReg.new(.float, 0), PReg.new(.float, 1), PReg.new(.float, 2), PReg.new(.float, 3),
-        PReg.new(.float, 4), PReg.new(.float, 5), PReg.new(.float, 6), PReg.new(.float, 7),
-    };
-
-    // Callee-saves: ALL registers except args and SP (X31)
-    // GPRs: X8-X30 (excluding arg registers X0-X7)
-    // FPRs: V8-V31 (excluding arg registers V0-V7)
-    const callee_saves = [_]PReg{
-        // X8-X18 (caller-saved in standard ABI, but preserved here)
-        PReg.new(.int, 8),    PReg.new(.int, 9),    PReg.new(.int, 10),   PReg.new(.int, 11),
-        PReg.new(.int, 12),   PReg.new(.int, 13),   PReg.new(.int, 14),   PReg.new(.int, 15),
-        PReg.new(.int, 16),   PReg.new(.int, 17),   PReg.new(.int, 18),
-        // X19-X30 (standard callee-saves)
-          PReg.new(.int, 19),
-        PReg.new(.int, 20),   PReg.new(.int, 21),   PReg.new(.int, 22),   PReg.new(.int, 23),
-        PReg.new(.int, 24),   PReg.new(.int, 25),   PReg.new(.int, 26),   PReg.new(.int, 27),
-        PReg.new(.int, 28),   PReg.new(.int, 29),   PReg.new(.int, 30),
-        // V8-V31 (V8-V15 standard callee-save, V16-V31 caller-saved but preserved here)
-          PReg.new(.float, 8),
-        PReg.new(.float, 9),  PReg.new(.float, 10), PReg.new(.float, 11), PReg.new(.float, 12),
-        PReg.new(.float, 13), PReg.new(.float, 14), PReg.new(.float, 15), PReg.new(.float, 16),
-        PReg.new(.float, 17), PReg.new(.float, 18), PReg.new(.float, 19), PReg.new(.float, 20),
-        PReg.new(.float, 21), PReg.new(.float, 22), PReg.new(.float, 23), PReg.new(.float, 24),
-        PReg.new(.float, 25), PReg.new(.float, 26), PReg.new(.float, 27), PReg.new(.float, 28),
-        PReg.new(.float, 29), PReg.new(.float, 30), PReg.new(.float, 31),
-    };
-
     return .{
-        .int_arg_regs = &int_args,
-        .float_arg_regs = &float_args,
-        .int_ret_regs = &int_rets,
-        .float_ret_regs = &float_rets,
-        .callee_saves = &callee_saves,
+        .int_arg_regs = &aapcs64_int_args,
+        .float_arg_regs = &aapcs64_float_args,
+        .int_ret_regs = &aapcs64_int_rets,
+        .float_ret_regs = &aapcs64_float_rets,
+        .callee_saves = &preserve_all_saves,
         .stack_align = 16,
+        .align_int_pairs = true,
     };
 }
 
@@ -490,13 +431,13 @@ pub const VaList = struct {
                     return addr;
                 } else {
                     // No more GP registers, fetch from stack
-                    // Stack arguments are 8-byte aligned per AAPCS64
-                    const alignment: u32 = if (size >= 8) 8 else size;
+                    // Stack arguments are at least 8-byte aligned (16-byte for > 8 bytes)
+                    const alignment: u32 = if (size > 8) 16 else 8;
                     const aligned_stack = (self.stack + alignment - 1) & ~@as(u64, alignment - 1);
                     const addr = aligned_stack;
 
-                    // Advance stack pointer, round up to 8-byte alignment
-                    self.stack = aligned_stack + ((size + 7) & ~@as(u32, 7));
+                    // Advance stack pointer, round up to alignment
+                    self.stack = aligned_stack + ((size + alignment - 1) & ~@as(u32, alignment - 1));
 
                     return addr;
                 }
@@ -721,11 +662,6 @@ pub fn classifyStruct(ty: abi_mod.Type) struct { class: StructClass, elem_ty: ?a
 
     const size = ty.bytes();
 
-    // Structs > 16 bytes are passed by reference
-    if (size > 16) {
-        return .{ .class = .indirect, .elem_ty = null };
-    }
-
     // Check for HFA (Homogeneous Floating-Point Aggregate)
     if (isHFA(fields)) |elem_ty| {
         return .{ .class = .hfa, .elem_ty = elem_ty };
@@ -734,6 +670,11 @@ pub fn classifyStruct(ty: abi_mod.Type) struct { class: StructClass, elem_ty: ?a
     // Check for HVA (Homogeneous Short-Vector Aggregate)
     if (isHVA(fields)) |elem_ty| {
         return .{ .class = .hva, .elem_ty = elem_ty };
+    }
+
+    // Structs > 16 bytes are passed by reference
+    if (size > 16) {
+        return .{ .class = .indirect, .elem_ty = null };
     }
 
     // Non-homogeneous struct <= 16 bytes: passed in general registers
@@ -1635,8 +1576,8 @@ test "Aarch64ABICallee prologue/epilogue" {
     try callee.emitPrologue(&buffer);
     try callee.emitEpilogue(&buffer);
 
-    // Should have: STP FP/LR, MOV FP SP, LDP FP/LR, RET
-    try testing.expect(buffer.data.items.len >= 16);
+    // Should have: STP FP/LR, MOV FP SP, LDP FP/LR
+    try testing.expect(buffer.data.items.len >= 12);
 }
 
 test "Aarch64ABICallee with callee-saves" {
@@ -2161,8 +2102,8 @@ test "large frame 65536 bytes" {
     try testing.expect(buffer.data.items.len > 0);
 }
 
-test "frame boundary at 504 bytes" {
-    // Test frame size exactly at the STP offset limit
+test "frame boundary at 496 bytes" {
+    // Test max aligned frame size below the STP offset limit
     // 504 bytes should use single-instruction path
     const args = [_]abi_mod.Type{.i64};
     const sig = abi_mod.ABISignature.init(&args, &.{.i64}, .aapcs64);
@@ -2171,8 +2112,8 @@ test "frame boundary at 504 bytes" {
     defer callee.deinit();
 
     // 504 - 16 (FP+LR) = 488 bytes of locals
-    callee.setLocalsSize(488);
-    try testing.expectEqual(@as(u32, 504), callee.frame_size);
+    callee.setLocalsSize(480);
+    try testing.expectEqual(@as(u32, 496), callee.frame_size);
     try testing.expectEqual(@as(u32, 0), callee.frame_size % 16);
 
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
@@ -2267,9 +2208,9 @@ test "callee-save register pairing with STP/LDP" {
 
     // With 4 callee-saves in 2 pairs, we expect:
     // Prologue: STP FP/LR, MOV FP, STP X19/X20, STP X21/X22 = 4 instructions = 16 bytes
-    // Epilogue: LDP X19/X20, LDP X21/X22, LDP FP/LR, RET = 4 instructions = 16 bytes
-    // Total = 32 bytes
-    try testing.expectEqual(@as(usize, 32), buffer.data.items.len);
+    // Epilogue: LDP X19/X20, LDP X21/X22, LDP FP/LR = 3 instructions = 12 bytes
+    // Total = 28 bytes
+    try testing.expectEqual(@as(usize, 28), buffer.data.items.len);
 }
 
 test "callee-save odd number uses STR/LDR for last register" {
@@ -2300,9 +2241,9 @@ test "callee-save odd number uses STR/LDR for last register" {
 
     // With 3 callee-saves, we expect:
     // Prologue: STP FP/LR, MOV FP, STP X19/X20, STR X21 = 4 instructions = 16 bytes
-    // Epilogue: LDP X19/X20, LDR X21, LDP FP/LR, RET = 4 instructions = 16 bytes
-    // Total = 32 bytes
-    try testing.expectEqual(@as(usize, 32), buffer.data.items.len);
+    // Epilogue: LDP X19/X20, LDR X21, LDP FP/LR = 3 instructions = 12 bytes
+    // Total = 28 bytes
+    try testing.expectEqual(@as(usize, 28), buffer.data.items.len);
 }
 
 test "callee-save pairing preserves all standard pairs" {
@@ -2340,9 +2281,9 @@ test "callee-save pairing preserves all standard pairs" {
 
     // With 10 callee-saves in 5 pairs, we expect:
     // Prologue: STP FP/LR, MOV FP, 5x STP = 7 instructions = 28 bytes
-    // Epilogue: 5x LDP, LDP FP/LR, RET = 7 instructions = 28 bytes
-    // Total = 56 bytes
-    try testing.expectEqual(@as(usize, 56), buffer.data.items.len);
+    // Epilogue: 5x LDP, LDP FP/LR = 6 instructions = 24 bytes
+    // Total = 52 bytes
+    try testing.expectEqual(@as(usize, 52), buffer.data.items.len);
 }
 
 test "callee-save offset calculation for paired saves" {
@@ -2550,7 +2491,7 @@ test "CallerSavedTracker mark integer registers" {
     var tracker = CallerSavedTracker.init(.linux);
 
     // Mark x0-x7 (argument registers)
-    var i: u5 = 0;
+    var i: u6 = 0;
     while (i <= 7) : (i += 1) {
         tracker.markIntReg(PReg.new(.int, i));
     }
@@ -2582,7 +2523,7 @@ test "CallerSavedTracker excludes callee-saved x19-x30" {
     var tracker = CallerSavedTracker.init(.linux);
 
     // x19-x30 are callee-saved and should not be marked
-    var i: u5 = 19;
+    var i: u6 = 19;
     while (i <= 30) : (i += 1) {
         tracker.markIntReg(PReg.new(.int, i));
     }
@@ -2593,7 +2534,7 @@ test "CallerSavedTracker mark float registers v0-v7" {
     var tracker = CallerSavedTracker.init(.linux);
 
     // Mark v0-v7 (argument/return registers)
-    var i: u5 = 0;
+    var i: u6 = 0;
     while (i <= 7) : (i += 1) {
         tracker.markFloatReg(PReg.new(.float, i));
     }
@@ -2604,7 +2545,7 @@ test "CallerSavedTracker mark float registers v16-v31" {
     var tracker = CallerSavedTracker.init(.linux);
 
     // Mark v16-v31 (temporaries)
-    var i: u5 = 16;
+    var i: u6 = 16;
     while (i <= 31) : (i += 1) {
         tracker.markFloatReg(PReg.new(.float, i));
     }
@@ -2615,7 +2556,7 @@ test "CallerSavedTracker excludes callee-saved v8-v15" {
     var tracker = CallerSavedTracker.init(.linux);
 
     // v8-v15 are callee-saved and should not be marked
-    var i: u5 = 8;
+    var i: u6 = 8;
     while (i <= 15) : (i += 1) {
         tracker.markFloatReg(PReg.new(.float, i));
     }
@@ -2765,7 +2706,7 @@ test "CallerSavedTracker comprehensive register coverage" {
     var tracker = CallerSavedTracker.init(.linux);
 
     // Mark all caller-saved integer registers (x0-x7, x9-x18)
-    var i: u5 = 0;
+    var i: u6 = 0;
     while (i <= 7) : (i += 1) {
         tracker.markIntReg(PReg.new(.int, i));
     }
@@ -3264,7 +3205,7 @@ test "VaList.arg stack alignment for i32" {
     const stack_base = @intFromPtr(&stack_area);
 
     // Store value at unaligned offset
-    const stack_ptr: *i32 = @ptrFromInt(stack_base + 2);
+    const stack_ptr: *align(1) i32 = @ptrFromInt(stack_base + 2);
     stack_ptr.* = 999;
 
     // Start with all GP registers consumed
@@ -3272,9 +3213,9 @@ test "VaList.arg stack alignment for i32" {
 
     const addr = va_list.arg(.i32);
 
-    // Should align to 4-byte boundary
-    try testing.expectEqual(@as(u64, 0), addr % 4);
-    try testing.expectEqual(stack_base + 8, va_list.stack); // Advanced by 8 (rounded up)
+    // Stack args align to 8 bytes
+    try testing.expectEqual(@as(u64, 0), addr % 8);
+    try testing.expectEqual(stack_base + 16, va_list.stack); // Advanced by 8 from aligned address
 }
 
 test "VaList.arg stack alignment for i64" {
@@ -3383,7 +3324,7 @@ pub const VarargsRegisterSaveArea = struct {
 
         // Save X0-X7 in pairs using STP
         var offset = self.gr_save_offset;
-        var i: u5 = 0;
+        var i: u6 = 0;
         while (i < 8) : (i += 2) {
             const reg1 = Reg.fromPReg(PReg.new(.int, i));
             const reg2 = Reg.fromPReg(PReg.new(.int, i + 1));
@@ -3408,7 +3349,7 @@ pub const VarargsRegisterSaveArea = struct {
 
         // Save V0-V7 in pairs using STP (128-bit each)
         var offset = self.vr_save_offset;
-        var i: u5 = 0;
+        var i: u6 = 0;
         while (i < 8) : (i += 2) {
             const reg1 = Reg.fromPReg(PReg.new(.float, i));
             const reg2 = Reg.fromPReg(PReg.new(.float, i + 1));

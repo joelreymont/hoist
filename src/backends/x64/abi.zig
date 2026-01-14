@@ -17,52 +17,48 @@ pub fn systemV() abi_mod.ABIMachineSpec(u64) {
 }
 
 /// Windows x64 ABI machine spec.
+const win_int_args = [_]PReg{
+    PReg.new(.int, 1), // RCX
+    PReg.new(.int, 2), // RDX
+    PReg.new(.int, 8), // R8
+    PReg.new(.int, 9), // R9
+};
+
+const win_float_args = [_]PReg{
+    PReg.new(.float, 0),
+    PReg.new(.float, 1),
+    PReg.new(.float, 2),
+    PReg.new(.float, 3),
+};
+
+const win_int_rets = [_]PReg{
+    PReg.new(.int, 0), // RAX
+};
+
+const win_float_rets = [_]PReg{
+    PReg.new(.float, 0),
+};
+
+const win_callee_saves = [_]PReg{
+    PReg.new(.int, 3), // RBX
+    PReg.new(.int, 5), // RBP
+    PReg.new(.int, 7), // RDI
+    PReg.new(.int, 6), // RSI
+    PReg.new(.int, 12),
+    PReg.new(.int, 13),
+    PReg.new(.int, 14),
+    PReg.new(.int, 15),
+};
+
 pub fn windowsFastcall() abi_mod.ABIMachineSpec(u64) {
-    // Windows fastcall: RCX, RDX, R8, R9 for int args
-    const int_args = [_]PReg{
-        PReg.new(.int, 1), // RCX
-        PReg.new(.int, 2), // RDX
-        PReg.new(.int, 8), // R8
-        PReg.new(.int, 9), // R9
-    };
-
-    // XMM0-XMM3 for float args
-    const float_args = [_]PReg{
-        PReg.new(.float, 0),
-        PReg.new(.float, 1),
-        PReg.new(.float, 2),
-        PReg.new(.float, 3),
-    };
-
-    // RAX for int return
-    const int_rets = [_]PReg{
-        PReg.new(.int, 0), // RAX
-    };
-
-    // XMM0 for float return
-    const float_rets = [_]PReg{
-        PReg.new(.float, 0),
-    };
-
-    // Windows callee-saves: RBX, RBP, RDI, RSI, R12-R15, XMM6-XMM15
-    const callee_saves = [_]PReg{
-        PReg.new(.int, 3), // RBX
-        PReg.new(.int, 5), // RBP
-        PReg.new(.int, 7), // RDI
-        PReg.new(.int, 6), // RSI
-        PReg.new(.int, 12),
-        PReg.new(.int, 13),
-        PReg.new(.int, 14),
-        PReg.new(.int, 15),
-    };
-
     return .{
-        .int_arg_regs = &int_args,
-        .float_arg_regs = &float_args,
-        .int_ret_regs = &int_rets,
-        .float_ret_regs = &float_rets,
-        .callee_saves = &callee_saves,
+        .int_arg_regs = &win_int_args,
+        .float_arg_regs = &win_float_args,
+        .int_ret_regs = &win_int_rets,
+        .float_ret_regs = &win_float_rets,
+        .callee_saves = &win_callee_saves,
         .stack_align = 16,
+        .align_int_pairs = false,
     };
 }
 

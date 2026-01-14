@@ -59,14 +59,14 @@ pub const LivenessInfo = struct {
 
     pub fn init(allocator: std.mem.Allocator) LivenessInfo {
         return .{
-            .ranges = std.ArrayList(LiveRange).init(allocator),
+            .ranges = std.ArrayList(LiveRange){},
             .vreg_to_range = std.AutoHashMap(u32, u32).init(allocator),
             .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *LivenessInfo) void {
-        self.ranges.deinit();
+        self.ranges.deinit(self.allocator);
         self.vreg_to_range.deinit();
     }
 
@@ -74,13 +74,13 @@ pub const LivenessInfo = struct {
     pub fn addRange(self: *LivenessInfo, range: LiveRange) !void {
         const range_idx: u32 = @intCast(self.ranges.items.len);
         try self.ranges.append(self.allocator, range);
-        try self.vreg_to_range.put(range.vreg.index, range_idx);
+        try self.vreg_to_range.put(range.vreg.index(), range_idx);
     }
 
     /// Get the live range for a given virtual register
     /// Returns null if the vreg has no recorded live range
     pub fn getRange(self: *LivenessInfo, vreg: machinst.VReg) ?*const LiveRange {
-        const range_idx = self.vreg_to_range.get(vreg.index) orelse return null;
+        const range_idx = self.vreg_to_range.get(vreg.index()) orelse return null;
         return &self.ranges.items[range_idx];
     }
 
@@ -144,12 +144,12 @@ pub fn computeLiveness(
         defer allocator.free(defs);
 
         for (defs) |vreg| {
-            const entry = try vreg_info.getOrPut(vreg.index);
+            const entry = try vreg_info.getOrPut(vreg.index());
             if (!entry.found_existing) {
                 entry.value_ptr.* = .{
                     .first_def = inst_idx,
                     .last_use = inst_idx,
-                    .reg_class = vreg.class,
+                    .reg_class = vreg.class(),
                 };
             } else {
                 // Multiple definitions - this is unusual but possible with phi nodes
@@ -165,14 +165,14 @@ pub fn computeLiveness(
         defer allocator.free(uses);
 
         for (uses) |vreg| {
-            const entry = try vreg_info.getOrPut(vreg.index);
+            const entry = try vreg_info.getOrPut(vreg.index());
             if (!entry.found_existing) {
                 // Use before def - this can happen with function parameters
                 // Treat the use as both the start and current end
                 entry.value_ptr.* = .{
                     .first_def = null, // No definition yet
                     .last_use = inst_idx,
-                    .reg_class = vreg.class,
+                    .reg_class = vreg.class(),
                 };
             } else {
                 // Update last use
@@ -261,7 +261,7 @@ pub fn computeLivenessWithCFG(
         var block_idx: i32 = @intCast(blocks.len - 1);
         while (block_idx >= 0) : (block_idx -= 1) {
             const block_id: u32 = @intCast(block_idx);
-            const block = &blocks[block_idx];
+            const block = &blocks[@intCast(block_idx)];
 
             // Compute live_out[B] = ∪(live_in[normal_successors ∪ exception_successors])
             var new_live_out = std.AutoHashMap(u32, void).init(allocator);
@@ -334,14 +334,14 @@ pub fn computeLivenessWithCFG(
                 const defs = try inst.getDefs(allocator);
                 defer allocator.free(defs);
                 for (defs) |def| {
-                    _ = new_live_in.remove(def.index);
+                    _ = new_live_in.remove(def.index());
                 }
 
                 // Add uses to live_in
                 const uses = try inst.getUses(allocator);
                 defer allocator.free(uses);
                 for (uses) |use| {
-                    try new_live_in.put(use.index, {});
+                    try new_live_in.put(use.index(), {});
                 }
             }
 
@@ -369,67 +369,87 @@ pub fn computeLivenessWithCFG(
     }
 
     // Convert liveness info to live ranges
-    // For each vreg, find the first block where it's live_in and last block where it's live_out
     var vreg_ranges = std.AutoHashMap(u32, struct { start: u32, end: u32, class: machinst.RegClass }).init(allocator);
     defer vreg_ranges.deinit();
+
+    var block_starts = try allocator.alloc(u32, blocks.len);
+    defer allocator.free(block_starts);
+
+    var inst_cursor: u32 = 0;
+    for (0..blocks.len) |block_idx| {
+        block_starts[block_idx] = inst_cursor;
+        if (block_insns.get(@intCast(block_idx))) |insns| {
+            inst_cursor += @intCast(insns.len);
+        }
+    }
 
     for (0..blocks.len) |block_idx| {
         const block_id: u32 = @intCast(block_idx);
         const insns = block_insns.get(block_id) orelse continue;
-
         if (insns.len == 0) continue;
 
-        // Get starting instruction index for this block
-        var start_inst: u32 = 0;
-        for (0..block_idx) |prev_idx| {
-            if (block_insns.get(@intCast(prev_idx))) |prev_insns| {
-                start_inst += @intCast(prev_insns.len);
+        const start_inst = block_starts[block_idx];
+
+        for (insns, 0..) |inst, local_idx| {
+            const inst_idx: u32 = start_inst + @as(u32, @intCast(local_idx));
+
+            const uses = try inst.getUses(allocator);
+            defer allocator.free(uses);
+            for (uses) |use| {
+                const entry = try vreg_ranges.getOrPut(use.index());
+                if (!entry.found_existing) {
+                    entry.value_ptr.* = .{
+                        .start = inst_idx,
+                        .end = inst_idx,
+                        .class = use.class(),
+                    };
+                } else {
+                    entry.value_ptr.start = @min(entry.value_ptr.start, inst_idx);
+                    entry.value_ptr.end = @max(entry.value_ptr.end, inst_idx);
+                }
+            }
+
+            const defs = try inst.getDefs(allocator);
+            defer allocator.free(defs);
+            for (defs) |def| {
+                const entry = try vreg_ranges.getOrPut(def.index());
+                if (!entry.found_existing) {
+                    entry.value_ptr.* = .{
+                        .start = inst_idx,
+                        .end = inst_idx,
+                        .class = def.class(),
+                    };
+                } else {
+                    entry.value_ptr.start = @min(entry.value_ptr.start, inst_idx);
+                    entry.value_ptr.end = @max(entry.value_ptr.end, inst_idx);
+                }
             }
         }
+    }
+
+    for (0..blocks.len) |block_idx| {
+        const block_id: u32 = @intCast(block_idx);
+        const insns = block_insns.get(block_id) orelse continue;
+        if (insns.len == 0) continue;
+
+        const start_inst = block_starts[block_idx];
+        const end_inst = start_inst + @as(u32, @intCast(insns.len)) - 1;
 
         if (block_live_in.get(block_id)) |live_in| {
             var vreg_iter = live_in.keyIterator();
             while (vreg_iter.next()) |vreg_id| {
-                const entry = try vreg_ranges.getOrPut(vreg_id.*);
-                if (!entry.found_existing) {
-                    // Infer reg_class from first use/def
-                    var reg_class = machinst.RegClass.int;
-                    var found_class = false;
+                const entry = vreg_ranges.getPtr(vreg_id.*) orelse continue;
+                entry.start = @min(entry.start, start_inst);
+                entry.end = @max(entry.end, end_inst);
+            }
+        }
 
-                    for (insns) |inst| {
-                        const uses = try inst.getUses(allocator);
-                        defer allocator.free(uses);
-                        for (uses) |use| {
-                            if (use.index == vreg_id.*) {
-                                reg_class = use.class;
-                                found_class = true;
-                                break;
-                            }
-                        }
-                        if (found_class) break;
-
-                        const defs = try inst.getDefs(allocator);
-                        defer allocator.free(defs);
-                        for (defs) |def| {
-                            if (def.index == vreg_id.*) {
-                                reg_class = def.class;
-                                found_class = true;
-                                break;
-                            }
-                        }
-                        if (found_class) break;
-                    }
-
-                    entry.value_ptr.* = .{
-                        .start = start_inst,
-                        .end = start_inst + @as(u32, @intCast(insns.len)) - 1,
-                        .class = reg_class,
-                    };
-                } else {
-                    // Extend existing range
-                    entry.value_ptr.start = @min(entry.value_ptr.start, start_inst);
-                    entry.value_ptr.end = @max(entry.value_ptr.end, start_inst + @as(u32, @intCast(insns.len)) - 1);
-                }
+        if (block_live_out.get(block_id)) |live_out| {
+            var vreg_iter = live_out.keyIterator();
+            while (vreg_iter.next()) |vreg_id| {
+                const entry = vreg_ranges.getPtr(vreg_id.*) orelse continue;
+                entry.start = @min(entry.start, start_inst);
+                entry.end = @max(entry.end, end_inst);
             }
         }
     }

@@ -7,7 +7,7 @@ const std = @import("std");
 const testing = std.testing;
 const MockABICallee = @import("mock_abi.zig").MockABICallee;
 
-test "frame layout: empty frame has zero size" {
+test "frame layout: empty frame has fp/lr size" {
     var mock = MockABICallee.init(testing.allocator);
     defer mock.deinit();
 
@@ -76,12 +76,12 @@ test "frame layout: large frame forces frame pointer" {
     mock.setLocalsSize(5000);
     try testing.expect(mock.uses_frame_pointer);
 
-    // Exactly 4KB boundary
-    mock.setLocalsSize(4096);
+    // Exactly 4KB boundary (frame includes FP+LR)
+    mock.setLocalsSize(4080);
     try testing.expect(!mock.uses_frame_pointer);
 
     // Just over 4KB
-    mock.setLocalsSize(4097);
+    mock.setLocalsSize(4081);
     try testing.expect(mock.uses_frame_pointer);
 }
 

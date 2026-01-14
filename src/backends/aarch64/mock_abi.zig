@@ -38,7 +38,7 @@ pub const MockABICallee = struct {
     const Self = @This();
 
     pub fn init(allocator: Allocator) Self {
-        return .{
+        var self = Self{
             .allocator = allocator,
             .num_int_args = 0,
             .num_float_args = 0,
@@ -51,6 +51,8 @@ pub const MockABICallee = struct {
             .uses_frame_pointer = false,
             .has_dynamic_alloc = false,
         };
+        self.computeFrame();
+        return self;
     }
 
     pub fn deinit(self: *Self) void {
@@ -95,11 +97,11 @@ pub const MockABICallee = struct {
     /// Update argument classification (register vs stack).
     fn updateArgClassification(self: *Self) void {
         // AAPCS64: X0-X7 (8 int regs), V0-V7 (8 float regs)
-        const max_int_regs = 8;
-        const max_float_regs = 8;
+        const max_int_regs: u32 = 8;
+        const max_float_regs: u32 = 8;
 
-        const int_in_regs = @min(self.num_int_args, max_int_regs);
-        const float_in_regs = @min(self.num_float_args, max_float_regs);
+        const int_in_regs: u32 = @min(self.num_int_args, max_int_regs);
+        const float_in_regs: u32 = @min(self.num_float_args, max_float_regs);
 
         self.register_args = int_in_regs + float_in_regs;
         self.stack_args = (self.num_int_args -| int_in_regs) + (self.num_float_args -| float_in_regs);
@@ -121,9 +123,7 @@ pub const MockABICallee = struct {
         self.frame_size = alignTo16(total);
 
         // Large frames (>4KB) require FP
-        if (self.frame_size > 4096) {
-            self.uses_frame_pointer = true;
-        }
+        self.uses_frame_pointer = self.has_dynamic_alloc or self.frame_size > 4096;
     }
 
     /// Get offset of local variable area.
@@ -175,7 +175,7 @@ test "MockABICallee: basic initialization" {
 
     try testing.expectEqual(@as(u32, 0), mock.num_int_args);
     try testing.expectEqual(@as(u32, 0), mock.num_float_args);
-    try testing.expectEqual(@as(u32, 0), mock.frame_size);
+    try testing.expectEqual(@as(u32, 16), mock.frame_size);
     try testing.expectEqual(@as(u32, 0), mock.register_args);
     try testing.expectEqual(@as(u32, 0), mock.stack_args);
     try testing.expect(!mock.uses_frame_pointer);

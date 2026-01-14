@@ -235,7 +235,7 @@ test "PassManager: statistics collection" {
 
     // Should have stats for all passes
     const stats = pm.getStats();
-    try testing.expectEqual(@as(usize, 10), stats.len);
+    try testing.expectEqual(@as(usize, 11), stats.len);
     try testing.expectEqualStrings("SCCP", stats[0].name);
     try testing.expectEqualStrings("SimplifyBranch", stats[1].name);
     try testing.expectEqualStrings("UCE", stats[2].name);
@@ -244,8 +244,9 @@ test "PassManager: statistics collection" {
     try testing.expectEqualStrings("CopyProp", stats[5].name);
     try testing.expectEqualStrings("Strength", stats[6].name);
     try testing.expectEqualStrings("LICM", stats[7].name);
-    try testing.expectEqualStrings("Peephole", stats[8].name);
-    try testing.expectEqualStrings("DCE", stats[9].name);
+    try testing.expectEqualStrings("Spectre", stats[8].name);
+    try testing.expectEqualStrings("Peephole", stats[9].name);
+    try testing.expectEqualStrings("DCE", stats[10].name);
 }
 
 test "PassManager: clear statistics" {

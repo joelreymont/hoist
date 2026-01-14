@@ -368,7 +368,8 @@ test "isValidArithImm: valid 12-bit immediates" {
 }
 
 test "isValidArithImm: invalid immediates" {
-    try testing.expect(!isValidArithImm(0x10000)); // too large
+    try testing.expect(!isValidArithImm(0x1000000)); // too large
+    try testing.expect(!isValidArithImm(0x1001)); // not aligned for shift
     try testing.expect(!isValidArithImm(0xABCDEF)); // doesn't fit
 }
 

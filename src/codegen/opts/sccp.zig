@@ -38,7 +38,6 @@ const InstructionData = ir.InstructionData;
 const instruction_data = @import("../../ir/instruction_data.zig");
 const BranchData = instruction_data.BranchData;
 const ValueData = @import("../../ir/dfg.zig").ValueData;
-const ValueList = @import("../../ir/value_list.zig").ValueList;
 const condcodes = @import("../../ir/condcodes.zig");
 const IntCC = condcodes.IntCC;
 const FloatCC = condcodes.FloatCC;
@@ -120,6 +119,11 @@ pub const SCCP = struct {
     /// Run SCCP on the function.
     /// Returns true if any constants were propagated.
     pub fn run(self: *SCCP, func: *Function) !bool {
+        self.lattice.clearRetainingCapacity();
+        self.executable_blocks.clearRetainingCapacity();
+        self.ssa_worklist.clearRetainingCapacity();
+        self.cfg_worklist.clearRetainingCapacity();
+
         // Initialize: entry block is executable
         const entry = func.layout.entryBlock() orelse return false;
         try self.cfg_worklist.append(self.allocator, entry);
@@ -139,10 +143,6 @@ pub const SCCP = struct {
 
         // Replace constants and mark unreachable code
         const changed = try self.rewriteFunction(func);
-
-        // Clear for next run
-        self.lattice.clearRetainingCapacity();
-        self.executable_blocks.clearRetainingCapacity();
 
         return changed;
     }
@@ -342,32 +342,22 @@ pub const SCCP = struct {
     }
 
     /// Check if an instruction uses a specific value as an operand.
-    fn instUsesValue(func: *const Function, inst_data: InstructionData, value: Value) bool {
-        return switch (inst_data) {
-            .unary => |d| std.meta.eql(d.arg, value),
-            .binary => |d| std.meta.eql(d.args[0], value) or std.meta.eql(d.args[1], value),
-            .int_compare => |d| std.meta.eql(d.args[0], value) or std.meta.eql(d.args[1], value),
-            .float_compare => |d| std.meta.eql(d.args[0], value) or std.meta.eql(d.args[1], value),
-            .branch => |d| std.meta.eql(d.condition, value),
-            .load => |d| std.meta.eql(d.arg, value),
-            .store => |d| std.meta.eql(d.args[0], value) or std.meta.eql(d.args[1], value),
-            .atomic_load => |d| std.meta.eql(d.addr, value),
-            .atomic_store => |d| std.meta.eql(d.addr, value) or std.meta.eql(d.src, value),
-            .atomic_rmw => |d| std.meta.eql(d.addr, value) or std.meta.eql(d.src, value),
-            .atomic_cas => |d| std.meta.eql(d.addr, value) or std.meta.eql(d.expected, value) or std.meta.eql(d.replacement, value),
-            .call => |d| valueListContains(func, d.args, value),
-            .call_indirect => |d| valueListContains(func, d.args, value),
-            else => false,
-        };
-    }
+    fn instUsesValue(func: *Function, inst_data: InstructionData, value: Value) bool {
+        var found = false;
+        const Ctx = struct {
+            value: Value,
+            found: *bool,
 
-    /// Check if a ValueList contains a specific value.
-    fn valueListContains(func: *const Function, list: ValueList, value: Value) bool {
-        const values = func.dfg.value_lists.asSlice(list);
-        for (values) |v| {
-            if (std.meta.eql(v, value)) return true;
-        }
-        return false;
+            pub fn visit(ctx: *@This(), val: *const Value) void {
+                if (!ctx.found.* and std.meta.eql(val.*, ctx.value)) {
+                    ctx.found.* = true;
+                }
+            }
+        };
+        var ctx = Ctx{ .value = value, .found = &found };
+        var inst = inst_data;
+        inst.forEachValue(&func.dfg.value_lists, &ctx, Ctx.visit);
+        return found;
     }
 
     /// Rewrite function with discovered constants.

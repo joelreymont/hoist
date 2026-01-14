@@ -42,7 +42,7 @@ test "lower simple iconst + return" {
     } };
     const v0_inst = try func.dfg.makeInst(iconst_data);
     try func.layout.appendInst(v0_inst, block0);
-    const v0 = func.dfg.firstResult(v0_inst).?;
+    const v0 = try func.dfg.appendInstResult(v0_inst, Type.I64);
 
     // return v0
     const return_data = InstructionData{ .unary = .{
@@ -97,7 +97,7 @@ test "lower iadd + return" {
     } };
     const v2_inst = try func.dfg.makeInst(iadd_data);
     try func.layout.appendInst(v2_inst, block0);
-    const v2 = func.dfg.firstResult(v2_inst).?;
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I64);
 
     // return v2
     const return_data = InstructionData{ .unary = .{

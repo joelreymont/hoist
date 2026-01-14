@@ -1037,6 +1037,21 @@ pub const Aarch64ISA = struct {
                 csel.src2 = replaceReg(csel.src2, result);
                 csel.dst = replaceWritableReg(csel.dst, result);
             },
+            .csinc => |*csinc| {
+                csinc.src1 = replaceReg(csinc.src1, result);
+                csinc.src2 = replaceReg(csinc.src2, result);
+                csinc.dst = replaceWritableReg(csinc.dst, result);
+            },
+            .csinv => |*csinv| {
+                csinv.src1 = replaceReg(csinv.src1, result);
+                csinv.src2 = replaceReg(csinv.src2, result);
+                csinv.dst = replaceWritableReg(csinv.dst, result);
+            },
+            .csneg => |*csneg| {
+                csneg.src1 = replaceReg(csneg.src1, result);
+                csneg.src2 = replaceReg(csneg.src2, result);
+                csneg.dst = replaceWritableReg(csneg.dst, result);
+            },
             .movz => |*movz| {
                 movz.dst = replaceWritableReg(movz.dst, result);
             },
@@ -1286,6 +1301,10 @@ pub const Aarch64ISA = struct {
             .neg => |*neg| {
                 neg.src = replaceReg(neg.src, result);
                 neg.dst = replaceWritableReg(neg.dst, result);
+            },
+            .ngc => |*ngc| {
+                ngc.src = replaceReg(ngc.src, result);
+                ngc.dst = replaceWritableReg(ngc.dst, result);
             },
             .uxtw => |*uxtw| {
                 uxtw.src = replaceReg(uxtw.src, result);

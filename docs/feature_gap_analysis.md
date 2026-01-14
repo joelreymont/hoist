@@ -23,6 +23,10 @@ Hoist has implemented the core compiler infrastructure necessary for production 
 - ✅ Integration with code generation pipeline
 - ✅ Frame size calculation with 16-byte alignment
 
+### Optimization Passes
+- ✅ SCCP, DCE, GVN, InstCombine
+- ✅ Copy propagation, strength reduction, peephole
+
 ### AArch64 Backend
 - ✅ ISLE (Instruction Selection Lowering) infrastructure
 - ✅ Pattern matching for IR → machine instruction lowering
@@ -32,6 +36,7 @@ Hoist has implemented the core compiler infrastructure necessary for production 
 - ✅ Floating-point operations (basic arithmetic, comparisons)
 - ✅ Vector operations (basic SIMD)
 - ✅ Load/store with various addressing modes
+- ✅ Atomic instructions (LDAXR/STLXR, LSE ops, CAS) and barriers (DMB/DSB/ISB)
 - ✅ Conditional execution (CSEL, CSINC, etc.)
 - ✅ Branch instructions (B, BL, CBZ, CBNZ, TBZ, TBNZ)
 - ✅ Arithmetic with shifts and extensions
@@ -57,12 +62,13 @@ Hoist has implemented the core compiler infrastructure necessary for production 
 - ✅ FMOV immediate for encodable values
 - ✅ Constant pool for non-immediate values
 - ✅ PC-relative literal loads
+- ✅ Special values (NaN, Inf, signed zeros)
 
 ### Function Calls
 - ✅ Direct calls (BL with relocation)
 - ✅ Indirect calls (BLR through register)
 - ✅ Argument marshaling (registers + stack)
-- ✅ Return value handling
+- ✅ Basic return value handling (single X0)
 - ✅ Signature validation infrastructure (optional)
 
 ### Testing
@@ -71,6 +77,8 @@ Hoist has implemented the core compiler infrastructure necessary for production 
 - ✅ ABI tests (argument passing, returns)
 - ✅ Encoding tests
 - ✅ Lowering tests
+- ✅ TLS tests
+- ✅ Tail call tests
 
 ## ⚠️ Partially Implemented
 
@@ -84,11 +92,16 @@ Hoist has implemented the core compiler infrastructure necessary for production 
 - ⚠️ **Signature validation** - Infrastructure in place, requires func_ref registration
 - ⚠️ **GOT-based calls** - Direct BL only, no ADRP+LDR+BLR for PIC
 - ⚠️ **Tail calls** - return_call opcode exists, marshaling not implemented
+- ⚠️ **FP/multi-register returns** - only single X0 return is wired
 
 ### Struct Handling
 - ⚠️ **Struct arguments** - Classification done, alignment edge cases remain
 - ⚠️ **Struct returns** - sret detection exists, marshaling incomplete
 - ⚠️ **Multi-return values** - IR supports multiple returns, codegen incomplete
+
+### Varargs
+- ⚠️ **VaList/save-area helpers** - implemented in `src/backends/aarch64/abi.zig`
+- ⚠️ **IR/callsite integration** - no variadic signature flag wired into lowering
 
 ### CCMP (Conditional Compare)
 - ⚠️ **CCMP patterns** - Instructions exist, ISLE patterns not implemented
@@ -98,7 +111,6 @@ Hoist has implemented the core compiler infrastructure necessary for production 
 ## ❌ Not Implemented
 
 ### Advanced Optimizations
-- ❌ **Peephole optimization** - No post-lowering optimization pass
 - ❌ **Load/store combining** - No fusion of adjacent memory ops
 - ❌ **Instruction selection improvements** - No cost model, greedy matching only
 - ❌ **Vector shuffle optimization** - Generic shuffle, no optimal sequences
@@ -110,15 +122,11 @@ Hoist has implemented the core compiler infrastructure necessary for production 
 
 ### Advanced Features
 - ❌ **CPU feature detection** - No runtime detection, static target only
-- ❌ **Varargs** - No va_list support
-- ❌ **Special FP values** - NaN/Inf handling incomplete
 - ❌ **Dot product patterns** - SIMD dot product not optimized
 
 ### Testing & Validation
 - ❌ **ISLE rule coverage** - No systematic coverage testing
 - ❌ **Comprehensive test suite** - Missing edge cases, stress tests
-- ❌ **TLS comprehensive tests** - Models implemented, integration tests missing
-- ❌ **Tail call tests** - No end-to-end tail call tests
 
 ## Priority Classification
 
@@ -128,7 +136,6 @@ Hoist has implemented the core compiler infrastructure necessary for production 
 ### P1 - Important for Performance
 - Register coalescing (reduces register pressure)
 - Rematerialization (reduces spills)
-- Peephole optimization (cleanup after lowering)
 - Load/store combining (memory bandwidth)
 
 ### P2 - Nice to Have

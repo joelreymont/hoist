@@ -25,7 +25,7 @@ const IntCC = condcodes.IntCC;
 const FloatCC = condcodes.FloatCC;
 const MemFlags = memflags.MemFlags;
 const ValueList = value_list.ValueList;
-const BlockCall = block_call.BlockCall;
+const ValueListPool = value_list.ValueListPool;
 const AtomicOrdering = atomics.AtomicOrdering;
 const AtomicRmwOp = atomics.AtomicRmwOp;
 const TrapCode = trapcode.TrapCode;
@@ -67,6 +67,271 @@ pub const InstructionData = union(enum) {
         return switch (self) {
             inline else => |data| data.opcode,
         };
+    }
+
+    pub fn forEachValueMut(
+        self: *InstructionData,
+        pool: *ValueListPool,
+        ctx: anytype,
+        func: anytype,
+    ) @typeInfo(@TypeOf(func)).@"fn".return_type.? {
+        return forEachValueImpl(self, pool, ctx, func);
+    }
+
+    pub fn forEachValue(
+        self: *const InstructionData,
+        pool: *const ValueListPool,
+        ctx: anytype,
+        func: anytype,
+    ) @typeInfo(@TypeOf(func)).@"fn".return_type.? {
+        return forEachValueImpl(self, pool, ctx, func);
+    }
+
+    fn listSlice(
+        pool: anytype,
+        list: ValueList,
+    ) if (@typeInfo(@TypeOf(pool)).pointer.is_const) []const Value else []Value {
+        if (comptime @typeInfo(@TypeOf(pool)).pointer.is_const) {
+            return pool.asSlice(list);
+        }
+        return pool.asMutSlice(list);
+    }
+
+    fn forEachValueImpl(
+        self: anytype,
+        pool: anytype,
+        ctx: anytype,
+        func: anytype,
+    ) @typeInfo(@TypeOf(func)).@"fn".return_type.? {
+        const func_info = @typeInfo(@TypeOf(func)).@"fn";
+        const ret_ty = func_info.return_type orelse void;
+        const ret_info = @typeInfo(ret_ty);
+        const ret_is_void = ret_info == .void;
+        const ret_is_error_void = ret_info == .error_union and ret_info.error_union.payload == void;
+        if (comptime !ret_is_void and !ret_is_error_void) {
+            @compileError("forEachValue callback must return void or !void");
+        }
+        const is_error = comptime ret_info == .error_union;
+
+        switch (self.*) {
+            .unary => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.arg);
+                } else {
+                    func(ctx, &data.arg);
+                }
+            },
+            .unary_with_trap => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.arg);
+                } else {
+                    func(ctx, &data.arg);
+                }
+            },
+            .extract_lane => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.arg);
+                } else {
+                    func(ctx, &data.arg);
+                }
+            },
+            .ternary => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.args[0]);
+                    try func(ctx, &data.args[1]);
+                    try func(ctx, &data.args[2]);
+                } else {
+                    func(ctx, &data.args[0]);
+                    func(ctx, &data.args[1]);
+                    func(ctx, &data.args[2]);
+                }
+            },
+            .ternary_imm8 => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.args[0]);
+                    try func(ctx, &data.args[1]);
+                } else {
+                    func(ctx, &data.args[0]);
+                    func(ctx, &data.args[1]);
+                }
+            },
+            .shuffle => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.args[0]);
+                    try func(ctx, &data.args[1]);
+                } else {
+                    func(ctx, &data.args[0]);
+                    func(ctx, &data.args[1]);
+                }
+            },
+            .binary => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.args[0]);
+                    try func(ctx, &data.args[1]);
+                } else {
+                    func(ctx, &data.args[0]);
+                    func(ctx, &data.args[1]);
+                }
+            },
+            .binary_imm64 => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.arg);
+                } else {
+                    func(ctx, &data.arg);
+                }
+            },
+            .int_compare => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.args[0]);
+                    try func(ctx, &data.args[1]);
+                } else {
+                    func(ctx, &data.args[0]);
+                    func(ctx, &data.args[1]);
+                }
+            },
+            .int_compare_imm => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.arg);
+                } else {
+                    func(ctx, &data.arg);
+                }
+            },
+            .float_compare => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.args[0]);
+                    try func(ctx, &data.args[1]);
+                } else {
+                    func(ctx, &data.args[0]);
+                    func(ctx, &data.args[1]);
+                }
+            },
+            .branch => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.condition);
+                } else {
+                    func(ctx, &data.condition);
+                }
+            },
+            .branch_table => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.arg);
+                } else {
+                    func(ctx, &data.arg);
+                }
+            },
+            .branch_z => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.condition);
+                } else {
+                    func(ctx, &data.condition);
+                }
+            },
+            .call => |*data| {
+                const slice = listSlice(pool, data.args);
+                for (slice) |*val| {
+                    if (comptime is_error) {
+                        try func(ctx, val);
+                    } else {
+                        func(ctx, val);
+                    }
+                }
+            },
+            .call_indirect => |*data| {
+                const slice = listSlice(pool, data.args);
+                for (slice) |*val| {
+                    if (comptime is_error) {
+                        try func(ctx, val);
+                    } else {
+                        func(ctx, val);
+                    }
+                }
+            },
+            .try_call => |*data| {
+                const slice = listSlice(pool, data.args);
+                for (slice) |*val| {
+                    if (comptime is_error) {
+                        try func(ctx, val);
+                    } else {
+                        func(ctx, val);
+                    }
+                }
+            },
+            .try_call_indirect => |*data| {
+                const slice = listSlice(pool, data.args);
+                for (slice) |*val| {
+                    if (comptime is_error) {
+                        try func(ctx, val);
+                    } else {
+                        func(ctx, val);
+                    }
+                }
+            },
+            .load => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.arg);
+                } else {
+                    func(ctx, &data.arg);
+                }
+            },
+            .store => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.args[0]);
+                    try func(ctx, &data.args[1]);
+                } else {
+                    func(ctx, &data.args[0]);
+                    func(ctx, &data.args[1]);
+                }
+            },
+            .atomic_load => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.addr);
+                } else {
+                    func(ctx, &data.addr);
+                }
+            },
+            .atomic_store => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.addr);
+                    try func(ctx, &data.src);
+                } else {
+                    func(ctx, &data.addr);
+                    func(ctx, &data.src);
+                }
+            },
+            .atomic_rmw => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.addr);
+                    try func(ctx, &data.src);
+                } else {
+                    func(ctx, &data.addr);
+                    func(ctx, &data.src);
+                }
+            },
+            .atomic_cas => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.addr);
+                    try func(ctx, &data.expected);
+                    try func(ctx, &data.replacement);
+                } else {
+                    func(ctx, &data.addr);
+                    func(ctx, &data.expected);
+                    func(ctx, &data.replacement);
+                }
+            },
+            .stack_store => |*data| {
+                if (comptime is_error) {
+                    try func(ctx, &data.arg);
+                } else {
+                    func(ctx, &data.arg);
+                }
+            },
+            .nullary,
+            .unary_imm,
+            .jump,
+            .fence,
+            .stack_load,
+            => {},
+        }
     }
 };
 

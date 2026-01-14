@@ -49,8 +49,7 @@ pub const FunctionBuilder = struct {
     }
 
     pub fn createBlock(self: *Self) !Block {
-        const block = Block.new(self.func.layout.blocks.elems.items.len);
-        return block;
+        return try self.func.dfg.addBlock();
     }
 
     pub fn switchToBlock(self: *Self, block: Block) void {
@@ -463,7 +462,7 @@ test "FunctionBuilder iconst and iadd" {
     _ = try builder.iadd(Type.I32, v1, v2);
     try builder.ret();
 
-    try testing.expectEqual(@as(usize, 3), func.dfg.insts.elems.items.len);
+    try testing.expectEqual(@as(usize, 4), func.dfg.insts.elems.items.len);
     try testing.expectEqual(@as(usize, 4), func.layout.insts.elems.items.len);
 
     // Verify iconst immediate values are stored correctly

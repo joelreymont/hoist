@@ -15,9 +15,7 @@ pub const Constant = union(enum) {
     /// Boolean constant.
     bool: bool,
 
-    pub fn format(self: Constant, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(self: Constant, writer: anytype) !void {
         switch (self) {
             .int => |val| try writer.print("{}", .{val}),
             .float => |val| try writer.print("{d}", .{val}),

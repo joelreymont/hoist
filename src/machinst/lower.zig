@@ -185,29 +185,30 @@ pub fn LowerCtx(comptime MachInst: type) type {
             }
 
             // Scan all instruction operands to count uses
+            const Ctx = struct {
+                uses: *std.AutoHashMap(Value, ValueUseState),
+
+                pub fn visit(ctx: *@This(), val: *const Value) !void {
+                    const entry = try ctx.uses.getOrPut(val.*);
+                    if (!entry.found_existing) {
+                        entry.value_ptr.* = .once;
+                        return;
+                    }
+                    entry.value_ptr.* = switch (entry.value_ptr.*) {
+                        .unused => .once,
+                        .once => .multiple,
+                        .multiple => .multiple,
+                    };
+                }
+            };
+            var ctx = Ctx{ .uses = &self.value_uses };
+
             block_iter = self.func.layout.blockIter();
             while (block_iter.next()) |block| {
                 var inst_iter = self.func.layout.blockInsts(block);
                 while (inst_iter.next()) |inst| {
-                    const inst_data = self.func.dfg.insts.get(inst).?;
-
-                    // TODO: Implement InstructionData.collectOperands
-                    _ = inst_data;
-                    const operands: [0]Value = .{};
-                    for (operands) |operand| {
-                        // Increment use count: unused -> once -> multiple
-                        const entry = try self.value_uses.getOrPut(operand);
-                        if (!entry.found_existing) {
-                            // Value used but not defined - could be a constant
-                            entry.value_ptr.* = .once;
-                        } else {
-                            entry.value_ptr.* = switch (entry.value_ptr.*) {
-                                .unused => .once,
-                                .once => .multiple,
-                                .multiple => .multiple,
-                            };
-                        }
-                    }
+                    var inst_data = self.func.dfg.insts.get(inst).?.*;
+                    try inst_data.forEachValue(&self.func.dfg.value_lists, &ctx, Ctx.visit);
                 }
             }
         }
@@ -336,11 +337,39 @@ fn dfsPostorder(
     try visited.put(block, {});
 
     // Visit successors by examining block terminator
-    // TODO: Implement proper CFG successor traversal
-    // For now, just iterate through instructions (stub implementation)
-    var inst_iter = func.layout.blockInsts(block);
-    while (inst_iter.next()) |_| {
-        // TODO: analyze terminator to get CFG successors
+    const block_data = func.layout.blocks.get(block) orelse return;
+    if (block_data.last_inst) |last_inst| {
+        const inst_data = func.dfg.insts.get(last_inst) orelse return;
+        switch (inst_data.opcode()) {
+            .jump => {
+                try dfsPostorder(func, inst_data.jump.destination, visited, postorder, allocator);
+            },
+            .brif => {
+                if (inst_data.branch.then_dest) |then_dest| {
+                    try dfsPostorder(func, then_dest, visited, postorder, allocator);
+                }
+                if (inst_data.branch.else_dest) |else_dest| {
+                    try dfsPostorder(func, else_dest, visited, postorder, allocator);
+                }
+            },
+            .try_call => {
+                try dfsPostorder(func, inst_data.try_call.normal_successor, visited, postorder, allocator);
+                try dfsPostorder(func, inst_data.try_call.exception_successor, visited, postorder, allocator);
+            },
+            .br_table => {
+                if (func.jump_tables.get(inst_data.branch_table.destination)) |jt| {
+                    if (jt.defaultBlock()) |default_call| {
+                        const default_block = default_call.block(&func.dfg.value_lists);
+                        try dfsPostorder(func, default_block, visited, postorder, allocator);
+                    }
+                    for (jt.asSlice()) |entry| {
+                        const target_block = entry.block(&func.dfg.value_lists);
+                        try dfsPostorder(func, target_block, visited, postorder, allocator);
+                    }
+                }
+            },
+            else => {},
+        }
     }
 
     // Add block to postorder after visiting successors
@@ -369,6 +398,11 @@ pub fn lowerFunction(
     // Lower each block in reverse postorder
     var rpo = try computeRPO(allocator, func);
     defer rpo.deinit(allocator);
+
+    // Pre-populate block labels so forward branches resolve.
+    for (rpo.items, 0..) |ir_block, idx| {
+        try ctx.block_map.put(ir_block, @intCast(idx));
+    }
 
     for (rpo.items) |ir_block| {
         // Start new machine block
@@ -432,7 +466,7 @@ test "SSA VReg pre-allocation" {
         opcode: u32,
     };
 
-    //     const Type = root.types.Type;
+    const Type = root.types.Type;
     const InstructionData = root.instruction_data.InstructionData;
 
     // Create function with some instructions
@@ -451,8 +485,7 @@ test "SSA VReg pre-allocation" {
     } };
     const inst1 = try func.dfg.makeInst(iconst_data);
     try func.layout.appendInst(inst1, block0);
-    const v1 = func.dfg.firstResult(inst1).?;
-    //     try func.dfg.attachResult(inst1, Type.i64());
+    const v1 = try func.dfg.appendInstResult(inst1, Type.I64);
 
     // Create LowerCtx and pre-allocate VRegs
     var vcode = vcode_mod.VCode(TestInst).init(testing.allocator);
@@ -479,7 +512,7 @@ test "Value use state computation" {
         opcode: u32,
     };
 
-    //     const Type = root.types.Type;
+    const Type = root.types.Type;
     const InstructionData = root.instruction_data.InstructionData;
 
     // Create function with dead and live values
@@ -504,8 +537,7 @@ test "Value use state computation" {
         .imm = .{ .value = 10 },
     } });
     try func.layout.appendInst(v0_inst, block0);
-    const v0 = func.dfg.firstResult(v0_inst).?;
-    //     try func.dfg.attachResult(v0_inst, Type.i64());
+    const v0 = try func.dfg.appendInstResult(v0_inst, Type.I64);
 
     // v1 = iconst 20 (used once in v3)
     const v1_inst = try func.dfg.makeInst(InstructionData{ .unary_imm = .{
@@ -513,8 +545,7 @@ test "Value use state computation" {
         .imm = .{ .value = 20 },
     } });
     try func.layout.appendInst(v1_inst, block0);
-    const v1 = func.dfg.firstResult(v1_inst).?;
-    //     try func.dfg.attachResult(v1_inst, Type.i64());
+    const v1 = try func.dfg.appendInstResult(v1_inst, Type.I64);
 
     // v2 = iconst 30 (used multiple times)
     const v2_inst = try func.dfg.makeInst(InstructionData{ .unary_imm = .{
@@ -522,8 +553,7 @@ test "Value use state computation" {
         .imm = .{ .value = 30 },
     } });
     try func.layout.appendInst(v2_inst, block0);
-    const v2 = func.dfg.firstResult(v2_inst).?;
-    //     try func.dfg.attachResult(v2_inst, Type.i64());
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I64);
 
     // v3 = iadd v1, v2
     const v3_inst = try func.dfg.makeInst(InstructionData{ .binary = .{
@@ -531,8 +561,7 @@ test "Value use state computation" {
         .args = .{ v1, v2 },
     } });
     try func.layout.appendInst(v3_inst, block0);
-    const v3 = func.dfg.firstResult(v3_inst).?;
-    //     try func.dfg.attachResult(v3_inst, Type.i64());
+    const v3 = try func.dfg.appendInstResult(v3_inst, Type.I64);
 
     // v4 = iadd v2, v2 (uses v2 again)
     const v4_inst = try func.dfg.makeInst(InstructionData{ .binary = .{
@@ -540,8 +569,7 @@ test "Value use state computation" {
         .args = .{ v2, v2 },
     } });
     try func.layout.appendInst(v4_inst, block0);
-    const v4 = func.dfg.firstResult(v4_inst).?;
-    //     try func.dfg.attachResult(v4_inst, Type.i64());
+    const v4 = try func.dfg.appendInstResult(v4_inst, Type.I64);
 
     // return v4
     const ret_inst = try func.dfg.makeInst(InstructionData{ .unary = .{

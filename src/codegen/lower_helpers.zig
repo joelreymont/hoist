@@ -175,16 +175,30 @@ pub const ImmStrategy = enum {
 
 /// Determine how to materialize an immediate value.
 pub fn immediateStrategy(value: i64, ty: Type, has_move_wide: bool) ImmStrategy {
-    _ = ty;
-
     // Small immediates can usually be inlined
     if (fitsInSmallImm(value)) {
         return .inline_imm;
     }
 
-    // If we have MOVZ/MOVK (AArch64) or equivalent, use move_imm
     if (has_move_wide) {
-        return .move_imm;
+        const bits = ty.bits();
+        if (bits != 0 and bits <= 64) {
+            const uval: u64 = @bitCast(value);
+            const masked = if (bits == 64) uval else uval & ((@as(u64, 1) << @intCast(bits)) - 1);
+            const chunk_count: u32 = (bits + 15) / 16;
+            var non_zero: u32 = 0;
+            var idx: u32 = 0;
+            while (idx < chunk_count) : (idx += 1) {
+                const shift: u6 = @intCast(idx * 16);
+                const chunk: u16 = @truncate(masked >> shift);
+                if (chunk != 0) {
+                    non_zero += 1;
+                }
+            }
+            if (non_zero <= 2) {
+                return .move_imm;
+            }
+        }
     }
 
     // Medium immediates might fit in move on some architectures

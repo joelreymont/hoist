@@ -403,201 +403,37 @@ pub const DataFlowGraph = struct {
     }
 
     pub fn resolveAllAliases(self: *Self) void {
-        for (self.insts.elems.items) |*inst_data| {
-            switch (inst_data.*) {
-                .unary => |*data| {
-                    data.arg = self.resolveAliases(data.arg);
-                },
-                .binary => |*data| {
-                    data.args[0] = self.resolveAliases(data.args[0]);
-                    data.args[1] = self.resolveAliases(data.args[1]);
-                },
-                .binary_imm64 => |*data| {
-                    data.arg = self.resolveAliases(data.arg);
-                },
-                .int_compare => |*data| {
-                    data.args[0] = self.resolveAliases(data.args[0]);
-                    data.args[1] = self.resolveAliases(data.args[1]);
-                },
-                .int_compare_imm => |*data| {
-                    data.arg = self.resolveAliases(data.arg);
-                },
-                .float_compare => |*data| {
-                    data.args[0] = self.resolveAliases(data.args[0]);
-                    data.args[1] = self.resolveAliases(data.args[1]);
-                },
-                .branch => |*data| {
-                    data.condition = self.resolveAliases(data.condition);
-                },
-                .branch_table => |*data| {
-                    data.arg = self.resolveAliases(data.arg);
-                },
-                .branch_z => |*data| {
-                    data.condition = self.resolveAliases(data.condition);
-                },
-                .call => |*data| {
-                    const slice = self.value_lists.asMutSlice(data.args);
-                    for (slice) |*val| {
-                        val.* = self.resolveAliases(val.*);
-                    }
-                },
-                .call_indirect => |*data| {
-                    const slice = self.value_lists.asMutSlice(data.args);
-                    for (slice) |*val| {
-                        val.* = self.resolveAliases(val.*);
-                    }
-                },
-                .try_call => |*data| {
-                    const slice = self.value_lists.asMutSlice(data.args);
-                    for (slice) |*val| {
-                        val.* = self.resolveAliases(val.*);
-                    }
-                },
-                .try_call_indirect => |*data| {
-                    const slice = self.value_lists.asMutSlice(data.args);
-                    for (slice) |*val| {
-                        val.* = self.resolveAliases(val.*);
-                    }
-                },
-                .load => |*data| {
-                    data.arg = self.resolveAliases(data.arg);
-                },
-                .store => |*data| {
-                    data.args[0] = self.resolveAliases(data.args[0]);
-                    data.args[1] = self.resolveAliases(data.args[1]);
-                },
-                .ternary => |*data| {
-                    data.args[0] = self.resolveAliases(data.args[0]);
-                    data.args[1] = self.resolveAliases(data.args[1]);
-                    data.args[2] = self.resolveAliases(data.args[2]);
-                },
-                .ternary_imm8 => |*data| {
-                    data.args[0] = self.resolveAliases(data.args[0]);
-                    data.args[1] = self.resolveAliases(data.args[1]);
-                },
-                .shuffle => |*data| {
-                    data.args[0] = self.resolveAliases(data.args[0]);
-                    data.args[1] = self.resolveAliases(data.args[1]);
-                },
-                .unary_with_trap => |*data| {
-                    data.arg = self.resolveAliases(data.arg);
-                },
-                .extract_lane => |*data| {
-                    data.arg = self.resolveAliases(data.arg);
-                },
-                .atomic_load => |*data| {
-                    data.addr = self.resolveAliases(data.addr);
-                },
-                .atomic_store => |*data| {
-                    data.addr = self.resolveAliases(data.addr);
-                    data.src = self.resolveAliases(data.src);
-                },
-                .atomic_rmw => |*data| {
-                    data.addr = self.resolveAliases(data.addr);
-                    data.src = self.resolveAliases(data.src);
-                },
-                .atomic_cas => |*data| {
-                    data.addr = self.resolveAliases(data.addr);
-                    data.expected = self.resolveAliases(data.expected);
-                    data.replacement = self.resolveAliases(data.replacement);
-                },
-                .stack_store => |*data| {
-                    data.arg = self.resolveAliases(data.arg);
-                },
-                .jump, .nullary, .unary_imm, .fence, .stack_load => {},
+        const Ctx = struct {
+            dfg: *Self,
+
+            pub fn visit(ctx: *@This(), val: *Value) void {
+                val.* = ctx.dfg.resolveAliases(val.*);
             }
+        };
+        var ctx = Ctx{ .dfg = self };
+
+        for (self.insts.elems.items) |*inst_data| {
+            inst_data.forEachValueMut(&self.value_lists, &ctx, Ctx.visit);
         }
     }
 
     /// Replace all uses of a value with another value.
     /// Walks all instructions and updates operands.
     pub fn replaceAllUses(self: *Self, old_value: Value, new_value: Value) !void {
-        const block_call = @import("block_call.zig");
+        const Ctx = struct {
+            old_value: Value,
+            new_value: Value,
+
+            pub fn visit(ctx: *@This(), val: *Value) void {
+                if (std.meta.eql(val.*, ctx.old_value)) {
+                    val.* = ctx.new_value;
+                }
+            }
+        };
+        var ctx = Ctx{ .old_value = old_value, .new_value = new_value };
 
         for (self.insts.elems.items) |*inst_data| {
-            switch (inst_data.*) {
-                .unary => |*data| {
-                    if (std.meta.eql(data.arg, old_value)) {
-                        data.arg = new_value;
-                    }
-                },
-                .binary => |*data| {
-                    if (std.meta.eql(data.args[0], old_value)) {
-                        data.args[0] = new_value;
-                    }
-                    if (std.meta.eql(data.args[1], old_value)) {
-                        data.args[1] = new_value;
-                    }
-                },
-                .int_compare => |*data| {
-                    if (std.meta.eql(data.args[0], old_value)) {
-                        data.args[0] = new_value;
-                    }
-                    if (std.meta.eql(data.args[1], old_value)) {
-                        data.args[1] = new_value;
-                    }
-                },
-                .float_compare => |*data| {
-                    if (std.meta.eql(data.args[0], old_value)) {
-                        data.args[0] = new_value;
-                    }
-                    if (std.meta.eql(data.args[1], old_value)) {
-                        data.args[1] = new_value;
-                    }
-                },
-                .branch => |*data| {
-                    const slice = self.value_lists.asMutSlice(data.destination.values);
-                    if (slice.len > 1) {
-                        var i: usize = 1;
-                        while (i < slice.len) : (i += 1) {
-                            var v: Value = undefined;
-                            var index: u32 = undefined;
-                            const tag = block_call.BlockArg.decodeFromValue(slice[i], &v, &index);
-                            if (tag == .value and std.meta.eql(v, old_value)) {
-                                slice[i] = block_call.BlockArg.fromValue(new_value).encodeAsValue(new_value, 0);
-                            }
-                        }
-                    }
-                },
-                .branch_table => |*data| {
-                    if (std.meta.eql(data.arg, old_value)) {
-                        data.arg = new_value;
-                    }
-                },
-                .branch_z => |*data| {
-                    data.condition = self.resolveAliases(data.condition);
-                },
-                .call => |*data| {
-                    const slice = self.value_lists.asMutSlice(data.args);
-                    for (slice) |*val| {
-                        if (std.meta.eql(val.*, old_value)) {
-                            val.* = new_value;
-                        }
-                    }
-                },
-                .call_indirect => |*data| {
-                    const slice = self.value_lists.asMutSlice(data.args);
-                    for (slice) |*val| {
-                        if (std.meta.eql(val.*, old_value)) {
-                            val.* = new_value;
-                        }
-                    }
-                },
-                .load => |*data| {
-                    if (std.meta.eql(data.arg, old_value)) {
-                        data.arg = new_value;
-                    }
-                },
-                .store => |*data| {
-                    if (std.meta.eql(data.args[0], old_value)) {
-                        data.args[0] = new_value;
-                    }
-                    if (std.meta.eql(data.args[1], old_value)) {
-                        data.args[1] = new_value;
-                    }
-                },
-                .jump, .nullary => {},
-            }
+            inst_data.forEachValueMut(&self.value_lists, &ctx, Ctx.visit);
         }
     }
 };

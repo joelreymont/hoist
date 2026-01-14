@@ -29,13 +29,14 @@
 - Struct classification and HFA detection
 - i128 multi-register support (X0:X1 pairs)
 - Floating-point operations (arithmetic, comparisons)
-- Vector operations (SIMD with shuffles, dot products)
+- Vector operations (SIMD with shuffles; dot product patterns pending)
 - Load/store with various addressing modes
+- Atomic instructions (LDAXR/STLXR, LSE ops, CAS) and barriers (DMB/DSB/ISB)
 - Conditional execution (CSEL, CSINC, etc.)
 - Branch instructions (B, BL, CBZ, CBNZ, TBZ, TBNZ)
 - Arithmetic with shifts and extensions (including shifted bitwise ops)
 - Bit manipulation (CLZ, RBIT, REV, etc.)
-- CPU feature detection (LSE, FP16, DotProd, SVE, crypto)
+- CPU feature flags and parser (runtime detection stubbed)
 
 ### Memory & Linking ✅
 - Stack slot allocation with alignment
@@ -61,15 +62,14 @@
 
 ### Floating-Point Constants ✅
 - F32/F64 constant loading
-- FMOV immediate for zero
-- Constant pool for all other values
+- FMOV immediate for encodable values
+- Constant pool for non-encodable values
 - Special values (NaN, Infinity, signed zeros)
 
-### Varargs ✅
-- VaList structure (AAPCS64 compliant)
-- GP and FP register save areas
-- Stack overflow handling
-- 50+ comprehensive tests
+### Varargs ⚠️
+- VaList structure and register save area helpers (AAPCS64) in `src/backends/aarch64/abi.zig`
+- Unit tests for VaList in `src/backends/aarch64/abi.zig`
+- IR/callsite integration not wired (no variadic signature flag)
 
 ### Testing ✅
 - 28 test files, 325+ test cases
@@ -86,12 +86,12 @@
 All remaining dots are advanced optimization or infrastructure work:
 
 ### Register Allocation Optimizations (4 dots)
-1. **Spill coalescing**: Use STP instead of 2×STR for adjacent spills (requires spilling implementation)
+1. **Spill coalescing**: Use STP instead of 2×STR for adjacent spills (requires spill analysis)
 2. **Reload hoisting**: Move reloads to dominating blocks, avoid loops (requires advanced allocator)
 3. **Register coalescing**: Eliminate redundant moves, merge live ranges (requires interference graph)
 4. **Rematerialization**: Recompute cheap values instead of spilling (requires cost model)
 
-Note: These all depend on implementing spill/reload emission (currently panics in compile.zig) and upgrading from TrivialAllocator to a full linear scan or graph coloring allocator.
+Note: Spill/reload emission and linear scan are integrated; remaining work is optimization/allocator quality.
 
 ### Exception Handling (2 dots)
 5. **Landing pad infrastructure**: Add landing pad block tracking, exception edge wiring in CFG
@@ -161,13 +161,13 @@ Hoist has successfully implemented a production-ready JIT compiler core. All P0 
 
 The compiler can currently:
 - Compile complex functions with arbitrary control flow
-- Handle high register pressure with allocation (spilling infrastructure exists but emission not wired up)
+- Handle high register pressure with allocation and spill emission
 - Generate correct AArch64 code following AAPCS64
 - Support TLS with all three models
 - Emit linkable ELF objects
-- Process varargs functions
+- Varargs ABI helpers available; IR/callsite integration pending
 - Perform shifted bitwise operations (AND/OR/XOR with LSL/LSR/ASR)
-- Detect CPU features at runtime (LSE, FP16, DotProd, SVE, crypto)
-- Support vector operations including shuffles and dot product infrastructure
+- Feature flags and parsing; runtime detection stubbed
+- Support vector operations including shuffles (dot product patterns pending)
 
 **Status**: ✅ Production-ready compiler with excellent foundation for future enhancements.

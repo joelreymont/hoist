@@ -46,10 +46,17 @@ test "Type compatibility: lane types match" {
     try testing.expect(Type.I8X16.laneType().eql(Type.I8));
 }
 
+test "Type vector constructor: lane type and count" {
+    const v = Type.vector(Type.I8, 16).?;
+    try testing.expect(v.eql(Type.I8X16));
+    try testing.expectEqual(@as(u32, 16), v.laneCount());
+    try testing.expect(Type.vector(Type.I8, 3) == null);
+}
+
 test "Type compatibility: vector lane count" {
     try testing.expectEqual(@as(u32, 4), Type.I32X4.laneCount());
     try testing.expectEqual(@as(u32, 2), Type.F64X2.laneCount());
-    try testing.expectEqual(@as(u32, 32), Type.I8X16.laneCount());
+    try testing.expectEqual(@as(u32, 16), Type.I8X16.laneCount());
     try testing.expectEqual(@as(u32, 1), Type.I32.laneCount());
 }
 
@@ -65,7 +72,7 @@ test "Type compatibility: total bits calculation" {
     try testing.expectEqual(@as(u32, 128), Type.I32X4.bits()); // 32 * 4
     try testing.expectEqual(@as(u32, 128), Type.F32X4.bits()); // 32 * 4
     try testing.expectEqual(@as(u32, 128), Type.F64X2.bits()); // 64 * 2
-    try testing.expectEqual(@as(u32, 256), Type.I8X16.bits()); // 8 * 32
+    try testing.expectEqual(@as(u32, 128), Type.I8X16.bits()); // 8 * 16
 }
 
 test "Type compatibility: byte size calculation" {
@@ -254,7 +261,7 @@ test "Type validation: log2 calculations" {
     try testing.expectEqual(@as(u32, 0), Type.I32.log2LaneCount()); // 1 lane
     try testing.expectEqual(@as(u32, 1), Type.F64X2.log2LaneCount()); // 2 lanes
     try testing.expectEqual(@as(u32, 2), Type.I32X4.log2LaneCount()); // 4 lanes
-    try testing.expectEqual(@as(u32, 5), Type.I8X16.log2LaneCount()); // 32 lanes
+    try testing.expectEqual(@as(u32, 4), Type.I8X16.log2LaneCount()); // 16 lanes
 
     // Lane bits log2
     try testing.expectEqual(@as(u32, 3), Type.I8.log2LaneBits()); // 8 = 2^3
@@ -454,7 +461,7 @@ test "Type edge cases: vector lane limits" {
     try testing.expectEqual(@as(u32, 1), Type.I32.laneCount());
     try testing.expectEqual(@as(u32, 2), Type.F64X2.laneCount());
     try testing.expectEqual(@as(u32, 4), Type.I32X4.laneCount());
-    try testing.expectEqual(@as(u32, 32), Type.I8X16.laneCount());
+    try testing.expectEqual(@as(u32, 16), Type.I8X16.laneCount());
 }
 
 test "Type edge cases: mixed width operations" {

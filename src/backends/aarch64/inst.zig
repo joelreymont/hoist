@@ -437,6 +437,13 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Negate with carry (NGC Xd, Xm).
+    ngc: struct {
+        dst: WritableReg,
+        src: Reg,
+        size: OperandSize,
+    },
+
     /// Logical shift left register-register (LSL Xd, Xn, Xm).
     lsl_rr: struct {
         dst: WritableReg,
@@ -541,6 +548,36 @@ pub const Inst = union(enum) {
     /// Conditional select (CSEL Xd, Xn, Xm, cond).
     /// Xd = (cond) ? Xn : Xm
     csel: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        cond: CondCode,
+        size: OperandSize,
+    },
+
+    /// Conditional select increment (CSINC Xd, Xn, Xm, cond).
+    /// Xd = (cond) ? Xn : Xm + 1
+    csinc: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        cond: CondCode,
+        size: OperandSize,
+    },
+
+    /// Conditional select invert (CSINV Xd, Xn, Xm, cond).
+    /// Xd = (cond) ? Xn : ~Xm
+    csinv: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        cond: CondCode,
+        size: OperandSize,
+    },
+
+    /// Conditional select negate (CSNEG Xd, Xn, Xm, cond).
+    /// Xd = (cond) ? Xn : -Xm
+    csneg: struct {
         dst: WritableReg,
         src1: Reg,
         src2: Reg,
@@ -2142,248 +2179,288 @@ pub const Inst = union(enum) {
     /// Epilogue placeholder - updated by prologue/epilogue insertion.
     epilogue_placeholder: void,
 
-    pub fn format(self: Inst, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Inst, writer: anytype) !void {
         switch (self) {
-            .mov_rr => |i| try writer.print("mov.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .mov_imm => |i| try writer.print("mov.{} {}, #0x{x}", .{ i.size, i.dst, i.imm }),
-            .movz => |i| try writer.print("movz.{} {}, #0x{x}, lsl #{d}", .{ i.size, i.dst, i.imm, i.shift }),
-            .movk => |i| try writer.print("movk.{} {}, #0x{x}, lsl #{d}", .{ i.size, i.dst, i.imm, i.shift }),
-            .movn => |i| try writer.print("movn.{} {}, #0x{x}, lsl #{d}", .{ i.size, i.dst, i.imm, i.shift }),
-            .add_rr => |i| try writer.print("add.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .add_imm => |i| try writer.print("add.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
-            .sub_rr => |i| try writer.print("sub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .sub_imm => |i| try writer.print("sub.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
-            .adds_rr => |i| try writer.print("adds.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .adds_imm => |i| try writer.print("adds.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
-            .subs_rr => |i| try writer.print("subs.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .subs_imm => |i| try writer.print("subs.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
-            .sqadd => |i| try writer.print("sqadd.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .sqsub => |i| try writer.print("sqsub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .uqadd => |i| try writer.print("uqadd.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .uqsub => |i| try writer.print("uqsub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .mul_rr => |i| try writer.print("mul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .madd => |i| try writer.print("madd.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.addend }),
-            .msub => |i| try writer.print("msub.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.minuend }),
-            .smulh => |i| try writer.print("smulh {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
-            .umulh => |i| try writer.print("umulh {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
-            .ccmp => |i| try writer.print("ccmp.{} {}, {}, #{d}, {}", .{ i.size, i.src1, i.src2, i.nzcv, i.cond }),
-            .ccmp_imm => |i| try writer.print("ccmp.{} {}, #{d}, #{d}, {}", .{ i.size, i.src, i.imm, i.nzcv, i.cond }),
-            .smull => |i| try writer.print("smull {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
-            .umull => |i| try writer.print("umull {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
-            .sdiv => |i| try writer.print("sdiv.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .udiv => |i| try writer.print("udiv.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .and_rr => |i| try writer.print("and.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .and_imm => |i| try writer.print("and.{} {}, {}, #0x{x}", .{ i.imm.size, i.dst, i.src, i.imm.value }),
-            .orr_rr => |i| try writer.print("orr.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .orr_imm => |i| try writer.print("orr.{} {}, {}, #0x{x}", .{ i.imm.size, i.dst, i.src, i.imm.value }),
-            .eor_rr => |i| try writer.print("eor.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .eor_imm => |i| try writer.print("eor.{} {}, {}, #0x{x}", .{ i.imm.size, i.dst, i.src, i.imm.value }),
-            .bic_rr => |i| try writer.print("bic.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .orn_rr => |i| try writer.print("orn.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .eon_rr => |i| try writer.print("eon.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .mvn_rr => |i| try writer.print("mvn.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .lsl_rr => |i| try writer.print("lsl.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .lsl_imm => |i| try writer.print("lsl.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
-            .lsr_rr => |i| try writer.print("lsr.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .lsr_imm => |i| try writer.print("lsr.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
-            .asr_rr => |i| try writer.print("asr.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .asr_imm => |i| try writer.print("asr.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
-            .ror_rr => |i| try writer.print("ror.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .ror_imm => |i| try writer.print("ror.{} {}, {}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
-            .cmp_rr => |i| try writer.print("cmp.{} {}, {}", .{ i.size, i.src1, i.src2 }),
-            .cmp_imm => |i| try writer.print("cmp {}, #{d}", .{ i.src, i.imm.toU64() }),
-            .cmn_rr => |i| try writer.print("cmn.{} {}, {}", .{ i.size, i.src1, i.src2 }),
-            .tst_rr => |i| try writer.print("tst.{} {}, {}", .{ i.size, i.src1, i.src2 }),
-            .tst_imm => |i| try writer.print("tst.{} {}, #0x{x}", .{ i.imm.size, i.src, i.imm.value }),
-            .ldr => |i| try writer.print("ldr.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
-            .ldr_reg => |i| try writer.print("ldr.{} {}, [{}, {}]", .{ i.size, i.dst, i.base, i.offset }),
-            .ldr_ext => |i| try writer.print("ldr.{} {}, [{}, {}, {}]", .{ i.size, i.dst, i.base, i.offset, i.extend }),
-            .ldr_shifted => |i| try writer.print("ldr.{} {}, [{}, {}, {} #{d}]", .{ i.size, i.dst, i.base, i.offset, i.shift_op, i.shift_amt }),
-            .ldr_literal => |i| try writer.print("ldr.{} {}, label{}", .{ i.size, i.dst, i.label.index }),
-            .str => |i| try writer.print("str.{} {}, [{}, #{d}]", .{ i.size, i.src, i.base, i.offset }),
-            .stp_imm => |i| try writer.print("stp.{} {}, {}, [{}, #{d}]", .{ i.size, i.rt1, i.rt2, i.rn, i.offset }),
-            .str_reg => |i| try writer.print("str.{} {}, [{}, {}]", .{ i.size, i.src, i.base, i.offset }),
-            .str_ext => |i| try writer.print("str.{} {}, [{}, {}, {}]", .{ i.size, i.src, i.base, i.offset, i.extend }),
-            .str_shifted => |i| try writer.print("str.{} {}, [{}, {}, {} #{d}]", .{ i.size, i.src, i.base, i.offset, i.shift_op, i.shift_amt }),
-            .ldrb => |i| try writer.print("ldrb.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
-            .ldrh => |i| try writer.print("ldrh.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
-            .ldrsb => |i| try writer.print("ldrsb.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
-            .ldrsh => |i| try writer.print("ldrsh.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
-            .ldrsw => |i| try writer.print("ldrsw {}, [{}, #{d}]", .{ i.dst, i.base, i.offset }),
-            .strb => |i| try writer.print("strb {}, [{}, #{d}]", .{ i.src, i.base, i.offset }),
-            .strh => |i| try writer.print("strh {}, [{}, #{d}]", .{ i.src, i.base, i.offset }),
-            .stp => |i| try writer.print("stp.{} {}, {}, [{}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
-            .ldp => |i| try writer.print("ldp.{} {}, {}, [{}, #{d}]", .{ i.size, i.dst1, i.dst2, i.base, i.offset }),
-            .ldr_pre => |i| try writer.print("ldr.{} {}, [{}, #{d}]!", .{ i.size, i.dst, i.base, i.offset }),
-            .ldr_post => |i| try writer.print("ldr.{} {}, [{}], #{d}", .{ i.size, i.dst, i.base, i.offset }),
-            .str_pre => |i| try writer.print("str.{} {}, [{}, #{d}]!", .{ i.size, i.src, i.base, i.offset }),
-            .str_post => |i| try writer.print("str.{} {}, [{}], #{d}", .{ i.size, i.src, i.base, i.offset }),
-            .ldarb => |i| try writer.print("ldarb {}, [{}]", .{ i.dst, i.base }),
-            .ldarh => |i| try writer.print("ldarh {}, [{}]", .{ i.dst, i.base }),
-            .ldar_w => |i| try writer.print("ldar {}, [{}]", .{ i.dst, i.base }),
-            .ldar => |i| try writer.print("ldar.{} {}, [{}]", .{ i.size, i.dst, i.base }),
-            .stlrb => |i| try writer.print("stlrb {}, [{}]", .{ i.src, i.base }),
-            .stlrh => |i| try writer.print("stlrh {}, [{}]", .{ i.src, i.base }),
-            .stlr_w => |i| try writer.print("stlr {}, [{}]", .{ i.src, i.base }),
-            .stlr => |i| try writer.print("stlr.{} {}, [{}]", .{ i.size, i.src, i.base }),
-            .ldxrb => |i| try writer.print("ldxrb {}, [{}]", .{ i.dst, i.base }),
-            .ldxrh => |i| try writer.print("ldxrh {}, [{}]", .{ i.dst, i.base }),
-            .ldxr_w => |i| try writer.print("ldxr {}, [{}]", .{ i.dst, i.base }),
-            .ldxr => |i| try writer.print("ldxr.{} {}, [{}]", .{ i.size, i.dst, i.base }),
-            .stxrb => |i| try writer.print("stxrb {}, {}, [{}]", .{ i.status, i.src, i.base }),
-            .stxrh => |i| try writer.print("stxrh {}, {}, [{}]", .{ i.status, i.src, i.base }),
-            .stxr_w => |i| try writer.print("stxr {}, {}, [{}]", .{ i.status, i.src, i.base }),
-            .stxr => |i| try writer.print("stxr.{} {}, {}, [{}]", .{ i.size, i.status, i.src, i.base }),
-            .ldaxrb => |i| try writer.print("ldaxrb {}, [{}]", .{ i.dst, i.base }),
-            .ldaxrh => |i| try writer.print("ldaxrh {}, [{}]", .{ i.dst, i.base }),
-            .ldaxr_w => |i| try writer.print("ldaxr {}, [{}]", .{ i.dst, i.base }),
-            .ldaxr => |i| try writer.print("ldaxr.{} {}, [{}]", .{ i.size, i.dst, i.base }),
-            .stlxrb => |i| try writer.print("stlxrb {}, {}, [{}]", .{ i.status, i.src, i.base }),
-            .stlxrh => |i| try writer.print("stlxrh {}, {}, [{}]", .{ i.status, i.src, i.base }),
-            .stlxr_w => |i| try writer.print("stlxr {}, {}, [{}]", .{ i.status, i.src, i.base }),
-            .stlxr => |i| try writer.print("stlxr.{} {}, {}, [{}]", .{ i.size, i.status, i.src, i.base }),
-            .ldadd => |i| try writer.print("ldadd.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
-            .ldclr => |i| try writer.print("ldclr.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
-            .ldeor => |i| try writer.print("ldeor.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
-            .ldset => |i| try writer.print("ldset.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
-            .ldsmax => |i| try writer.print("ldsmax.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
-            .ldsmin => |i| try writer.print("ldsmin.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
-            .ldumax => |i| try writer.print("ldumax.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
-            .ldumin => |i| try writer.print("ldumin.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
-            .swp => |i| try writer.print("swp.{} {}, {}, [{}]", .{ i.size, i.src, i.dst, i.base }),
-            .cas => |i| try writer.print("cas.{} {}, {}, {}, [{}]", .{ i.size, i.compare, i.swap, i.dst, i.base }),
-            .casa => |i| try writer.print("casa.{} {}, {}, {}, [{}]", .{ i.size, i.compare, i.swap, i.dst, i.base }),
-            .casl => |i| try writer.print("casl.{} {}, {}, {}, [{}]", .{ i.size, i.compare, i.swap, i.dst, i.base }),
-            .casal => |i| try writer.print("casal.{} {}, {}, {}, [{}]", .{ i.size, i.compare, i.swap, i.dst, i.base }),
-            .casp => |i| try writer.print("casp {}, {}, {}, {}, [{}]", .{ i.compare_lo, i.compare_hi, i.swap_lo, i.swap_hi, i.base }),
-            .dmb => |i| try writer.print("dmb {}", .{i.option}),
-            .dsb => |i| try writer.print("dsb {}", .{i.option}),
+            .mov_rr => |i| try writer.print("mov.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .mov_imm => |i| try writer.print("mov.{f} {f}, #0x{x}", .{ i.size, i.dst, i.imm }),
+            .movz => |i| try writer.print("movz.{f} {f}, #0x{x}, lsl #{d}", .{ i.size, i.dst, i.imm, i.shift }),
+            .movk => |i| try writer.print("movk.{f} {f}, #0x{x}, lsl #{d}", .{ i.size, i.dst, i.imm, i.shift }),
+            .movn => |i| try writer.print("movn.{f} {f}, #0x{x}, lsl #{d}", .{ i.size, i.dst, i.imm, i.shift }),
+            .add_rr => |i| try writer.print("add.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .add_imm => |i| try writer.print("add.{f} {f}, {f}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .add_shifted => |i| try writer.print("add.{f} {f}, {f}, {f}, {f} #{d}", .{ i.size, i.dst, i.src1, i.src2, i.shift_op, i.shift_amt }),
+            .add_extended => |i| try writer.print("add.{f} {f}, {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2, i.extend }),
+            .sub_rr => |i| try writer.print("sub.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .sub_imm => |i| try writer.print("sub.{f} {f}, {f}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .sub_shifted => |i| try writer.print("sub.{f} {f}, {f}, {f}, {f} #{d}", .{ i.size, i.dst, i.src1, i.src2, i.shift_op, i.shift_amt }),
+            .sub_extended => |i| try writer.print("sub.{f} {f}, {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2, i.extend }),
+            .adds_rr => |i| try writer.print("adds.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .adds_imm => |i| try writer.print("adds.{f} {f}, {f}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .adcs => |i| try writer.print("adcs.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .subs_rr => |i| try writer.print("subs.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .subs_imm => |i| try writer.print("subs.{f} {f}, {f}, #{f}", .{ i.size, i.dst, i.src, i.imm }),
+            .sbcs => |i| try writer.print("sbcs.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .sqadd => |i| try writer.print("sqadd.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .sqsub => |i| try writer.print("sqsub.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .uqadd => |i| try writer.print("uqadd.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .uqsub => |i| try writer.print("uqsub.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .mul_rr => |i| try writer.print("mul.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .madd => |i| try writer.print("madd.{f} {f}, {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2, i.addend }),
+            .msub => |i| try writer.print("msub.{f} {f}, {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2, i.minuend }),
+            .smulh => |i| try writer.print("smulh {f}, {f}, {f}", .{ i.dst, i.src1, i.src2 }),
+            .umulh => |i| try writer.print("umulh {f}, {f}, {f}", .{ i.dst, i.src1, i.src2 }),
+            .ccmp => |i| try writer.print("ccmp.{f} {f}, {f}, #{d}, {f}", .{ i.size, i.src1, i.src2, i.nzcv, i.cond }),
+            .ccmp_imm => |i| try writer.print("ccmp.{f} {f}, #{d}, #{d}, {f}", .{ i.size, i.src, i.imm, i.nzcv, i.cond }),
+            .smull => |i| try writer.print("smull {f}, {f}, {f}", .{ i.dst, i.src1, i.src2 }),
+            .umull => |i| try writer.print("umull {f}, {f}, {f}", .{ i.dst, i.src1, i.src2 }),
+            .sdiv => |i| try writer.print("sdiv.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .udiv => |i| try writer.print("udiv.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .and_rr => |i| try writer.print("and.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .and_imm => |i| try writer.print("and.{f} {f}, {f}, #0x{x}", .{ i.imm.size, i.dst, i.src, i.imm.value }),
+            .and_shifted => |i| try writer.print("and.{f} {f}, {f}, {f}, {f} #{d}", .{ i.size, i.dst, i.src1, i.src2, i.shift_op, i.shift_amt }),
+            .orr_rr => |i| try writer.print("orr.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .orr_imm => |i| try writer.print("orr.{f} {f}, {f}, #0x{x}", .{ i.imm.size, i.dst, i.src, i.imm.value }),
+            .orr_shifted => |i| try writer.print("orr.{f} {f}, {f}, {f}, {f} #{d}", .{ i.size, i.dst, i.src1, i.src2, i.shift_op, i.shift_amt }),
+            .eor_rr => |i| try writer.print("eor.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .eor_imm => |i| try writer.print("eor.{f} {f}, {f}, #0x{x}", .{ i.imm.size, i.dst, i.src, i.imm.value }),
+            .eor_shifted => |i| try writer.print("eor.{f} {f}, {f}, {f}, {f} #{d}", .{ i.size, i.dst, i.src1, i.src2, i.shift_op, i.shift_amt }),
+            .bic_rr => |i| try writer.print("bic.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .orn_rr => |i| try writer.print("orn.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .eon_rr => |i| try writer.print("eon.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .mvn_rr => |i| try writer.print("mvn.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .neg => |i| try writer.print("neg.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .ngc => |i| try writer.print("ngc.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .lsl_rr => |i| try writer.print("lsl.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .lsl_imm => |i| try writer.print("lsl.{f} {f}, {f}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .lsr_rr => |i| try writer.print("lsr.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .lsr_imm => |i| try writer.print("lsr.{f} {f}, {f}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .asr_rr => |i| try writer.print("asr.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .asr_imm => |i| try writer.print("asr.{f} {f}, {f}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .ror_rr => |i| try writer.print("ror.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .ror_imm => |i| try writer.print("ror.{f} {f}, {f}, #{d}", .{ i.size, i.dst, i.src, i.imm }),
+            .cmp_rr => |i| try writer.print("cmp.{f} {f}, {f}", .{ i.size, i.src1, i.src2 }),
+            .cmp_imm => |i| try writer.print("cmp {f}, #{d}", .{ i.src, i.imm.toU64() }),
+            .cmn_rr => |i| try writer.print("cmn.{f} {f}, {f}", .{ i.size, i.src1, i.src2 }),
+            .tst_rr => |i| try writer.print("tst.{f} {f}, {f}", .{ i.size, i.src1, i.src2 }),
+            .tst_imm => |i| try writer.print("tst.{f} {f}, #0x{x}", .{ i.imm.size, i.src, i.imm.value }),
+            .ldr => |i| try writer.print("ldr.{f} {f}, [{f}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
+            .ldr_reg => |i| try writer.print("ldr.{f} {f}, [{f}, {f}]", .{ i.size, i.dst, i.base, i.offset }),
+            .ldr_ext => |i| try writer.print("ldr.{f} {f}, [{f}, {f}, {f}]", .{ i.size, i.dst, i.base, i.offset, i.extend }),
+            .ldr_shifted => |i| try writer.print("ldr.{f} {f}, [{f}, {f}, {f} #{d}]", .{ i.size, i.dst, i.base, i.offset, i.shift_op, i.shift_amt }),
+            .ldr_literal => |i| try writer.print("ldr.{f} {f}, label{}", .{ i.size, i.dst, i.label.index }),
+            .str => |i| try writer.print("str.{f} {f}, [{f}, #{d}]", .{ i.size, i.src, i.base, i.offset }),
+            .stp_imm => |i| try writer.print("stp.{f} {f}, {f}, [{f}, #{d}]", .{ i.size, i.rt1, i.rt2, i.rn, i.offset }),
+            .str_reg => |i| try writer.print("str.{f} {f}, [{f}, {f}]", .{ i.size, i.src, i.base, i.offset }),
+            .str_ext => |i| try writer.print("str.{f} {f}, [{f}, {f}, {f}]", .{ i.size, i.src, i.base, i.offset, i.extend }),
+            .str_shifted => |i| try writer.print("str.{f} {f}, [{f}, {f}, {f} #{d}]", .{ i.size, i.src, i.base, i.offset, i.shift_op, i.shift_amt }),
+            .ldrb => |i| try writer.print("ldrb.{f} {f}, [{f}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
+            .ldrh => |i| try writer.print("ldrh.{f} {f}, [{f}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
+            .ldrsb => |i| try writer.print("ldrsb.{f} {f}, [{f}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
+            .ldrsh => |i| try writer.print("ldrsh.{f} {f}, [{f}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
+            .ldrsw => |i| try writer.print("ldrsw {f}, [{f}, #{d}]", .{ i.dst, i.base, i.offset }),
+            .strb => |i| try writer.print("strb {f}, [{f}, #{d}]", .{ i.src, i.base, i.offset }),
+            .strh => |i| try writer.print("strh {f}, [{f}, #{d}]", .{ i.src, i.base, i.offset }),
+            .stp => |i| try writer.print("stp.{f} {f}, {f}, [{f}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
+            .ldp => |i| try writer.print("ldp.{f} {f}, {f}, [{f}, #{d}]", .{ i.size, i.dst1, i.dst2, i.base, i.offset }),
+            .ldr_pre => |i| try writer.print("ldr.{f} {f}, [{f}, #{d}]!", .{ i.size, i.dst, i.base, i.offset }),
+            .ldr_post => |i| try writer.print("ldr.{f} {f}, [{f}], #{d}", .{ i.size, i.dst, i.base, i.offset }),
+            .str_pre => |i| try writer.print("str.{f} {f}, [{f}, #{d}]!", .{ i.size, i.src, i.base, i.offset }),
+            .str_post => |i| try writer.print("str.{f} {f}, [{f}], #{d}", .{ i.size, i.src, i.base, i.offset }),
+            .ldarb => |i| try writer.print("ldarb {f}, [{f}]", .{ i.dst, i.base }),
+            .ldarh => |i| try writer.print("ldarh {f}, [{f}]", .{ i.dst, i.base }),
+            .ldar_w => |i| try writer.print("ldar {f}, [{f}]", .{ i.dst, i.base }),
+            .ldar => |i| try writer.print("ldar.{f} {f}, [{f}]", .{ i.size, i.dst, i.base }),
+            .stlrb => |i| try writer.print("stlrb {f}, [{f}]", .{ i.src, i.base }),
+            .stlrh => |i| try writer.print("stlrh {f}, [{f}]", .{ i.src, i.base }),
+            .stlr_w => |i| try writer.print("stlr {f}, [{f}]", .{ i.src, i.base }),
+            .stlr => |i| try writer.print("stlr.{f} {f}, [{f}]", .{ i.size, i.src, i.base }),
+            .ldxrb => |i| try writer.print("ldxrb {f}, [{f}]", .{ i.dst, i.base }),
+            .ldxrh => |i| try writer.print("ldxrh {f}, [{f}]", .{ i.dst, i.base }),
+            .ldxr_w => |i| try writer.print("ldxr {f}, [{f}]", .{ i.dst, i.base }),
+            .ldxr => |i| try writer.print("ldxr.{f} {f}, [{f}]", .{ i.size, i.dst, i.base }),
+            .stxrb => |i| try writer.print("stxrb {f}, {f}, [{f}]", .{ i.status, i.src, i.base }),
+            .stxrh => |i| try writer.print("stxrh {f}, {f}, [{f}]", .{ i.status, i.src, i.base }),
+            .stxr_w => |i| try writer.print("stxr {f}, {f}, [{f}]", .{ i.status, i.src, i.base }),
+            .stxr => |i| try writer.print("stxr.{f} {f}, {f}, [{f}]", .{ i.size, i.status, i.src, i.base }),
+            .ldaxrb => |i| try writer.print("ldaxrb {f}, [{f}]", .{ i.dst, i.base }),
+            .ldaxrh => |i| try writer.print("ldaxrh {f}, [{f}]", .{ i.dst, i.base }),
+            .ldaxr_w => |i| try writer.print("ldaxr {f}, [{f}]", .{ i.dst, i.base }),
+            .ldaxr => |i| try writer.print("ldaxr.{f} {f}, [{f}]", .{ i.size, i.dst, i.base }),
+            .stlxrb => |i| try writer.print("stlxrb {f}, {f}, [{f}]", .{ i.status, i.src, i.base }),
+            .stlxrh => |i| try writer.print("stlxrh {f}, {f}, [{f}]", .{ i.status, i.src, i.base }),
+            .stlxr_w => |i| try writer.print("stlxr {f}, {f}, [{f}]", .{ i.status, i.src, i.base }),
+            .stlxr => |i| try writer.print("stlxr.{f} {f}, {f}, [{f}]", .{ i.size, i.status, i.src, i.base }),
+            .ldadd => |i| try writer.print("ldadd.{f} {f}, {f}, [{f}]", .{ i.size, i.src, i.dst, i.base }),
+            .ldadda => |i| try writer.print("ldadda.{f} {f}, {f}, [{f}]", .{ i.size, i.src, i.dst, i.base }),
+            .ldaddl => |i| try writer.print("ldaddl.{f} {f}, {f}, [{f}]", .{ i.size, i.src, i.dst, i.base }),
+            .ldaddal => |i| try writer.print("ldaddal.{f} {f}, {f}, [{f}]", .{ i.size, i.src, i.dst, i.base }),
+            .ldclr => |i| try writer.print("ldclr.{f} {f}, {f}, [{f}]", .{ i.size, i.src, i.dst, i.base }),
+            .ldeor => |i| try writer.print("ldeor.{f} {f}, {f}, [{f}]", .{ i.size, i.src, i.dst, i.base }),
+            .ldset => |i| try writer.print("ldset.{f} {f}, {f}, [{f}]", .{ i.size, i.src, i.dst, i.base }),
+            .ldsmax => |i| try writer.print("ldsmax.{f} {f}, {f}, [{f}]", .{ i.size, i.src, i.dst, i.base }),
+            .ldsmin => |i| try writer.print("ldsmin.{f} {f}, {f}, [{f}]", .{ i.size, i.src, i.dst, i.base }),
+            .ldumax => |i| try writer.print("ldumax.{f} {f}, {f}, [{f}]", .{ i.size, i.src, i.dst, i.base }),
+            .ldumin => |i| try writer.print("ldumin.{f} {f}, {f}, [{f}]", .{ i.size, i.src, i.dst, i.base }),
+            .swp => |i| try writer.print("swp.{f} {f}, {f}, [{f}]", .{ i.size, i.src, i.dst, i.base }),
+            .cas => |i| try writer.print("cas.{f} {f}, {f}, {f}, [{f}]", .{ i.size, i.compare, i.swap, i.dst, i.base }),
+            .casa => |i| try writer.print("casa.{f} {f}, {f}, {f}, [{f}]", .{ i.size, i.compare, i.swap, i.dst, i.base }),
+            .casl => |i| try writer.print("casl.{f} {f}, {f}, {f}, [{f}]", .{ i.size, i.compare, i.swap, i.dst, i.base }),
+            .casal => |i| try writer.print("casal.{f} {f}, {f}, {f}, [{f}]", .{ i.size, i.compare, i.swap, i.dst, i.base }),
+            .casp => |i| try writer.print("casp {f}, {f}, {f}, {f}, [{f}]", .{ i.compare_lo, i.compare_hi, i.swap_lo, i.swap_hi, i.base }),
+            .dmb => |i| try writer.print("dmb {f}", .{i.option}),
+            .dsb => |i| try writer.print("dsb {f}", .{i.option}),
             .isb => try writer.print("isb", .{}),
-            .b => |i| try writer.print("b {}", .{i.target}),
-            .bl => |i| try writer.print("bl {}", .{i.target}),
-            .br => |i| try writer.print("br {}", .{i.target}),
-            .blr => |i| try writer.print("blr {}", .{i.target}),
+            .b => |i| try writer.print("b {f}", .{i.target}),
+            .bl => |i| try writer.print("bl {f}", .{i.target}),
+            .br => |i| try writer.print("br {f}", .{i.target}),
+            .blr => |i| try writer.print("blr {f}", .{i.target}),
             .ret => try writer.print("ret", .{}),
-            .b_cond => |i| try writer.print("b.{} {}", .{ i.cond, i.target }),
-            .cbz => |i| try writer.print("cbz.{} {}, {}", .{ i.size, i.reg, i.target }),
-            .cbnz => |i| try writer.print("cbnz.{} {}, {}", .{ i.size, i.reg, i.target }),
-            .tbz => |i| try writer.print("tbz {}, #{}, {}", .{ i.reg, i.bit, i.target }),
-            .tbnz => |i| try writer.print("tbnz {}, #{}, {}", .{ i.reg, i.bit, i.target }),
-            .tbz => |i| try writer.print("tbz {}, #{d}, {}", .{ i.reg, i.bit, i.target }),
-            .tbnz => |i| try writer.print("tbnz {}, #{d}, {}", .{ i.reg, i.bit, i.target }),
-            .adr => |i| try writer.print("adr {}, label{d}", .{ i.dst, i.label }),
-            .adrp => |i| try writer.print("adrp {}, label{d}", .{ i.dst, i.label }),
+            .b_cond => |i| try writer.print("b.{f} {f}", .{ i.cond, i.target }),
+            .cbz => |i| try writer.print("cbz.{f} {f}, {f}", .{ i.size, i.reg, i.target }),
+            .cbnz => |i| try writer.print("cbnz.{f} {f}, {f}", .{ i.size, i.reg, i.target }),
+            .tbz => |i| try writer.print("tbz {f}, #{d}, {f}", .{ i.reg, i.bit, i.target }),
+            .tbnz => |i| try writer.print("tbnz {f}, #{d}, {f}", .{ i.reg, i.bit, i.target }),
+            .adr => |i| try writer.print("adr {f}, label{d}", .{ i.dst, i.label }),
+            .adrp => |i| try writer.print("adrp {f}, label{d}", .{ i.dst, i.label }),
+            .adrp_symbol => |i| try writer.print("adrp {f}, {s}", .{ i.dst, i.symbol }),
+            .add_symbol_lo12 => |i| try writer.print("add {f}, {f}, :lo12:{s}", .{ i.dst, i.src, i.symbol }),
             .nop => try writer.print("nop", .{}),
+            .csdb => try writer.print("csdb", .{}),
+            .bti => |i| try writer.print("bti {f}", .{i.target}),
+            .paciasp => try writer.print("paciasp", .{}),
+            .autiasp => try writer.print("autiasp", .{}),
             .brk => |i| try writer.print("brk #{d}", .{i.imm}),
             .udf => |i| try writer.print("udf #{d}", .{i.imm}),
             .fence => try writer.print("fence", .{}),
-            .lea => |i| try writer.print("lea {}, {}", .{ i.dst, i.addr }),
+            .lea => |i| try writer.print("lea {f}, {f}", .{ i.dst, i.addr }),
             .virtual_sp_offset_adj => |i| try writer.print("virtual_sp_offset_adj #{d}", .{i.offset}),
             .data => |i| try writer.print("data [{}]", .{i.bytes.len}),
-            .unwind => |i| try writer.print("unwind {}", .{i.inst}),
-            .csel => |i| try writer.print("csel.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
-            .cset => |i| try writer.print("cset.{} {}, {}", .{ i.size, i.dst, i.cond }),
-            .cinc => |i| try writer.print("cinc.{} {}, {}, {}", .{ i.size, i.dst, i.src, i.cond }),
-            .clz => |i| try writer.print("clz.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .cls => |i| try writer.print("cls.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .ctz => |i| try writer.print("ctz.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .rbit => |i| try writer.print("rbit.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .rev16 => |i| try writer.print("rev16.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .rev32 => |i| try writer.print("rev32.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .rev64 => |i| try writer.print("rev64 {}, {}", .{ i.dst, i.src }),
-            .popcnt => |i| try writer.print("popcnt.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .fmov => |i| try writer.print("fmov.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .fmov_imm => |i| try writer.print("fmov.{} {}, #{}", .{ i.size, i.dst, i.imm }),
-            .fmov_from_gpr => |i| try writer.print("fmov.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .fmov_to_gpr => |i| try writer.print("fmov.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .fpload_const => |i| try writer.print("ldr.{} {}, =0x{x}", .{ i.size, i.dst, i.bits }),
-            .fadd => |i| try writer.print("fadd.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .fsub => |i| try writer.print("fsub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .fmul => |i| try writer.print("fmul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .fdiv => |i| try writer.print("fdiv.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .fmadd => |i| try writer.print("fmadd.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.addend }),
-            .fmsub => |i| try writer.print("fmsub.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.addend }),
-            .fneg => |i| try writer.print("fneg.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .fabs => |i| try writer.print("fabs.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .fsqrt => |i| try writer.print("fsqrt.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .frintn => |i| try writer.print("frintn.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .frintz => |i| try writer.print("frintz.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .frintp => |i| try writer.print("frintp.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .frintm => |i| try writer.print("frintm.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .fmin => |i| try writer.print("fmin.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .fmax => |i| try writer.print("fmax.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .fcmp => |i| try writer.print("fcmp.{} {}, {}", .{ i.size, i.src1, i.src2 }),
-            .fcmp_zero => |i| try writer.print("fcmp.{} {}, #0.0", .{ i.size, i.src }),
-            .fcsel => |i| try writer.print("fcsel.{} {}, {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
-            .scvtf => |i| try writer.print("scvtf.{}.{} {}, {}", .{ i.src_size, i.dst_size, i.dst, i.src }),
-            .ucvtf => |i| try writer.print("ucvtf.{}.{} {}, {}", .{ i.src_size, i.dst_size, i.dst, i.src }),
-            .fcvtzs => |i| try writer.print("fcvtzs.{}.{} {}, {}", .{ i.src_size, i.dst_size, i.dst, i.src }),
-            .fcvtzu => |i| try writer.print("fcvtzu.{}.{} {}, {}", .{ i.src_size, i.dst_size, i.dst, i.src }),
-            .fcvt_f32_to_f64 => |i| try writer.print("fcvt.f32.f64 {}, {}", .{ i.dst, i.src }),
-            .fcvt_f64_to_f32 => |i| try writer.print("fcvt.f64.f32 {}, {}", .{ i.dst, i.src }),
-            .vldr => |i| try writer.print("vldr.{} {}, [{}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
-            .vstr => |i| try writer.print("vstr.{} {}, [{}, #{d}]", .{ i.size, i.src, i.base, i.offset }),
-            .vldp => |i| try writer.print("vldp.{} {}, {}, [{}, #{d}]", .{ i.size, i.dst1, i.dst2, i.base, i.offset }),
-            .vstp => |i| try writer.print("vstp.{} {}, {}, [{}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
-            .ld1r => |i| try writer.print("ld1r.{} {}, [{}]", .{ i.size, i.dst, i.base }),
-            .load_ext_name_got => |i| try writer.print("load_ext_name_got {}, {s}", .{ i.dst, i.symbol }),
-            .jt_sequence => |i| try writer.print("jt_sequence {}, {} targets", .{ i.index, i.targets.len }),
-            .vec_and => |i| try writer.print("vec_and.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_orr => |i| try writer.print("vec_orr.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_eor => |i| try writer.print("vec_eor.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_add => |i| try writer.print("vec_add.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_sub => |i| try writer.print("vec_sub.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_mul => |i| try writer.print("vec_mul.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_sdot => |i| try writer.print("vec_sdot.4s {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
-            .vec_udot => |i| try writer.print("vec_udot.4s {}, {}, {}", .{ i.dst, i.src1, i.src2 }),
-            .vec_smin => |i| try writer.print("vec_smin.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_smax => |i| try writer.print("vec_smax.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_umin => |i| try writer.print("vec_umin.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_umax => |i| try writer.print("vec_umax.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_fmin => |i| try writer.print("vec_fmin.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_fmax => |i| try writer.print("vec_fmax.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_addv => |i| try writer.print("vec_addv.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .vec_sminv => |i| try writer.print("vec_sminv.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .vec_smaxv => |i| try writer.print("vec_smaxv.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .vec_uminv => |i| try writer.print("vec_uminv.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .vec_umaxv => |i| try writer.print("vec_umaxv.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .vec_dup => |i| try writer.print("vec_dup.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .vec_extract_lane => |i| try writer.print("vec_extract_lane.{} {}, {}[{}]", .{ i.size, i.dst, i.src, i.lane }),
-            .vec_insert_lane => |i| try writer.print("vec_insert_lane.{} {}[{}], {}", .{ i.size, i.dst, i.lane, i.src }),
-            .tbl => |i| try writer.print("tbl {}, {{{}}}, {}", .{ i.dst, i.table, i.indices }),
-            .tbx => |i| try writer.print("tbx {}, {{{}}}, {}", .{ i.dst, i.table, i.indices }),
-            .vec_ext => |i| try writer.print("vec_ext.{} {}, {}, {}, #{}", .{ i.size, i.dst, i.src1, i.src2, i.index }),
-            .vec_addp => |i| try writer.print("vec_addp.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_umaxp => |i| try writer.print("vec_umaxp.{} {}, {}, {}", .{ i.size, i.dst, i.src1, i.src2 }),
-            .vec_cmeq0 => |i| try writer.print("vec_cmeq0.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .vec_sshll => |i| try writer.print("vec_sshll{s}.{} {}, {}, #{}", .{ if (i.high) "2" else "", i.size, i.dst, i.src, i.shift_amt }),
-            .vec_ushll => |i| try writer.print("vec_ushll{s}.{} {}, {}, #{}", .{ if (i.high) "2" else "", i.size, i.dst, i.src, i.shift_amt }),
-            .vec_sqxtn => |i| try writer.print("vec_sqxtn{s}.{} {}, {}", .{ if (i.high) "2" else "", i.size, i.dst, i.src }),
-            .vec_sqxtun => |i| try writer.print("vec_sqxtun{s}.{} {}, {}", .{ if (i.high) "2" else "", i.size, i.dst, i.src }),
-            .vec_uqxtn => |i| try writer.print("vec_uqxtn{s}.{} {}, {}", .{ if (i.high) "2" else "", i.size, i.dst, i.src }),
-            .vec_fcvtl => |i| try writer.print("vec_fcvtl{s} {}, {}", .{ if (i.high) "2" else "", i.dst, i.src }),
-            .vec_fcvtn => |i| try writer.print("vec_fcvtn{s} {}, {}", .{ if (i.high) "2" else "", i.dst, i.src }),
-            .call => |i| try writer.print("call {}", .{i.target}),
-            .call_indirect => |i| try writer.print("call {}", .{i.target}),
+            .unwind => |i| try writer.print("unwind {f}", .{i.inst}),
+            .csel => |i| try writer.print("csel.{f} {f}, {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
+            .csinc => |i| try writer.print("csinc.{f} {f}, {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
+            .csinv => |i| try writer.print("csinv.{f} {f}, {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
+            .csneg => |i| try writer.print("csneg.{f} {f}, {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
+            .cset => |i| try writer.print("cset.{f} {f}, {f}", .{ i.size, i.dst, i.cond }),
+            .cinc => |i| try writer.print("cinc.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src, i.cond }),
+            .clz => |i| try writer.print("clz.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .cls => |i| try writer.print("cls.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .ctz => |i| try writer.print("ctz.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .rbit => |i| try writer.print("rbit.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .rev16 => |i| try writer.print("rev16.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .rev32 => |i| try writer.print("rev32.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .rev64 => |i| try writer.print("rev64 {f}, {f}", .{ i.dst, i.src }),
+            .popcnt => |i| try writer.print("popcnt.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .fmov => |i| try writer.print("fmov.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .fmov_imm => |i| try writer.print("fmov.{f} {f}, #{}", .{ i.size, i.dst, i.imm }),
+            .fmov_from_gpr => |i| try writer.print("fmov.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .fmov_to_gpr => |i| try writer.print("fmov.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .fpload_const => |i| try writer.print("ldr.{f} {f}, =0x{x}", .{ i.size, i.dst, i.bits }),
+            .fadd => |i| try writer.print("fadd.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .fsub => |i| try writer.print("fsub.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .fmul => |i| try writer.print("fmul.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .fdiv => |i| try writer.print("fdiv.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .fmadd => |i| try writer.print("fmadd.{f} {f}, {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2, i.addend }),
+            .fmsub => |i| try writer.print("fmsub.{f} {f}, {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2, i.addend }),
+            .fneg => |i| try writer.print("fneg.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .fabs => |i| try writer.print("fabs.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .fsqrt => |i| try writer.print("fsqrt.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .frintn => |i| try writer.print("frintn.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .frintz => |i| try writer.print("frintz.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .frintp => |i| try writer.print("frintp.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .frintm => |i| try writer.print("frintm.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .fmin => |i| try writer.print("fmin.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .fmax => |i| try writer.print("fmax.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .fcmp => |i| try writer.print("fcmp.{f} {f}, {f}", .{ i.size, i.src1, i.src2 }),
+            .fcmp_zero => |i| try writer.print("fcmp.{f} {f}, #0.0", .{ i.size, i.src }),
+            .fcsel => |i| try writer.print("fcsel.{f} {f}, {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2, i.cond }),
+            .scvtf => |i| try writer.print("scvtf.{f}.{f} {f}, {f}", .{ i.src_size, i.dst_size, i.dst, i.src }),
+            .ucvtf => |i| try writer.print("ucvtf.{f}.{f} {f}, {f}", .{ i.src_size, i.dst_size, i.dst, i.src }),
+            .fcvtzs => |i| try writer.print("fcvtzs.{f}.{f} {f}, {f}", .{ i.src_size, i.dst_size, i.dst, i.src }),
+            .fcvtzu => |i| try writer.print("fcvtzu.{f}.{f} {f}, {f}", .{ i.src_size, i.dst_size, i.dst, i.src }),
+            .fcvt_f32_to_f64 => |i| try writer.print("fcvt.f32.f64 {f}, {f}", .{ i.dst, i.src }),
+            .fcvt_f64_to_f32 => |i| try writer.print("fcvt.f64.f32 {f}, {f}", .{ i.dst, i.src }),
+            .vldr => |i| try writer.print("vldr.{f} {f}, [{f}, #{d}]", .{ i.size, i.dst, i.base, i.offset }),
+            .vstr => |i| try writer.print("vstr.{f} {f}, [{f}, #{d}]", .{ i.size, i.src, i.base, i.offset }),
+            .vldp => |i| try writer.print("vldp.{f} {f}, {f}, [{f}, #{d}]", .{ i.size, i.dst1, i.dst2, i.base, i.offset }),
+            .vstp => |i| try writer.print("vstp.{f} {f}, {f}, [{f}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
+            .ld1r => |i| try writer.print("ld1r.{f} {f}, [{f}]", .{ i.size, i.dst, i.base }),
+            .load_ext_name_got => |i| try writer.print("load_ext_name_got {f}, {s}", .{ i.dst, i.symbol }),
+            .jt_sequence => |i| try writer.print("jt_sequence {f}, {d} targets", .{ i.index, i.targets.len }),
+            .vec_and => |i| try writer.print("vec_and.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_orr => |i| try writer.print("vec_orr.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_eor => |i| try writer.print("vec_eor.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_add => |i| try writer.print("vec_add.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_sub => |i| try writer.print("vec_sub.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_mul => |i| try writer.print("vec_mul.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_sdot => |i| try writer.print("vec_sdot.4s {f}, {f}, {f}", .{ i.dst, i.src1, i.src2 }),
+            .vec_udot => |i| try writer.print("vec_udot.4s {f}, {f}, {f}", .{ i.dst, i.src1, i.src2 }),
+            .vec_smin => |i| try writer.print("vec_smin.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_smax => |i| try writer.print("vec_smax.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_umin => |i| try writer.print("vec_umin.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_umax => |i| try writer.print("vec_umax.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fadd => |i| try writer.print("vec_fadd.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fsub => |i| try writer.print("vec_fsub.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fmul => |i| try writer.print("vec_fmul.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fdiv => |i| try writer.print("vec_fdiv.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fmin => |i| try writer.print("vec_fmin.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_fmax => |i| try writer.print("vec_fmax.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_addv => |i| try writer.print("vec_addv.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .vec_sminv => |i| try writer.print("vec_sminv.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .vec_smaxv => |i| try writer.print("vec_smaxv.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .vec_uminv => |i| try writer.print("vec_uminv.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .vec_umaxv => |i| try writer.print("vec_umaxv.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .vec_dup => |i| try writer.print("vec_dup.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .vec_dup_lane => |i| try writer.print("vec_dup_lane.{f} {f}, {f}[{}]", .{ i.size, i.dst, i.src, i.lane }),
+            .vec_extract_lane => |i| try writer.print("vec_extract_lane.{f} {f}, {f}[{}]", .{ i.size, i.dst, i.src, i.lane }),
+            .vec_insert_lane => |i| try writer.print("vec_insert_lane.{f} {f}[{}], {f}", .{ i.size, i.dst, i.lane, i.src }),
+            .tbl => |i| try writer.print("tbl {f}, {{{f}}}, {f}", .{ i.dst, i.table, i.indices }),
+            .tbx => |i| try writer.print("tbx {f}, {{{f}}}, {f}", .{ i.dst, i.table, i.indices }),
+            .zip1 => |i| try writer.print("zip1.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .zip2 => |i| try writer.print("zip2.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .uzp1 => |i| try writer.print("uzp1.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .uzp2 => |i| try writer.print("uzp2.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .trn1 => |i| try writer.print("trn1.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .trn2 => |i| try writer.print("trn2.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_rev16 => |i| try writer.print("vec_rev16.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .vec_rev32 => |i| try writer.print("vec_rev32.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .vec_rev64 => |i| try writer.print("vec_rev64.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .vec_ext => |i| try writer.print("vec_ext.{f} {f}, {f}, {f}, #{}", .{ i.size, i.dst, i.src1, i.src2, i.index }),
+            .vec_rrr_mod => |i| try writer.print("{f}.{f} {f}, {f}, {f}, {f}", .{ i.op, i.size, i.dst, i.ri, i.rn, i.rm }),
+            .vec_rrr => |i| try writer.print("{f}.{f} {f}, {f}, {f}", .{ i.op, i.size, i.dst, i.rn, i.rm }),
+            .vec_misc => |i| try writer.print("{f}.{f} {f}, {f}", .{ i.op, i.size, i.dst, i.rn }),
+            .vec_shift_imm => |i| try writer.print("{f}.{f} {f}, {f}, #{d}", .{ i.op, i.size, i.dst, i.rn, i.imm }),
+            .vec_fmla_elem => |i| try writer.print("{f}.{f} {f}, {f}, {f}, {f}[{d}]", .{ i.op, i.size, i.dst, i.ri, i.rn, i.rm, i.idx }),
+            .vec_addp => |i| try writer.print("vec_addp.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_umaxp => |i| try writer.print("vec_umaxp.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .vec_cmeq0 => |i| try writer.print("vec_cmeq0.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .vec_sshll => |i| try writer.print("vec_sshll{s}.{f} {f}, {f}, #{}", .{ if (i.high) "2" else "", i.size, i.dst, i.src, i.shift_amt }),
+            .vec_ushll => |i| try writer.print("vec_ushll{s}.{f} {f}, {f}, #{}", .{ if (i.high) "2" else "", i.size, i.dst, i.src, i.shift_amt }),
+            .vec_sqxtn => |i| try writer.print("vec_sqxtn{s}.{f} {f}, {f}", .{ if (i.high) "2" else "", i.size, i.dst, i.src }),
+            .vec_sqxtun => |i| try writer.print("vec_sqxtun{s}.{f} {f}, {f}", .{ if (i.high) "2" else "", i.size, i.dst, i.src }),
+            .vec_uqxtn => |i| try writer.print("vec_uqxtn{s}.{f} {f}, {f}", .{ if (i.high) "2" else "", i.size, i.dst, i.src }),
+            .vec_fcvtl => |i| try writer.print("vec_fcvtl{s} {f}, {f}", .{ if (i.high) "2" else "", i.dst, i.src }),
+            .vec_fcvtn => |i| try writer.print("vec_fcvtn{s} {f}, {f}", .{ if (i.high) "2" else "", i.dst, i.src }),
+            .call => |i| try writer.print("call {f}", .{i.target}),
+            .call_indirect => |i| try writer.print("call {f}", .{i.target}),
             .ret_call => try writer.print("ret", .{}),
-            .sxtb => |i| try writer.print("sxtb.{} {}, {}", .{ i.dst_size, i.dst, i.src }),
-            .uxtb => |i| try writer.print("uxtb.{} {}, {}", .{ i.dst_size, i.dst, i.src }),
-            .sxth => |i| try writer.print("sxth.{} {}, {}", .{ i.dst_size, i.dst, i.src }),
-            .uxth => |i| try writer.print("uxth.{} {}, {}", .{ i.dst_size, i.dst, i.src }),
-            .sxtw => |i| try writer.print("sxtw {}, {}", .{ i.dst, i.src }),
-            .uxtw => |i| try writer.print("uxtw {}, {}", .{ i.dst, i.src }),
-            .zext8 => |i| try writer.print("zext8.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .zext16 => |i| try writer.print("zext16.{} {}, {}", .{ i.size, i.dst, i.src }),
-            .zext32 => |i| try writer.print("zext32 {}, {}", .{ i.dst, i.src }),
-            .mrs => |i| try writer.print("mrs {}, {}", .{ i.dst, i.sysreg }),
-            .msr => |i| try writer.print("msr {}, {}", .{ i.sysreg, i.src }),
+            .sxtb => |i| try writer.print("sxtb.{f} {f}, {f}", .{ i.dst_size, i.dst, i.src }),
+            .uxtb => |i| try writer.print("uxtb.{f} {f}, {f}", .{ i.dst_size, i.dst, i.src }),
+            .sxth => |i| try writer.print("sxth.{f} {f}, {f}", .{ i.dst_size, i.dst, i.src }),
+            .uxth => |i| try writer.print("uxth.{f} {f}, {f}", .{ i.dst_size, i.dst, i.src }),
+            .sxtw => |i| try writer.print("sxtw {f}, {f}", .{ i.dst, i.src }),
+            .uxtw => |i| try writer.print("uxtw {f}, {f}", .{ i.dst, i.src }),
+            .zext8 => |i| try writer.print("zext8.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .zext16 => |i| try writer.print("zext16.{f} {f}, {f}", .{ i.size, i.dst, i.src }),
+            .zext32 => |i| try writer.print("zext32 {f}, {f}", .{ i.dst, i.src }),
+            .mrs => |i| try writer.print("mrs {f}, {f}", .{ i.dst, i.sysreg }),
+            .msr => |i| try writer.print("msr {f}, {f}", .{ i.sysreg, i.src }),
             .epilogue_placeholder => try writer.print("epilogue_placeholder", .{}),
         }
     }
 
     /// Collect operands for register allocation.
     /// Called by regalloc to understand register use/def constraints.
-    pub fn getOperands(self: *Inst, collector: *OperandCollector) !void {
+    pub fn getOperands(self: *const Inst, collector: *OperandCollector) !void {
         switch (self.*) {
             .mov_imm => |*i| {
                 try collector.regDef(i.dst);
@@ -3016,6 +3093,21 @@ pub const Inst = union(enum) {
                 try collector.regUse(i.src2);
                 try collector.regDef(i.dst);
             },
+            .csinc => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .csinv => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .csneg => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
             .movz => |*i| {
                 try collector.regDef(i.dst);
             },
@@ -3321,6 +3413,10 @@ pub const Inst = union(enum) {
                 try collector.regUse(i.src);
                 try collector.regDef(i.dst);
             },
+            .ngc => |*i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
             .uxtw => |*i| {
                 try collector.regUse(i.src);
                 try collector.regDef(i.dst);
@@ -3506,44 +3602,44 @@ pub const Inst = union(enum) {
 
     /// Get defined (output) registers for this instruction.
     /// Returns a list of virtual registers written by this instruction.
-    pub fn getDefs(self: *Inst, allocator: std.mem.Allocator) ![]VReg {
+    pub fn getDefs(self: *const Inst, allocator: std.mem.Allocator) ![]VReg {
         var collector = OperandCollector.init(allocator);
         defer collector.deinit();
 
         try self.getOperands(&collector);
 
         // Convert WritableReg to VReg, filtering out physical registers
-        var vregs = std.ArrayList(VReg).init(allocator);
-        defer vregs.deinit();
+        var vregs = std.ArrayList(VReg){};
+        defer vregs.deinit(allocator);
 
         for (collector.defs.items) |writable_reg| {
             if (writable_reg.toReg().toVReg()) |vreg| {
-                try vregs.append(vreg);
+                try vregs.append(allocator, vreg);
             }
         }
 
-        return try vregs.toOwnedSlice();
+        return try vregs.toOwnedSlice(allocator);
     }
 
     /// Get used (input) registers for this instruction.
     /// Returns a list of virtual registers read by this instruction.
-    pub fn getUses(self: *Inst, allocator: std.mem.Allocator) ![]VReg {
+    pub fn getUses(self: *const Inst, allocator: std.mem.Allocator) ![]VReg {
         var collector = OperandCollector.init(allocator);
         defer collector.deinit();
 
         try self.getOperands(&collector);
 
         // Convert Reg to VReg, filtering out physical registers
-        var vregs = std.ArrayList(VReg).init(allocator);
-        defer vregs.deinit();
+        var vregs = std.ArrayList(VReg){};
+        defer vregs.deinit(allocator);
 
         for (collector.uses.items) |reg| {
             if (reg.toVReg()) |vreg| {
-                try vregs.append(vreg);
+                try vregs.append(allocator, vreg);
             }
         }
 
-        return try vregs.toOwnedSlice();
+        return try vregs.toOwnedSlice(allocator);
     }
 };
 
@@ -3566,7 +3662,7 @@ pub const OperandSize = enum {
         };
     }
 
-    pub fn format(self: OperandSize, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: OperandSize, writer: anytype) !void {
         switch (self) {
             .size32 => try writer.print("w", .{}),
             .size64 => try writer.print("x", .{}),
@@ -3596,7 +3692,7 @@ pub const FpuOperandSize = enum {
         };
     }
 
-    pub fn format(self: FpuOperandSize, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: FpuOperandSize, writer: anytype) !void {
         switch (self) {
             .size32 => try writer.print("s", .{}),
             .size64 => try writer.print("d", .{}),
@@ -3676,7 +3772,7 @@ pub const VecElemSize = enum {
         };
     }
 
-    pub fn format(self: VecElemSize, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: VecElemSize, writer: anytype) !void {
         switch (self) {
             .size8x8 => try writer.print("8b", .{}),
             .size8x16 => try writer.print("16b", .{}),
@@ -3693,6 +3789,13 @@ pub const VecElemSize = enum {
 pub const VecALUModOp = enum {
     Fmla, // Fused multiply-add
     Fmls, // Fused multiply-subtract
+
+    pub fn format(self: VecALUModOp, writer: anytype) !void {
+        switch (self) {
+            .Fmla => try writer.print("fmla", .{}),
+            .Fmls => try writer.print("fmls", .{}),
+        }
+    }
 };
 
 /// Vector ALU binary operations for ISLE integration.
@@ -3756,6 +3859,53 @@ pub const VecALUOp = enum {
 
     // Special
     Sqrdmulh, // Signed saturating rounding doubling multiply returning high half
+
+    pub fn format(self: VecALUOp, writer: anytype) !void {
+        switch (self) {
+            .Sqadd => try writer.print("sqadd", .{}),
+            .Uqadd => try writer.print("uqadd", .{}),
+            .Sqsub => try writer.print("sqsub", .{}),
+            .Uqsub => try writer.print("uqsub", .{}),
+            .Cmeq => try writer.print("cmeq", .{}),
+            .Cmge => try writer.print("cmge", .{}),
+            .Cmgt => try writer.print("cmgt", .{}),
+            .Cmhs => try writer.print("cmhs", .{}),
+            .Cmhi => try writer.print("cmhi", .{}),
+            .Fcmeq => try writer.print("fcmeq", .{}),
+            .Fcmgt => try writer.print("fcmgt", .{}),
+            .Fcmge => try writer.print("fcmge", .{}),
+            .And => try writer.print("and", .{}),
+            .Bic => try writer.print("bic", .{}),
+            .Orr => try writer.print("orr", .{}),
+            .Orn => try writer.print("orn", .{}),
+            .Eor => try writer.print("eor", .{}),
+            .Add => try writer.print("add", .{}),
+            .Sub => try writer.print("sub", .{}),
+            .Mul => try writer.print("mul", .{}),
+            .Sshl => try writer.print("sshl", .{}),
+            .Ushl => try writer.print("ushl", .{}),
+            .Umin => try writer.print("umin", .{}),
+            .Smin => try writer.print("smin", .{}),
+            .Umax => try writer.print("umax", .{}),
+            .Smax => try writer.print("smax", .{}),
+            .Umaxp => try writer.print("umaxp", .{}),
+            .Urhadd => try writer.print("urhadd", .{}),
+            .Fadd => try writer.print("fadd", .{}),
+            .Fsub => try writer.print("fsub", .{}),
+            .Fdiv => try writer.print("fdiv", .{}),
+            .Fmax => try writer.print("fmax", .{}),
+            .Fmin => try writer.print("fmin", .{}),
+            .Fmul => try writer.print("fmul", .{}),
+            .Addp => try writer.print("addp", .{}),
+            .Zip1 => try writer.print("zip1", .{}),
+            .Zip2 => try writer.print("zip2", .{}),
+            .Uzp1 => try writer.print("uzp1", .{}),
+            .Uzp2 => try writer.print("uzp2", .{}),
+            .Trn1 => try writer.print("trn1", .{}),
+            .Trn2 => try writer.print("trn2", .{}),
+            .Sqrdmulh => try writer.print("sqrdmulh", .{}),
+        }
+    }
 };
 
 /// Vector miscellaneous unary operations for ISLE integration.
@@ -3803,6 +3953,39 @@ pub const VecMisc2 = enum {
     Fcmgt0, // Floating point compare greater than 0
     Fcmle0, // Floating point compare less than or equal to 0
     Fcmlt0, // Floating point compare less than 0
+
+    pub fn format(self: VecMisc2, writer: anytype) !void {
+        switch (self) {
+            .Not => try writer.print("not", .{}),
+            .Neg => try writer.print("neg", .{}),
+            .Abs => try writer.print("abs", .{}),
+            .Fabs => try writer.print("fabs", .{}),
+            .Fneg => try writer.print("fneg", .{}),
+            .Fsqrt => try writer.print("fsqrt", .{}),
+            .Rev16 => try writer.print("rev16", .{}),
+            .Rev32 => try writer.print("rev32", .{}),
+            .Rev64 => try writer.print("rev64", .{}),
+            .Fcvtzs => try writer.print("fcvtzs", .{}),
+            .Fcvtzu => try writer.print("fcvtzu", .{}),
+            .Scvtf => try writer.print("scvtf", .{}),
+            .Ucvtf => try writer.print("ucvtf", .{}),
+            .Frintn => try writer.print("frintn", .{}),
+            .Frintz => try writer.print("frintz", .{}),
+            .Frintm => try writer.print("frintm", .{}),
+            .Frintp => try writer.print("frintp", .{}),
+            .Cnt => try writer.print("cnt", .{}),
+            .Cmeq0 => try writer.print("cmeq0", .{}),
+            .Cmge0 => try writer.print("cmge0", .{}),
+            .Cmgt0 => try writer.print("cmgt0", .{}),
+            .Cmle0 => try writer.print("cmle0", .{}),
+            .Cmlt0 => try writer.print("cmlt0", .{}),
+            .Fcmeq0 => try writer.print("fcmeq0", .{}),
+            .Fcmge0 => try writer.print("fcmge0", .{}),
+            .Fcmgt0 => try writer.print("fcmgt0", .{}),
+            .Fcmle0 => try writer.print("fcmle0", .{}),
+            .Fcmlt0 => try writer.print("fcmlt0", .{}),
+        }
+    }
 };
 
 /// Vector shift immediate operations
@@ -3812,6 +3995,16 @@ pub const VecShiftImmOp = enum {
     Sshr, // Signed shift right
     Ushll, // Unsigned shift left long (widens elements)
     Sshll, // Signed shift left long (widens elements)
+
+    pub fn format(self: VecShiftImmOp, writer: anytype) !void {
+        switch (self) {
+            .Shl => try writer.print("shl", .{}),
+            .Ushr => try writer.print("ushr", .{}),
+            .Sshr => try writer.print("sshr", .{}),
+            .Ushll => try writer.print("ushll", .{}),
+            .Sshll => try writer.print("sshll", .{}),
+        }
+    }
 };
 
 /// Vector size for ISLE integration (maps to ISLE VectorSize enum).
@@ -3823,6 +4016,18 @@ pub const VectorSize = enum {
     V2S,
     V4S,
     V2D,
+
+    pub fn format(self: VectorSize, writer: anytype) !void {
+        switch (self) {
+            .V8B => try writer.print("8b", .{}),
+            .V16B => try writer.print("16b", .{}),
+            .V4H => try writer.print("4h", .{}),
+            .V8H => try writer.print("8h", .{}),
+            .V2S => try writer.print("2s", .{}),
+            .V4S => try writer.print("4s", .{}),
+            .V2D => try writer.print("2d", .{}),
+        }
+    }
 };
 
 /// Condition code for conditional instructions.
@@ -3847,7 +4052,7 @@ pub const CondCode = enum(u4) {
         return @enumFromInt(@intFromEnum(self) ^ 1);
     }
 
-    pub fn format(self: CondCode, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: CondCode, writer: anytype) !void {
         const names = [_][]const u8{
             "eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc",
             "hi", "ls", "ge", "lt", "gt", "le", "al", "nv",
@@ -3863,7 +4068,7 @@ pub const ShiftOp = enum(u2) {
     asr = 0b10, // Arithmetic shift right
     ror = 0b11, // Rotate right
 
-    pub fn format(self: ShiftOp, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: ShiftOp, writer: anytype) !void {
         switch (self) {
             .lsl => try writer.print("lsl", .{}),
             .lsr => try writer.print("lsr", .{}),
@@ -3884,7 +4089,7 @@ pub const ExtendOp = enum(u3) {
     sxtw = 0b110, // Signed extend word
     sxtx = 0b111, // Signed extend doubleword (LSL)
 
-    pub fn format(self: ExtendOp, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: ExtendOp, writer: anytype) !void {
         switch (self) {
             .uxtb => try writer.print("uxtb", .{}),
             .uxth => try writer.print("uxth", .{}),
@@ -3913,7 +4118,7 @@ pub const BarrierOp = enum(u4) {
     oshst = 0b0010, // Outer shareable store
     oshld = 0b0001, // Outer shareable load
 
-    pub fn format(self: BarrierOp, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: BarrierOp, writer: anytype) !void {
         switch (self) {
             .sy => try writer.print("sy", .{}),
             .st => try writer.print("st", .{}),
@@ -3949,7 +4154,7 @@ pub const SystemReg = enum(u16) {
         return @intCast(@intFromEnum(self));
     }
 
-    pub fn format(self: SystemReg, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: SystemReg, writer: anytype) !void {
         switch (self) {
             .nzcv => try writer.print("nzcv", .{}),
             .fpcr => try writer.print("fpcr", .{}),
@@ -3965,7 +4170,7 @@ pub const BranchTarget = union(enum) {
     label: u32,
     offset: i32,
 
-    pub fn format(self: BranchTarget, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: BranchTarget, writer: anytype) !void {
         switch (self) {
             .label => |l| try writer.print("label{d}", .{l}),
             .offset => |o| try writer.print("offset{d}", .{o}),
@@ -3978,7 +4183,7 @@ pub const CallTarget = union(enum) {
     external_name: []const u8,
     label: u32,
 
-    pub fn format(self: CallTarget, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: CallTarget, writer: anytype) !void {
         switch (self) {
             .external_name => |n| try writer.print("{s}", .{n}),
             .label => |l| try writer.print("label{d}", .{l}),
@@ -4029,26 +4234,26 @@ pub const Amode = union(enum) {
     /// PC-relative: label
     label: u32,
 
-    pub fn format(self: Amode, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Amode, writer: anytype) !void {
         switch (self) {
             .reg_offset => |a| {
                 if (a.offset == 0) {
-                    try writer.print("[{}]", .{a.base});
+                    try writer.print("[{f}]", .{a.base});
                 } else {
-                    try writer.print("[{}, #{d}]", .{ a.base, a.offset });
+                    try writer.print("[{f}, #{d}]", .{ a.base, a.offset });
                 }
             },
-            .reg_reg => |a| try writer.print("[{}, {}]", .{ a.base, a.index }),
-            .reg_extended => |a| try writer.print("[{}, {}, {}]", .{ a.base, a.index, a.extend }),
+            .reg_reg => |a| try writer.print("[{f}, {f}]", .{ a.base, a.index }),
+            .reg_extended => |a| try writer.print("[{f}, {f}, {f}]", .{ a.base, a.index, a.extend }),
             .reg_scaled => |a| {
                 if (a.scale == 0) {
-                    try writer.print("[{}, {}]", .{ a.base, a.index });
+                    try writer.print("[{f}, {f}]", .{ a.base, a.index });
                 } else {
-                    try writer.print("[{}, {}, lsl #{d}]", .{ a.base, a.index, a.scale });
+                    try writer.print("[{f}, {f}, lsl #{d}]", .{ a.base, a.index, a.scale });
                 }
             },
-            .pre_index => |a| try writer.print("[{}, #{d}]!", .{ a.base, a.offset }),
-            .post_index => |a| try writer.print("[{}], #{d}", .{ a.base, a.offset }),
+            .pre_index => |a| try writer.print("[{f}, #{d}]!", .{ a.base, a.offset }),
+            .post_index => |a| try writer.print("[{f}], #{d}", .{ a.base, a.offset }),
             .label => |l| try writer.print("label{d}", .{l}),
         }
     }
@@ -4061,7 +4266,7 @@ pub const UnwindInst = union(enum) {
     stack_alloc: u32,
     stack_dealloc: u32,
 
-    pub fn format(self: UnwindInst, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: UnwindInst, writer: anytype) !void {
         switch (self) {
             .push_frame_regs => try writer.print("push_frame_regs", .{}),
             .pop_frame_regs => try writer.print("pop_frame_regs", .{}),
@@ -4093,6 +4298,10 @@ pub const Imm12 = struct {
     pub fn toU64(self: Imm12) u64 {
         const val: u64 = self.bits;
         return if (self.shift12) val << 12 else val;
+    }
+
+    pub fn format(self: Imm12, writer: anytype) !void {
+        try writer.print("{d}", .{self.toU64()});
     }
 };
 
@@ -4242,6 +4451,10 @@ pub const BtiTarget = enum(u2) {
     j = 0b01,
     /// BTI jc - Valid target for both call and jump
     jc = 0b10,
+
+    pub fn format(self: BtiTarget, writer: anytype) !void {
+        try writer.print("{s}", .{@tagName(self)});
+    }
 };
 
 /// Create AND immediate instruction.
@@ -4652,8 +4865,8 @@ test "Inst formatting" {
         .size = .size64,
     } };
 
-    var buf: [64]u8 = undefined;
-    const str = try std.fmt.bufPrint(&buf, "{any}", .{inst});
+    var buf: [256]u8 = undefined;
+    const str = try std.fmt.bufPrint(&buf, "{f}", .{inst});
     try testing.expect(std.mem.indexOf(u8, str, "add") != null);
 }
 
@@ -4686,8 +4899,14 @@ test "Imm12 encoding" {
     const imm3 = Imm12.maybeFromU64(0xfff).?;
     try testing.expectEqual(@as(u12, 0xfff), imm3.bits);
 
+    // 12-bit immediate with shift (1 << 12)
+    const imm4 = Imm12.maybeFromU64(0x1000).?;
+    try testing.expectEqual(@as(u12, 1), imm4.bits);
+    try testing.expectEqual(true, imm4.shift12);
+    try testing.expectEqual(@as(u64, 0x1000), imm4.toU64());
+
     // Invalid - too large
-    try testing.expectEqual(@as(?Imm12, null), Imm12.maybeFromU64(0x1000));
+    try testing.expectEqual(@as(?Imm12, null), Imm12.maybeFromU64(0x1000000));
 
     // Invalid - not aligned to either encoding
     try testing.expectEqual(@as(?Imm12, null), Imm12.maybeFromU64((12 << 12) + 1));
@@ -4739,7 +4958,7 @@ test "Multiply instruction formatting" {
     const r3 = Reg.fromVReg(v3);
     const wr0 = WritableReg.fromReg(r0);
 
-    var buf: [128]u8 = undefined;
+    var buf: [256]u8 = undefined;
 
     // MUL
     const mul_inst = Inst{ .mul_rr = .{
@@ -4748,7 +4967,7 @@ test "Multiply instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    const mul_str = try std.fmt.bufPrint(&buf, "{any}", .{mul_inst});
+    const mul_str = try std.fmt.bufPrint(&buf, "{f}", .{mul_inst});
     try testing.expect(std.mem.indexOf(u8, mul_str, "mul") != null);
 
     // MADD
@@ -4759,7 +4978,7 @@ test "Multiply instruction formatting" {
         .addend = r3,
         .size = .size64,
     } };
-    const madd_str = try std.fmt.bufPrint(&buf, "{any}", .{madd_inst});
+    const madd_str = try std.fmt.bufPrint(&buf, "{f}", .{madd_inst});
     try testing.expect(std.mem.indexOf(u8, madd_str, "madd") != null);
 
     // MSUB
@@ -4770,7 +4989,7 @@ test "Multiply instruction formatting" {
         .minuend = r3,
         .size = .size64,
     } };
-    const msub_str = try std.fmt.bufPrint(&buf, "{any}", .{msub_inst});
+    const msub_str = try std.fmt.bufPrint(&buf, "{f}", .{msub_inst});
     try testing.expect(std.mem.indexOf(u8, msub_str, "msub") != null);
 
     // SMULH
@@ -4779,7 +4998,7 @@ test "Multiply instruction formatting" {
         .src1 = r1,
         .src2 = r2,
     } };
-    const smulh_str = try std.fmt.bufPrint(&buf, "{any}", .{smulh_inst});
+    const smulh_str = try std.fmt.bufPrint(&buf, "{f}", .{smulh_inst});
     try testing.expect(std.mem.indexOf(u8, smulh_str, "smulh") != null);
 
     // UMULH
@@ -4788,7 +5007,7 @@ test "Multiply instruction formatting" {
         .src1 = r1,
         .src2 = r2,
     } };
-    const umulh_str = try std.fmt.bufPrint(&buf, "{any}", .{umulh_inst});
+    const umulh_str = try std.fmt.bufPrint(&buf, "{f}", .{umulh_inst});
     try testing.expect(std.mem.indexOf(u8, umulh_str, "umulh") != null);
 
     // SMULL
@@ -4797,7 +5016,7 @@ test "Multiply instruction formatting" {
         .src1 = r1,
         .src2 = r2,
     } };
-    const smull_str = try std.fmt.bufPrint(&buf, "{any}", .{smull_inst});
+    const smull_str = try std.fmt.bufPrint(&buf, "{f}", .{smull_inst});
     try testing.expect(std.mem.indexOf(u8, smull_str, "smull") != null);
 
     // UMULL
@@ -4806,7 +5025,7 @@ test "Multiply instruction formatting" {
         .src1 = r1,
         .src2 = r2,
     } };
-    const umull_str = try std.fmt.bufPrint(&buf, "{any}", .{umull_inst});
+    const umull_str = try std.fmt.bufPrint(&buf, "{f}", .{umull_inst});
     try testing.expect(std.mem.indexOf(u8, umull_str, "umull") != null);
 }
 
@@ -4819,7 +5038,7 @@ test "Bitwise instruction formatting" {
     const r2 = Reg.fromVReg(v2);
     const wr0 = WritableReg.fromReg(r0);
 
-    var buf: [128]u8 = undefined;
+    var buf: [256]u8 = undefined;
 
     // AND register-register
     const and_rr = Inst{ .and_rr = .{
@@ -4828,7 +5047,7 @@ test "Bitwise instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    const and_str = try std.fmt.bufPrint(&buf, "{any}", .{and_rr});
+    const and_str = try std.fmt.bufPrint(&buf, "{f}", .{and_rr});
     try testing.expect(std.mem.indexOf(u8, and_str, "and") != null);
 
     // ORR register-register
@@ -4838,7 +5057,7 @@ test "Bitwise instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    const orr_str = try std.fmt.bufPrint(&buf, "{any}", .{orr_rr});
+    const orr_str = try std.fmt.bufPrint(&buf, "{f}", .{orr_rr});
     try testing.expect(std.mem.indexOf(u8, orr_str, "orr") != null);
 
     // EOR register-register
@@ -4848,7 +5067,7 @@ test "Bitwise instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    const eor_str = try std.fmt.bufPrint(&buf, "{any}", .{eor_rr});
+    const eor_str = try std.fmt.bufPrint(&buf, "{f}", .{eor_rr});
     try testing.expect(std.mem.indexOf(u8, eor_str, "eor") != null);
 
     // BIC register-register
@@ -4858,7 +5077,7 @@ test "Bitwise instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    const bic_str = try std.fmt.bufPrint(&buf, "{any}", .{bic_rr});
+    const bic_str = try std.fmt.bufPrint(&buf, "{f}", .{bic_rr});
     try testing.expect(std.mem.indexOf(u8, bic_str, "bic") != null);
 
     // MVN
@@ -4867,7 +5086,7 @@ test "Bitwise instruction formatting" {
         .src = r1,
         .size = .size64,
     } };
-    const mvn_str = try std.fmt.bufPrint(&buf, "{any}", .{mvn});
+    const mvn_str = try std.fmt.bufPrint(&buf, "{f}", .{mvn});
     try testing.expect(std.mem.indexOf(u8, mvn_str, "mvn") != null);
 }
 
@@ -4880,7 +5099,7 @@ test "Shift instruction formatting" {
     const r2 = Reg.fromVReg(v2);
     const wr0 = WritableReg.fromReg(r0);
 
-    var buf: [128]u8 = undefined;
+    var buf: [256]u8 = undefined;
     var str: []u8 = undefined;
 
     // LSL register-register (32-bit)
@@ -4890,7 +5109,7 @@ test "Shift instruction formatting" {
         .src2 = r2,
         .size = .size32,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{lsl_rr_32});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{lsl_rr_32});
     try testing.expect(std.mem.indexOf(u8, str, "lsl") != null);
     try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
 
@@ -4901,7 +5120,7 @@ test "Shift instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{lsl_rr_64});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{lsl_rr_64});
     try testing.expect(std.mem.indexOf(u8, str, "lsl") != null);
     try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
 
@@ -4912,7 +5131,7 @@ test "Shift instruction formatting" {
         .imm = 5,
         .size = .size32,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{lsl_imm_32});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{lsl_imm_32});
     try testing.expect(std.mem.indexOf(u8, str, "lsl") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#5") != null);
 
@@ -4923,7 +5142,7 @@ test "Shift instruction formatting" {
         .imm = 42,
         .size = .size64,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{lsl_imm_64});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{lsl_imm_64});
     try testing.expect(std.mem.indexOf(u8, str, "lsl") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#42") != null);
 
@@ -4934,7 +5153,7 @@ test "Shift instruction formatting" {
         .src2 = r2,
         .size = .size32,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{lsr_rr_32});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{lsr_rr_32});
     try testing.expect(std.mem.indexOf(u8, str, "lsr") != null);
     try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
 
@@ -4945,7 +5164,7 @@ test "Shift instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{lsr_rr_64});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{lsr_rr_64});
     try testing.expect(std.mem.indexOf(u8, str, "lsr") != null);
     try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
 
@@ -4956,7 +5175,7 @@ test "Shift instruction formatting" {
         .imm = 13,
         .size = .size32,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{lsr_imm_32});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{lsr_imm_32});
     try testing.expect(std.mem.indexOf(u8, str, "lsr") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#13") != null);
 
@@ -4967,7 +5186,7 @@ test "Shift instruction formatting" {
         .imm = 57,
         .size = .size64,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{lsr_imm_64});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{lsr_imm_64});
     try testing.expect(std.mem.indexOf(u8, str, "lsr") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#57") != null);
 
@@ -4978,7 +5197,7 @@ test "Shift instruction formatting" {
         .src2 = r2,
         .size = .size32,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{asr_rr_32});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{asr_rr_32});
     try testing.expect(std.mem.indexOf(u8, str, "asr") != null);
     try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
 
@@ -4989,7 +5208,7 @@ test "Shift instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{asr_rr_64});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{asr_rr_64});
     try testing.expect(std.mem.indexOf(u8, str, "asr") != null);
     try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
 
@@ -5000,7 +5219,7 @@ test "Shift instruction formatting" {
         .imm = 7,
         .size = .size32,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{asr_imm_32});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{asr_imm_32});
     try testing.expect(std.mem.indexOf(u8, str, "asr") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#7") != null);
 
@@ -5011,7 +5230,7 @@ test "Shift instruction formatting" {
         .imm = 61,
         .size = .size64,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{asr_imm_64});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{asr_imm_64});
     try testing.expect(std.mem.indexOf(u8, str, "asr") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#61") != null);
 
@@ -5022,7 +5241,7 @@ test "Shift instruction formatting" {
         .src2 = r2,
         .size = .size32,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{ror_rr_32});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{ror_rr_32});
     try testing.expect(std.mem.indexOf(u8, str, "ror") != null);
     try testing.expect(std.mem.indexOf(u8, str, ".w") != null);
 
@@ -5033,7 +5252,7 @@ test "Shift instruction formatting" {
         .src2 = r2,
         .size = .size64,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{ror_rr_64});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{ror_rr_64});
     try testing.expect(std.mem.indexOf(u8, str, "ror") != null);
     try testing.expect(std.mem.indexOf(u8, str, ".x") != null);
 
@@ -5044,7 +5263,7 @@ test "Shift instruction formatting" {
         .imm = 11,
         .size = .size32,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{ror_imm_32});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{ror_imm_32});
     try testing.expect(std.mem.indexOf(u8, str, "ror") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#11") != null);
 
@@ -5055,7 +5274,7 @@ test "Shift instruction formatting" {
         .imm = 59,
         .size = .size64,
     } };
-    str = try std.fmt.bufPrint(&buf, "{any}", .{ror_imm_64});
+    str = try std.fmt.bufPrint(&buf, "{f}", .{ror_imm_64});
     try testing.expect(std.mem.indexOf(u8, str, "ror") != null);
     try testing.expect(std.mem.indexOf(u8, str, "#59") != null);
 }

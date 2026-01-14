@@ -43,7 +43,7 @@ pub const PReg = struct {
         return self.bits;
     }
 
-    pub fn format(self: PReg, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: PReg, writer: anytype) !void {
         try writer.print("p{d}(class={s},hw={d})", .{
             self.bits,
             @tagName(self.class()),
@@ -75,7 +75,7 @@ pub const VReg = struct {
         return self.bits & INDEX_MASK;
     }
 
-    pub fn format(self: VReg, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: VReg, writer: anytype) !void {
         try writer.print("v{d}(class={s})", .{ self.index(), @tagName(self.class()) });
     }
 };
@@ -96,7 +96,7 @@ pub const Reg = struct {
 
     pub fn fromPReg(preg: PReg) Reg {
         // Physical registers are pinned to the first PINNED_VREGS virtual registers
-        const vreg = VReg.new(preg.index(), preg.class());
+        const vreg = VReg.new(@as(u32, preg.hwEnc()), preg.class());
         return .{ .bits = vreg.bits };
     }
 
@@ -145,11 +145,11 @@ pub const Reg = struct {
         return vreg.class();
     }
 
-    pub fn format(self: Reg, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Reg, writer: anytype) !void {
         if (self.toRealReg()) |preg| {
-            try writer.print("r{}", .{preg});
+            try writer.print("r{f}", .{preg});
         } else if (self.toVReg()) |vreg| {
-            try writer.print("r{}", .{vreg});
+            try writer.print("r{f}", .{vreg});
         } else if (self.toSpillSlot()) |slot| {
             try writer.print("rslot{d}", .{slot.index});
         } else {
@@ -172,6 +172,10 @@ pub const WritableReg = struct {
 
     pub fn toReg(self: WritableReg) Reg {
         return self.reg;
+    }
+
+    pub fn format(self: WritableReg, writer: anytype) !void {
+        try self.reg.format(writer);
     }
 };
 
@@ -218,10 +222,10 @@ pub const ValueRegs = union(enum) {
         };
     }
 
-    pub fn format(self: ValueRegs, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: ValueRegs, writer: anytype) !void {
         switch (self) {
-            .one => |r| try writer.print("{}", .{r}),
-            .two => |p| try writer.print("[{},{}]", .{ p.low, p.high }),
+            .one => |r| try writer.print("{f}", .{r}),
+            .two => |p| try writer.print("[{f},{f}]", .{ p.low, p.high }),
         }
     }
 };

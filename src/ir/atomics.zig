@@ -50,9 +50,16 @@ pub const AtomicOrdering = enum(u8) {
 
     /// Get the minimum ordering that provides both this and other's guarantees.
     pub fn merge(self: AtomicOrdering, other: AtomicOrdering) AtomicOrdering {
-        const a = @intFromEnum(self);
-        const b = @intFromEnum(other);
-        return @enumFromInt(@max(a, b));
+        if (self.isSeqCst() or other.isSeqCst()) return .seq_cst;
+
+        const need_acquire = self.isAcquire() or other.isAcquire();
+        const need_release = self.isRelease() or other.isRelease();
+        if (need_acquire and need_release) return .acq_rel;
+        if (need_acquire) return .acquire;
+        if (need_release) return .release;
+
+        if (self == .monotonic or other == .monotonic) return .monotonic;
+        return .unordered;
     }
 };
 

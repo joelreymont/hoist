@@ -282,3 +282,65 @@ test "compile aarch64 function with call" {
 
     try testing.expect(code.buffer.len > 0);
 }
+
+test "compile aarch64 preserve_all callconv" {
+    var sig = Signature.init(testing.allocator, .preserve_all);
+    defer sig.deinit();
+
+    const i64_type = Type{ .int = .{ .width = 64 } };
+    const params = [_]AbiParam{
+        AbiParam.new(i64_type),
+        AbiParam.new(i64_type),
+    };
+    try sig.params.appendSlice(&params);
+    try sig.returns.append(AbiParam.new(i64_type));
+
+    var func = try Function.init(testing.allocator, "test_aarch64_preserve_all", sig);
+    defer func.deinit();
+
+    const entry = func.dfg.makeBlock() catch unreachable;
+    try func.layout.appendBlock(entry);
+
+    const param0 = func.dfg.blockParams(entry)[0];
+    const param1 = func.dfg.blockParams(entry)[1];
+
+    const callee = FuncRef.new(0);
+
+    var call_args = ValueList.default();
+    try func.dfg.value_lists.push(&call_args, param0);
+    try func.dfg.value_lists.push(&call_args, param1);
+
+    const call_data = InstructionData{
+        .call = .{
+            .opcode = .call,
+            .func_ref = callee,
+            .args = call_args,
+        },
+    };
+    const call_inst = try func.dfg.makeInst(call_data);
+    const call_result = try func.dfg.appendInstResult(call_inst, i64_type);
+    try func.layout.appendInst(call_inst, entry);
+
+    const ret_data = InstructionData{
+        .unary = .{
+            .opcode = .@"return",
+            .arg = call_result,
+        },
+    };
+    const ret_inst = try func.dfg.makeInst(ret_data);
+    try func.layout.appendInst(ret_inst, entry);
+
+    var ctx = ContextBuilder.init(testing.allocator)
+        .target(.aarch64, .linux)
+        .callConv(.preserve_all)
+        .verify(true)
+        .build();
+
+    const code = ctx.compileFunction(&func) catch |err| {
+        std.debug.print("PreserveAll callconv compilation failed: {}\n", .{err});
+        return err;
+    };
+    defer code.deinit(testing.allocator);
+
+    try testing.expect(code.buffer.len > 0);
+}
