@@ -13,6 +13,7 @@ const InstructionData = hoist.instruction_data.InstructionData;
 const Imm64 = hoist.immediates.Imm64;
 const Verifier = hoist.verifier.Verifier;
 const IntCC = hoist.condcodes.IntCC;
+const FunctionBuilder = hoist.builder.FunctionBuilder;
 
 // Test: E2E compilation of function with while loop
 // Tests loop header, back edge, phi nodes via block parameters
@@ -25,6 +26,7 @@ test "E2E: while loop with phi node" {
 
     var func = try Function.init(testing.allocator, "while_loop", sig);
     defer func.deinit();
+    var ir_builder = FunctionBuilder.init(&func);
 
     // Create blocks: entry -> loop_header -> loop_body -> loop_exit
     const entry = try func.dfg.blocks.add();
@@ -39,16 +41,9 @@ test "E2E: while loop with phi node" {
 
     // Entry block: jump to loop header
     const param = try func.dfg.appendBlockParam(entry, Type.I32);
-    _ = param;
 
-    const jump_entry_data = InstructionData{
-        .jump = .{
-            .opcode = .jump,
-            .destination = loop_header,
-        },
-    };
-    const jump_entry_inst = try func.dfg.makeInst(jump_entry_data);
-    try func.layout.appendInst(jump_entry_inst, entry);
+    ir_builder.switchToBlock(entry);
+    try ir_builder.jumpArgs(loop_header, &.{param});
 
     // Loop header: phi node via block parameter (loop counter)
     const loop_counter = try func.dfg.appendBlockParam(loop_header, Type.I32);
@@ -105,18 +100,12 @@ test "E2E: while loop with phi node" {
         },
     };
     const sub_inst = try func.dfg.makeInst(sub_data);
-    _ = try func.dfg.appendInstResult(sub_inst, Type.I32);
+    const sub_val = try func.dfg.appendInstResult(sub_inst, Type.I32);
     try func.layout.appendInst(sub_inst, loop_body);
 
     // Jump back to loop header (back edge)
-    const jump_back_data = InstructionData{
-        .jump = .{
-            .opcode = .jump,
-            .destination = loop_header,
-        },
-    };
-    const jump_back_inst = try func.dfg.makeInst(jump_back_data);
-    try func.layout.appendInst(jump_back_inst, loop_body);
+    ir_builder.switchToBlock(loop_body);
+    try ir_builder.jumpArgs(loop_header, &.{sub_val});
 
     // Loop exit: return final counter value
     const ret_data = InstructionData{
@@ -143,9 +132,8 @@ test "E2E: while loop with phi node" {
 
     // Compile and verify code generation
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder.targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     const code = try ctx.compileFunction(&func);
     var code_copy = code;
@@ -165,6 +153,7 @@ test "E2E: nested loops with phi nodes" {
 
     var func = try Function.init(testing.allocator, "nested_loops", sig);
     defer func.deinit();
+    var ir_builder = FunctionBuilder.init(&func);
 
     // Create blocks
     const entry = try func.dfg.blocks.add();
@@ -182,17 +171,10 @@ test "E2E: nested loops with phi nodes" {
     try func.layout.appendBlock(outer_exit);
 
     const param2 = try func.dfg.appendBlockParam(entry, Type.I32);
-    _ = param2;
 
     // Entry: jump to outer loop
-    const jump_entry_data = InstructionData{
-        .jump = .{
-            .opcode = .jump,
-            .destination = outer_header,
-        },
-    };
-    const jump_entry_inst = try func.dfg.makeInst(jump_entry_data);
-    try func.layout.appendInst(jump_entry_inst, entry);
+    ir_builder.switchToBlock(entry);
+    try ir_builder.jumpArgs(outer_header, &.{param2});
 
     // Outer loop header: phi node for outer counter
     const outer_counter = try func.dfg.appendBlockParam(outer_header, Type.I32);
@@ -218,16 +200,8 @@ test "E2E: nested loops with phi nodes" {
     const outer_cmp_result = try func.dfg.appendInstResult(outer_cmp_inst, Type.I8);
     try func.layout.appendInst(outer_cmp_inst, outer_header);
 
-    const outer_brif_data = InstructionData{
-        .branch = .{
-            .opcode = .brif,
-            .condition = outer_cmp_result,
-            .then_dest = inner_header,
-            .else_dest = outer_exit,
-        },
-    };
-    const outer_brif_inst = try func.dfg.makeInst(outer_brif_data);
-    try func.layout.appendInst(outer_brif_inst, outer_header);
+    ir_builder.switchToBlock(outer_header);
+    try ir_builder.brifArgs(outer_cmp_result, inner_header, &.{outer_counter}, outer_exit, &.{});
 
     // Inner loop header: phi node for inner counter
     const inner_counter = try func.dfg.appendBlockParam(inner_header, Type.I32);
@@ -272,17 +246,11 @@ test "E2E: nested loops with phi nodes" {
         },
     };
     const inner_sub_inst = try func.dfg.makeInst(inner_sub_data);
-    _ = try func.dfg.appendInstResult(inner_sub_inst, Type.I32);
+    const inner_sub_val = try func.dfg.appendInstResult(inner_sub_inst, Type.I32);
     try func.layout.appendInst(inner_sub_inst, inner_body);
 
-    const inner_jump_data = InstructionData{
-        .jump = .{
-            .opcode = .jump,
-            .destination = inner_header,
-        },
-    };
-    const inner_jump_inst = try func.dfg.makeInst(inner_jump_data);
-    try func.layout.appendInst(inner_jump_inst, inner_body);
+    ir_builder.switchToBlock(inner_body);
+    try ir_builder.jumpArgs(inner_header, &.{inner_sub_val});
 
     // Inner exit: decrement outer counter and jump back
     const outer_sub_data = InstructionData{
@@ -292,17 +260,11 @@ test "E2E: nested loops with phi nodes" {
         },
     };
     const outer_sub_inst = try func.dfg.makeInst(outer_sub_data);
-    _ = try func.dfg.appendInstResult(outer_sub_inst, Type.I32);
+    const outer_sub_val = try func.dfg.appendInstResult(outer_sub_inst, Type.I32);
     try func.layout.appendInst(outer_sub_inst, inner_exit);
 
-    const outer_jump_data = InstructionData{
-        .jump = .{
-            .opcode = .jump,
-            .destination = outer_header,
-        },
-    };
-    const outer_jump_inst = try func.dfg.makeInst(outer_jump_data);
-    try func.layout.appendInst(outer_jump_inst, inner_exit);
+    ir_builder.switchToBlock(inner_exit);
+    try ir_builder.jumpArgs(outer_header, &.{outer_sub_val});
 
     // Outer exit: return final value
     const ret_data = InstructionData{
@@ -328,9 +290,8 @@ test "E2E: nested loops with phi nodes" {
 
     // Compile
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder.targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     const code = try ctx.compileFunction(&func);
     var code_copy = code;
@@ -350,6 +311,7 @@ test "E2E: loop with accumulator phi" {
 
     var func = try Function.init(testing.allocator, "loop_accumulator", sig);
     defer func.deinit();
+    var ir_builder = FunctionBuilder.init(&func);
 
     // sum = 0; while (n > 0) { sum = sum + n; n = n - 1; } return sum;
     const entry = try func.dfg.blocks.add();
@@ -363,7 +325,6 @@ test "E2E: loop with accumulator phi" {
     try func.layout.appendBlock(loop_exit);
 
     const param3 = try func.dfg.appendBlockParam(entry, Type.I32);
-    _ = param3;
 
     // Entry: initialize sum = 0, jump to header
     const zero_data = InstructionData{
@@ -373,17 +334,11 @@ test "E2E: loop with accumulator phi" {
         },
     };
     const zero_inst = try func.dfg.makeInst(zero_data);
-    _ = try func.dfg.appendInstResult(zero_inst, Type.I32);
+    const sum_init = try func.dfg.appendInstResult(zero_inst, Type.I32);
     try func.layout.appendInst(zero_inst, entry);
 
-    const jump_entry_data = InstructionData{
-        .jump = .{
-            .opcode = .jump,
-            .destination = loop_header,
-        },
-    };
-    const jump_entry_inst = try func.dfg.makeInst(jump_entry_data);
-    try func.layout.appendInst(jump_entry_inst, entry);
+    ir_builder.switchToBlock(entry);
+    try ir_builder.jumpArgs(loop_header, &.{ param3, sum_init });
 
     // Loop header: phi nodes for both n and sum
     const n = try func.dfg.appendBlockParam(loop_header, Type.I32);
@@ -429,7 +384,7 @@ test "E2E: loop with accumulator phi" {
         },
     };
     const add_inst = try func.dfg.makeInst(add_data);
-    _ = try func.dfg.appendInstResult(add_inst, Type.I32);
+    const add_val = try func.dfg.appendInstResult(add_inst, Type.I32);
     try func.layout.appendInst(add_inst, loop_body);
 
     const one_data = InstructionData{
@@ -449,17 +404,11 @@ test "E2E: loop with accumulator phi" {
         },
     };
     const sub_inst = try func.dfg.makeInst(sub_data);
-    _ = try func.dfg.appendInstResult(sub_inst, Type.I32);
+    const sub_val = try func.dfg.appendInstResult(sub_inst, Type.I32);
     try func.layout.appendInst(sub_inst, loop_body);
 
-    const jump_back_data = InstructionData{
-        .jump = .{
-            .opcode = .jump,
-            .destination = loop_header,
-        },
-    };
-    const jump_back_inst = try func.dfg.makeInst(jump_back_data);
-    try func.layout.appendInst(jump_back_inst, loop_body);
+    ir_builder.switchToBlock(loop_body);
+    try ir_builder.jumpArgs(loop_header, &.{ sub_val, add_val });
 
     // Loop exit: return sum
     const ret_data = InstructionData{
@@ -483,9 +432,8 @@ test "E2E: loop with accumulator phi" {
 
     // Compile
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder.targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     const code = try ctx.compileFunction(&func);
     var code_copy = code;

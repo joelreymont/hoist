@@ -33,6 +33,7 @@ const Imm64 = @import("immediates.zig").Imm64;
 const IntCC = @import("condcodes.zig").IntCC;
 const FloatCC = @import("condcodes.zig").FloatCC;
 const MemFlags = @import("memflags.zig").MemFlags;
+const ValueList = @import("value_list.zig").ValueList;
 
 /// Function builder - ergonomic IR construction.
 pub const FunctionBuilder = struct {
@@ -69,6 +70,14 @@ pub const FunctionBuilder = struct {
 
     pub fn appendBlock(self: *Self, block: Block) !void {
         try self.func.layout.appendBlock(block);
+    }
+
+    fn buildValueList(self: *Self, values: []const Value) !ValueList {
+        var list = ValueList.default();
+        for (values) |val| {
+            try self.func.dfg.value_lists.push(&list, val);
+        }
+        return list;
     }
 
     pub fn iconst(self: *Self, ty: Type, imm: i64) !Value {
@@ -351,18 +360,36 @@ pub const FunctionBuilder = struct {
     }
 
     pub fn brif(self: *Self, cond: Value, then_block: Block, else_block: Block) !void {
+        return self.brifArgs(cond, then_block, &.{}, else_block, &.{});
+    }
+
+    pub fn brifArgs(
+        self: *Self,
+        cond: Value,
+        then_block: Block,
+        then_args: []const Value,
+        else_block: Block,
+        else_args: []const Value,
+    ) !void {
         const block = self.current_block orelse return error.NoCurrentBlock;
 
-        const inst_data = InstructionData{ .branch = BranchData.init(.brif, cond, then_block, else_block) };
+        var inst_data = InstructionData{ .branch = BranchData.init(.brif, cond, then_block, else_block) };
+        inst_data.branch.then_args = try self.buildValueList(then_args);
+        inst_data.branch.else_args = try self.buildValueList(else_args);
         const inst = try self.func.dfg.makeInst(inst_data);
 
         try self.func.layout.appendInst(inst, block);
     }
 
     pub fn jump(self: *Self, dest: Block) !void {
+        return self.jumpArgs(dest, &.{});
+    }
+
+    pub fn jumpArgs(self: *Self, dest: Block, args: []const Value) !void {
         const block = self.current_block orelse return error.NoCurrentBlock;
 
-        const inst_data = InstructionData{ .jump = instruction_data.JumpData.init(.jump, dest) };
+        var inst_data = InstructionData{ .jump = instruction_data.JumpData.init(.jump, dest) };
+        inst_data.jump.args = try self.buildValueList(args);
         const inst = try self.func.dfg.makeInst(inst_data);
 
         try self.func.layout.appendInst(inst, block);

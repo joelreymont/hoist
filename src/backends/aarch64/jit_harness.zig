@@ -159,10 +159,8 @@ pub fn compileAndLoad(
 
     // Compile function
     var builder = ContextBuilder.init(allocator);
-    var ctx = builder
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     const compiled = try ctx.compileFunction(func);
 

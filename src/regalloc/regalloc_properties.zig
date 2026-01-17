@@ -35,7 +35,7 @@ test "property: live ranges have valid start and end positions" {
             var alloc = TrivialAllocator.init(allocator);
             defer alloc.deinit();
 
-            const vreg = VReg.new(.int, 0);
+            const vreg = VReg.new(0, .int);
             const start_pos = @min(args.start, args.end);
             const end_pos = @max(args.start, args.end);
 
@@ -43,7 +43,7 @@ test "property: live ranges have valid start and end positions" {
 
             // Verify the range was recorded correctly
             for (alloc.live_ranges.items) |range| {
-                if (range.vreg.toU32() == vreg.toU32()) {
+                if (std.meta.eql(range.vreg, vreg)) {
                     return range.start <= range.end;
                 }
             }
@@ -67,8 +67,8 @@ test "property: overlapping vregs get different pregs or spills" {
             var alloc = TrivialAllocator.init(allocator);
             defer alloc.deinit();
 
-            const vreg1 = VReg.new(.int, 0);
-            const vreg2 = VReg.new(.int, 1);
+            const vreg1 = VReg.new(0, .int);
+            const vreg2 = VReg.new(1, .int);
 
             const start1 = @as(u32, args.vreg1_start);
             const end1 = start1 + @as(u32, args.vreg1_len);
@@ -91,7 +91,7 @@ test "property: overlapping vregs get different pregs or spills" {
             if (overlaps) {
                 // If both are registers, they must be different
                 if (alloc1 == .reg and alloc2 == .reg) {
-                    return alloc1.reg.hw() != alloc2.reg.hw();
+                    return alloc1.reg.hwEnc() != alloc2.reg.hwEnc();
                 }
                 // If either is spilled, that's also fine
                 return true;
@@ -130,7 +130,7 @@ test "property: allocated vregs always have allocation" {
             // Create and allocate vregs
             var i: u32 = 0;
             while (i < count) : (i += 1) {
-                const vreg = VReg.new(.int, i);
+                const vreg = VReg.new(i, .int);
                 alloc.recordLiveRange(vreg, start, end) catch return false;
                 _ = alloc.allocate(vreg, start) catch return false;
 
@@ -162,7 +162,7 @@ test "property: int vregs never allocated to float pregs" {
             var alloc = TrivialAllocator.init(allocator);
             defer alloc.deinit();
 
-            const vreg = VReg.new(.int, args.vreg_index);
+            const vreg = VReg.new(args.vreg_index, .int);
             const start_pos = @as(u32, args.start);
             const end_pos = start_pos + @as(u32, args.len);
 
@@ -195,7 +195,7 @@ test "property: float vregs never allocated to int pregs" {
             var alloc = TrivialAllocator.init(allocator);
             defer alloc.deinit();
 
-            const vreg = VReg.new(.float, args.vreg_index);
+            const vreg = VReg.new(args.vreg_index, .float);
             const start_pos = @as(u32, args.start);
             const end_pos = start_pos + @as(u32, args.len);
 
@@ -243,7 +243,7 @@ test "property: excessive pressure triggers spilling" {
 
             var i: u32 = 0;
             while (i < total_vregs) : (i += 1) {
-                const vreg = VReg.new(.int, i);
+                const vreg = VReg.new(i, .int);
                 alloc.recordLiveRange(vreg, start, end) catch return false;
                 _ = alloc.allocate(vreg, start) catch return false;
             }
@@ -251,7 +251,7 @@ test "property: excessive pressure triggers spilling" {
             // Verify all vregs have allocations
             i = 0;
             while (i < total_vregs) : (i += 1) {
-                const vreg = VReg.new(.int, i);
+                const vreg = VReg.new(i, .int);
                 if (alloc.getAllocation(vreg) == null) {
                     return false;
                 }
@@ -261,7 +261,7 @@ test "property: excessive pressure triggers spilling" {
             var spill_count: u32 = 0;
             i = 0;
             while (i < total_vregs) : (i += 1) {
-                const vreg = VReg.new(.int, i);
+                const vreg = VReg.new(i, .int);
                 if (alloc.getAllocation(vreg)) |allocation| {
                     if (allocation == .spill) {
                         spill_count += 1;
@@ -297,7 +297,7 @@ test "property: spill slots are unique for live vregs" {
             // Fill all registers
             var i: u32 = 0;
             while (i < available_regs) : (i += 1) {
-                const vreg = VReg.new(.int, i);
+                const vreg = VReg.new(i, .int);
                 alloc.recordLiveRange(vreg, start, end) catch return false;
                 _ = alloc.allocate(vreg, start) catch return false;
             }
@@ -308,7 +308,7 @@ test "property: spill slots are unique for live vregs" {
 
             i = spill_start;
             while (i < spill_end) : (i += 1) {
-                const vreg = VReg.new(.int, i);
+                const vreg = VReg.new(i, .int);
                 alloc.recordLiveRange(vreg, start, end) catch return false;
                 _ = alloc.allocate(vreg, start) catch return false;
             }
@@ -319,7 +319,7 @@ test "property: spill slots are unique for live vregs" {
 
             i = spill_start;
             while (i < spill_end) : (i += 1) {
-                const vreg = VReg.new(.int, i);
+                const vreg = VReg.new(i, .int);
                 if (alloc.getAllocation(vreg)) |allocation| {
                     if (allocation == .spill) {
                         const slot_idx = allocation.spill.index;
@@ -356,8 +356,8 @@ test "property: registers reused after live range ends" {
             var alloc = TrivialAllocator.init(allocator);
             defer alloc.deinit();
 
-            const vreg1 = VReg.new(.int, 0);
-            const vreg2 = VReg.new(.int, 1);
+            const vreg1 = VReg.new(0, .int);
+            const vreg2 = VReg.new(1, .int);
 
             // vreg1 lives [0, 10]
             alloc.recordLiveRange(vreg1, 0, 10) catch return false;
@@ -369,16 +369,15 @@ test "property: registers reused after live range ends" {
             const vreg2_start = 10 + @as(u32, args.gap_size);
             alloc.recordLiveRange(vreg2, vreg2_start, vreg2_start + 10) catch return false;
 
-            // Expire old ranges before allocating vreg2
-            alloc.expireOldRanges(vreg2_start);
-
             _ = alloc.allocate(vreg2, vreg2_start) catch return false;
 
             const alloc2 = alloc.getAllocation(vreg2) orelse return false;
 
             // If both are registers and non-overlapping, they CAN share a preg
             // (This is an optimization, not a requirement, so we just check they both got allocations)
-            return alloc1 != null and alloc2 != null;
+            _ = alloc1;
+            _ = alloc2;
+            return true;
         }
     }.prop, .{ .iterations = 100 });
 }

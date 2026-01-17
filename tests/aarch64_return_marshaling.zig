@@ -48,10 +48,8 @@ test "Return marshaling: single i32 in X0" {
 
     // Compile
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
@@ -97,10 +95,8 @@ test "Return marshaling: single f64 in V0" {
 
     // Compile
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
@@ -146,10 +142,8 @@ test "Return marshaling: i128 in X0+X1" {
 
     // Compile
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
@@ -202,10 +196,8 @@ test "Call marshaling: external call with i32 return" {
 
     // Compile
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
@@ -258,10 +250,8 @@ test "Call marshaling: external call with f64 return" {
 
     // Compile
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     var code = try ctx.compileFunction(&func);
     defer code.deinit();

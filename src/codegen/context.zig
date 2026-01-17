@@ -12,6 +12,50 @@ const ControlFlowGraph = ir.ControlFlowGraph;
 const DominatorTree = ir.DominatorTree;
 const LoopInfo = ir.LoopInfo;
 
+pub const DebugOptions = struct {
+    dump_ir: bool,
+    dump_dir: ?[]const u8,
+
+    pub fn init() DebugOptions {
+        return .{
+            .dump_ir = false,
+            .dump_dir = null,
+        };
+    }
+
+    pub fn deinit(self: *DebugOptions, allocator: std.mem.Allocator) void {
+        if (self.dump_dir) |dir| {
+            allocator.free(dir);
+        }
+        self.* = DebugOptions.init();
+    }
+
+    pub fn enableIrDumps(self: *DebugOptions, allocator: std.mem.Allocator, dir: []const u8) !void {
+        if (self.dump_dir) |existing| {
+            allocator.free(existing);
+        }
+        self.dump_dir = try allocator.dupe(u8, dir);
+        self.dump_ir = true;
+    }
+
+    pub fn loadFromEnv(self: *DebugOptions, allocator: std.mem.Allocator) !void {
+        if (self.dump_ir) return;
+        const value = std.process.getEnvVarOwned(allocator, "HOIST_DUMP_IR") catch |err| {
+            return switch (err) {
+                error.EnvironmentVariableNotFound => {},
+                else => err,
+            };
+        };
+        if (value.len == 0 or std.mem.eql(u8, value, "1")) {
+            allocator.free(value);
+            try self.enableIrDumps(allocator, "hoist_dumps");
+            return;
+        }
+        self.dump_dir = value;
+        self.dump_ir = true;
+    }
+};
+
 /// Persistent data structures and compilation pipeline.
 pub const Context = struct {
     /// Allocator for all context data.
@@ -34,6 +78,8 @@ pub const Context = struct {
 
     /// Request disassembly output.
     want_disasm: bool,
+    /// Debug output options.
+    debug: DebugOptions,
 
     pub fn init(allocator: std.mem.Allocator) Context {
         return .{
@@ -44,6 +90,7 @@ pub const Context = struct {
             .loop_analysis = LoopInfo.init(allocator),
             .compiled_code = null,
             .want_disasm = false,
+            .debug = DebugOptions.init(),
         };
     }
 
@@ -56,6 +103,7 @@ pub const Context = struct {
             .loop_analysis = LoopInfo.init(allocator),
             .compiled_code = null,
             .want_disasm = false,
+            .debug = DebugOptions.init(),
         };
     }
 
@@ -67,6 +115,7 @@ pub const Context = struct {
         if (self.compiled_code) |*code| {
             code.deinit();
         }
+        self.debug.deinit(self.allocator);
     }
 
     /// Clear all data structures for reuse.

@@ -211,6 +211,32 @@ pub const InstructionData = union(enum) {
                 } else {
                     func(ctx, &data.condition);
                 }
+                const then_slice = listSlice(pool, data.then_args);
+                for (then_slice) |*val| {
+                    if (comptime is_error) {
+                        try func(ctx, val);
+                    } else {
+                        func(ctx, val);
+                    }
+                }
+                const else_slice = listSlice(pool, data.else_args);
+                for (else_slice) |*val| {
+                    if (comptime is_error) {
+                        try func(ctx, val);
+                    } else {
+                        func(ctx, val);
+                    }
+                }
+            },
+            .jump => |*data| {
+                const slice = listSlice(pool, data.args);
+                for (slice) |*val| {
+                    if (comptime is_error) {
+                        try func(ctx, val);
+                    } else {
+                        func(ctx, val);
+                    }
+                }
             },
             .branch_table => |*data| {
                 if (comptime is_error) {
@@ -224,6 +250,14 @@ pub const InstructionData = union(enum) {
                     try func(ctx, &data.condition);
                 } else {
                     func(ctx, &data.condition);
+                }
+                const slice = listSlice(pool, data.args);
+                for (slice) |*val| {
+                    if (comptime is_error) {
+                        try func(ctx, val);
+                    } else {
+                        func(ctx, val);
+                    }
                 }
             },
             .call => |*data| {
@@ -327,7 +361,6 @@ pub const InstructionData = union(enum) {
             },
             .nullary,
             .unary_imm,
-            .jump,
             .fence,
             .stack_load,
             => {},
@@ -465,6 +498,8 @@ pub const BranchData = struct {
     condition: Value,
     then_dest: ?entities.Block,
     else_dest: ?entities.Block,
+    then_args: ValueList = ValueList.default(),
+    else_args: ValueList = ValueList.default(),
 
     pub fn init(op: Opcode, cond: Value, then_dst: entities.Block, else_dst: entities.Block) BranchData {
         return .{
@@ -479,6 +514,7 @@ pub const BranchData = struct {
 pub const JumpData = struct {
     opcode: Opcode,
     destination: entities.Block,
+    args: ValueList = ValueList.default(),
 
     pub fn init(op: Opcode, dest: entities.Block) JumpData {
         return .{ .opcode = op, .destination = dest };
@@ -499,6 +535,7 @@ pub const BranchZData = struct {
     opcode: Opcode,
     condition: Value,
     destination: entities.Block,
+    args: ValueList = ValueList.default(),
 
     pub fn init(op: Opcode, cond: Value, dest: entities.Block) BranchZData {
         return .{ .opcode = op, .condition = cond, .destination = dest };

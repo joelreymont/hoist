@@ -42,10 +42,9 @@ test "E2E: return constant i32" {
     const ret_inst = try func.dfg.makeInst(ret_data);
     try func.layout.appendInst(ret_inst, entry);
 
-    var ctx = ContextBuilder.init(testing.allocator)
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    var builder = ContextBuilder.init(testing.allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     var verifier = Verifier.init(testing.allocator, &func);
     defer verifier.deinit();
@@ -94,10 +93,9 @@ test "E2E: simple arithmetic i32 add" {
     const ret_inst = try func.dfg.makeInst(ret_data);
     try func.layout.appendInst(ret_inst, entry);
 
-    var ctx = ContextBuilder.init(testing.allocator)
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    var builder = ContextBuilder.init(testing.allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     var verifier = Verifier.init(testing.allocator, &func);
     defer verifier.deinit();
@@ -146,10 +144,9 @@ test "E2E: arithmetic i64 multiply" {
     const ret_inst = try func.dfg.makeInst(ret_data);
     try func.layout.appendInst(ret_inst, entry);
 
-    var ctx = ContextBuilder.init(testing.allocator)
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    var builder = ContextBuilder.init(testing.allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     var verifier = Verifier.init(testing.allocator, &func);
     defer verifier.deinit();
@@ -213,11 +210,9 @@ test "E2E: constant computation with optimization" {
     const ret_inst = try func.dfg.makeInst(ret_data);
     try func.layout.appendInst(ret_inst, entry);
 
-    var ctx = ContextBuilder.init(testing.allocator)
-        .targetNative()
-        .optLevel(.speed)
-        .optimize(true)
-        .build();
+    var builder = ContextBuilder.init(testing.allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.speed).optimize(true).build();
 
     var verifier = Verifier.init(testing.allocator, &func);
     defer verifier.deinit();
@@ -314,11 +309,9 @@ test "E2E: verify compilation stages" {
     defer verifier.deinit();
     try verifier.verify();
 
-    var ctx = ContextBuilder.init(testing.allocator)
-        .targetNative()
-        .optLevel(.none)
-        .verification(true)
-        .build();
+    var builder = ContextBuilder.init(testing.allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).verification(true).build();
 
     const code = try ctx.compileFunction(&func);
     var code_copy = code;

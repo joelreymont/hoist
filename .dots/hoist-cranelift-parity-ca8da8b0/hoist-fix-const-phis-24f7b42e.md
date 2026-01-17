@@ -1,9 +1,10 @@
 ---
 title: Fix const phis
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.787860+02:00"
+created-at: "\"\\\"2026-01-14T15:42:46.787860+02:00\\\"\""
+closed-at: "2026-01-17T13:39:30.987976+02:00"
 ---
 
 Files: src/codegen/compile.zig:728-738

@@ -212,10 +212,8 @@ test "JIT: compile and execute return constant i32" {
 
     // Compile function
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
@@ -293,10 +291,8 @@ test "JIT: compile and execute i32 add" {
 
     // Compile function
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
@@ -366,10 +362,8 @@ test "JIT: compile and execute i64 multiply" {
 
     // Compile function
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
@@ -534,10 +528,8 @@ test "JIT: register spilling with 40+ live values" {
 
     // Compile function
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     var code = try ctx.compileFunction(&func);
     defer code.deinit();

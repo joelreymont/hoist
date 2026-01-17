@@ -32,6 +32,7 @@ pub const global_value_data = @import("ir/global_value_data.zig");
 pub const jump_table_data = @import("ir/jump_table_data.zig");
 pub const flowgraph = @import("ir/flowgraph.zig");
 pub const function = @import("ir/function.zig");
+pub const ir_print = @import("ir/print.zig");
 pub const external_name = @import("ir/external_name.zig");
 pub const builder = @import("ir/builder.zig");
 pub const optimize = @import("ir/optimize.zig");
@@ -121,6 +122,7 @@ test {
     _ = @import("codegen/lower_helpers.zig");
     _ = @import("codegen/isle_ctx.zig");
     _ = @import("codegen/opts/alias.zig");
+    _ = @import("regalloc/regalloc_properties.zig");
 }
 
 // Backend tests
@@ -131,6 +133,7 @@ test {
     _ = @import("backends/aarch64/abi_callconv_test.zig");
     _ = @import("backends/aarch64/encoding_property_test.zig");
     _ = @import("backends/aarch64/lower_test.zig");
+    _ = @import("backends/aarch64/zcheck_properties.zig");
 }
 
 pub const x64_inst = @import("backends/x64/inst.zig");

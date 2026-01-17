@@ -71,7 +71,7 @@ pub const BlockArg = union(enum) {
         writer: anytype,
     ) !void {
         switch (self) {
-            .value => |v| try writer.print("{}", .{v}),
+            .value => |v| try writer.print("{f}", .{v}),
             .try_call_ret => |i| try writer.print("ret{}", .{i}),
             .try_call_exn => |i| try writer.print("exn{}", .{i}),
         }

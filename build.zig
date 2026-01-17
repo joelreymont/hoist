@@ -82,6 +82,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const ohsnap = b.dependency("ohsnap", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     // Unit tests
     const tests = b.addTest(.{
@@ -92,6 +96,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     tests.root_module.addImport("zcheck", zcheck.module("zcheck"));
+    tests.root_module.addImport("ohsnap", ohsnap.module("ohsnap"));
     applyFlags(tests, enable_lto, debug_info, strip_debug, pic, single_threaded);
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");

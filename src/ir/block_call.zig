@@ -73,7 +73,7 @@ pub const BlockArg = enum(u2) {
 
     pub fn format(self: BlockArg, writer: anytype, v: Value, index: u32) !void {
         switch (self) {
-            .value => try writer.print("{}", .{v}),
+            .value => try writer.print("{f}", .{v}),
             .try_call_ret => try writer.print("ret{d}", .{index}),
             .try_call_exn => try writer.print("exn{d}", .{index}),
         }
@@ -160,7 +160,7 @@ pub const BlockCall = struct {
     }
 
     pub fn format(self: BlockCall, writer: anytype, pool: *const ValueListPool) !void {
-        try writer.print("{}", .{self.block(pool)});
+        try writer.print("{f}", .{self.block(pool)});
         const arg_count = self.len(pool);
         if (arg_count > 0) {
             try writer.writeAll("(");
@@ -168,7 +168,7 @@ pub const BlockCall = struct {
             while (i < arg_count) : (i += 1) {
                 if (i > 0) try writer.writeAll(", ");
                 if (self.getArg(pool, i)) |v| {
-                    try writer.print("{}", .{v});
+                    try writer.print("{f}", .{v});
                 }
             }
             try writer.writeAll(")");

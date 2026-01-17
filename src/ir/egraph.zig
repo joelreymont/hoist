@@ -19,14 +19,7 @@ const Opcode = opcodes.Opcode;
 pub const EClassId = enum(u32) {
     _,
 
-    pub fn format(
-        self: EClassId,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(self: EClassId, writer: anytype) !void {
         try writer.print("e{d}", .{@intFromEnum(self)});
     }
 };
@@ -720,6 +713,12 @@ pub const Extractor = struct {
     allocator: Allocator,
     costs: AutoHashMap(EClassId, CostNode),
 
+    const ExtractError = Allocator.Error || error{
+        EClassNotFound,
+        EmptyEClass,
+        CostNotFound,
+    };
+
     const CostNode = struct {
         cost: u32,
         node: ENode,
@@ -738,7 +737,7 @@ pub const Extractor = struct {
     }
 
     /// Extract the cheapest e-node from an e-class.
-    pub fn extractBest(self: *Extractor, eclass_id: EClassId) !ENode {
+    pub fn extractBest(self: *Extractor, eclass_id: EClassId) ExtractError!ENode {
         const canon_id = self.eg.uf.find(eclass_id);
 
         // Check memoized result
@@ -771,7 +770,7 @@ pub const Extractor = struct {
     }
 
     /// Compute cost of an e-node (instruction count).
-    fn computeCost(self: *Extractor, node: ENode) !u32 {
+    fn computeCost(self: *Extractor, node: ENode) ExtractError!u32 {
         // Base cost for this instruction
         var cost = opcodeCost(node.op);
 
@@ -820,12 +819,11 @@ pub const Extractor = struct {
             .store => 2,
 
             // Control flow
-            .br, .br_table => 1,
-            .branch, .branch_z => 1,
+            .jump, .brif, .brz, .brnz, .br_table => 1,
             .@"return" => 1,
 
             // Function calls (expensive)
-            .call, .call_indirect => 5,
+            .call, .call_indirect, .try_call, .try_call_indirect, .return_call, .return_call_indirect => 5,
 
             // Everything else: default cost
             else => 1,
@@ -838,7 +836,7 @@ const testing = std.testing;
 
 test "EClassId format" {
     const id: EClassId = @enumFromInt(42);
-    const str = try std.fmt.allocPrint(testing.allocator, "{}", .{id});
+    const str = try std.fmt.allocPrint(testing.allocator, "{f}", .{id});
     defer testing.allocator.free(str);
     try testing.expectEqualStrings("e42", str);
 }

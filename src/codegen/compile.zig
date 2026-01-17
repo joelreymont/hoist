@@ -22,6 +22,7 @@ const sig_mod = @import("../ir/signature.zig");
 const a64_inst = @import("../backends/aarch64/inst.zig");
 const a64_abi = @import("../backends/aarch64/abi.zig");
 const linear_scan_mod = @import("../regalloc/linear_scan.zig");
+const ir_print = @import("../ir/print.zig");
 const ir = struct {
     pub const Type = @import("../ir/types.zig").Type;
     pub const I32 = @import("../ir/types.zig").Type.I32;
@@ -31,8 +32,10 @@ const ir = struct {
     pub const Inst = @import("../ir/entities.zig").Inst;
     pub const Value = @import("../ir/entities.zig").Value;
     pub const ValueData = @import("../ir/dfg.zig").ValueData;
+    pub const InstructionData = @import("../ir/instruction_data.zig").InstructionData;
     pub const FunctionBuilder = @import("../ir/builder.zig").FunctionBuilder;
     pub const Function = @import("../ir/function.zig").Function;
+    pub const Imm64 = @import("../ir/immediates.zig").Imm64;
 };
 const MachBuffer = @import("../machinst/buffer.zig").MachBuffer;
 const Reloc = @import("../machinst/buffer.zig").Reloc;
@@ -78,6 +81,8 @@ pub const CodegenError = error{
     SpillOffsetOutOfRange,
     /// Unsupported calling convention for target.
     UnsupportedCallConv,
+    /// Unsupported target architecture.
+    UnsupportedTarget,
     /// Code emission failed.
     EmissionFailed,
     /// Out of memory.
@@ -638,14 +643,23 @@ pub fn compile(
     func: *Function,
     target: *const Target,
 ) CompileResult {
+    ctx.debug.loadFromEnv(ctx.allocator) catch |err| switch (err) {
+        error.OutOfMemory => return CodegenError.OutOfMemory,
+        error.InvalidWtf8 => return CodegenError.OptimizationFailed,
+        error.EnvironmentVariableNotFound => {},
+    };
+
     // Set the function pointer in context
     ctx.func = func;
 
     // 1. Verify IR (if enabled)
     try verifyIf(ctx, func, target);
+    try dumpIrStage(ctx, "verify");
 
     // 2. Optimize IR
     try optimize(ctx, target);
+
+    try dumpIrStage(ctx, "pre_lower");
 
     // 3. Lower to VCode via ISLE
     try lower(ctx, target);
@@ -660,6 +674,32 @@ pub fn compile(
     try emit(ctx, target);
 
     return ctx.getCompiledCode() orelse return error.EmissionFailed;
+}
+
+fn dumpIrStage(ctx: *Context, stage: []const u8) CodegenError!void {
+    if (!ctx.debug.dump_ir) return;
+    const dir = ctx.debug.dump_dir orelse return error.EmissionFailed;
+
+    std.fs.cwd().makePath(dir) catch return error.EmissionFailed;
+
+    const file_path = std.fmt.allocPrint(ctx.allocator, "{s}/{s}.{s}.ir", .{
+        dir,
+        ctx.func.name,
+        stage,
+    }) catch |err| {
+        return switch (err) {
+            error.OutOfMemory => CodegenError.OutOfMemory,
+        };
+    };
+    defer ctx.allocator.free(file_path);
+
+    var file = std.fs.cwd().createFile(file_path, .{ .truncate = true }) catch return error.EmissionFailed;
+    defer file.close();
+
+    var buffer = std.ArrayList(u8){};
+    defer buffer.deinit(ctx.allocator);
+    try ir_print.writeFunction(buffer.writer(ctx.allocator), ctx.func, .{});
+    file.writeAll(buffer.items) catch return error.EmissionFailed;
 }
 
 /// Verify function if verification is enabled.
@@ -698,6 +738,7 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
 
     // 1. Legalize IR
     try legalize(ctx);
+    try dumpIrStage(ctx, "legalize");
 
     // 2. Compute CFG
     try ctx.cfg.compute(ctx.func);
@@ -709,12 +750,15 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
 
     // 4. Eliminate unreachable code
     _ = try eliminateUnreachableCode(ctx);
+    try dumpIrStage(ctx, "unreachable");
 
     // 5. Remove constant phis
     _ = try removeConstantPhis(ctx);
+    try dumpIrStage(ctx, "const_phis");
 
     // 6. Alias analysis (redundant load elimination, store-to-load forwarding)
     _ = try runAliasAnalysis(ctx);
+    try dumpIrStage(ctx, "alias");
 
     // 7. Resolve value aliases
     ctx.func.dfg.resolveAllAliases();
@@ -722,6 +766,7 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
     // 8. E-graph optimization (if opt_level > 0)
     if (opt_level != .none) {
         _ = try runEGraphOptimization(ctx);
+        try dumpIrStage(ctx, "egraph");
     }
 }
 
@@ -731,10 +776,104 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
 /// and replaces the parameter with an alias to that value.
 /// Returns true if any phis were removed.
 fn removeConstantPhis(ctx: *Context) CodegenError!bool {
-    // TODO: Block parameters not yet implemented in IR
-    _ = ctx;
-    _ = ctx;
-    return false;
+    var changed = false;
+    var block_iter = ctx.func.layout.blockIter();
+    while (block_iter.next()) |block| {
+        const params = ctx.func.dfg.blockParams(block);
+        if (params.len == 0) continue;
+
+        const first_vals = try ctx.allocator.alloc(?ir.Value, params.len);
+        defer ctx.allocator.free(first_vals);
+        const seen = try ctx.allocator.alloc(bool, params.len);
+        defer ctx.allocator.free(seen);
+        const all_same = try ctx.allocator.alloc(bool, params.len);
+        defer ctx.allocator.free(all_same);
+
+        @memset(seen, false);
+        @memset(all_same, true);
+
+        const processArgs = struct {
+            fn run(
+                args: []const ir.Value,
+                first: []?ir.Value,
+                seen_vals: []bool,
+                same: []bool,
+            ) CodegenError!void {
+                if (args.len != first.len) return error.OptimizationFailed;
+                for (args, 0..) |arg, i| {
+                    if (!seen_vals[i]) {
+                        first[i] = arg;
+                        seen_vals[i] = true;
+                        continue;
+                    }
+                    if (!std.meta.eql(first[i].?, arg)) {
+                        same[i] = false;
+                    }
+                }
+            }
+        }.run;
+
+        var pred_iter = ctx.func.layout.blockIter();
+        while (pred_iter.next()) |pred| {
+            var inst_iter = ctx.func.layout.blockInsts(pred);
+            while (inst_iter.next()) |inst| {
+                const inst_data = ctx.func.dfg.insts.get(inst) orelse continue;
+                switch (inst_data.*) {
+                    .jump => |data| {
+                        if (!std.meta.eql(data.destination, block)) continue;
+                        const args = ctx.func.dfg.value_lists.asSlice(data.args);
+                        try processArgs(args, first_vals, seen, all_same);
+                    },
+                    .branch => |data| {
+                        if (data.then_dest) |then_blk| {
+                            if (std.meta.eql(then_blk, block)) {
+                                const args = ctx.func.dfg.value_lists.asSlice(data.then_args);
+                                try processArgs(args, first_vals, seen, all_same);
+                            }
+                        }
+                        if (data.else_dest) |else_blk| {
+                            if (std.meta.eql(else_blk, block)) {
+                                const args = ctx.func.dfg.value_lists.asSlice(data.else_args);
+                                try processArgs(args, first_vals, seen, all_same);
+                            }
+                        }
+                    },
+                    .branch_z => |data| {
+                        if (!std.meta.eql(data.destination, block)) continue;
+                        const args = ctx.func.dfg.value_lists.asSlice(data.args);
+                        try processArgs(args, first_vals, seen, all_same);
+                    },
+                    .branch_table => |data| {
+                        const table = ctx.func.jump_tables.get(data.destination) orelse return error.OptimizationFailed;
+                        for (table.allBranches()) |bc| {
+                            if (!std.meta.eql(bc.block(&ctx.func.dfg.value_lists), block)) continue;
+                            const arg_count = bc.len(&ctx.func.dfg.value_lists);
+                            if (arg_count != params.len) return error.OptimizationFailed;
+                            const args = try ctx.allocator.alloc(ir.Value, arg_count);
+                            defer ctx.allocator.free(args);
+                            for (args, 0..) |*out, i| {
+                                out.* = bc.getArg(&ctx.func.dfg.value_lists, i) orelse return error.OptimizationFailed;
+                            }
+                            try processArgs(args, first_vals, seen, all_same);
+                        }
+                    },
+                    else => {},
+                }
+            }
+        }
+
+        for (params, 0..) |param, i| {
+            if (!seen[i]) continue;
+            if (!all_same[i]) continue;
+            const incoming = first_vals[i] orelse continue;
+            const param_type = ctx.func.dfg.valueType(param) orelse return error.OptimizationFailed;
+            if (ctx.func.dfg.values.getMut(param)) |data| {
+                data.* = ir.ValueData.alias(param_type, incoming);
+                changed = true;
+            }
+        }
+    }
+    return changed;
 }
 
 /// Run alias analysis optimization pass.
@@ -1280,17 +1419,115 @@ fn emitAArch64WithAllocation(
     ctx.compiled_code = try assembleResult(ctx.allocator, &buffer, ctx.func, false);
 }
 
+fn emitMovWideImmediate(
+    builder: anytype,
+    dst: a64_inst.WritableReg,
+    value: u64,
+    size: a64_inst.OperandSize,
+) CodegenError!void {
+    const max_hw: usize = if (size == .size64) 4 else 2;
+    const masked = if (size == .size64) value else (value & 0xFFFF_FFFF);
+    const inverted = ~masked;
+
+    const hw = [_]u16{
+        @intCast(masked & 0xFFFF),
+        @intCast((masked >> 16) & 0xFFFF),
+        @intCast((masked >> 32) & 0xFFFF),
+        @intCast((masked >> 48) & 0xFFFF),
+    };
+    const inv_hw = [_]u16{
+        @intCast(inverted & 0xFFFF),
+        @intCast((inverted >> 16) & 0xFFFF),
+        @intCast((inverted >> 32) & 0xFFFF),
+        @intCast((inverted >> 48) & 0xFFFF),
+    };
+
+    var zero_count: u32 = 0;
+    var inv_zero_count: u32 = 0;
+    var i: usize = 0;
+    while (i < max_hw) : (i += 1) {
+        if (hw[i] == 0) zero_count += 1;
+        if (inv_hw[i] == 0) inv_zero_count += 1;
+    }
+
+    const use_movn = inv_zero_count > zero_count;
+    const base = if (use_movn) inv_hw else hw;
+
+    var base_idx: ?usize = null;
+    i = 0;
+    while (i < max_hw) : (i += 1) {
+        if (base[i] != 0) {
+            base_idx = i;
+            break;
+        }
+    }
+
+    if (base_idx == null) {
+        if (use_movn) {
+            try builder.emit(a64_inst.Inst{
+                .movn = .{
+                    .dst = dst,
+                    .imm = 0,
+                    .shift = 0,
+                    .size = size,
+                },
+            });
+        } else {
+            try builder.emit(a64_inst.Inst{
+                .movz = .{
+                    .dst = dst,
+                    .imm = 0,
+                    .shift = 0,
+                    .size = size,
+                },
+            });
+        }
+        return;
+    }
+
+    const shift: u8 = @intCast(base_idx.? * 16);
+    if (use_movn) {
+        try builder.emit(a64_inst.Inst{
+            .movn = .{
+                .dst = dst,
+                .imm = base[base_idx.?],
+                .shift = shift,
+                .size = size,
+            },
+        });
+    } else {
+        try builder.emit(a64_inst.Inst{
+            .movz = .{
+                .dst = dst,
+                .imm = base[base_idx.?],
+                .shift = shift,
+                .size = size,
+            },
+        });
+    }
+
+    i = 0;
+    while (i < max_hw) : (i += 1) {
+        if (i == base_idx.?) continue;
+        if (hw[i] == 0) continue;
+        try builder.emit(a64_inst.Inst{
+            .movk = .{
+                .dst = dst,
+                .imm = hw[i],
+                .shift = @intCast(i * 16),
+                .size = size,
+            },
+        });
+    }
+}
+
 /// Lower a single AArch64 instruction.
 fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) CodegenError!void {
     const Inst = @import("../backends/aarch64/inst.zig").Inst;
     const OperandSize = @import("../backends/aarch64/inst.zig").OperandSize;
 
     // Get instruction data from DFG
-    const inst_data_ptr = ctx.func.dfg.insts.get(inst) orelse {
-        // No instruction data - emit NOP
-        try builder.emit(Inst.nop);
-        return;
-    };
+    const inst_data_ptr = ctx.func.dfg.insts.get(inst) orelse return error.LoweringFailed;
 
     // Match instruction opcode and lower accordingly
     switch (inst_data_ptr.*) {
@@ -1303,10 +1540,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
 
             // Allocate virtual register for result
             const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
-            const value_type = ctx.func.dfg.valueType(result_value) orelse {
-                try builder.emit(Inst.nop);
-                return;
-            };
+            const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
 
             if (data.opcode == .iconst) {
                 // Integer constant - use MOVZ/MOVN/MOVK for full immediate construction
@@ -1319,316 +1553,8 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     .size32;
 
                 const imm_value = data.imm.bits();
-                const is_64bit = size == .size64;
                 const value: u64 = @bitCast(imm_value);
-
-                // Strategy: Use MOVZ/MOVN + MOVK for large constants
-                // 1. Check if can use simple MOV (logical immediate)
-                // 2. Otherwise, use MOVZ or MOVN (inverted) for base, then MOVK for remaining halfwords
-
-                // For now, implement the MOVZ + MOVK approach
-                // Count non-zero 16-bit chunks
-                const hw0 = value & 0xFFFF;
-                const hw1 = (value >> 16) & 0xFFFF;
-                const hw2 = (value >> 32) & 0xFFFF;
-                const hw3 = (value >> 48) & 0xFFFF;
-
-                // Determine if we should use MOVN (all bits set except one halfword)
-                const inverted = ~value;
-                const inv_hw0 = inverted & 0xFFFF;
-                const inv_hw1 = (inverted >> 16) & 0xFFFF;
-                const inv_hw2 = (inverted >> 32) & 0xFFFF;
-                const inv_hw3 = (inverted >> 48) & 0xFFFF;
-
-                // Count zero halfwords in original vs inverted
-                var zero_count: u32 = 0;
-                if (hw0 == 0) zero_count += 1;
-                if (hw1 == 0) zero_count += 1;
-                if (hw2 == 0) zero_count += 1;
-                if (hw3 == 0) zero_count += 1;
-
-                var inv_zero_count: u32 = 0;
-                if (inv_hw0 == 0) inv_zero_count += 1;
-                if (inv_hw1 == 0) inv_zero_count += 1;
-                if (inv_hw2 == 0) inv_zero_count += 1;
-                if (inv_hw3 == 0) inv_zero_count += 1;
-
-                const use_movn = inv_zero_count > zero_count;
-
-                if (use_movn) {
-                    // Use MOVN (move inverted)
-                    // Find first non-zero inverted halfword
-                    if (inv_hw0 != 0) {
-                        try builder.emit(Inst{
-                            .movn = .{
-                                .dst = writable,
-                                .imm = @intCast(inv_hw0),
-                                .shift = 0,
-                                .size = size,
-                            },
-                        });
-                        // Add MOVK for other non-zero original halfwords
-                        if (hw1 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw1),
-                                    .shift = 16,
-                                    .size = size,
-                                },
-                            });
-                        }
-                        if (is_64bit and hw2 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw2),
-                                    .shift = 32,
-                                    .size = size,
-                                },
-                            });
-                        }
-                        if (is_64bit and hw3 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw3),
-                                    .shift = 48,
-                                    .size = size,
-                                },
-                            });
-                        }
-                    } else if (inv_hw1 != 0) {
-                        try builder.emit(Inst{
-                            .movn = .{
-                                .dst = writable,
-                                .imm = @intCast(inv_hw1),
-                                .shift = 16,
-                                .size = size,
-                            },
-                        });
-                        if (hw0 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw0),
-                                    .shift = 0,
-                                    .size = size,
-                                },
-                            });
-                        }
-                        if (is_64bit and hw2 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw2),
-                                    .shift = 32,
-                                    .size = size,
-                                },
-                            });
-                        }
-                        if (is_64bit and hw3 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw3),
-                                    .shift = 48,
-                                    .size = size,
-                                },
-                            });
-                        }
-                    } else if (is_64bit and inv_hw2 != 0) {
-                        try builder.emit(Inst{
-                            .movn = .{
-                                .dst = writable,
-                                .imm = @intCast(inv_hw2),
-                                .shift = 32,
-                                .size = size,
-                            },
-                        });
-                        if (hw0 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw0),
-                                    .shift = 0,
-                                    .size = size,
-                                },
-                            });
-                        }
-                        if (hw1 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw1),
-                                    .shift = 16,
-                                    .size = size,
-                                },
-                            });
-                        }
-                        if (hw3 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw3),
-                                    .shift = 48,
-                                    .size = size,
-                                },
-                            });
-                        }
-                    } else {
-                        // inv_hw3 must be non-zero
-                        try builder.emit(Inst{
-                            .movn = .{
-                                .dst = writable,
-                                .imm = @intCast(inv_hw3),
-                                .shift = 48,
-                                .size = size,
-                            },
-                        });
-                        if (hw0 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw0),
-                                    .shift = 0,
-                                    .size = size,
-                                },
-                            });
-                        }
-                        if (hw1 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw1),
-                                    .shift = 16,
-                                    .size = size,
-                                },
-                            });
-                        }
-                        if (hw2 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw2),
-                                    .shift = 32,
-                                    .size = size,
-                                },
-                            });
-                        }
-                    }
-                } else {
-                    // Use MOVZ (move zero)
-                    // Find first non-zero halfword
-                    if (hw0 != 0) {
-                        try builder.emit(Inst{
-                            .movz = .{
-                                .dst = writable,
-                                .imm = @intCast(hw0),
-                                .shift = 0,
-                                .size = size,
-                            },
-                        });
-                        // Add MOVK for other non-zero halfwords
-                        if (hw1 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw1),
-                                    .shift = 16,
-                                    .size = size,
-                                },
-                            });
-                        }
-                        if (is_64bit and hw2 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw2),
-                                    .shift = 32,
-                                    .size = size,
-                                },
-                            });
-                        }
-                        if (is_64bit and hw3 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw3),
-                                    .shift = 48,
-                                    .size = size,
-                                },
-                            });
-                        }
-                    } else if (hw1 != 0) {
-                        try builder.emit(Inst{
-                            .movz = .{
-                                .dst = writable,
-                                .imm = @intCast(hw1),
-                                .shift = 16,
-                                .size = size,
-                            },
-                        });
-                        if (is_64bit and hw2 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw2),
-                                    .shift = 32,
-                                    .size = size,
-                                },
-                            });
-                        }
-                        if (is_64bit and hw3 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw3),
-                                    .shift = 48,
-                                    .size = size,
-                                },
-                            });
-                        }
-                    } else if (is_64bit and hw2 != 0) {
-                        try builder.emit(Inst{
-                            .movz = .{
-                                .dst = writable,
-                                .imm = @intCast(hw2),
-                                .shift = 32,
-                                .size = size,
-                            },
-                        });
-                        if (hw3 != 0) {
-                            try builder.emit(Inst{
-                                .movk = .{
-                                    .dst = writable,
-                                    .imm = @intCast(hw3),
-                                    .shift = 48,
-                                    .size = size,
-                                },
-                            });
-                        }
-                    } else if (is_64bit and hw3 != 0) {
-                        try builder.emit(Inst{
-                            .movz = .{
-                                .dst = writable,
-                                .imm = @intCast(hw3),
-                                .shift = 48,
-                                .size = size,
-                            },
-                        });
-                    } else {
-                        // Value is 0
-                        try builder.emit(Inst{
-                            .movz = .{
-                                .dst = writable,
-                                .imm = 0,
-                                .shift = 0,
-                                .size = size,
-                            },
-                        });
-                    }
-                }
+                try emitMovWideImmediate(builder, writable, value, size);
             } else if (data.opcode == .f32const or data.opcode == .f64const) {
                 // Floating-point constant
                 const vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.float);
@@ -1655,7 +1581,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     },
                 });
             } else {
-                try builder.emit(Inst.nop);
+                return error.LoweringFailed;
             }
         },
         .nullary => |data| {
@@ -1681,7 +1607,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 // No operation
                 try builder.emit(Inst.nop);
             } else {
-                try builder.emit(Inst.nop);
+                return error.LoweringFailed;
             }
         },
         .binary => |data| {
@@ -1704,10 +1630,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const dst = WritableReg.fromVReg(result_vreg);
 
                 // Get size from result type
-                const value_type = ctx.func.dfg.valueType(ctx.func.dfg.firstResult(inst).?) orelse {
-                    try builder.emit(Inst.nop);
-                    return;
-                };
+                const value_type = ctx.func.dfg.valueType(ctx.func.dfg.firstResult(inst).?) orelse return error.LoweringFailed;
 
                 const size: OperandSize = if (value_type.bits() == 64)
                     .size64
@@ -1738,43 +1661,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const src2 = Reg.fromVReg(arg1_vreg);
                 const dst = WritableReg.fromVReg(result_vreg);
 
-                const value_type = ctx.func.dfg.valueType(result_value) orelse {
-                    try builder.emit(Inst.nop);
-                    return;
-                };
-
-                const size: OperandSize = if (value_type.bits() == 64)
-                    .size64
-                else
-                    .size32;
-
-                try builder.emit(Inst{
-                    .sub_rr = .{
-                        .dst = dst,
-                        .src1 = src1,
-                        .src2 = src2,
-                        .size = size,
-                    },
-                });
-            } else if (data.opcode == .isub) {
-                const VReg = @import("../machinst/reg.zig").VReg;
-                const WritableReg = @import("../machinst/reg.zig").WritableReg;
-                const RegClass = @import("../machinst/reg.zig").RegClass;
-                const Reg = @import("../machinst/reg.zig").Reg;
-
-                const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
-                const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
-                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
-                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
-
-                const src1 = Reg.fromVReg(arg0_vreg);
-                const src2 = Reg.fromVReg(arg1_vreg);
-                const dst = WritableReg.fromVReg(result_vreg);
-
-                const value_type = ctx.func.dfg.valueType(result_value) orelse {
-                    try builder.emit(Inst.nop);
-                    return;
-                };
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
 
                 const size: OperandSize = if (value_type.bits() == 64)
                     .size64
@@ -1807,10 +1694,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const dst = WritableReg.fromVReg(result_vreg);
 
                 // Get size from result type
-                const value_type = ctx.func.dfg.valueType(ctx.func.dfg.firstResult(inst).?) orelse {
-                    try builder.emit(Inst.nop);
-                    return;
-                };
+                const value_type = ctx.func.dfg.valueType(ctx.func.dfg.firstResult(inst).?) orelse return error.LoweringFailed;
 
                 const size: OperandSize = if (value_type.bits() == 64)
                     .size64
@@ -1873,10 +1757,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const src2 = Reg.fromVReg(arg1_vreg);
                 const dst = WritableReg.fromVReg(result_vreg);
 
-                const value_type = ctx.func.dfg.valueType(result_value) orelse {
-                    try builder.emit(Inst.nop);
-                    return;
-                };
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
 
                 const size: OperandSize = if (value_type.bits() == 64)
                     .size64
@@ -1918,10 +1799,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const src2 = Reg.fromVReg(arg1_vreg);
                 const dst = WritableReg.fromVReg(result_vreg);
 
-                const value_type = ctx.func.dfg.valueType(result_value) orelse {
-                    try builder.emit(Inst.nop);
-                    return;
-                };
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
 
                 const size: OperandSize = if (value_type.bits() == 64)
                     .size64
@@ -2026,10 +1904,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const divisor = Reg.fromVReg(arg1_vreg);
                 const dst = WritableReg.fromVReg(result_vreg);
 
-                const value_type = ctx.func.dfg.valueType(result_value) orelse {
-                    try builder.emit(Inst.nop);
-                    return;
-                };
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
 
                 const size: OperandSize = if (value_type.bits() == 64)
                     .size64
@@ -2092,10 +1967,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const src2 = Reg.fromVReg(arg1_vreg);
                 const dst = WritableReg.fromVReg(result_vreg);
 
-                const value_type = ctx.func.dfg.valueType(result_value) orelse {
-                    try builder.emit(Inst.nop);
-                    return;
-                };
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
 
                 const size: OperandSize = if (value_type.bits() == 64)
                     .size64
@@ -2196,10 +2068,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const src2 = Reg.fromVReg(arg1_vreg);
                 const dst = WritableReg.fromVReg(result_vreg);
 
-                const value_type = ctx.func.dfg.valueType(result_value) orelse {
-                    try builder.emit(Inst.nop);
-                    return;
-                };
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
 
                 const size: FpuOperandSize = if (value_type.bits() == 64)
                     .size64
@@ -2260,10 +2129,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const src2 = Reg.fromVReg(arg1_vreg);
                 const dst = WritableReg.fromVReg(result_vreg);
 
-                const value_type = ctx.func.dfg.valueType(result_value) orelse {
-                    try builder.emit(Inst.nop);
-                    return;
-                };
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
 
                 const size: FpuOperandSize = if (value_type.bits() == 64)
                     .size64
@@ -2351,8 +2217,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     },
                 });
             } else {
-                // Other binary ops not yet implemented
-                try builder.emit(Inst.nop);
+                return error.LoweringFailed;
             }
         },
         .ternary => |data| {
@@ -2890,7 +2755,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     },
                 });
             } else {
-                try builder.emit(Inst.nop);
+                return error.LoweringFailed;
             }
         },
         .binary_imm64 => |data| {
@@ -3513,7 +3378,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     },
                 });
             } else {
-                try builder.emit(Inst.nop);
+                return error.LoweringFailed;
             }
         },
         .unary => |data| {
@@ -3536,10 +3401,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const dst = WritableReg.fromReg(x0);
 
                 // Get size from return value type
-                const value_type = ctx.func.dfg.valueType(data.arg) orelse {
-                    try builder.emit(Inst.nop);
-                    return;
-                };
+                const value_type = ctx.func.dfg.valueType(data.arg) orelse return error.LoweringFailed;
 
                 const size: OperandSize = if (value_type.bits() == 64)
                     .size64
@@ -3570,10 +3432,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                 const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
                 const dst = WritableReg.fromVReg(result_vreg);
 
-                const value_type = ctx.func.dfg.valueType(result_value) orelse {
-                    try builder.emit(Inst.nop);
-                    return;
-                };
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
 
                 const size: OperandSize = if (value_type.bits() == 64)
                     .size64
@@ -4044,8 +3903,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     });
                 }
             } else {
-                // Other unary ops not yet implemented
-                try builder.emit(Inst.nop);
+                return error.LoweringFailed;
             }
         },
         .unary_with_trap => |data| {
@@ -4061,10 +3919,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
             const arg_reg = Reg.fromVReg(arg_vreg);
 
             // Get value type for size
-            const value_type = ctx.func.dfg.valueType(data.arg) orelse {
-                try builder.emit(Inst.nop);
-                return;
-            };
+            const value_type = ctx.func.dfg.valueType(data.arg) orelse return error.LoweringFailed;
 
             const size: OperandSize = if (value_type.bits() == 64)
                 .size64
@@ -4097,7 +3952,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     .brk = .{ .imm = data.trap_code.toRaw() },
                 });
             } else {
-                try builder.emit(Inst.nop);
+                return error.LoweringFailed;
             }
         },
         .load => |data| {
@@ -4708,13 +4563,10 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                     });
                 }
             } else {
-                try builder.emit(Inst.nop);
+                return error.LoweringFailed;
             }
         },
-        else => {
-            // Unimplemented instruction - emit NOP placeholder
-            try builder.emit(Inst.nop);
-        },
+        else => return error.LoweringFailed,
     }
 }
 
@@ -4722,7 +4574,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
 fn lowerX86_64(ctx: *Context) CodegenError!void {
     // TODO: x86-64 lowering not yet implemented
     _ = ctx;
-    return error.LoweringFailed;
+    return error.UnsupportedTarget;
 }
 
 /// Lower a single instruction.
@@ -4957,6 +4809,90 @@ test "compile: target initialization" {
     try testing.expectEqual(Target.Architecture.aarch64, target.arch);
     try testing.expectEqual(Target.OptLevel.none, target.opt_level);
     try testing.expect(!target.verify);
+}
+
+test "compile: IR dump writes stage file" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var dir_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const dir_path = try std.fmt.bufPrint(&dir_buf, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+
+    const sig = ir.Signature.init(testing.allocator, .fast);
+    var func = try Function.init(testing.allocator, "dump_ir", sig);
+    defer func.deinit();
+
+    const block = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block);
+
+    const iconst_data = ir.InstructionData{ .unary_imm = .{
+        .opcode = .iconst,
+        .imm = ir.Imm64.new(1),
+    } };
+    const iconst_inst = try func.dfg.makeInst(iconst_data);
+    try func.layout.appendInst(iconst_inst, block);
+    _ = try func.dfg.appendInstResult(iconst_inst, ir.I32);
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    try ctx.debug.enableIrDumps(testing.allocator, dir_path);
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+
+    _ = try compile(&ctx, &func, &target);
+
+    const verify_path = try std.fmt.allocPrint(testing.allocator, "{s}/dump_ir.verify.ir", .{dir_path});
+    defer testing.allocator.free(verify_path);
+    var file = try std.fs.cwd().openFile(verify_path, .{});
+    defer file.close();
+    const stat = try file.stat();
+    try testing.expect(stat.size > 0);
+}
+
+test "optimize: remove constant phis" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    defer sig.deinit();
+
+    var func = try Function.init(testing.allocator, "const_phi", sig);
+    defer func.deinit();
+
+    const b0 = try func.dfg.makeBlock();
+    const b1 = try func.dfg.makeBlock();
+    const b2 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(b0);
+    try func.layout.appendBlock(b1);
+    try func.layout.appendBlock(b2);
+
+    try func.dfg.setBlockParams(b2, &[_]ir.Type{ir.I32});
+
+    var builder = ir.FunctionBuilder.init(&func);
+    builder.switchToBlock(b0);
+    const v0 = try builder.iconst(ir.I32, 7);
+    try builder.brifArgs(v0, b1, &.{}, b2, &.{v0});
+
+    builder.switchToBlock(b1);
+    try builder.jumpArgs(b2, &.{v0});
+
+    builder.switchToBlock(b2);
+    const param = func.dfg.blockParams(b2)[0];
+    const ret = ir.InstructionData{ .unary = .{
+        .opcode = .@"return",
+        .arg = param,
+    } };
+    const ret_inst = try func.dfg.makeInst(ret);
+    try func.layout.appendInst(ret_inst, b2);
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    const changed = try removeConstantPhis(&ctx);
+    try testing.expect(changed);
+
+    const data = ctx.func.dfg.values.get(param) orelse return error.TestExpectedEqual;
+    const aliased = data.aliasOriginal() orelse return error.TestExpectedEqual;
+    try testing.expect(std.meta.eql(aliased, v0));
 }
 
 test "IRBuilder: initialization" {

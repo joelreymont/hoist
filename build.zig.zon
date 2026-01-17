@@ -4,7 +4,7 @@
     .fingerprint = 0x1859437b338089d5,
     .dependencies = .{
         .ohsnap = .{
-            .path = "deps/ohsnap",
+            .path = "deps",
         },
         .zcheck = .{
             .url = "https://github.com/joelreymont/zcheck/archive/refs/heads/master.tar.gz",

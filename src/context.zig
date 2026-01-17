@@ -33,11 +33,11 @@ pub const Context = struct {
         return .{
             .allocator = allocator,
             .target = .{
-                .arch = .x86_64,
-                .os = .linux,
+                .arch = .aarch64,
+                .os = .macos,
             },
             .opt_level = .none,
-            .call_conv = .system_v,
+            .call_conv = defaultCallConv(.aarch64, .macos),
             .verify = true,
             .optimize = false,
         };
@@ -129,6 +129,11 @@ pub const OS = enum {
     windows,
 };
 
+pub const TargetError = error{
+    UnsupportedArch,
+    UnsupportedOS,
+};
+
 /// Optimization levels.
 pub const OptLevel = enum {
     /// No optimization.
@@ -158,18 +163,18 @@ pub const ContextBuilder = struct {
         return self;
     }
 
-    pub fn targetNative(self: *ContextBuilder) *ContextBuilder {
+    pub fn targetNative(self: *ContextBuilder) TargetError!*ContextBuilder {
         const builtin = @import("builtin");
         const arch: Arch = switch (builtin.cpu.arch) {
             .aarch64 => .aarch64,
             .x86_64 => .x86_64,
-            else => @panic("Unsupported architecture"),
+            else => return error.UnsupportedArch,
         };
         const os: OS = switch (builtin.os.tag) {
             .linux => .linux,
             .macos => .macos,
             .windows => .windows,
-            else => @panic("Unsupported OS"),
+            else => return error.UnsupportedOS,
         };
         return self.target(arch, os);
     }
@@ -203,8 +208,8 @@ test "Context basic" {
     const ctx = Context.init(testing.allocator);
 
     // Default configuration
-    try testing.expectEqual(Arch.x86_64, ctx.target.arch);
-    try testing.expectEqual(OS.linux, ctx.target.os);
+    try testing.expectEqual(Arch.aarch64, ctx.target.arch);
+    try testing.expectEqual(OS.macos, ctx.target.os);
     try testing.expectEqual(OptLevel.none, ctx.opt_level);
     try testing.expectEqual(true, ctx.verify);
     try testing.expectEqual(false, ctx.optimize);
@@ -255,6 +260,22 @@ test "Context compile function" {
 
     // Empty function produces minimal code
     try testing.expect(code.code.len == 0);
+}
+
+test "Context compile function unsupported target" {
+    var ctx = Context.withTarget(testing.allocator, .x86_64, .linux);
+    ctx.verify = false;
+
+    const sig = root.signature.Signature.init(testing.allocator, .fast);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    if (ctx.compileFunction(&func)) |code| {
+        defer code.deinit();
+        try testing.expect(false);
+    } else |err| {
+        try testing.expectEqual(error.UnsupportedTarget, err);
+    }
 }
 
 test "Context default calling convention" {

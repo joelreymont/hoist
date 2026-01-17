@@ -76,12 +76,9 @@ test "compile function with call" {
     try func.layout.appendInst(ret_inst, entry);
 
     // Compile for x64
-    var ctx = ContextBuilder.init(testing.allocator)
-        .targetNative()
-        .optLevel(.none)
-        .callConv(.system_v)
-        .verify(true)
-        .build();
+    var builder = ContextBuilder.init(testing.allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).callConv(.system_v).verify(true).build();
 
     const code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("Call compilation failed: {}\n", .{err});
@@ -155,10 +152,9 @@ test "compile function with multiple calls" {
     const ret_inst = try func.dfg.makeInst(ret_data);
     try func.layout.appendInst(ret_inst, entry);
 
-    var ctx = ContextBuilder.init(testing.allocator)
-        .targetNative()
-        .verify(true)
-        .build();
+    var builder = ContextBuilder.init(testing.allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.verify(true).build();
 
     const code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("Multi-call compilation failed: {}\n", .{err});
@@ -206,10 +202,9 @@ test "compile function with nullary call" {
     const ret_inst = try func.dfg.makeInst(ret_data);
     try func.layout.appendInst(ret_inst, entry);
 
-    var ctx = ContextBuilder.init(testing.allocator)
-        .targetNative()
-        .verify(true)
-        .build();
+    var builder = ContextBuilder.init(testing.allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.verify(true).build();
 
     const code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("Nullary call compilation failed: {}\n", .{err});

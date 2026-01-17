@@ -138,10 +138,8 @@ test "CCMP: AND pattern (a < b) && (c < d)" {
 
     // Compile - should succeed
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
@@ -281,10 +279,8 @@ test "CCMP: OR pattern (a < b) || (c < d)" {
 
     // Compile - should succeed
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     var code = try ctx.compileFunction(&func);
     defer code.deinit();

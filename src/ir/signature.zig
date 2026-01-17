@@ -110,7 +110,7 @@ pub const AbiParam = struct {
     }
 
     pub fn format(self: AbiParam, writer: anytype) !void {
-        try writer.print("{}", .{self.value_type});
+        try writer.print("{f}", .{self.value_type});
         try self.extension.format(writer);
         try self.purpose.format(writer);
     }

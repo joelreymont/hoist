@@ -107,6 +107,7 @@ pub const LivenessInfo = struct {
 /// Helper to track per-vreg information during liveness computation
 const VRegInfo = struct {
     first_def: ?u32,
+    first_use: ?u32,
     last_use: u32,
     reg_class: machinst.RegClass,
 };
@@ -148,6 +149,7 @@ pub fn computeLiveness(
             if (!entry.found_existing) {
                 entry.value_ptr.* = .{
                     .first_def = inst_idx,
+                    .first_use = null,
                     .last_use = inst_idx,
                     .reg_class = vreg.class(),
                 };
@@ -156,6 +158,9 @@ pub fn computeLiveness(
                 // Keep the first definition
                 if (entry.value_ptr.first_def == null) {
                     entry.value_ptr.first_def = inst_idx;
+                    if (entry.value_ptr.last_use < inst_idx) {
+                        entry.value_ptr.last_use = inst_idx;
+                    }
                 }
             }
         }
@@ -171,10 +176,14 @@ pub fn computeLiveness(
                 // Treat the use as both the start and current end
                 entry.value_ptr.* = .{
                     .first_def = null, // No definition yet
+                    .first_use = inst_idx,
                     .last_use = inst_idx,
                     .reg_class = vreg.class(),
                 };
             } else {
+                if (entry.value_ptr.first_use == null) {
+                    entry.value_ptr.first_use = inst_idx;
+                }
                 // Update last use
                 entry.value_ptr.last_use = inst_idx;
             }
@@ -188,7 +197,10 @@ pub fn computeLiveness(
         const vinfo = entry.value_ptr.*;
 
         // Start is either first definition or first use (for parameters)
-        const start = vinfo.first_def orelse 0;
+        const start = if (vinfo.first_def) |def|
+            if (vinfo.first_use) |use| @min(def, use) else def
+        else
+            vinfo.first_use orelse 0;
 
         try info.addRange(.{
             .vreg = machinst.VReg.new(vreg_idx, vinfo.reg_class),

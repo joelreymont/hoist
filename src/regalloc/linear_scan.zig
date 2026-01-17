@@ -752,9 +752,9 @@ test "LinearScanAllocator different register classes independent" {
     try std.testing.expectEqual(machinst.RegClass.vector, p2.?.class());
 
     // Can all use index 0 (different register files)
-    try std.testing.expectEqual(@as(u32, 0), p0.?.index());
-    try std.testing.expectEqual(@as(u32, 0), p1.?.index());
-    try std.testing.expectEqual(@as(u32, 0), p2.?.index());
+    try std.testing.expectEqual(@as(u6, 0), p0.?.hwEnc());
+    try std.testing.expectEqual(@as(u6, 0), p1.?.hwEnc());
+    try std.testing.expectEqual(@as(u6, 0), p2.?.hwEnc());
 }
 
 test "LinearScanAllocator out of registers error" {

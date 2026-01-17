@@ -213,11 +213,11 @@ test "property: register pairs start at even register" {
             const first_reg = @as(u8, args.start_reg) * 2;
             if (first_reg >= 8) return true; // X8+ not used for args
 
-            const lo = abi_mod.PReg.new(.int, first_reg);
-            const hi = abi_mod.PReg.new(.int, first_reg + 1);
+            const lo = abi_mod.PReg.new(.int, @intCast(first_reg));
+            const hi = abi_mod.PReg.new(.int, @intCast(first_reg + 1));
 
             // Verify: lo register number must be even
-            return lo.hw() % 2 == 0 and hi.hw() == lo.hw() + 1;
+            return lo.hwEnc() % 2 == 0 and hi.hwEnc() == lo.hwEnc() + 1;
         }
     }.prop, .{ .iterations = 50 });
 }
@@ -342,7 +342,7 @@ test "property: operand size enum coverage" {
         fn prop(args: struct { size: OperandSize }) bool {
             // All OperandSize variants should be valid
             return switch (args.size) {
-                .size8, .size16, .size32, .size64 => true,
+                .size32, .size64 => true,
             };
         }
     }.prop, .{ .iterations = 100 });

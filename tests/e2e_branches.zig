@@ -97,9 +97,8 @@ test "E2E: conditional branch if-then-else" {
     try verifier.verify();
 
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder.targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     const code = try ctx.compileFunction(&func);
     var code_copy = code;
@@ -244,9 +243,8 @@ test "E2E: br_table switch statement" {
     try verifier.verify();
 
     var builder = ContextBuilder.init(testing.allocator);
-    var ctx = builder.targetNative()
-        .optLevel(.none)
-        .build();
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     const code = try ctx.compileFunction(&func);
     var code_copy = code;

@@ -165,8 +165,8 @@ pub const ABIArgSlot = union(enum) {
         writer: anytype,
     ) !void {
         switch (self) {
-            .reg => |r| try writer.print("reg({}, {})", .{ r.preg, r.ty }),
-            .stack => |s| try writer.print("stack({d}, {})", .{ s.offset, s.ty }),
+            .reg => |r| try writer.print("reg({f}, {f})", .{ r.preg, r.ty }),
+            .stack => |s| try writer.print("stack({d}, {f})", .{ s.offset, s.ty }),
         }
     }
 };
