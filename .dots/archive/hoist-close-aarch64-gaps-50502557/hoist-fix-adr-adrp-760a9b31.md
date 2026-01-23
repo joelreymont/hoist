@@ -3,8 +3,8 @@ title: Fix adr/adrp enc
 status: closed
 priority: 1
 issue-type: task
-created-at: "\"\\\"2026-01-14T14:14:31.035699+02:00\\\"\""
-closed-at: "2026-01-14T14:20:59.253835+02:00"
+created-at: "\"\\\"\\\\\\\"2026-01-14T14:14:31.035699+02:00\\\\\\\"\\\"\""
+closed-at: "2026-01-23T08:43:11.451940+02:00"
 close-reason: adrp encodes page offset, tests sign-extend
 ---
 

@@ -2546,14 +2546,16 @@ fn emitLdarW(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
     const rt = hwEnc(dst);
     const rn = hwEnc(base);
 
-    // LDAR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
-    // size=10 (word), L=1 (load), Rs=11111, Rt2=11111
+    // LDAR: size|001000|1|L|o0|Rs|0|Rt2|Rn|Rt
+    // size=10 (word), L=1 (load), o0=0, Rs=11111, Rt2=11111
     const insn: u32 = (0b10 << 30) | // size = word
         (0b001000 << 24) |
-        (1 << 23) | // fixed bit
+        (1 << 23) |
         (1 << 22) | // L = load
-        (0b11111 << 16) | // Rs = 31
-        (0b1111111 << 10) | // fixed bit + Rt2 = 31
+        (0 << 21) | // o0
+        (0b11111 << 16) | // Rs
+        (0 << 15) |
+        (0b11111 << 10) | // Rt2
         (@as(u32, rn) << 5) |
         rt;
 
@@ -2565,14 +2567,16 @@ fn emitLdarX(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
     const rt = hwEnc(dst);
     const rn = hwEnc(base);
 
-    // LDAR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
-    // size=11 (doubleword), L=1 (load), Rs=11111, Rt2=11111
+    // LDAR: size|001000|1|L|o0|Rs|0|Rt2|Rn|Rt
+    // size=11 (doubleword), L=1 (load), o0=0, Rs=11111, Rt2=11111
     const insn: u32 = (0b11 << 30) | // size = doubleword
         (0b001000 << 24) |
-        (1 << 23) | // fixed bit
+        (1 << 23) |
         (1 << 22) | // L = load
-        (0b11111 << 16) | // Rs = 31
-        (0b1111111 << 10) | // fixed bit + Rt2 = 31
+        (0 << 21) | // o0
+        (0b11111 << 16) | // Rs
+        (0 << 15) |
+        (0b11111 << 10) | // Rt2
         (@as(u32, rn) << 5) |
         rt;
 
@@ -8918,7 +8922,7 @@ test "emit ldar_w - verify correct encoding" {
     const r5 = Reg.fromVReg(v5);
     const wr4 = inst_mod.WritableReg.fromReg(r4);
 
-    // LDAR W4, [X5] - encoding: 0x88dffca4
+    // LDAR W4, [X5] - encoding: 0x88df7ca4
     try emit(.{ .ldar_w = .{
         .dst = wr4,
         .base = r5,
@@ -8926,7 +8930,7 @@ test "emit ldar_w - verify correct encoding" {
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
     const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
-    try testing.expectEqual(@as(u32, 0x88dffca4), insn);
+    try testing.expectEqual(@as(u32, 0x88df7ca4), insn);
 }
 
 test "emit ldar_x - verify correct encoding" {
@@ -8939,7 +8943,7 @@ test "emit ldar_x - verify correct encoding" {
     const r7 = Reg.fromVReg(v7);
     const wr6 = inst_mod.WritableReg.fromReg(r6);
 
-    // LDAR X6, [X7] - encoding: 0xc8dffce6
+    // LDAR X6, [X7] - encoding: 0xc8df7ce6
     try emit(.{ .ldar = .{
         .dst = wr6,
         .base = r7,
@@ -8948,7 +8952,7 @@ test "emit ldar_x - verify correct encoding" {
 
     try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
     const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
-    try testing.expectEqual(@as(u32, 0xc8dffce6), insn);
+    try testing.expectEqual(@as(u32, 0xc8df7ce6), insn);
 }
 
 test "emit stlrb - verify correct encoding" {
