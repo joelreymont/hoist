@@ -1,9 +1,10 @@
 ---
 title: Add regalloc verify
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.834594+02:00"
+created-at: "\"2026-01-14T15:42:46.834594+02:00\""
+closed-at: "2026-01-23T21:48:08.557781+02:00"
 ---
 
 Files: /Users/joel/Work/wasmtime/cranelift/README.md:46-50

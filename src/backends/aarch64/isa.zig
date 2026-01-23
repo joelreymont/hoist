@@ -258,7 +258,6 @@ pub const Aarch64ISA = struct {
         func: *const lower_mod.Function,
     ) !compile_mod.CompiledCode {
         const RegAllocBridge = @import("regalloc_bridge.zig").RegAllocBridge;
-        const regalloc2_types = @import("../../machinst/regalloc2/types.zig");
         const buffer_mod = @import("../../machinst/buffer.zig");
 
         // Phase 1: Lower IR to VCode
@@ -277,15 +276,19 @@ pub const Aarch64ISA = struct {
         // Convert VCode to regalloc2 representation
         try bridge.convertVCode(&vcode);
 
-        // TODO: Actually run regalloc2 algorithm here
-        // For now, we do a dummy allocation: v0 -> p0, v1 -> p1, etc.
-        const num_vregs = bridge.adapter.num_vregs;
-        var i: u32 = 0;
-        while (i < num_vregs) : (i += 1) {
-            const vreg = regalloc2_types.VReg.new(i);
-            const preg = regalloc2_types.PhysReg.new(@intCast(i));
-            try bridge.adapter.setAllocation(vreg, regalloc2_types.Allocation{ .reg = preg });
-        }
+        // Run regalloc2 algorithm
+        const regalloc2_liveness = @import("../../machinst/regalloc2/liveness.zig");
+
+        // Compute liveness
+        var liveness = regalloc2_liveness.LivenessInfo.init(ctx.allocator);
+        defer liveness.deinit();
+        try regalloc2_liveness.computeLiveness(&vcode, &bridge.adapter, &liveness);
+
+        // Run allocation
+        const regalloc2_alloc = @import("../../machinst/regalloc2/allocator.zig");
+        var alloc = try regalloc2_alloc.Allocator.init(ctx.allocator, &bridge.adapter);
+        defer alloc.deinit();
+        try alloc.run(&liveness);
 
         // Apply allocations back to VCode
         try bridge.applyAllocations(&vcode);

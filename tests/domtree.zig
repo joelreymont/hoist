@@ -24,9 +24,9 @@ fn buildDiamondCFG(cfg: *ControlFlowGraph) !struct {
     const exit = Block.new(3);
 
     try cfg.addEdge(entry, Inst.new(0), left);
-    try cfg.addEdge(entry, Inst.new(0), right);
-    try cfg.addEdge(left, Inst.new(0), exit);
-    try cfg.addEdge(right, Inst.new(0), exit);
+    try cfg.addEdge(entry, Inst.new(1), right);
+    try cfg.addEdge(left, Inst.new(2), exit);
+    try cfg.addEdge(right, Inst.new(3), exit);
 
     return .{
         .entry = entry,
@@ -83,14 +83,14 @@ test "domtree: diamond CFG left and right dominance" {
 
     try tree.compute(testing.allocator, blocks.entry, &cfg);
 
-    // Left should dominate itself and exit, but not right
+    // Left should dominate itself, but not exit or right
     try testing.expect(tree.dominates(blocks.left, blocks.left));
-    try testing.expect(tree.dominates(blocks.left, blocks.exit));
+    try testing.expect(!tree.dominates(blocks.left, blocks.exit));
     try testing.expect(!tree.dominates(blocks.left, blocks.right));
 
-    // Right should dominate itself and exit, but not left
+    // Right should dominate itself, but not exit or left
     try testing.expect(tree.dominates(blocks.right, blocks.right));
-    try testing.expect(tree.dominates(blocks.right, blocks.exit));
+    try testing.expect(!tree.dominates(blocks.right, blocks.exit));
     try testing.expect(!tree.dominates(blocks.right, blocks.left));
 
     // Left and right do not dominate each other
@@ -229,8 +229,9 @@ test "domtree: diamond CFG exit dominated by all" {
 
     try tree.compute(testing.allocator, blocks.entry, &cfg);
 
-    // Exit should be dominated by entry only (in the idom chain)
-    // But not by left or right (they don't dominate exit)
-    try testing.expect(!tree.dominates(blocks.left, blocks.exit) or std.meta.eql(tree.idominator(blocks.exit).?, blocks.entry));
-    try testing.expect(!tree.dominates(blocks.right, blocks.exit) or std.meta.eql(tree.idominator(blocks.exit).?, blocks.entry));
+    // Exit should be dominated by entry only
+    // Left and right do not dominate exit
+    try testing.expect(!tree.dominates(blocks.left, blocks.exit));
+    try testing.expect(!tree.dominates(blocks.right, blocks.exit));
+    try testing.expect(std.meta.eql(tree.idominator(blocks.exit).?, blocks.entry));
 }

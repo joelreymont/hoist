@@ -217,4 +217,8 @@ pub const ir = struct {
         pub const Parser = @import("ir/text/parser.zig").Parser;
         pub const Printer = @import("ir/text/printer.zig").Printer;
     };
+    pub const cfg = @import("ir/cfg.zig");
+    pub const domtree = @import("ir/domtree.zig");
+    pub const Block = @import("ir/entities.zig").Block;
+    pub const Inst = @import("ir/entities.zig").Inst;
 };

@@ -103,18 +103,17 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_tests.step);
 
     // E2E tests
-    // TODO: e2e_branches.zig needs createInst->makeInst, makeIconst API fixes
-    // const e2e_branches = b.addTest(.{
-    //     .root_module = b.createModule(.{
-    //         .root_source_file = b.path("tests/e2e_branches.zig"),
-    //         .target = target,
-    //         .optimize = optimize,
-    //     }),
-    // });
-    // e2e_branches.root_module.addImport("hoist", lib.root_module);
-    // applyFlags(e2e_branches, enable_lto, debug_info, strip_debug, pic, single_threaded);
-    // const run_e2e_branches = b.addRunArtifact(e2e_branches);
-    // test_step.dependOn(&run_e2e_branches.step);
+    const e2e_branches = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/e2e_branches.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    e2e_branches.root_module.addImport("hoist", lib.root_module);
+    applyFlags(e2e_branches, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_e2e_branches = b.addRunArtifact(e2e_branches);
+    test_step.dependOn(&run_e2e_branches.step);
 
     const e2e_loops = b.addTest(.{
         .root_module = b.createModule(.{
@@ -128,18 +127,17 @@ pub fn build(b: *std.Build) void {
     const run_e2e_loops = b.addRunArtifact(e2e_loops);
     test_step.dependOn(&run_e2e_loops.step);
 
-    // TODO: e2e_jit.zig needs API fixes (abi_param, firstResult, etc.)
-    // const e2e_jit = b.addTest(.{
-    //     .root_module = b.createModule(.{
-    //         .root_source_file = b.path("tests/e2e_jit.zig"),
-    //         .target = target,
-    //         .optimize = optimize,
-    //     }),
-    // });
-    // e2e_jit.root_module.addImport("hoist", lib.root_module);
-    // applyFlags(e2e_jit, enable_lto, debug_info, strip_debug, pic, single_threaded);
-    // const run_e2e_jit = b.addRunArtifact(e2e_jit);
-    // test_step.dependOn(&run_e2e_jit.step);
+    const e2e_jit = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/e2e_jit.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    e2e_jit.root_module.addImport("hoist", lib.root_module);
+    applyFlags(e2e_jit, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_e2e_jit = b.addRunArtifact(e2e_jit);
+    test_step.dependOn(&run_e2e_jit.step);
 
     const egraph_opt = b.addTest(.{
         .root_module = b.createModule(.{
@@ -283,6 +281,7 @@ pub fn build(b: *std.Build) void {
     // const run_isle_coverage_tests = b.addRunArtifact(isle_coverage_tests);
     // test_step.dependOn(&run_isle_coverage_tests.step);
 
+    // TODO: ISLE code generator needs to emit recordRule() calls in constructors
     // const isle_compare_tests = b.addTest(.{
     //     .root_module = b.createModule(.{
     //         .root_source_file = b.path("tests/isle_compare.zig"),
@@ -369,18 +368,17 @@ pub fn build(b: *std.Build) void {
     const run_value_range_tests = b.addRunArtifact(value_range_tests);
     test_step.dependOn(&run_value_range_tests.step);
 
-    // TODO: domtree.zig needs cfg export fix (hoist.ir.cfg)
-    // const domtree_tests = b.addTest(.{
-    //     .root_module = b.createModule(.{
-    //         .root_source_file = b.path("tests/domtree.zig"),
-    //         .target = target,
-    //         .optimize = optimize,
-    //     }),
-    // });
-    // domtree_tests.root_module.addImport("hoist", lib.root_module);
-    // applyFlags(domtree_tests, enable_lto, debug_info, strip_debug, pic, single_threaded);
-    // const run_domtree_tests = b.addRunArtifact(domtree_tests);
-    // test_step.dependOn(&run_domtree_tests.step);
+    const domtree_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/domtree.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    domtree_tests.root_module.addImport("hoist", lib.root_module);
+    applyFlags(domtree_tests, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_domtree_tests = b.addRunArtifact(domtree_tests);
+    test_step.dependOn(&run_domtree_tests.step);
 
     const interference_tests = b.addTest(.{
         .root_module = b.createModule(.{

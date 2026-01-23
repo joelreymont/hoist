@@ -855,6 +855,7 @@ fn removeConstantPhis(ctx: *Context) CodegenError!bool {
                         for (table.allBranches()) |bc| {
                             if (!std.meta.eql(bc.block(&ctx.func.dfg.value_lists), block)) continue;
                             const arg_count = bc.len(&ctx.func.dfg.value_lists);
+                            if (arg_count == 0) continue;
                             if (arg_count != params.len) return error.OptimizationFailed;
                             const args = try ctx.allocator.alloc(ir.Value, arg_count);
                             defer ctx.allocator.free(args);
@@ -1237,7 +1238,7 @@ fn lowerAArch64(ctx: *Context, _: *const Target) CodegenError!void {
         // Lower each instruction in block
         var inst_iter = ctx.func.layout.blockInsts(block);
         while (inst_iter.next()) |inst| {
-            try lowerInstructionAArch64(ctx, &builder, inst);
+            try lowerInstructionAArch64(ctx, &builder, inst, &block_index_map);
 
             // Check if this was a try_call and emit exception handling branch
             const inst_data_ptr = ctx.func.dfg.insts.get(inst);
@@ -1569,7 +1570,7 @@ fn emitMovWideImmediate(
 }
 
 /// Lower a single AArch64 instruction.
-fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) CodegenError!void {
+fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block_map: anytype) CodegenError!void {
     const Inst = @import("../backends/aarch64/inst.zig").Inst;
     const OperandSize = @import("../backends/aarch64/inst.zig").OperandSize;
 
@@ -4641,6 +4642,80 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
             } else {
                 return error.LoweringFailed;
             }
+        },
+        .branch_z => |data| {
+            const VReg = @import("../machinst/reg.zig").VReg;
+            const RegClass = @import("../machinst/reg.zig").RegClass;
+            const Reg = @import("../machinst/reg.zig").Reg;
+
+            const cond_vreg = VReg.new(@intCast(data.condition.index + Reg.PINNED_VREGS), RegClass.int);
+            const cond = Reg.fromVReg(cond_vreg);
+
+            const value_type = ctx.func.dfg.valueType(data.condition) orelse return error.LoweringFailed;
+            const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+            const target_label = block_map.get(data.destination) orelse return error.LoweringFailed;
+
+            if (data.opcode == .brz) {
+                try builder.emit(Inst{
+                    .cbz = .{
+                        .reg = cond,
+                        .target = .{ .label = target_label },
+                        .size = size,
+                    },
+                });
+            } else {
+                try builder.emit(Inst{
+                    .cbnz = .{
+                        .reg = cond,
+                        .target = .{ .label = target_label },
+                        .size = size,
+                    },
+                });
+            }
+        },
+        .branch_table => |data| {
+            const VReg = @import("../machinst/reg.zig").VReg;
+            const RegClass = @import("../machinst/reg.zig").RegClass;
+            const Reg = @import("../machinst/reg.zig").Reg;
+
+            const arg_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
+            const arg_reg = Reg.fromVReg(arg_vreg);
+
+            const jt = ctx.func.jump_tables.get(data.destination) orelse return error.LoweringFailed;
+            const default_bc = jt.defaultBlock() orelse return error.LoweringFailed;
+            const default_block = default_bc.block(&ctx.func.dfg.value_lists);
+            const default_label = block_map.get(default_block) orelse return error.LoweringFailed;
+
+            const cases = jt.asSlice();
+
+            const Imm12 = @import("../backends/aarch64/inst.zig").Imm12;
+            const CondCode = @import("../backends/aarch64/inst.zig").CondCode;
+
+            for (cases, 0..) |bc, idx| {
+                const target_block = bc.block(&ctx.func.dfg.value_lists);
+                const target_label = block_map.get(target_block) orelse return error.LoweringFailed;
+
+                try builder.emit(Inst{
+                    .cmp_imm = .{
+                        .src = arg_reg,
+                        .imm = Imm12{ .bits = @intCast(idx), .shift12 = false },
+                        .size = .size32,
+                    },
+                });
+                try builder.emit(Inst{
+                    .b_cond = .{
+                        .cond = CondCode.eq,
+                        .target = .{ .label = target_label },
+                    },
+                });
+            }
+
+            try builder.emit(Inst{
+                .b = .{
+                    .target = .{ .label = default_label },
+                },
+            });
         },
         else => return error.LoweringFailed,
     }

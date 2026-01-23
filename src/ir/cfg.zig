@@ -102,37 +102,42 @@ pub const ControlFlowGraph = struct {
     }
 
     fn computeBlock(self: *ControlFlowGraph, func: *const Function, block: Block) !void {
-        // Visit all branch/jump successors of this block
-        const block_data = func.layout.blocks.get(block) orelse return;
-
-        // Get last instruction (terminator)
-        if (block_data.last_inst) |last_inst| {
-            const inst_data = func.dfg.insts.get(last_inst) orelse return;
+        // Visit all branch/jump instructions in this block
+        var inst_iter = func.layout.blockInsts(block);
+        while (inst_iter.next()) |inst| {
+            const inst_data = func.dfg.insts.get(inst) orelse continue;
 
             // Extract successor blocks based on instruction type
             switch (inst_data.opcode()) {
                 .jump => {
-                    try self.addEdge(block, last_inst, inst_data.jump.destination);
+                    try self.addEdge(block, inst, inst_data.jump.destination);
                 },
                 .brif => {
                     if (inst_data.branch.then_dest) |then_dest| {
-                        try self.addEdge(block, last_inst, then_dest);
+                        try self.addEdge(block, inst, then_dest);
                     }
                     if (inst_data.branch.else_dest) |else_dest| {
-                        try self.addEdge(block, last_inst, else_dest);
+                        try self.addEdge(block, inst, else_dest);
                     }
+                },
+                .brz, .brnz => {
+                    try self.addEdge(block, inst, inst_data.branch_z.destination);
                 },
                 .try_call => {
                     // Wire normal successor as regular control flow edge
-                    try self.addEdge(block, last_inst, inst_data.try_call.normal_successor);
+                    try self.addEdge(block, inst, inst_data.try_call.normal_successor);
                     // Wire exception successor as exception edge
                     try self.addExceptionEdge(block, inst_data.try_call.exception_successor);
                 },
                 .br_table => {
-                    // TODO: Look up jump table destinations from function.jump_tables
-                    // For now, skip adding edges for br_table
+                    const jt = func.jump_tables.get(inst_data.branch_table.destination) orelse continue;
+                    const default_bc = jt.defaultBlock() orelse continue;
+                    try self.addEdge(block, inst, default_bc.block(&func.dfg.value_lists));
+                    for (jt.asSlice()) |bc| {
+                        try self.addEdge(block, inst, bc.block(&func.dfg.value_lists));
+                    }
                 },
-                else => {}, // Non-branching terminator (return, trap, etc)
+                else => {}, // Non-branching instruction
             }
         }
     }

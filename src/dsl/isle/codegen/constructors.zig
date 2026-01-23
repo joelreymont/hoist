@@ -105,8 +105,14 @@ pub const ConstructorGen = struct {
 
         // For now, emit a simple structure
         // TODO: Implement full decision tree traversal
-        _ = ruleset;
         _ = ret_ty;
+
+        // Emit recordRule() calls for each rule in the ruleset
+        for (ruleset.rules.items, 0..) |rule, rule_idx| {
+            _ = rule;
+            try self.indent(self.indent_level);
+            try writer.print("recordRule(\"rule_{}\");\n", .{rule_idx});
+        }
 
         // Temporary implementation
         try self.indent(self.indent_level);

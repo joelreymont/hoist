@@ -13,7 +13,7 @@ const ContextBuilder = hoist.context.ContextBuilder;
 const InstructionData = hoist.instruction_data.InstructionData;
 const Imm64 = hoist.immediates.Imm64;
 const Verifier = hoist.verifier.Verifier;
-const CompileContext = hoist.compile.CompileContext;
+
 const IntCC = hoist.condcodes.IntCC;
 const JumpTableData = hoist.jump_table_data.JumpTableData;
 const BlockCall = hoist.block_call.BlockCall;
@@ -118,9 +118,6 @@ test "E2E: br_table switch statement" {
     var func = try Function.init(testing.allocator, "switch_func", sig);
     defer func.deinit();
 
-    var pool = ValueListPool.init(testing.allocator);
-    defer pool.deinit();
-
     const entry = try func.dfg.makeBlock();
     const case0_block = try func.dfg.makeBlock();
     const case1_block = try func.dfg.makeBlock();
@@ -136,11 +133,11 @@ test "E2E: br_table switch statement" {
     const param = try func.dfg.appendBlockParam(entry, Type.I32);
 
     // Create jump table
-    const default_call = try BlockCall.new(default_block, &.{}, &pool);
+    const default_call = try BlockCall.new(default_block, &.{}, &func.dfg.value_lists);
     const case_calls = [_]BlockCall{
-        try BlockCall.new(case0_block, &.{}, &pool),
-        try BlockCall.new(case1_block, &.{}, &pool),
-        try BlockCall.new(case2_block, &.{}, &pool),
+        try BlockCall.new(case0_block, &.{}, &func.dfg.value_lists),
+        try BlockCall.new(case1_block, &.{}, &func.dfg.value_lists),
+        try BlockCall.new(case2_block, &.{}, &func.dfg.value_lists),
     };
     const jt_data = try JumpTableData.new(testing.allocator, default_call, &case_calls);
     const jt = try func.jump_tables.push(jt_data);
@@ -272,51 +269,70 @@ test "E2E: brz branch if zero" {
     try func.layout.appendBlock(zero_block);
     try func.layout.appendBlock(nonzero_block);
 
-    const param = func.dfg.blockParams(entry_block)[0];
+    const param = try func.dfg.appendBlockParam(entry_block, Type.int(64).?);
 
-    // entry: brz param, zero_block
-    const brz_inst = try func.dfg.createInst(.{
+    // entry: brz param, zero_block, nonzero_block
+    const brz_data = InstructionData{
         .branch_z = .{
             .opcode = .brz,
             .condition = param,
             .destination = zero_block,
         },
-    }, Type.void());
+    };
+    const brz_inst = try func.dfg.makeInst(brz_data);
     try func.layout.appendInst(brz_inst, entry_block);
 
     // Also add fallthrough jump to nonzero_block
-    const jump_inst = try func.dfg.createInst(.{
+    const jump_data = InstructionData{
         .jump = .{
             .opcode = .jump,
             .destination = nonzero_block,
         },
-    }, Type.void());
+    };
+    const jump_inst = try func.dfg.makeInst(jump_data);
     try func.layout.appendInst(jump_inst, entry_block);
 
     // zero_block: return 0
-    const zero_val = try func.dfg.makeIconst(Type.int(64), 0);
-    const ret0_inst = try func.dfg.createInst(.{
+    const zero_data_z = InstructionData{
+        .unary_imm = .{
+            .opcode = .iconst,
+            .imm = Imm64.new(0),
+        },
+    };
+    const zero_inst_z = try func.dfg.makeInst(zero_data_z);
+    const zero_val = try func.dfg.appendInstResult(zero_inst_z, Type.int(64).?);
+    try func.layout.appendInst(zero_inst_z, zero_block);
+    const ret0_data = InstructionData{
         .unary = .{
             .opcode = .@"return",
             .arg = zero_val,
         },
-    }, Type.void());
+    };
+    const ret0_inst = try func.dfg.makeInst(ret0_data);
     try func.layout.appendInst(ret0_inst, zero_block);
 
     // nonzero_block: return 1
-    const one_val = try func.dfg.makeIconst(Type.int(64), 1);
-    const ret1_inst = try func.dfg.createInst(.{
+    const one_data_nz = InstructionData{
+        .unary_imm = .{
+            .opcode = .iconst,
+            .imm = Imm64.new(1),
+        },
+    };
+    const one_inst_nz = try func.dfg.makeInst(one_data_nz);
+    const one_val = try func.dfg.appendInstResult(one_inst_nz, Type.int(64).?);
+    try func.layout.appendInst(one_inst_nz, nonzero_block);
+    const ret1_data = InstructionData{
         .unary = .{
             .opcode = .@"return",
             .arg = one_val,
         },
-    }, Type.void());
+    };
+    const ret1_inst = try func.dfg.makeInst(ret1_data);
     try func.layout.appendInst(ret1_inst, nonzero_block);
 
-    var ctx = CompileContext
-        .forTarget(.aarch64)
-        .optLevel(.none)
-        .build();
+    var builder = ContextBuilder.init(testing.allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
     const code = try ctx.compileFunction(&func);
     var code_copy = code;
