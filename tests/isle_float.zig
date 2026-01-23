@@ -611,7 +611,7 @@ test "ISLE coverage: copysign f64" {
 
     // v2 = copysign v0, v1
     const copysign_data = InstructionData{ .binary = .{
-        .opcode = .copysign,
+        .opcode = .fcopysign,
         .args = .{ v0, v1 },
     } };
     const v2_inst = try func.dfg.makeInst(copysign_data);

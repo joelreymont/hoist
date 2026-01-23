@@ -1580,6 +1580,35 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst) Codeg
                         .size = size,
                     },
                 });
+            } else if (data.opcode == .tls_value) {
+                // TLS value - Local-Exec model: MRS + ADD
+                const SystemReg = @import("../backends/aarch64/inst.zig").SystemReg;
+                const vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const writable = WritableReg.fromVReg(vreg);
+
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                // MRS dst, TPIDR_EL0
+                try builder.emit(Inst{
+                    .mrs = .{
+                        .dst = writable,
+                        .sysreg = SystemReg.tpidr_el0,
+                    },
+                });
+
+                // ADD dst, dst, #offset
+                const offset = data.imm.bits();
+                if (offset != 0) {
+                    const offset_u12: u12 = @intCast(offset & 0xFFF);
+                    try builder.emit(Inst{
+                        .add_imm = .{
+                            .dst = writable,
+                            .src = Reg.fromVReg(vreg),
+                            .imm = offset_u12,
+                            .size = size,
+                        },
+                    });
+                }
             } else {
                 return error.LoweringFailed;
             }

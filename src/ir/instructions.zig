@@ -6,7 +6,7 @@
 //! This is a minimal scaffold. Full opcode definitions will be generated from meta definitions.
 
 const std = @import("std");
-const entity = @import("../foundation/entity.zig");
+const value_list_mod = @import("value_list.zig");
 const entities = @import("entities.zig");
 
 const Value = entities.Value;
@@ -16,10 +16,10 @@ const Inst = entities.Inst;
 /// A variable list of Value operands.
 /// Some instructions use an external list of argument values because there is not enough space
 /// in the InstructionData struct. These value lists are stored in a memory pool.
-pub const ValueList = entity.EntityList(Value);
+pub const ValueList = value_list_mod.ValueList;
 
 /// Memory pool for holding value lists.
-pub const ValueListPool = entity.ListPool(Value);
+pub const ValueListPool = value_list_mod.ValueListPool;
 
 /// A block argument: either an ordinary value, or a special edge-generated value
 /// from try_call instructions.

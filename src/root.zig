@@ -72,7 +72,12 @@ pub const machinst = @import("machinst/machinst.zig");
 pub const buffer = @import("machinst/buffer.zig");
 pub const vcode = @import("machinst/vcode.zig");
 pub const abi = @import("machinst/abi.zig");
-pub const regalloc = @import("machinst/regalloc.zig");
+pub const regalloc = struct {
+    pub const liveness = @import("regalloc/liveness.zig");
+    pub const interference = @import("regalloc/interference.zig");
+    pub const LinearScanAllocator = @import("machinst/regalloc.zig").LinearScanAllocator;
+    pub const Allocation = @import("machinst/regalloc.zig").Allocation;
+};
 pub const regalloc2_types = @import("machinst/regalloc2/types.zig");
 pub const regalloc2_api = @import("machinst/regalloc2/api.zig");
 pub const regalloc2_moves = @import("machinst/regalloc2/moves.zig");

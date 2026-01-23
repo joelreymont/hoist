@@ -44,7 +44,7 @@ test "ISLE coverage: sext i8 to i32" {
 
     // v1 = sext.i32 v0
     const sext_data = InstructionData{ .unary = .{
-        .opcode = .sext,
+        .opcode = .sextend,
         .arg = v0,
     } };
     const v1_inst = try func.dfg.makeInst(sext_data);
@@ -194,7 +194,7 @@ test "ISLE coverage: sext i16 to i64" {
 
     // v1 = sext.i64 v0
     const sext_data = InstructionData{ .unary = .{
-        .opcode = .sext,
+        .opcode = .sextend,
         .arg = v0,
     } };
     const v1_inst = try func.dfg.makeInst(sext_data);
@@ -244,7 +244,7 @@ test "ISLE coverage: sext i32 to i64" {
 
     // v1 = sext.i64 v0
     const sext_data = InstructionData{ .unary = .{
-        .opcode = .sext,
+        .opcode = .sextend,
         .arg = v0,
     } };
     const v1_inst = try func.dfg.makeInst(sext_data);
@@ -294,7 +294,7 @@ test "ISLE coverage: uext i8 to i32" {
 
     // v1 = uext.i32 v0
     const uext_data = InstructionData{ .unary = .{
-        .opcode = .uext,
+        .opcode = .uextend,
         .arg = v0,
     } };
     const v1_inst = try func.dfg.makeInst(uext_data);
@@ -344,7 +344,7 @@ test "ISLE coverage: uext i16 to i64" {
 
     // v1 = uext.i64 v0
     const uext_data = InstructionData{ .unary = .{
-        .opcode = .uext,
+        .opcode = .uextend,
         .arg = v0,
     } };
     const v1_inst = try func.dfg.makeInst(uext_data);

@@ -132,24 +132,24 @@ test "interference: neighbors list" {
     defer graph.deinit();
 
     // Get neighbors of v0
-    var neighbors_v0 = try graph.neighbors(v0);
-    defer neighbors_v0.deinit();
+    var neighbors_v0 = try graph.neighbors(v0, testing.allocator);
+    defer neighbors_v0.deinit(testing.allocator);
 
     // v0 should have 1 neighbor: v1
     try testing.expectEqual(@as(usize, 1), neighbors_v0.items.len);
     try testing.expectEqual(@as(u32, 1), neighbors_v0.items[0]);
 
     // Get neighbors of v1
-    var neighbors_v1 = try graph.neighbors(v1);
-    defer neighbors_v1.deinit();
+    var neighbors_v1 = try graph.neighbors(v1, testing.allocator);
+    defer neighbors_v1.deinit(testing.allocator);
 
     // v1 should have 1 neighbor: v0
     try testing.expectEqual(@as(usize, 1), neighbors_v1.items.len);
     try testing.expectEqual(@as(u32, 0), neighbors_v1.items[0]);
 
     // Get neighbors of v2
-    var neighbors_v2 = try graph.neighbors(v2);
-    defer neighbors_v2.deinit();
+    var neighbors_v2 = try graph.neighbors(v2, testing.allocator);
+    defer neighbors_v2.deinit(testing.allocator);
 
     // v2 should have 0 neighbors
     try testing.expectEqual(@as(usize, 0), neighbors_v2.items.len);

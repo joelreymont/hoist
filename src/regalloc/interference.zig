@@ -45,12 +45,12 @@ pub const InterferenceGraph = struct {
     /// Add an interference edge between two virtual registers.
     /// The edge is bidirectional (symmetric).
     pub fn addEdge(self: *InterferenceGraph, v1: machinst.VReg, v2: machinst.VReg) void {
-        if (v1.index >= self.num_vregs or v2.index >= self.num_vregs) return;
-        if (v1.index == v2.index) return; // No self-edges
+        if (v1.index() >= self.num_vregs or v2.index() >= self.num_vregs) return;
+        if (v1.index() == v2.index()) return; // No self-edges
 
         // Set both directions (symmetric matrix)
-        const idx1 = v1.index * self.num_vregs + v2.index;
-        const idx2 = v2.index * self.num_vregs + v1.index;
+        const idx1 = v1.index() * self.num_vregs + v2.index();
+        const idx2 = v2.index() * self.num_vregs + v1.index();
 
         self.edges.set(idx1);
         self.edges.set(idx2);
@@ -58,23 +58,23 @@ pub const InterferenceGraph = struct {
 
     /// Check if two virtual registers interfere.
     pub fn interferes(self: *const InterferenceGraph, v1: machinst.VReg, v2: machinst.VReg) bool {
-        if (v1.index >= self.num_vregs or v2.index >= self.num_vregs) return false;
-        if (v1.index == v2.index) return false;
+        if (v1.index() >= self.num_vregs or v2.index() >= self.num_vregs) return false;
+        if (v1.index() == v2.index()) return false;
 
-        const idx = v1.index * self.num_vregs + v2.index;
+        const idx = v1.index() * self.num_vregs + v2.index();
         return self.edges.isSet(idx);
     }
 
     /// Get the degree (number of neighbors) of a virtual register.
     /// This is the count of vregs that interfere with the given vreg.
     pub fn degree(self: *const InterferenceGraph, v: machinst.VReg) u32 {
-        if (v.index >= self.num_vregs) return 0;
+        if (v.index() >= self.num_vregs) return 0;
 
         var count: u32 = 0;
         var i: u32 = 0;
         while (i < self.num_vregs) : (i += 1) {
-            if (i == v.index) continue;
-            const idx = v.index * self.num_vregs + i;
+            if (i == v.index()) continue;
+            const idx = v.index() * self.num_vregs + i;
             if (self.edges.isSet(idx)) {
                 count += 1;
             }
@@ -84,18 +84,18 @@ pub const InterferenceGraph = struct {
 
     /// Get all neighbors (interfering vregs) of a virtual register.
     /// Returns an ArrayList of VReg indices that must be freed by caller.
-    pub fn neighbors(self: *const InterferenceGraph, v: machinst.VReg) !std.ArrayList(u32) {
-        var result = std.ArrayList(u32).init(self.allocator);
-        errdefer result.deinit();
+    pub fn neighbors(self: *const InterferenceGraph, v: machinst.VReg, allocator: std.mem.Allocator) !std.ArrayList(u32) {
+        var result = try std.ArrayList(u32).initCapacity(allocator, 0);
+        errdefer result.deinit(allocator);
 
-        if (v.index >= self.num_vregs) return result;
+        if (v.index() >= self.num_vregs) return result;
 
         var i: u32 = 0;
         while (i < self.num_vregs) : (i += 1) {
-            if (i == v.index) continue;
-            const idx = v.index * self.num_vregs + i;
+            if (i == v.index()) continue;
+            const idx = v.index() * self.num_vregs + i;
             if (self.edges.isSet(idx)) {
-                try result.append(self.allocator, i);
+                try result.append(allocator, i);
             }
         }
 
@@ -120,8 +120,8 @@ pub fn buildInterferenceGraph(
     // Find max vreg index to size the graph
     var max_vreg_idx: u32 = 0;
     for (ranges) |range| {
-        if (range.vreg.index > max_vreg_idx) {
-            max_vreg_idx = range.vreg.index;
+        if (range.vreg.index() > max_vreg_idx) {
+            max_vreg_idx = range.vreg.index();
         }
     }
 

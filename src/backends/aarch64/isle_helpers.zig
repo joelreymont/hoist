@@ -3161,7 +3161,50 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
                 }
             }
 
-            // TODO: Handle HVA struct class
+            if (classification.class == .hva) {
+                // HVA: 2-4 same-type vector fields passed in V0-V3
+                const elem_ty = classification.elem_ty.?;
+                const fields = arg_type.@"struct";
+                const field_count = fields.len;
+
+                if (fp_count + field_count <= abi_spec.float_arg_regs.len) {
+                    // Load struct address
+                    const struct_ptr = try ctx.getValueReg(arg_value, .int);
+
+                    // Extract each vector field and move to FP register
+                    for (0..field_count) |field_idx| {
+                        const offset: i32 = @intCast(field_idx * elem_ty.bytes());
+                        const field_reg = lower_mod.WritableReg.allocReg(.float, ctx);
+
+                        // Load vector field from struct
+                        try ctx.emit(Inst{ .vldr = .{
+                            .dst = field_reg,
+                            .base = struct_ptr.toReg(),
+                            .offset = offset,
+                            .size = vectorSizeFromType(elem_ty),
+                        } });
+
+                        // Move to ABI FP register
+                        const abi_preg = abi_spec.float_arg_regs[fp_count + field_idx];
+                        const abi_reg = Reg.fpr(abi_preg.hw_enc);
+
+                        if (!field_reg.toReg().eq(abi_reg)) {
+                            try ctx.emit(Inst{ .vmov = .{
+                                .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                                .src = field_reg.toReg(),
+                                .size = vectorSizeFromType(elem_ty),
+                            } });
+                        }
+                    }
+
+                    fp_count += @intCast(field_count);
+                    continue;
+                } else {
+                    // Stack HVA handling
+                    stack_offset += arg_type.bytes();
+                    continue;
+                }
+            }
         }
 
         const is_fp = arg_type.isFloat() or arg_type.isVector();
@@ -3669,7 +3712,50 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                 }
             }
 
-            // TODO: Handle HVA struct class
+            if (classification.class == .hva) {
+                // HVA: 2-4 same-type vector fields passed in V0-V3
+                const elem_ty = classification.elem_ty.?;
+                const fields = arg_type.@"struct";
+                const field_count = fields.len;
+
+                if (fp_count + field_count <= abi_spec.float_arg_regs.len) {
+                    // Load struct address
+                    const struct_ptr = try ctx.getValueReg(arg_value, .int);
+
+                    // Extract each vector field and move to FP register
+                    for (0..field_count) |field_idx| {
+                        const offset: i32 = @intCast(field_idx * elem_ty.bytes());
+                        const field_reg = lower_mod.WritableReg.allocReg(.float, ctx);
+
+                        // Load vector field from struct
+                        try ctx.emit(Inst{ .vldr = .{
+                            .dst = field_reg,
+                            .base = struct_ptr.toReg(),
+                            .offset = offset,
+                            .size = vectorSizeFromType(elem_ty),
+                        } });
+
+                        // Move to ABI FP register
+                        const abi_preg = abi_spec.float_arg_regs[fp_count + field_idx];
+                        const abi_reg = Reg.fpr(abi_preg.hw_enc);
+
+                        if (!field_reg.toReg().eq(abi_reg)) {
+                            try ctx.emit(Inst{ .vmov = .{
+                                .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                                .src = field_reg.toReg(),
+                                .size = vectorSizeFromType(elem_ty),
+                            } });
+                        }
+                    }
+
+                    fp_count += @intCast(field_count);
+                    continue;
+                } else {
+                    // Stack HVA handling
+                    stack_offset += arg_type.bytes();
+                    continue;
+                }
+            }
         }
 
         const is_fp = arg_type.isFloat() or arg_type.isVector();
@@ -4113,7 +4199,50 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                 }
             }
 
-            // TODO: Handle HVA struct class
+            if (classification.class == .hva) {
+                // HVA: 2-4 same-type vector fields passed in V0-V3
+                const elem_ty = classification.elem_ty.?;
+                const fields = arg_type.@"struct";
+                const field_count = fields.len;
+
+                if (fp_count + field_count <= abi_spec.float_arg_regs.len) {
+                    // Load struct address
+                    const struct_ptr = try ctx.getValueReg(arg_value, .int);
+
+                    // Extract each vector field and move to FP register
+                    for (0..field_count) |field_idx| {
+                        const offset: i32 = @intCast(field_idx * elem_ty.bytes());
+                        const field_reg = lower_mod.WritableReg.allocReg(.float, ctx);
+
+                        // Load vector field from struct
+                        try ctx.emit(Inst{ .vldr = .{
+                            .dst = field_reg,
+                            .base = struct_ptr.toReg(),
+                            .offset = offset,
+                            .size = vectorSizeFromType(elem_ty),
+                        } });
+
+                        // Move to ABI FP register
+                        const abi_preg = abi_spec.float_arg_regs[fp_count + field_idx];
+                        const abi_reg = Reg.fpr(abi_preg.hw_enc);
+
+                        if (!field_reg.toReg().eq(abi_reg)) {
+                            try ctx.emit(Inst{ .vmov = .{
+                                .dst = lower_mod.WritableReg.fromReg(abi_reg),
+                                .src = field_reg.toReg(),
+                                .size = vectorSizeFromType(elem_ty),
+                            } });
+                        }
+                    }
+
+                    fp_count += @intCast(field_count);
+                    continue;
+                } else {
+                    // Stack HVA handling
+                    stack_offset += arg_type.bytes();
+                    continue;
+                }
+            }
         }
 
         const is_fp = arg_type.isFloat() or arg_type.isVector();

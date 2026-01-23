@@ -153,18 +153,17 @@ pub fn build(b: *std.Build) void {
     const run_egraph_opt = b.addRunArtifact(egraph_opt);
     test_step.dependOn(&run_egraph_opt.step);
 
-    // TODO: aarch64_tls needs ISLE root import fix
-    // const aarch64_tls = b.addTest(.{
-    //     .root_module = b.createModule(.{
-    //         .root_source_file = b.path("tests/aarch64_tls.zig"),
-    //         .target = target,
-    //         .optimize = optimize,
-    //     }),
-    // });
-    // aarch64_tls.root_module.addImport("hoist", lib.root_module);
-    // applyFlags(aarch64_tls, enable_lto, debug_info, strip_debug, pic, single_threaded);
-    // const run_aarch64_tls = b.addRunArtifact(aarch64_tls);
-    // test_step.dependOn(&run_aarch64_tls.step);
+    const aarch64_tls = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/aarch64_tls.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    aarch64_tls.root_module.addImport("hoist", lib.root_module);
+    applyFlags(aarch64_tls, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_aarch64_tls = b.addRunArtifact(aarch64_tls);
+    test_step.dependOn(&run_aarch64_tls.step);
 
     // TODO: fp_special_values.zig needs API fixes (unary_ieee32/64)
     // const fp_special_values = b.addTest(.{
@@ -219,19 +218,18 @@ pub fn build(b: *std.Build) void {
     // const run_aarch64_struct_args = b.addRunArtifact(aarch64_struct_args);
     // test_step.dependOn(&run_aarch64_struct_args.step);
 
-    // TODO: aarch64_stack_args.zig needs major API updates (uses old InstructionData format)
-    // const aarch64_stack_args = b.addTest(.{
-    //     .root_module = b.createModule(.{
-    //         .root_source_file = b.path("tests/aarch64_stack_args.zig"),
-    //         .target = target,
-    //         .optimize = optimize,
-    //     }),
-    // });
-    // aarch64_stack_args.root_module.addImport("hoist", lib.root_module);
-    // aarch64_stack_args.root_module.addImport("zcheck", zcheck.module("zcheck"));
-    // applyFlags(aarch64_stack_args, enable_lto, debug_info, strip_debug, pic, single_threaded);
-    // const run_aarch64_stack_args = b.addRunArtifact(aarch64_stack_args);
-    // test_step.dependOn(&run_aarch64_stack_args.step);
+    const aarch64_stack_args = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/aarch64_stack_args.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    aarch64_stack_args.root_module.addImport("hoist", lib.root_module);
+    aarch64_stack_args.root_module.addImport("zcheck", zcheck.module("zcheck"));
+    applyFlags(aarch64_stack_args, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_aarch64_stack_args = b.addRunArtifact(aarch64_stack_args);
+    test_step.dependOn(&run_aarch64_stack_args.step);
 
     // TODO: aarch64_return_marshaling.zig needs Imm64.fromF64 and makeSig fixes
     // const aarch64_return_marshaling = b.addTest(.{
@@ -260,7 +258,7 @@ pub fn build(b: *std.Build) void {
     // const run_aarch64_indirect_return = b.addRunArtifact(aarch64_indirect_return);
     // test_step.dependOn(&run_aarch64_indirect_return.step);
 
-    // TODO: ISLE coverage tests need API fixes (firstResult -> appendInstResult)
+    // TODO: ISLE coverage tracking returns 0 rules invoked - needs investigation
     // const isle_coverage_tests = b.addTest(.{
     //     .root_module = b.createModule(.{
     //         .root_source_file = b.path("tests/isle_coverage.zig"),
@@ -285,6 +283,8 @@ pub fn build(b: *std.Build) void {
     // const run_isle_compare_tests = b.addRunArtifact(isle_compare_tests);
     // test_step.dependOn(&run_isle_compare_tests.step);
 
+    // TODO: ISLE tests create IR but don't run lowering, so firstResult returns null
+    // These need to be rewritten to either: 1) run full compile pipeline, or 2) manually attach results
     // const isle_memory_tests = b.addTest(.{
     //     .root_module = b.createModule(.{
     //         .root_source_file = b.path("tests/isle_memory.zig"),
@@ -370,18 +370,17 @@ pub fn build(b: *std.Build) void {
     // const run_domtree_tests = b.addRunArtifact(domtree_tests);
     // test_step.dependOn(&run_domtree_tests.step);
 
-    // TODO: interference.zig needs liveness export fix
-    // const interference_tests = b.addTest(.{
-    //     .root_module = b.createModule(.{
-    //         .root_source_file = b.path("tests/interference.zig"),
-    //         .target = target,
-    //         .optimize = optimize,
-    //     }),
-    // });
-    // interference_tests.root_module.addImport("hoist", lib.root_module);
-    // applyFlags(interference_tests, enable_lto, debug_info, strip_debug, pic, single_threaded);
-    // const run_interference_tests = b.addRunArtifact(interference_tests);
-    // test_step.dependOn(&run_interference_tests.step);
+    const interference_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/interference.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    interference_tests.root_module.addImport("hoist", lib.root_module);
+    applyFlags(interference_tests, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_interference_tests = b.addRunArtifact(interference_tests);
+    test_step.dependOn(&run_interference_tests.step);
 
     // Integration tests (future: full pipeline tests)
     const integration_step = b.step("test-integration", "Run integration tests");

@@ -339,12 +339,118 @@ pub const MatchCompiler = struct {
 
 /// Optimize a decision tree by eliminating redundant tests.
 pub fn optimizeTree(tree: *trie.DecisionTree, allocator: Allocator) !void {
-    _ = tree;
-    _ = allocator;
-    // TODO: Implement tree optimization passes:
-    // - Remove unreachable branches
-    // - Merge identical subtrees
-    // - Hoist common tests
+    var ctx = OptCtx{
+        .allocator = allocator,
+        .seen = std.AutoHashMap(*const trie.DecisionTree, *trie.DecisionTree).init(allocator),
+    };
+    defer ctx.seen.deinit();
+    _ = try optimizeNode(tree, &ctx);
+}
+
+const OptCtx = struct {
+    allocator: Allocator,
+    seen: std.AutoHashMap(*const trie.DecisionTree, *trie.DecisionTree),
+};
+
+/// Optimize a single node and its children.
+fn optimizeNode(tree: *trie.DecisionTree, ctx: *OptCtx) error{OutOfMemory}!*trie.DecisionTree {
+    // Check for previously seen identical subtree (DAG sharing)
+    if (ctx.seen.get(tree)) |cached| {
+        return cached;
+    }
+
+    switch (tree.*) {
+        .leaf, .fail => return tree,
+        .switch_constraint => |*s| {
+            // Optimize all cases
+            var it = s.cases.iterator();
+            while (it.next()) |entry| {
+                const optimized = try optimizeNode(entry.value_ptr.*, ctx);
+                entry.value_ptr.* = optimized;
+            }
+
+            if (s.default) |def| {
+                s.default = try optimizeNode(def, ctx);
+            }
+
+            // Remove unreachable cases: if default is .fail and no cases exist
+            if (s.cases.count() == 0 and s.default != null and s.default.?.* == .fail) {
+                return s.default.?;
+            }
+
+            // If only default exists, inline it
+            if (s.cases.count() == 0 and s.default != null) {
+                return s.default.?;
+            }
+
+            // Merge identical cases with default
+            if (s.default) |def| {
+                var to_remove = std.ArrayList(trie.Constraint){};
+                defer to_remove.deinit(ctx.allocator);
+
+                var case_it = s.cases.iterator();
+                while (case_it.next()) |entry| {
+                    if (treesEqual(entry.value_ptr.*, def)) {
+                        try to_remove.append(ctx.allocator, entry.key_ptr.*);
+                    }
+                }
+
+                for (to_remove.items) |constraint| {
+                    _ = s.cases.remove(constraint);
+                }
+            }
+
+            try ctx.seen.put(tree, tree);
+            return tree;
+        },
+        .test_equal => |*t| {
+            t.on_equal = try optimizeNode(t.on_equal, ctx);
+            t.on_not_equal = try optimizeNode(t.on_not_equal, ctx);
+
+            // If both branches are identical, eliminate the test
+            if (treesEqual(t.on_equal, t.on_not_equal)) {
+                return t.on_equal;
+            }
+
+            try ctx.seen.put(tree, tree);
+            return tree;
+        },
+    }
+}
+
+/// Check if two trees are structurally identical.
+fn treesEqual(a: *const trie.DecisionTree, b: *const trie.DecisionTree) bool {
+    if (@as(std.meta.Tag(trie.DecisionTree), a.*) != @as(std.meta.Tag(trie.DecisionTree), b.*)) {
+        return false;
+    }
+
+    return switch (a.*) {
+        .leaf => |al| std.meta.eql(al.rule_index, b.leaf.rule_index),
+        .fail => true,
+        .switch_constraint => |*as| blk: {
+            const bs = &b.switch_constraint;
+            if (!std.meta.eql(as.binding, bs.binding)) break :blk false;
+            if (as.cases.count() != bs.cases.count()) break :blk false;
+
+            // Check all cases match
+            var it = as.cases.iterator();
+            while (it.next()) |entry| {
+                const b_tree = bs.cases.get(entry.key_ptr.*) orelse break :blk false;
+                if (!treesEqual(entry.value_ptr.*, b_tree)) break :blk false;
+            }
+
+            // Check defaults
+            if (as.default == null and bs.default == null) break :blk true;
+            if (as.default == null or bs.default == null) break :blk false;
+            break :blk treesEqual(as.default.?, bs.default.?);
+        },
+        .test_equal => |*at| blk: {
+            const bt = &b.test_equal;
+            if (!std.meta.eql(at.a, bt.a) or !std.meta.eql(at.b, bt.b)) break :blk false;
+            if (!treesEqual(at.on_equal, bt.on_equal)) break :blk false;
+            break :blk treesEqual(at.on_not_equal, bt.on_not_equal);
+        },
+    };
 }
 
 /// Estimate the cost of evaluating a decision tree.

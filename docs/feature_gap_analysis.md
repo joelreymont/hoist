@@ -162,7 +162,7 @@ Hoist has implemented the core compiler infrastructure necessary for production 
 
 ### Areas Where Cranelift is Ahead
 - **Register allocation**: Uses regalloc2 with backtracking, more sophisticated
-- **Optimization passes**: Multiple optimization levels, more mature peephole
+- **Optimization passes**: Multiple optimization levels, broader pass coverage
 - **Exception handling**: Full support with landing pads and unwinding
 - **Multi-backend**: x86-64, AArch64, RISC-V, s390x
 - **Testing**: Extensive fuzzing, differential testing
@@ -179,8 +179,7 @@ Hoist has implemented the core compiler infrastructure necessary for production 
 ### Short Term (1-2 weeks)
 1. Complete tail call implementation (marshaling + frame deallocation)
 2. Add register coalescing pass
-3. Implement basic peephole optimizer
-4. Add comprehensive integration tests
+3. Add comprehensive integration tests
 
 ### Medium Term (1-2 months)
 1. Implement rematerialization

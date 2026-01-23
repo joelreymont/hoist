@@ -45,7 +45,7 @@ test "ISLE coverage: load i64" {
     // v1 = load v0+0
     const load_data = InstructionData{ .load = .{
         .opcode = .load,
-        .flags = MemFlags.new(),
+        .flags = MemFlags.default(),
         .arg = v0,
         .offset = 0,
     } };
@@ -99,7 +99,7 @@ test "ISLE coverage: store i32" {
     // store v1, v0+0
     const store_data = InstructionData{ .store = .{
         .opcode = .store,
-        .flags = MemFlags.new(),
+        .flags = MemFlags.default(),
         .args = .{ v1, v0 },
         .offset = 0,
     } };
@@ -150,7 +150,7 @@ test "ISLE coverage: sload8 (sign-extend i8)" {
     // v1 = sload8 v0+0
     const load_data = InstructionData{ .load = .{
         .opcode = .sload8,
-        .flags = MemFlags.new(),
+        .flags = MemFlags.default(),
         .arg = v0,
         .offset = 0,
     } };
@@ -202,7 +202,7 @@ test "ISLE coverage: uload16 (zero-extend i16)" {
     // v1 = uload16 v0+0
     const load_data = InstructionData{ .load = .{
         .opcode = .uload16,
-        .flags = MemFlags.new(),
+        .flags = MemFlags.default(),
         .arg = v0,
         .offset = 0,
     } };
@@ -254,7 +254,7 @@ test "ISLE coverage: sload32 (sign-extend i32 to i64)" {
     // v1 = sload32 v0+0
     const load_data = InstructionData{ .load = .{
         .opcode = .sload32,
-        .flags = MemFlags.new(),
+        .flags = MemFlags.default(),
         .arg = v0,
         .offset = 0,
     } };
@@ -306,7 +306,7 @@ test "ISLE coverage: load with offset" {
     // v1 = load v0+128 (16 * 8 bytes)
     const load_data = InstructionData{ .load = .{
         .opcode = .load,
-        .flags = MemFlags.new(),
+        .flags = MemFlags.default(),
         .arg = v0,
         .offset = 128,
     } };

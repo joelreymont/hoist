@@ -4145,9 +4145,9 @@ pub const SystemReg = enum(u16) {
     /// FPSR - Floating-point Status Register
     fpsr = 0b11_011_0100_0100_001,
     /// TPIDR_EL0 - Thread Pointer/ID Register (User Read/Write)
-    tpidr_el0 = 0b11_011_1101_0000_010,
+    tpidr_el0 = 0b11_011_1101_0000_010 & 0x7FFF,
     /// TPIDRRO_EL0 - Thread Pointer/ID Register (User Read-Only)
-    tpidrro_el0 = 0b11_011_1101_0000_011,
+    tpidrro_el0 = 0b11_011_1101_0000_011 & 0x7FFF,
 
     /// Get the encoding for MRS/MSR instructions.
     pub fn encoding(self: SystemReg) u15 {

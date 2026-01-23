@@ -8,7 +8,7 @@ const AbiParam = hoist.signature.AbiParam;
 const Type = hoist.types.Type;
 const InstructionData = hoist.instruction_data.InstructionData;
 const Imm64 = hoist.immediates.Imm64;
-const Context = hoist.context.Context;
+const ContextBuilder = hoist.context.ContextBuilder;
 
 // Test TLS Local-Exec model with small offset (<4096 bytes).
 // Local-Exec: MRS x0, TPIDR_EL0; ADD x0, x0, #offset
@@ -44,7 +44,9 @@ test "TLS: Local-Exec model small offset" {
     const ret_inst = try func.dfg.makeInst(ret_data);
     try func.layout.appendInst(ret_inst, entry);
 
-    var ctx = Context.init(testing.allocator);
+    var builder = ContextBuilder.init(testing.allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
     var result = try ctx.compileFunction(&func);
     defer result.deinit();
 
@@ -83,7 +85,9 @@ test "TLS: Local-Exec model large offset" {
     const ret_inst = try func.dfg.makeInst(ret_data);
     try func.layout.appendInst(ret_inst, entry);
 
-    var ctx = Context.init(testing.allocator);
+    var builder = ContextBuilder.init(testing.allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
     var result = try ctx.compileFunction(&func);
     defer result.deinit();
 
@@ -122,7 +126,9 @@ test "TLS: Local-Exec model zero offset" {
     const ret_inst = try func.dfg.makeInst(ret_data);
     try func.layout.appendInst(ret_inst, entry);
 
-    var ctx = Context.init(testing.allocator);
+    var builder = ContextBuilder.init(testing.allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
     var result = try ctx.compileFunction(&func);
     defer result.deinit();
 

@@ -40,6 +40,187 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Add immediate to register.
+    add_imm: struct {
+        dst: WritableReg, // Also source
+        imm: i32,
+        size: OperandSize,
+    },
+
+    /// Subtract immediate from register.
+    sub_imm: struct {
+        dst: WritableReg, // Also source
+        imm: i32,
+        size: OperandSize,
+    },
+
+    /// Bitwise AND register with register.
+    and_rr: struct {
+        dst: WritableReg, // Also source
+        src: Reg,
+        size: OperandSize,
+    },
+
+    /// Bitwise AND immediate with register.
+    and_imm: struct {
+        dst: WritableReg, // Also source
+        imm: i32,
+        size: OperandSize,
+    },
+
+    /// Bitwise OR register with register.
+    or_rr: struct {
+        dst: WritableReg, // Also source
+        src: Reg,
+        size: OperandSize,
+    },
+
+    /// Bitwise OR immediate with register.
+    or_imm: struct {
+        dst: WritableReg, // Also source
+        imm: i32,
+        size: OperandSize,
+    },
+
+    /// Bitwise XOR register with register.
+    xor_rr: struct {
+        dst: WritableReg, // Also source
+        src: Reg,
+        size: OperandSize,
+    },
+
+    /// Bitwise XOR immediate with register.
+    xor_imm: struct {
+        dst: WritableReg, // Also source
+        imm: i32,
+        size: OperandSize,
+    },
+
+    /// Compare register with register (sets flags, doesn't store result).
+    cmp_rr: struct {
+        lhs: Reg,
+        rhs: Reg,
+        size: OperandSize,
+    },
+
+    /// Compare register with immediate.
+    cmp_imm: struct {
+        lhs: Reg,
+        imm: i32,
+        size: OperandSize,
+    },
+
+    /// Test register with register (bitwise AND, sets flags only).
+    test_rr: struct {
+        lhs: Reg,
+        rhs: Reg,
+        size: OperandSize,
+    },
+
+    /// Test register with immediate.
+    test_imm: struct {
+        lhs: Reg,
+        imm: i32,
+        size: OperandSize,
+    },
+
+    /// Shift left logical.
+    shl_rr: struct {
+        dst: WritableReg, // Also source
+        count: Reg, // Must be CL
+        size: OperandSize,
+    },
+
+    /// Shift left logical by immediate.
+    shl_imm: struct {
+        dst: WritableReg, // Also source
+        count: u8,
+        size: OperandSize,
+    },
+
+    /// Shift right logical.
+    shr_rr: struct {
+        dst: WritableReg, // Also source
+        count: Reg, // Must be CL
+        size: OperandSize,
+    },
+
+    /// Shift right logical by immediate.
+    shr_imm: struct {
+        dst: WritableReg, // Also source
+        count: u8,
+        size: OperandSize,
+    },
+
+    /// Shift right arithmetic.
+    sar_rr: struct {
+        dst: WritableReg, // Also source
+        count: Reg, // Must be CL
+        size: OperandSize,
+    },
+
+    /// Shift right arithmetic by immediate.
+    sar_imm: struct {
+        dst: WritableReg, // Also source
+        count: u8,
+        size: OperandSize,
+    },
+
+    /// Rotate left.
+    rol_rr: struct {
+        dst: WritableReg, // Also source
+        count: Reg, // Must be CL
+        size: OperandSize,
+    },
+
+    /// Rotate left by immediate.
+    rol_imm: struct {
+        dst: WritableReg, // Also source
+        count: u8,
+        size: OperandSize,
+    },
+
+    /// Rotate right.
+    ror_rr: struct {
+        dst: WritableReg, // Also source
+        count: Reg, // Must be CL
+        size: OperandSize,
+    },
+
+    /// Rotate right by immediate.
+    ror_imm: struct {
+        dst: WritableReg, // Also source
+        count: u8,
+        size: OperandSize,
+    },
+
+    /// Multiply (unsigned).
+    imul_rr: struct {
+        dst: WritableReg, // Also source
+        src: Reg,
+        size: OperandSize,
+    },
+
+    /// Multiply by immediate.
+    imul_imm: struct {
+        dst: WritableReg,
+        src: Reg,
+        imm: i32,
+        size: OperandSize,
+    },
+
+    /// Negate.
+    neg: struct {
+        dst: WritableReg, // Also source
+        size: OperandSize,
+    },
+
+    /// Bitwise NOT.
+    not: struct {
+        dst: WritableReg, // Also source
+        size: OperandSize,
+    },
+
     /// Push register to stack.
     push_r: struct {
         src: Reg,
@@ -82,7 +263,29 @@ pub const Inst = union(enum) {
             .mov_rr => |i| try writer.print("mov.{} {}, {}", .{ i.size, i.dst, i.src }),
             .mov_imm => |i| try writer.print("mov.{} {}, ${d}", .{ i.size, i.dst, i.imm }),
             .add_rr => |i| try writer.print("add.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .add_imm => |i| try writer.print("add.{} {}, ${d}", .{ i.size, i.dst, i.imm }),
             .sub_rr => |i| try writer.print("sub.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .sub_imm => |i| try writer.print("sub.{} {}, ${d}", .{ i.size, i.dst, i.imm }),
+            .and_rr => |i| try writer.print("and.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .and_imm => |i| try writer.print("and.{} {}, ${d}", .{ i.size, i.dst, i.imm }),
+            .or_rr => |i| try writer.print("or.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .or_imm => |i| try writer.print("or.{} {}, ${d}", .{ i.size, i.dst, i.imm }),
+            .xor_rr => |i| try writer.print("xor.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .xor_imm => |i| try writer.print("xor.{} {}, ${d}", .{ i.size, i.dst, i.imm }),
+            .cmp_rr => |i| try writer.print("cmp.{} {}, {}", .{ i.size, i.lhs, i.rhs }),
+            .cmp_imm => |i| try writer.print("cmp.{} {}, ${d}", .{ i.size, i.lhs, i.imm }),
+            .test_rr => |i| try writer.print("test.{} {}, {}", .{ i.size, i.lhs, i.rhs }),
+            .test_imm => |i| try writer.print("test.{} {}, ${d}", .{ i.size, i.lhs, i.imm }),
+            .shl_rr => |i| try writer.print("shl.{} {}, {}", .{ i.size, i.dst, i.count }),
+            .shl_imm => |i| try writer.print("shl.{} {}, ${d}", .{ i.size, i.dst, i.count }),
+            .shr_rr => |i| try writer.print("shr.{} {}, {}", .{ i.size, i.dst, i.count }),
+            .shr_imm => |i| try writer.print("shr.{} {}, ${d}", .{ i.size, i.dst, i.count }),
+            .sar_rr => |i| try writer.print("sar.{} {}, {}", .{ i.size, i.dst, i.count }),
+            .sar_imm => |i| try writer.print("sar.{} {}, ${d}", .{ i.size, i.dst, i.count }),
+            .imul_rr => |i| try writer.print("imul.{} {}, {}", .{ i.size, i.dst, i.src }),
+            .imul_imm => |i| try writer.print("imul.{} {}, {}, ${d}", .{ i.size, i.dst, i.src, i.imm }),
+            .neg => |i| try writer.print("neg.{} {}", .{ i.size, i.dst }),
+            .not => |i| try writer.print("not.{} {}", .{ i.size, i.dst }),
             .push_r => |i| try writer.print("push {}", .{i.src}),
             .pop_r => |i| try writer.print("pop {}", .{i.dst}),
             .jmp => |i| try writer.print("jmp {}", .{i.target}),
@@ -266,4 +469,61 @@ test "OperandSize bytes" {
     try testing.expectEqual(@as(u32, 2), OperandSize.size16.bytes());
     try testing.expectEqual(@as(u32, 4), OperandSize.size32.bytes());
     try testing.expectEqual(@as(u32, 8), OperandSize.size64.bytes());
+}
+
+test "ALU instruction formatting" {
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    var buf: [64]u8 = undefined;
+
+    // Test immediate forms
+    const add_imm = Inst{ .add_imm = .{ .dst = wr0, .imm = 42, .size = .size64 } };
+    const str1 = try std.fmt.bufPrint(&buf, "{}", .{add_imm});
+    try testing.expect(std.mem.indexOf(u8, str1, "add") != null);
+    try testing.expect(std.mem.indexOf(u8, str1, "$42") != null);
+
+    // Test bitwise ops
+    const and_rr = Inst{ .and_rr = .{ .dst = wr0, .src = r1, .size = .size32 } };
+    const str2 = try std.fmt.bufPrint(&buf, "{}", .{and_rr});
+    try testing.expect(std.mem.indexOf(u8, str2, "and") != null);
+
+    const xor_imm = Inst{ .xor_imm = .{ .dst = wr0, .imm = -1, .size = .size64 } };
+    const str3 = try std.fmt.bufPrint(&buf, "{}", .{xor_imm});
+    try testing.expect(std.mem.indexOf(u8, str3, "xor") != null);
+
+    // Test compare/test
+    const cmp_rr = Inst{ .cmp_rr = .{ .lhs = r0, .rhs = r1, .size = .size64 } };
+    const str4 = try std.fmt.bufPrint(&buf, "{}", .{cmp_rr});
+    try testing.expect(std.mem.indexOf(u8, str4, "cmp") != null);
+
+    const test_imm = Inst{ .test_imm = .{ .lhs = r0, .imm = 1, .size = .size8 } };
+    const str5 = try std.fmt.bufPrint(&buf, "{}", .{test_imm});
+    try testing.expect(std.mem.indexOf(u8, str5, "test") != null);
+
+    // Test shifts
+    const shl_imm = Inst{ .shl_imm = .{ .dst = wr0, .count = 3, .size = .size64 } };
+    const str6 = try std.fmt.bufPrint(&buf, "{}", .{shl_imm});
+    try testing.expect(std.mem.indexOf(u8, str6, "shl") != null);
+
+    const sar_rr = Inst{ .sar_rr = .{ .dst = wr0, .count = r1, .size = .size32 } };
+    const str7 = try std.fmt.bufPrint(&buf, "{}", .{sar_rr});
+    try testing.expect(std.mem.indexOf(u8, str7, "sar") != null);
+
+    // Test multiply
+    const imul_rr = Inst{ .imul_rr = .{ .dst = wr0, .src = r1, .size = .size64 } };
+    const str8 = try std.fmt.bufPrint(&buf, "{}", .{imul_rr});
+    try testing.expect(std.mem.indexOf(u8, str8, "imul") != null);
+
+    // Test unary
+    const neg = Inst{ .neg = .{ .dst = wr0, .size = .size64 } };
+    const str9 = try std.fmt.bufPrint(&buf, "{}", .{neg});
+    try testing.expect(std.mem.indexOf(u8, str9, "neg") != null);
+
+    const not = Inst{ .not = .{ .dst = wr0, .size = .size64 } };
+    const str10 = try std.fmt.bufPrint(&buf, "{}", .{not});
+    try testing.expect(std.mem.indexOf(u8, str10, "not") != null);
 }

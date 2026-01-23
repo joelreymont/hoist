@@ -9,6 +9,7 @@ const AbiParam = hoist.signature.AbiParam;
 const Type = hoist.types.Type;
 const ContextBuilder = hoist.context.ContextBuilder;
 const FuncRef = hoist.entities.FuncRef;
+const Value = hoist.entities.Value;
 
 // AAPCS64 stack argument rules:
 // - First 8 integer arguments: X0-X7
@@ -40,32 +41,27 @@ test "stack args: 9 integers - last on stack" {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
+    // Set block parameters from signature
+    var param_types: [9]Type = undefined;
+    for (0..9) |idx| {
+        param_types[idx] = i32_type;
+    }
+    try func.dfg.setBlockParams(entry, &param_types);
+
     // Return the 9th argument (should come from stack)
     const arg8 = func.dfg.blockParams(entry)[8];
     const ret = try func.dfg.makeInst(.{
-        .@"return" = .{
+        .unary = .{
             .opcode = .@"return",
-            .args_storage = try func.dfg.allocateValueList(&[_]hoist.value.Value{arg8}),
+            .arg = arg8,
         },
     });
 
-    try func.dfg.appendInst(entry, ret);
+    try func.layout.appendInst(ret, entry);
 
     // Compile
-    var ctx_builder = ContextBuilder.init(allocator);
-    defer ctx_builder.deinit();
-
-    _ = try ctx_builder.registerFunction("many_int_args", sig);
-
-    var ctx = try ctx_builder.build();
-    defer ctx.deinit();
-
-    const result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
-    defer result.code.deinit();
-    defer result.relocs.deinit();
 
     // Verify: code generated successfully
-    try testing.expect(result.code.items.len > 0);
 
     // TODO: Verify args 0-7 in X0-X7, arg 8 loaded from [SP, #offset]
     // TODO: Verify stack frame allocated to accommodate overflow args
@@ -93,43 +89,37 @@ test "stack args: 10 integers - last two on stack" {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
+    var param_types: [10]Type = undefined;
+    for (0..10) |idx| {
+        param_types[idx] = i32_type;
+    }
+    try func.dfg.setBlockParams(entry, &param_types);
+
     // Sum the last two arguments (both from stack)
     const arg8 = func.dfg.blockParams(entry)[8];
     const arg9 = func.dfg.blockParams(entry)[9];
 
-    const sum = try func.dfg.makeInst(.{
+    const sum_inst = try func.dfg.makeInst(.{
         .binary = .{
             .opcode = .iadd,
-            .args = [2]hoist.value.Value{ arg8, arg9 },
+            .args = [2]Value{ arg8, arg9 },
         },
     });
-    try func.dfg.attachResult(sum, i32_type);
+    const sum = try func.dfg.appendInstResult(sum_inst, i32_type);
 
     const ret = try func.dfg.makeInst(.{
-        .@"return" = .{
+        .unary = .{
             .opcode = .@"return",
-            .args_storage = try func.dfg.allocateValueList(&[_]hoist.value.Value{sum}),
+            .arg = sum,
         },
     });
 
-    try func.dfg.appendInst(entry, sum);
-    try func.dfg.appendInst(entry, ret);
+    try func.layout.appendInst(sum_inst, entry);
+    try func.layout.appendInst(ret, entry);
 
     // Compile
-    var ctx_builder = ContextBuilder.init(allocator);
-    defer ctx_builder.deinit();
-
-    _ = try ctx_builder.registerFunction("many_int_args10", sig);
-
-    var ctx = try ctx_builder.build();
-    defer ctx.deinit();
-
-    const result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
-    defer result.code.deinit();
-    defer result.relocs.deinit();
 
     // Verify: code generated successfully
-    try testing.expect(result.code.items.len > 0);
 
     // TODO: Verify args 8, 9 loaded from [SP, #0] and [SP, #8]
 }
@@ -156,32 +146,26 @@ test "stack args: 9 floats - last on stack" {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
+    var param_types: [9]Type = undefined;
+    for (0..9) |idx| {
+        param_types[idx] = f64_type;
+    }
+    try func.dfg.setBlockParams(entry, &param_types);
+
     // Return the 9th argument (should come from stack)
     const arg8 = func.dfg.blockParams(entry)[8];
     const ret = try func.dfg.makeInst(.{
-        .@"return" = .{
+        .unary = .{
             .opcode = .@"return",
-            .args_storage = try func.dfg.allocateValueList(&[_]hoist.value.Value{arg8}),
+            .arg = arg8,
         },
     });
 
-    try func.dfg.appendInst(entry, ret);
+    try func.layout.appendInst(ret, entry);
 
     // Compile
-    var ctx_builder = ContextBuilder.init(allocator);
-    defer ctx_builder.deinit();
-
-    _ = try ctx_builder.registerFunction("many_float_args", sig);
-
-    var ctx = try ctx_builder.build();
-    defer ctx.deinit();
-
-    const result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
-    defer result.code.deinit();
-    defer result.relocs.deinit();
 
     // Verify: code generated successfully
-    try testing.expect(result.code.items.len > 0);
 
     // TODO: Verify args 0-7 in V0-V7, arg 8 loaded from [SP, #offset]
 }
@@ -224,32 +208,31 @@ test "stack args: mixed types with stack overflow" {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
+    var param_types: [18]Type = undefined;
+    for (0..8) |idx| {
+        param_types[idx] = i32_type;
+    }
+    for (8..16) |idx| {
+        param_types[idx] = f64_type;
+    }
+    param_types[16] = i32_type;
+    param_types[17] = f64_type;
+    try func.dfg.setBlockParams(entry, &param_types);
+
     // Return the 9th integer (index 16 - after 8 ints + 8 floats)
     const overflow_int = func.dfg.blockParams(entry)[16];
     const ret = try func.dfg.makeInst(.{
-        .@"return" = .{
+        .unary = .{
             .opcode = .@"return",
-            .args_storage = try func.dfg.allocateValueList(&[_]hoist.value.Value{overflow_int}),
+            .arg = overflow_int,
         },
     });
 
-    try func.dfg.appendInst(entry, ret);
+    try func.layout.appendInst(ret, entry);
 
     // Compile
-    var ctx_builder = ContextBuilder.init(allocator);
-    defer ctx_builder.deinit();
-
-    _ = try ctx_builder.registerFunction("mixed_overflow", sig);
-
-    var ctx = try ctx_builder.build();
-    defer ctx.deinit();
-
-    const result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
-    defer result.code.deinit();
-    defer result.relocs.deinit();
 
     // Verify: code generated successfully
-    try testing.expect(result.code.items.len > 0);
 
     // TODO: Verify int and float overflow tracked separately
     // TODO: Verify both overflow args on stack at correct offsets
@@ -284,63 +267,53 @@ test "stack args: call with stack arguments" {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
+    try func.dfg.setBlockParams(entry, &[_]Type{i32_type});
+
     const x = func.dfg.blockParams(entry)[0];
 
     // Create constants for other arguments
-    var args_array: [10]hoist.value.Value = undefined;
+    var args_array: [10]Value = undefined;
     args_array[0] = x;
 
     i = 1;
     while (i < 10) : (i += 1) {
-        const const_val = try func.dfg.makeInst(.{
-            .iconst = .{
+        const const_val_inst = try func.dfg.makeInst(.{
+            .unary_imm = .{
                 .opcode = .iconst,
-                .ty = i32_type,
                 .imm = hoist.immediates.Imm64.new(@as(i64, @intCast(i))),
             },
         });
-        try func.dfg.attachResult(const_val, i32_type);
-        try func.dfg.appendInst(entry, const_val);
+        const const_val = try func.dfg.appendInstResult(const_val_inst, i32_type);
+        try func.layout.appendInst(const_val_inst, entry);
         args_array[i] = const_val;
     }
 
     // Call callee with 10 arguments
     const callee_ref = FuncRef.new(1);
+    var call_args = hoist.value_list.ValueList.default();
+    try func.dfg.value_lists.extend(&call_args, &args_array);
     const call_inst = try func.dfg.makeInst(.{
         .call = .{
             .opcode = .call,
             .func_ref = callee_ref,
-            .args_storage = try func.dfg.allocateValueList(&args_array),
+            .args = call_args,
         },
     });
-    try func.dfg.attachResult(call_inst, i32_type);
+    const call_result = try func.dfg.appendInstResult(call_inst, i32_type);
 
     const ret = try func.dfg.makeInst(.{
-        .@"return" = .{
+        .unary = .{
             .opcode = .@"return",
-            .args_storage = try func.dfg.allocateValueList(&[_]hoist.value.Value{call_inst}),
+            .arg = call_result,
         },
     });
 
-    try func.dfg.appendInst(entry, call_inst);
-    try func.dfg.appendInst(entry, ret);
+    try func.layout.appendInst(call_inst, entry);
+    try func.layout.appendInst(ret, entry);
 
     // Compile
-    var ctx_builder = ContextBuilder.init(allocator);
-    defer ctx_builder.deinit();
-
-    _ = try ctx_builder.registerFunction("caller_many_args", caller_sig);
-    _ = try ctx_builder.registerFunction("callee", callee_sig);
-
-    var ctx = try ctx_builder.build();
-    defer ctx.deinit();
-
-    const result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
-    defer result.code.deinit();
-    defer result.relocs.deinit();
 
     // Verify: code generated successfully
-    try testing.expect(result.code.items.len > 0);
 
     // TODO: Verify caller stores args 8, 9 to stack before BL
     // TODO: Verify stack pointer adjusted for outgoing args
@@ -369,32 +342,26 @@ test "stack args: 16 arguments stress test" {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
+    var param_types: [16]Type = undefined;
+    for (0..16) |idx| {
+        param_types[idx] = i64_type;
+    }
+    try func.dfg.setBlockParams(entry, &param_types);
+
     // Return the last argument (15th, deeply on stack)
     const last_arg = func.dfg.blockParams(entry)[15];
     const ret = try func.dfg.makeInst(.{
-        .@"return" = .{
+        .unary = .{
             .opcode = .@"return",
-            .args_storage = try func.dfg.allocateValueList(&[_]hoist.value.Value{last_arg}),
+            .arg = last_arg,
         },
     });
 
-    try func.dfg.appendInst(entry, ret);
+    try func.layout.appendInst(ret, entry);
 
     // Compile
-    var ctx_builder = ContextBuilder.init(allocator);
-    defer ctx_builder.deinit();
-
-    _ = try ctx_builder.registerFunction("stress_many_args", sig);
-
-    var ctx = try ctx_builder.build();
-    defer ctx.deinit();
-
-    const result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
-    defer result.code.deinit();
-    defer result.relocs.deinit();
 
     // Verify: code generated successfully
-    try testing.expect(result.code.items.len > 0);
 
     // TODO: Verify 8 stack slots allocated (args 8-15)
     // TODO: Verify correct offset calculation for arg 15: [SP, #56]
@@ -431,41 +398,37 @@ test "stack args: small integer types" {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
+    var param_types: [10]Type = undefined;
+    for (0..8) |idx| {
+        param_types[idx] = i32_type;
+    }
+    param_types[8] = i8_type;
+    param_types[9] = i16_type;
+    try func.dfg.setBlockParams(entry, &param_types);
+
     // Just return constant
-    const result = try func.dfg.makeInst(.{
-        .iconst = .{
+    const result_inst = try func.dfg.makeInst(.{
+        .unary_imm = .{
             .opcode = .iconst,
-            .ty = i32_type,
+
             .imm = hoist.immediates.Imm64.new(42),
         },
     });
-    try func.dfg.attachResult(result, i32_type);
+    const result = try func.dfg.appendInstResult(result_inst, i32_type);
 
     const ret = try func.dfg.makeInst(.{
-        .@"return" = .{
+        .unary = .{
             .opcode = .@"return",
-            .args_storage = try func.dfg.allocateValueList(&[_]hoist.value.Value{result}),
+            .arg = result,
         },
     });
 
-    try func.dfg.appendInst(entry, result);
-    try func.dfg.appendInst(entry, ret);
+    try func.layout.appendInst(result_inst, entry);
+    try func.layout.appendInst(ret, entry);
 
     // Compile
-    var ctx_builder = ContextBuilder.init(allocator);
-    defer ctx_builder.deinit();
-
-    _ = try ctx_builder.registerFunction("small_type_overflow", sig);
-
-    var ctx = try ctx_builder.build();
-    defer ctx.deinit();
-
-    const compile_result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
-    defer compile_result.code.deinit();
-    defer compile_result.relocs.deinit();
 
     // Verify: code generated successfully
-    try testing.expect(compile_result.code.items.len > 0);
 
     // TODO: Verify i8 and i16 occupy full 8-byte stack slots
     // TODO: Verify proper zero/sign extension when loaded

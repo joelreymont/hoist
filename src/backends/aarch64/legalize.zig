@@ -67,6 +67,55 @@ pub fn floatCCRequiresExpansion(cc: FloatCC) bool {
     return floatCCToCondCode(cc) == null;
 }
 
+/// Expansion strategy for floating-point comparisons.
+pub const FloatCCExpansion = union(enum) {
+    /// Single comparison with given condition code.
+    single: CondCode,
+    /// Two comparisons combined with OR logic (e.g., unordered OR equal).
+    or_pair: struct {
+        first: CondCode,
+        second: CondCode,
+    },
+    /// Two comparisons combined with AND logic (e.g., ordered AND not-equal).
+    and_pair: struct {
+        first: CondCode,
+        second: CondCode,
+    },
+};
+
+/// Get expansion strategy for floating-point comparison.
+pub fn expandFloatCC(cc: FloatCC) FloatCCExpansion {
+    return switch (cc) {
+        // Direct mappings
+        .eq => .{ .single = .eq },
+        .ne => .{ .single = .ne },
+        .lt => .{ .single = .mi },
+        .le => .{ .single = .ls },
+        .gt => .{ .single = .gt },
+        .ge => .{ .single = .ge },
+        .uno => .{ .single = .vs },
+        .ord => .{ .single = .vc },
+
+        // Unordered-or-equal: (unordered) OR (equal)
+        .ueq => .{ .or_pair = .{ .first = .vs, .second = .eq } },
+
+        // Ordered-and-not-equal: (ordered) AND (not-equal)
+        .one => .{ .and_pair = .{ .first = .vc, .second = .ne } },
+
+        // Unordered-or-less-than: (unordered) OR (less-than)
+        .ult => .{ .or_pair = .{ .first = .vs, .second = .mi } },
+
+        // Unordered-or-less-equal: (unordered) OR (less-equal)
+        .ule => .{ .or_pair = .{ .first = .vs, .second = .ls } },
+
+        // Unordered-or-greater-than: (unordered) OR (greater-than)
+        .ugt => .{ .or_pair = .{ .first = .vs, .second = .gt } },
+
+        // Unordered-or-greater-equal: (unordered) OR (greater-equal)
+        .uge => .{ .or_pair = .{ .first = .vs, .second = .ge } },
+    };
+}
+
 // ============================================================================
 // Immediate Legalization
 // ============================================================================
