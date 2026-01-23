@@ -18,6 +18,7 @@ const types = hoist.types;
 const trapcode = hoist.trapcode;
 const emit = @import("emit.zig");
 const entities = hoist.entities;
+const extfunc = hoist.extfunc;
 const abi_mod = @import("abi.zig");
 const signature_mod = hoist.function.signature;
 
@@ -28,7 +29,7 @@ const FloatCC = hoist.condcodes.FloatCC;
 const TrapCode = trapcode.TrapCode;
 const StackSlot = entities.StackSlot;
 const SigRef = entities.SigRef;
-const ExternalName = entities.ExternalName;
+const ExternalName = extfunc.ExternalName;
 const VectorSize = enum {
     V8B,
     V16B,
@@ -4053,14 +4054,14 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
 fn marshalReturnValues(sig_ref: SigRef, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
     const sig = ctx.getSig(sig_ref) orelse {
         // No signature available - assume single integer return in X0
-        return lower_mod.ValueRegs.one(Reg.gpr(0));
+        return lower_mod.ValueRegs.single(Reg.gpr(0));
     };
 
     const returns = sig.returns.items;
 
     if (returns.len == 0) {
         // No return values
-        return lower_mod.ValueRegs.empty();
+        return lower_mod.ValueRegs.single(Reg.invalid());
     }
 
     if (returns.len == 1) {
@@ -4069,8 +4070,8 @@ fn marshalReturnValues(sig_ref: SigRef, ctx: *lower_mod.LowerCtx(Inst)) !lower_m
         const ret_loc = abi_mod.classifyReturn(ret_type);
 
         return switch (ret_loc) {
-            .single_reg => |preg| lower_mod.ValueRegs.one(Reg.fromPReg(preg)),
-            .reg_pair => |pair| lower_mod.ValueRegs.two(
+            .single_reg => |preg| lower_mod.ValueRegs.single(Reg.fromPReg(preg)),
+            .reg_pair => |pair| lower_mod.ValueRegs.pair(
                 Reg.fromPReg(pair.lo),
                 Reg.fromPReg(pair.hi),
             ),
@@ -4102,13 +4103,13 @@ fn marshalReturnValues(sig_ref: SigRef, ctx: *lower_mod.LowerCtx(Inst)) !lower_m
                 }
 
                 // Return pointer to assembled struct
-                return lower_mod.ValueRegs.one(stack_slot_addr);
+                return lower_mod.ValueRegs.single(stack_slot_addr);
             },
             .indirect => {
                 // Indirect return via X8 pointer
                 // The callee wrote the result to the address in X8
                 // Return X8 as the pointer - IR consumers will load from it
-                return lower_mod.ValueRegs.one(Reg.gpr(8));
+                return lower_mod.ValueRegs.single(Reg.gpr(8));
             },
         };
     }
@@ -4144,8 +4145,8 @@ fn marshalReturnValues(sig_ref: SigRef, ctx: *lower_mod.LowerCtx(Inst)) !lower_m
 
     // Return the collected registers
     return switch (reg_count) {
-        1 => lower_mod.ValueRegs.one(regs[0]),
-        2 => lower_mod.ValueRegs.two(regs[0], regs[1]),
+        1 => lower_mod.ValueRegs.single(regs[0]),
+        2 => lower_mod.ValueRegs.pair(regs[0], regs[1]),
         3 => lower_mod.ValueRegs.triple(regs[0], regs[1], regs[2]),
         4 => lower_mod.ValueRegs.quad(regs[0], regs[1], regs[2], regs[3]),
         else => {
