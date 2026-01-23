@@ -820,6 +820,24 @@ pub const Inst = union(enum) {
         size: OperandSize,
     },
 
+    /// Store pair with pre-index (STP Xt1, Xt2, [Xn, #offset]!).
+    stp_pre: struct {
+        src1: Reg,
+        src2: Reg,
+        base: WritableReg,
+        offset: i16,
+        size: OperandSize,
+    },
+
+    /// Load pair with post-index (LDP Xt1, Xt2, [Xn], #offset).
+    ldp_post: struct {
+        dst1: WritableReg,
+        dst2: WritableReg,
+        base: WritableReg,
+        offset: i16,
+        size: OperandSize,
+    },
+
     /// Load register with pre-index (LDR Xt, [Xn, #offset]!).
     /// Updates base register before memory access: base = base + offset, then load from base.
     ldr_pre: struct {
@@ -2262,6 +2280,8 @@ pub const Inst = union(enum) {
             .strh => |i| try writer.print("strh {f}, [{f}, #{d}]", .{ i.src, i.base, i.offset }),
             .stp => |i| try writer.print("stp.{f} {f}, {f}, [{f}, #{d}]", .{ i.size, i.src1, i.src2, i.base, i.offset }),
             .ldp => |i| try writer.print("ldp.{f} {f}, {f}, [{f}, #{d}]", .{ i.size, i.dst1, i.dst2, i.base, i.offset }),
+            .stp_pre => |i| try writer.print("stp.{f} {f}, {f}, [{f}, #{d}]!", .{ i.size, i.src1, i.src2, i.base, i.offset }),
+            .ldp_post => |i| try writer.print("ldp.{f} {f}, {f}, [{f}], #{d}", .{ i.size, i.dst1, i.dst2, i.base, i.offset }),
             .ldr_pre => |i| try writer.print("ldr.{f} {f}, [{f}, #{d}]!", .{ i.size, i.dst, i.base, i.offset }),
             .ldr_post => |i| try writer.print("ldr.{f} {f}, [{f}], #{d}", .{ i.size, i.dst, i.base, i.offset }),
             .str_pre => |i| try writer.print("str.{f} {f}, [{f}, #{d}]!", .{ i.size, i.src, i.base, i.offset }),
@@ -2831,6 +2851,18 @@ pub const Inst = union(enum) {
             },
             .ldp => |*i| {
                 try collector.regUse(i.base);
+                try collector.regDef(i.dst1);
+                try collector.regDef(i.dst2);
+            },
+            .stp_pre => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regUse(i.base.toReg());
+                try collector.regDef(i.base);
+            },
+            .ldp_post => |*i| {
+                try collector.regUse(i.base.toReg());
+                try collector.regDef(i.base);
                 try collector.regDef(i.dst1);
                 try collector.regDef(i.dst2);
             },

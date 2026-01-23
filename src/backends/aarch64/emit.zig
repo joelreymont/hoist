@@ -137,6 +137,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .strh => |i| try emitStrh(i.src, i.base, i.offset, buffer),
         .stp => |i| try emitStp(i.src1, i.src2, i.base, i.offset, i.size, buffer),
         .ldp => |i| try emitLdp(i.dst1.toReg(), i.dst2.toReg(), i.base, i.offset, i.size, buffer),
+        .stp_pre => |i| try emitStpPre(i.src1, i.src2, i.base.toReg(), i.offset, i.size, buffer),
+        .ldp_post => |i| try emitLdpPost(i.dst1.toReg(), i.dst2.toReg(), i.base.toReg(), i.offset, i.size, buffer),
         .ldr_pre => |i| try emitLdrPre(i.dst.toReg(), i.base.toReg(), i.offset, i.size, buffer),
         .ldr_post => |i| try emitLdrPost(i.dst.toReg(), i.base.toReg(), i.offset, i.size, buffer),
         .str_pre => |i| try emitStrPre(i.src, i.base.toReg(), i.offset, i.size, buffer),
@@ -2402,6 +2404,48 @@ fn emitLdp(dst1: Reg, dst2: Reg, base: Reg, offset: i16, size: OperandSize, buff
     // LDP: sf|10|1|0|011|0|imm7|Rt2|Rn|Rt
     const insn: u32 = (sf_bit << 31) |
         (0b1010011 << 23) |
+        (@as(u32, imm7) << 15) |
+        (@as(u32, rt2) << 10) |
+        (@as(u32, rn) << 5) |
+        rt;
+
+    try buffer.put4(insn);
+}
+
+/// STP Xt1, Xt2, [Xn, #offset]! - Pre-index
+fn emitStpPre(src1: Reg, src2: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rt = hwEnc(src1);
+    const rt2 = hwEnc(src2);
+    const rn = hwEnc(base);
+    const scale: u4 = if (size == .size64) 3 else 2;
+    const imm7: u7 = @truncate(@as(u16, @bitCast(offset)) >> scale);
+
+    // STP pre-index: sf|10|1|0|011|1|imm7|Rt2|Rn|Rt
+    const insn: u32 = (sf_bit << 31) |
+        (0b1010011 << 23) |
+        (1 << 22) |
+        (@as(u32, imm7) << 15) |
+        (@as(u32, rt2) << 10) |
+        (@as(u32, rn) << 5) |
+        rt;
+
+    try buffer.put4(insn);
+}
+
+/// LDP Xt1, Xt2, [Xn], #offset - Post-index
+fn emitLdpPost(dst1: Reg, dst2: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    const sf_bit: u32 = @intCast(sf(size));
+    const rt = hwEnc(dst1);
+    const rt2 = hwEnc(dst2);
+    const rn = hwEnc(base);
+    const scale: u4 = if (size == .size64) 3 else 2;
+    const imm7: u7 = @truncate(@as(u16, @bitCast(offset)) >> scale);
+
+    // LDP post-index: sf|10|1|0|001|1|imm7|Rt2|Rn|Rt
+    const insn: u32 = (sf_bit << 31) |
+        (0b1010001 << 23) |
+        (1 << 22) |
         (@as(u32, imm7) << 15) |
         (@as(u32, rt2) << 10) |
         (@as(u32, rn) << 5) |

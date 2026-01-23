@@ -157,8 +157,24 @@ pub const LibCall = enum {
                 const ret_items = [_]AbiParam{AbiParam.init(Type.I32)};
                 try sig.returns.appendSlice(allocator, &ret_items);
             },
-            .probestack, .elf_tls_get_addr, .elf_tls_get_offset => {
-                @panic("unimplemented libcall signature");
+            .probestack => {
+                const ptr_type = call_conv.ptrType();
+                const items = [_]AbiParam{AbiParam.init(ptr_type)};
+                try sig.params.appendSlice(allocator, &items);
+            },
+            .elf_tls_get_addr => {
+                const ptr_type = call_conv.ptrType();
+                const items = [_]AbiParam{AbiParam.init(ptr_type)};
+                try sig.params.appendSlice(allocator, &items);
+                const ret_items = [_]AbiParam{AbiParam.init(ptr_type)};
+                try sig.returns.appendSlice(allocator, &ret_items);
+            },
+            .elf_tls_get_offset => {
+                const ptr_type = call_conv.ptrType();
+                const items = [_]AbiParam{AbiParam.init(ptr_type)};
+                try sig.params.appendSlice(allocator, &items);
+                const ret_items = [_]AbiParam{AbiParam.init(ptr_type)};
+                try sig.returns.appendSlice(allocator, &ret_items);
             },
             .x86_pshufb => {
                 const items = [_]AbiParam{ AbiParam.init(Type.I8X16), AbiParam.init(Type.I8X16) };

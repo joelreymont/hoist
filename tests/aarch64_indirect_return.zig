@@ -9,7 +9,7 @@ const AbiParam = hoist.signature.AbiParam;
 const ArgumentPurpose = hoist.signature.ArgumentPurpose;
 const Type = hoist.types.Type;
 const ContextBuilder = hoist.context.ContextBuilder;
-const abi_mod = hoist.machinst.abi;
+const abi = hoist.abi;
 const FuncRef = hoist.entities.FuncRef;
 
 // AAPCS64 indirect return rules:
@@ -32,10 +32,10 @@ test "indirect return: large struct returned via X8 pointer" {
     const allocator = testing.allocator;
 
     // Define large struct: { i64, i64, i64 } = 24 bytes (>16 bytes)
-    const struct_fields = [_]abi_mod.StructField{
-        .{ .ty = abi_mod.Type.i64, .offset = 0 },
-        .{ .ty = abi_mod.Type.i64, .offset = 8 },
-        .{ .ty = abi_mod.Type.i64, .offset = 16 },
+    const struct_fields = [_]abi.StructField{
+        .{ .ty = abi.Type.i64, .offset = 0 },
+        .{ .ty = abi.Type.i64, .offset = 8 },
+        .{ .ty = abi.Type.i64, .offset = 16 },
     };
     const large_struct_type = Type{ .@"struct" = &struct_fields };
 
@@ -143,10 +143,10 @@ test "indirect return: indirect call with large struct return" {
     const allocator = testing.allocator;
 
     // Same 24-byte struct
-    const struct_fields = [_]abi_mod.StructField{
-        .{ .ty = abi_mod.Type.i64, .offset = 0 },
-        .{ .ty = abi_mod.Type.i64, .offset = 8 },
-        .{ .ty = abi_mod.Type.i64, .offset = 16 },
+    const struct_fields = [_]abi.StructField{
+        .{ .ty = abi.Type.i64, .offset = 0 },
+        .{ .ty = abi.Type.i64, .offset = 8 },
+        .{ .ty = abi.Type.i64, .offset = 16 },
     };
     const large_struct_type = Type{ .@"struct" = &struct_fields };
 
@@ -251,10 +251,10 @@ test "indirect return: callee writes to X8 pointer" {
     const allocator = testing.allocator;
 
     // Define 24-byte struct
-    const struct_fields = [_]abi_mod.StructField{
-        .{ .ty = abi_mod.Type.i64, .offset = 0 },
-        .{ .ty = abi_mod.Type.i64, .offset = 8 },
-        .{ .ty = abi_mod.Type.i64, .offset = 16 },
+    const struct_fields = [_]abi.StructField{
+        .{ .ty = abi.Type.i64, .offset = 0 },
+        .{ .ty = abi.Type.i64, .offset = 8 },
+        .{ .ty = abi.Type.i64, .offset = 16 },
     };
     const large_struct_type = Type{ .@"struct" = &struct_fields };
 
@@ -374,10 +374,10 @@ test "indirect return: call with args and sret pointer" {
     const allocator = testing.allocator;
 
     // Define 24-byte struct
-    const struct_fields = [_]abi_mod.StructField{
-        .{ .ty = abi_mod.Type.i64, .offset = 0 },
-        .{ .ty = abi_mod.Type.i64, .offset = 8 },
-        .{ .ty = abi_mod.Type.i64, .offset = 16 },
+    const struct_fields = [_]abi.StructField{
+        .{ .ty = abi.Type.i64, .offset = 0 },
+        .{ .ty = abi.Type.i64, .offset = 8 },
+        .{ .ty = abi.Type.i64, .offset = 16 },
     };
     const large_struct_type = Type{ .@"struct" = &struct_fields };
 

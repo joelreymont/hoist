@@ -113,6 +113,8 @@ pub const CodegenError = error{
     BufferTooSmall,
     /// Invalid label.
     InvalidLabel,
+    /// Invalid constant size in pool.
+    InvalidConstantSize,
 };
 
 /// Compilation result type.
@@ -1462,7 +1464,8 @@ fn emitAArch64WithAllocation(
         }
     }
 
-    // Finalize buffer and assemble result
+    // Emit constant pool and finalize buffer
+    try buffer.emitConstPool();
     try buffer.finalize();
     ctx.compiled_code = try assembleResult(ctx.allocator, &buffer, ctx.func, false);
 }

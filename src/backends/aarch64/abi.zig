@@ -1200,10 +1200,10 @@ pub const Aarch64ABICallee = struct {
             // Small frame: use STP with offset to allocate and save atomically
             // STP X29, X30, [SP, #-frame_size]!
             const frame_offset: i16 = -@as(i16, @intCast(self.frame_size));
-            try emit_fn(.{ .stp = .{
+            try emit_fn(.{ .stp_pre = .{
                 .src1 = fp,
                 .src2 = lr,
-                .base = sp,
+                .base = sp_w,
                 .offset = frame_offset,
                 .size = .size64,
             } }, buffer);
@@ -1390,10 +1390,10 @@ pub const Aarch64ABICallee = struct {
         if (self.frame_size <= max_stp_offset) {
             // Small frame: restore FP/LR and deallocate in one instruction
             // LDP X29, X30, [SP], #frame_size
-            try emit_fn(.{ .ldp = .{
+            try emit_fn(.{ .ldp_post = .{
                 .dst1 = fp_w,
                 .dst2 = lr_w,
-                .base = sp,
+                .base = sp_w,
                 .offset = @intCast(self.frame_size),
                 .size = .size64,
             } }, buffer);

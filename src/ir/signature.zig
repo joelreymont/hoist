@@ -126,8 +126,8 @@ pub const Signature = struct {
 
     pub fn init(allocator: Allocator, call_conv: CallConv) Signature {
         return .{
-            .params = .{},
-            .returns = .{},
+            .params = std.ArrayList(AbiParam){},
+            .returns = std.ArrayList(AbiParam){},
             .call_conv = call_conv,
             .is_varargs = false,
             .allocator = allocator,

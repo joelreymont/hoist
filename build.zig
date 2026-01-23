@@ -97,6 +97,9 @@ pub fn build(b: *std.Build) void {
     });
     tests.root_module.addImport("zcheck", zcheck.module("zcheck"));
     tests.root_module.addImport("ohsnap", ohsnap.module("ohsnap"));
+    tests.linkSystemLibrary("capstone");
+    tests.addIncludePath(.{ .cwd_relative = "/opt/homebrew/opt/capstone/include" });
+    tests.addLibraryPath(.{ .cwd_relative = "/opt/homebrew/opt/capstone/lib" });
     applyFlags(tests, enable_lto, debug_info, strip_debug, pic, single_threaded);
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");
@@ -253,7 +256,8 @@ pub fn build(b: *std.Build) void {
     // const run_aarch64_return_marshaling = b.addRunArtifact(aarch64_return_marshaling);
     // test_step.dependOn(&run_aarch64_return_marshaling.step);
 
-    // TODO: aarch64_indirect_return.zig needs abi export fix
+    // TODO: aarch64_indirect_return.zig needs struct type support in ir/types.zig
+    // TODO: aarch64_indirect_return.zig needs struct type support in ir/types.zig
     // const aarch64_indirect_return = b.addTest(.{
     //     .root_module = b.createModule(.{
     //         .root_source_file = b.path("tests/aarch64_indirect_return.zig"),

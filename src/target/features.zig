@@ -354,6 +354,16 @@ test "FeatureDetector detect" {
     try detector.detect();
 
     const features = detector.getFeatures();
-    try testing.expect(features.has(AArch64Features.FP));
-    try testing.expect(features.has(AArch64Features.NEON));
+
+    switch (builtin.cpu.arch) {
+        .aarch64 => {
+            try testing.expect(features.has(AArch64Features.FP));
+            try testing.expect(features.has(AArch64Features.NEON));
+        },
+        .x86_64 => {
+            try testing.expect(features.has(X86Features.SSE));
+            try testing.expect(features.has(X86Features.SSE2));
+        },
+        else => {},
+    }
 }
