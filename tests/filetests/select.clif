@@ -1,0 +1,14 @@
+test verify
+test roundtrip
+
+function "select"(i32, i32, i32) -> i32 {
+block0(v0: i32, v1: i32, v2: i32):
+  v3 = select v0, v1, v2
+  return v3
+}
+
+function "select_i64"(i32, i64, i64) -> i64 {
+block0(v0: i32, v1: i64, v2: i64):
+  v3 = select v0, v1, v2
+  return v3
+}

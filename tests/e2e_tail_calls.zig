@@ -20,7 +20,7 @@ test "tail call: simple recursive countdown" {
 
     // Signature: fn countdown(n: i32) -> i32
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i32_type = Type.I32;
     try sig.params.append(allocator, AbiParam.new(i32_type));
@@ -223,7 +223,7 @@ test "tail call: indirect through function pointer" {
 
     // Signature: fn caller(fn_ptr: *fn(i32) -> i32, arg: i32) -> i32
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i32_type = Type.I32;
     const ptr_type = Type{ .ptr = .{ .pointee = 0 } }; // Simplified
@@ -361,7 +361,7 @@ test "tail call: mixed with regular calls" {
 
     // Signature: fn caller(n: i32) -> i32
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i32_type = Type.I32;
     try sig.params.append(allocator, AbiParam.new(i32_type));

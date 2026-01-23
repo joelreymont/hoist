@@ -1,0 +1,8 @@
+test verify
+test roundtrip
+
+function "add"(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = iadd v0, v1
+  return v2
+}

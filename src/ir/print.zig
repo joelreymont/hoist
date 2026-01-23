@@ -338,7 +338,7 @@ test "IR print basic" {
     const ir = root;
 
     var sig = ir.signature.Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transferred to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, ir.signature.AbiParam.new(ir.types.Type.I32));
     try sig.params.append(testing.allocator, ir.signature.AbiParam.new(ir.types.Type.I32));

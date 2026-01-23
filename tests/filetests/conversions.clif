@@ -1,0 +1,20 @@
+test verify
+test roundtrip
+
+function "sextend"(i32) -> i64 {
+block0(v0: i32):
+  v1 = sextend.i64 v0
+  return v1
+}
+
+function "uextend"(i32) -> i64 {
+block0(v0: i32):
+  v1 = uextend.i64 v0
+  return v1
+}
+
+function "ireduce"(i64) -> i32 {
+block0(v0: i64):
+  v1 = ireduce.i32 v0
+  return v1
+}

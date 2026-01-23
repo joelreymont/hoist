@@ -202,6 +202,30 @@ pub fn build(b: *std.Build) void {
     const run_riscv64_encoding = b.addRunArtifact(riscv64_encoding);
     test_step.dependOn(&run_riscv64_encoding.step);
 
+    const s390x_encoding = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/s390x_encoding.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    s390x_encoding.root_module.addImport("hoist", lib.root_module);
+    applyFlags(s390x_encoding, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_s390x_encoding = b.addRunArtifact(s390x_encoding);
+    test_step.dependOn(&run_s390x_encoding.step);
+
+    const x64_encoding = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/x64_encoding.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    x64_encoding.root_module.addImport("hoist", lib.root_module);
+    applyFlags(x64_encoding, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_x64_encoding = b.addRunArtifact(x64_encoding);
+    test_step.dependOn(&run_x64_encoding.step);
+
     // TODO: e2e_tail_calls.zig needs API fixes (iconst, fconst, etc.)
     // const e2e_tail_calls = b.addTest(.{
     //     .root_module = b.createModule(.{
@@ -395,9 +419,29 @@ pub fn build(b: *std.Build) void {
     const run_interference_tests = b.addRunArtifact(interference_tests);
     test_step.dependOn(&run_interference_tests.step);
 
+    const filetest_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/filetest.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    filetest_tests.root_module.addImport("hoist", lib.root_module);
+    applyFlags(filetest_tests, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_filetest_tests = b.addRunArtifact(filetest_tests);
+    test_step.dependOn(&run_filetest_tests.step);
+
     // Integration tests (future: full pipeline tests)
     const integration_step = b.step("test-integration", "Run integration tests");
     integration_step.dependOn(&run_tests.step);
+
+    // JIT tests only
+    const jit_step = b.step("test-jit", "Run JIT tests only");
+    jit_step.dependOn(&run_e2e_jit.step);
+
+    // Filetest only
+    const filetest_step = b.step("test-filetest", "Run filetests only");
+    filetest_step.dependOn(&run_filetest_tests.step);
 
     // Standalone E2E test (bypasses test framework)
     const standalone_e2e = b.addExecutable(.{

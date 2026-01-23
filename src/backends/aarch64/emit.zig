@@ -2421,10 +2421,11 @@ fn emitStpPre(src1: Reg, src2: Reg, base: Reg, offset: i16, size: OperandSize, b
     const scale: u4 = if (size == .size64) 3 else 2;
     const imm7: u7 = @truncate(@as(u16, @bitCast(offset)) >> scale);
 
-    // STP pre-index: sf|10|1|0|011|1|imm7|Rt2|Rn|Rt
+    // STP pre-index: sf|0|101|0|011|0|imm7|Rt2|Rn|Rt
+    // Note: bit 22 (L) = 0 for store, 1 for load
     const insn: u32 = (sf_bit << 31) |
         (0b1010011 << 23) |
-        (1 << 22) |
+        // bit 22 = 0 for STP (store), not set
         (@as(u32, imm7) << 15) |
         (@as(u32, rt2) << 10) |
         (@as(u32, rn) << 5) |

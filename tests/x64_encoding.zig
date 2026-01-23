@@ -1,13 +1,13 @@
 const std = @import("std");
 const testing = std.testing;
 
-const root = @import("root");
-const Inst = root.x64_inst.Inst;
-const Reg = root.x64_inst.Reg;
-const WritableReg = root.x64_inst.WritableReg;
-const PReg = root.reg.PReg;
-const OperandSize = root.x64_inst.OperandSize;
-const MachBuffer = root.buffer.MachBuffer;
+const hoist = @import("hoist");
+const Inst = hoist.x64_inst.Inst;
+const Reg = hoist.x64_inst.Reg;
+const WritableReg = hoist.x64_inst.WritableReg;
+const PReg = hoist.reg.PReg;
+const OperandSize = hoist.x64_inst.OperandSize;
+const MachBuffer = hoist.buffer.MachBuffer;
 
 /// Test MOV encoding: mov rax, rbx
 test "x64 encode mov" {

@@ -11,7 +11,7 @@ const InstructionData = hoist.instruction_data.InstructionData;
 
 test "riscv64: iadd i32" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, AbiParam.new(Type.I32));
     try sig.params.append(testing.allocator, AbiParam.new(Type.I32));
@@ -44,7 +44,7 @@ test "riscv64: iadd i32" {
 
 test "riscv64: isub i64" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
     try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
@@ -77,7 +77,7 @@ test "riscv64: isub i64" {
 
 test "riscv64: band i64" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
     try sig.params.append(testing.allocator, AbiParam.new(Type.I64));

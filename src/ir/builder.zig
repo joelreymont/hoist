@@ -203,6 +203,26 @@ pub const FunctionBuilder = struct {
         return try self.func.dfg.appendInstResult(inst, ty);
     }
 
+    pub fn rotl(self: *Self, ty: Type, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .binary = BinaryData.init(.rotl, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
+    pub fn rotr(self: *Self, ty: Type, lhs: Value, rhs: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .binary = BinaryData.init(.rotr, lhs, rhs) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
     pub fn band(self: *Self, ty: Type, lhs: Value, rhs: Value) !Value {
         const block = self.current_block orelse return error.NoCurrentBlock;
 
@@ -303,6 +323,16 @@ pub const FunctionBuilder = struct {
         return try self.func.dfg.appendInstResult(inst, ty);
     }
 
+    pub fn ireduce(self: *Self, ty: Type, val: Value) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+
+        const inst_data = InstructionData{ .unary = UnaryData.init(.ireduce, val) };
+        const inst = try self.func.dfg.makeInst(inst_data);
+
+        try self.func.layout.appendInst(inst, block);
+        return try self.func.dfg.appendInstResult(inst, ty);
+    }
+
     pub fn bitcast(self: *Self, ty: Type, val: Value) !Value {
         const block = self.current_block orelse return error.NoCurrentBlock;
 
@@ -356,7 +386,7 @@ pub const FunctionBuilder = struct {
     pub fn load(self: *Self, ty: Type, addr: Value, flags: MemFlags) !Value {
         const block = self.current_block orelse return error.NoCurrentBlock;
 
-        const inst_data = InstructionData{ .load = LoadData.init(.load, flags, addr, Imm64.new(0)) };
+        const inst_data = InstructionData{ .load = LoadData.init(.load, flags, addr, 0) };
         const inst = try self.func.dfg.makeInst(inst_data);
 
         try self.func.layout.appendInst(inst, block);
@@ -366,7 +396,7 @@ pub const FunctionBuilder = struct {
     pub fn store(self: *Self, val: Value, addr: Value, flags: MemFlags) !void {
         const block = self.current_block orelse return error.NoCurrentBlock;
 
-        const inst_data = InstructionData{ .store = StoreData.init(.store, flags, val, addr, Imm64.new(0)) };
+        const inst_data = InstructionData{ .store = StoreData.init(.store, flags, addr, val, 0) };
         const inst = try self.func.dfg.makeInst(inst_data);
 
         try self.func.layout.appendInst(inst, block);

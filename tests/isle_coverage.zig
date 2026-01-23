@@ -31,7 +31,7 @@ test "ISLE coverage: iadd i64 register + register" {
 
     // Build IR: fn(a: i64, b: i64) -> i64 { return a + b }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.returns.append(allocator, AbiParam.new(Type.I64));
@@ -95,7 +95,7 @@ test "ISLE coverage: iadd i32 register + immediate" {
 
     // Build IR: fn(a: i32) -> i32 { return a + 42 }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I32));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
 
@@ -155,7 +155,7 @@ test "ISLE coverage: isub i64 register - register" {
 
     // Build IR: fn(a: i64, b: i64) -> i64 { return a - b }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.returns.append(allocator, AbiParam.new(Type.I64));
@@ -208,7 +208,7 @@ test "ISLE coverage: imul i32 register * register" {
 
     // Build IR: fn(a: i32, b: i32) -> i32 { return a * b }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I32));
     try sig.params.append(allocator, AbiParam.new(Type.I32));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));

@@ -80,7 +80,7 @@ pub const SSABuilder = struct {
     pub fn sealBlock(self: *SSABuilder, func: *Function, block: Block) !void {
         const gop = try self.sealed.getOrPut(block);
         if (!gop.found_existing) {
-            gop.value_ptr.* = .{ .sealed = false, .undef_vars = ArrayList(Variable).init(self.alloc) };
+            gop.value_ptr.* = .{ .sealed = false, .undef_vars = ArrayList(Variable){} };
         }
 
         if (gop.value_ptr.sealed) return;
@@ -116,7 +116,7 @@ pub const SSABuilder = struct {
 
             const gop = try self.sealed.getOrPut(block);
             if (!gop.found_existing) {
-                gop.value_ptr.* = .{ .sealed = false, .undef_vars = ArrayList(Variable).init(self.alloc) };
+                gop.value_ptr.* = .{ .sealed = false, .undef_vars = ArrayList(Variable){} };
             }
             try gop.value_ptr.undef_vars.append(variable);
             try self.results.append(sentinel);
@@ -195,3 +195,6 @@ pub const SSABuilder = struct {
         return self.results.pop().?;
     }
 };
+
+// Tests require CFG integration with Function struct.
+// See: hoist-wire-ssa-builder-80d7576f dot for wiring.

@@ -24,7 +24,7 @@ test "stack args: 9 integers - last on stack" {
 
     // Signature: fn many_args(a0, a1, a2, a3, a4, a5, a6, a7, a8: i32) -> i32
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i32_type = Type.I32;
 
@@ -73,7 +73,7 @@ test "stack args: 10 integers - last two on stack" {
 
     // Signature: fn many_args(a0..a9: i32) -> i32
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i32_type = Type.I32;
 
@@ -130,7 +130,7 @@ test "stack args: 9 floats - last on stack" {
 
     // Signature: fn many_floats(a0..a8: f64) -> f64
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const f64_type = Type.F64;
 
@@ -177,7 +177,7 @@ test "stack args: mixed types with stack overflow" {
     // Signature: fn mixed(i0..i7: i32, f0..f7: f64, i8: i32, f8: f64) -> i32
     // This tests that int and float overflow is tracked independently
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i32_type = Type.I32;
     const f64_type = Type.F64;
@@ -326,7 +326,7 @@ test "stack args: 16 arguments stress test" {
 
     // Signature: fn stress(a0..a15: i64) -> i64
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i64_type = Type.I64;
 
@@ -374,7 +374,7 @@ test "stack args: small integer types" {
     // Signature: fn small_types(i0..i7: i32, b0: i8, b1: i16) -> i32
     // Small types are promoted to 8 bytes on stack per AAPCS64
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i32_type = Type.I32;
     const i8_type = Type.I8;

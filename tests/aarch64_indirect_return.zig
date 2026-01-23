@@ -260,7 +260,7 @@ test "indirect return: callee writes to X8 pointer" {
 
     // Callee signature: fn make_struct(sret_ptr: *Struct) (implicit sret parameter)
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     var sret_param = AbiParam.new(Type{ .ptr = .{ .pointee = 0 } });
     sret_param.purpose = .struct_return;

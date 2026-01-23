@@ -16,7 +16,7 @@ const ExternalName = hoist.entities.ExternalName;
 // Test single integer return (X0)
 test "Return marshaling: single i32 in X0" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     // fn() -> i32
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
@@ -63,7 +63,7 @@ test "Return marshaling: single i32 in X0" {
 // Test single f64 return (V0)
 test "Return marshaling: single f64 in V0" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     // fn() -> f64
     try sig.returns.append(testing.allocator, AbiParam.new(Type.F64));
@@ -110,7 +110,7 @@ test "Return marshaling: single f64 in V0" {
 // Test i128 return (X0 + X1)
 test "Return marshaling: i128 in X0+X1" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     // fn() -> i128
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I128));
@@ -157,7 +157,7 @@ test "Return marshaling: i128 in X0+X1" {
 // Test call with single return value
 test "Call marshaling: external call with i32 return" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     // fn() -> i32
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
@@ -211,7 +211,7 @@ test "Call marshaling: external call with i32 return" {
 // Test call with f64 return
 test "Call marshaling: external call with f64 return" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     // fn() -> f64
     try sig.returns.append(testing.allocator, AbiParam.new(Type.F64));
@@ -265,7 +265,7 @@ test "Call marshaling: external call with f64 return" {
 // Test multi-return: two i32 values in X0 and X1
 test "Return marshaling: multi i32 in X0+X1" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
@@ -318,7 +318,7 @@ test "Return marshaling: multi i32 in X0+X1" {
 // Test multi-return: i64 in X0 and f64 in V0
 test "Return marshaling: mixed i64+f64 in X0+V0" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I64));
     try sig.returns.append(testing.allocator, AbiParam.new(Type.F64));
@@ -379,7 +379,7 @@ test "Return marshaling: HFA 2xf32 in V0+V1" {
     const hfa_type = Type{ .@"struct" = &fields };
 
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.returns.append(testing.allocator, AbiParam.new(hfa_type));
 

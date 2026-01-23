@@ -31,7 +31,7 @@ test "ISLE coverage: fadd f32" {
 
     // Build IR: fn(a: f32, b: f32) -> f32 { return a + b }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F32));
     try sig.params.append(allocator, AbiParam.new(Type.F32));
     try sig.returns.append(allocator, AbiParam.new(Type.F32));
@@ -83,7 +83,7 @@ test "ISLE coverage: fadd f64" {
 
     // Build IR: fn(a: f64, b: f64) -> f64 { return a + b }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.returns.append(allocator, AbiParam.new(Type.F64));
@@ -135,7 +135,7 @@ test "ISLE coverage: fsub f64" {
 
     // Build IR: fn(a: f64, b: f64) -> f64 { return a - b }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.returns.append(allocator, AbiParam.new(Type.F64));
@@ -187,7 +187,7 @@ test "ISLE coverage: fmul f32" {
 
     // Build IR: fn(a: f32, b: f32) -> f32 { return a * b }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F32));
     try sig.params.append(allocator, AbiParam.new(Type.F32));
     try sig.returns.append(allocator, AbiParam.new(Type.F32));
@@ -239,7 +239,7 @@ test "ISLE coverage: fdiv f64" {
 
     // Build IR: fn(a: f64, b: f64) -> f64 { return a / b }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.returns.append(allocator, AbiParam.new(Type.F64));
@@ -291,7 +291,7 @@ test "ISLE coverage: fmin f64" {
 
     // Build IR: fn(a: f64, b: f64) -> f64 { return min(a, b) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.returns.append(allocator, AbiParam.new(Type.F64));
@@ -343,7 +343,7 @@ test "ISLE coverage: fmax f32" {
 
     // Build IR: fn(a: f32, b: f32) -> f32 { return max(a, b) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F32));
     try sig.params.append(allocator, AbiParam.new(Type.F32));
     try sig.returns.append(allocator, AbiParam.new(Type.F32));
@@ -395,7 +395,7 @@ test "ISLE coverage: ceil f64" {
 
     // Build IR: fn(x: f64) -> f64 { return ceil(x) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.returns.append(allocator, AbiParam.new(Type.F64));
 
@@ -445,7 +445,7 @@ test "ISLE coverage: floor f32" {
 
     // Build IR: fn(x: f32) -> f32 { return floor(x) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F32));
     try sig.returns.append(allocator, AbiParam.new(Type.F32));
 
@@ -495,7 +495,7 @@ test "ISLE coverage: trunc f64" {
 
     // Build IR: fn(x: f64) -> f64 { return trunc(x) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.returns.append(allocator, AbiParam.new(Type.F64));
 
@@ -545,7 +545,7 @@ test "ISLE coverage: nearest f32" {
 
     // Build IR: fn(x: f32) -> f32 { return round_to_nearest_even(x) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F32));
     try sig.returns.append(allocator, AbiParam.new(Type.F32));
 
@@ -595,7 +595,7 @@ test "ISLE coverage: copysign f64" {
 
     // Build IR: fn(mag: f64, sign: f64) -> f64 { return copysign(mag, sign) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.returns.append(allocator, AbiParam.new(Type.F64));
@@ -647,7 +647,7 @@ test "ISLE coverage: fabs f32" {
 
     // Build IR: fn(x: f32) -> f32 { return fabs(x) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F32));
     try sig.returns.append(allocator, AbiParam.new(Type.F32));
 
@@ -697,7 +697,7 @@ test "ISLE coverage: fneg f64" {
 
     // Build IR: fn(x: f64) -> f64 { return -x }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.returns.append(allocator, AbiParam.new(Type.F64));
 
@@ -747,7 +747,7 @@ test "ISLE coverage: sqrt f64" {
 
     // Build IR: fn(x: f64) -> f64 { return sqrt(x) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.returns.append(allocator, AbiParam.new(Type.F64));
 

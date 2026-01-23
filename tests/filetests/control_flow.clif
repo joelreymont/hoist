@@ -1,0 +1,15 @@
+test verify
+test roundtrip
+
+function "branch"(i32) -> i32 {
+block0(v0: i32):
+  v1 = iconst 0
+  v2 = icmp eq v0, v1
+  brif v2, block1, block2
+block1:
+  v3 = iconst 1
+  return v3
+block2:
+  v4 = iconst 2
+  return v4
+}

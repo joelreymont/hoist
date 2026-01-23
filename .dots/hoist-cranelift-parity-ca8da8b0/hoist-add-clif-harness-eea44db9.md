@@ -1,9 +1,10 @@
 ---
 title: Add clif harness
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.811129+02:00"
+created-at: "\"2026-01-14T15:42:46.811129+02:00\""
+closed-at: "2026-01-24T15:50:55.961670+02:00"
 ---
 
 Files: /Users/joel/Work/wasmtime/cranelift/docs/testing.md:17-75

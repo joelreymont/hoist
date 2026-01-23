@@ -1,0 +1,26 @@
+test verify
+test roundtrip
+
+function "band"(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = band v0, v1
+  return v2
+}
+
+function "bor"(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = bor v0, v1
+  return v2
+}
+
+function "bxor"(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = bxor v0, v1
+  return v2
+}
+
+function "bnot"(i32) -> i32 {
+block0(v0: i32):
+  v1 = bnot v0
+  return v1
+}

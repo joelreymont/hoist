@@ -24,7 +24,7 @@ test "variadic call with fixed parameters" {
 
     // Create signature for printf-like function: (I64, ...) -> I32
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     sig.is_varargs = true;
     try sig.params.append(testing.allocator, AbiParam.new(Type.I64)); // format string
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
@@ -82,7 +82,7 @@ test "variadic call with no extra arguments" {
 
     // Varargs function with 2 fixed params
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     sig.is_varargs = true;
     try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
     try sig.params.append(testing.allocator, AbiParam.new(Type.I32));
@@ -135,7 +135,7 @@ test "variadic indirect call" {
 
     // Varargs signature
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     sig.is_varargs = true;
     try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
@@ -186,7 +186,7 @@ test "variadic call type validation" {
     defer ctx.deinit();
 
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     sig.is_varargs = true;
     try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));

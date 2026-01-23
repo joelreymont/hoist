@@ -5098,8 +5098,8 @@ test "compile: IR dump writes stage file" {
 }
 
 test "optimize: remove constant phis" {
-    var sig = ir.Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    const sig = ir.Signature.init(testing.allocator, .fast);
+    // Note: sig ownership transferred to func, func.deinit() frees it
 
     var func = try Function.init(testing.allocator, "const_phi", sig);
     defer func.deinit();

@@ -1,9 +1,10 @@
 ---
 title: Add phi insertion to SSA builder
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-01-16T14:50:58.767724+02:00"
+created-at: "\"2026-01-16T14:50:58.767724+02:00\""
+closed-at: "2026-01-25T15:38:46.310759+02:00"
 ---
 
 In src/ir/ssa_builder.zig, implement phi insertion algorithm. Place phis at dominance frontiers. Deps: Add SSA builder struct. Verify: zig build test

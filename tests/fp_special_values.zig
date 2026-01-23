@@ -14,7 +14,7 @@ const compile_mod = @import("hoist").codegen_compile;
 // Test that f32 NaN constant can be compiled.
 test "FP special values: f32 NaN" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const f32_type = Type.F32;
     try sig.returns.append(testing.allocator, AbiParam.new(f32_type));
@@ -59,7 +59,7 @@ test "FP special values: f32 NaN" {
 // Test that f32 positive infinity constant can be compiled.
 test "FP special values: f32 positive infinity" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const f32_type = Type.F32;
     try sig.returns.append(testing.allocator, AbiParam.new(f32_type));
@@ -104,7 +104,7 @@ test "FP special values: f32 positive infinity" {
 // Test that f32 negative infinity constant can be compiled.
 test "FP special values: f32 negative infinity" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const f32_type = Type.F32;
     try sig.returns.append(testing.allocator, AbiParam.new(f32_type));
@@ -149,7 +149,7 @@ test "FP special values: f32 negative infinity" {
 // Test that f64 NaN constant can be compiled.
 test "FP special values: f64 NaN" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const f64_type = Type.F64;
     try sig.returns.append(testing.allocator, AbiParam.new(f64_type));
@@ -194,7 +194,7 @@ test "FP special values: f64 NaN" {
 // Test that f64 positive infinity constant can be compiled.
 test "FP special values: f64 positive infinity" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const f64_type = Type.F64;
     try sig.returns.append(testing.allocator, AbiParam.new(f64_type));
@@ -239,7 +239,7 @@ test "FP special values: f64 positive infinity" {
 // Test that f64 negative infinity constant can be compiled.
 test "FP special values: f64 negative infinity" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const f64_type = Type.F64;
     try sig.returns.append(testing.allocator, AbiParam.new(f64_type));
@@ -284,7 +284,7 @@ test "FP special values: f64 negative infinity" {
 // Test that f32 zero (both +0.0 and -0.0) can be compiled.
 test "FP special values: f32 signed zeros" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const f32_type = Type.F32;
     try sig.returns.append(testing.allocator, AbiParam.new(f32_type));

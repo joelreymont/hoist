@@ -1,4 +1,5 @@
 pub const context = @import("context.zig");
+pub const interpreter = @import("interpreter/interpreter.zig");
 
 pub const bforest = @import("foundation/bforest.zig");
 pub const bitset = @import("foundation/bitset.zig");
@@ -221,4 +222,5 @@ pub const ir = struct {
     pub const domtree = @import("ir/domtree.zig");
     pub const Block = @import("ir/entities.zig").Block;
     pub const Inst = @import("ir/entities.zig").Inst;
+    pub const Verifier = @import("ir/verifier.zig").Verifier;
 };

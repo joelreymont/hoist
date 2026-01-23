@@ -30,7 +30,7 @@ test "ISLE coverage: band (bitwise AND)" {
 
     // Build IR: fn(a: i64, b: i64) -> i64 { return a & b }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.returns.append(allocator, AbiParam.new(Type.I64));
@@ -83,7 +83,7 @@ test "ISLE coverage: bor (bitwise OR)" {
 
     // Build IR: fn(a: i32, b: i32) -> i32 { return a | b }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I32));
     try sig.params.append(allocator, AbiParam.new(Type.I32));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
@@ -135,7 +135,7 @@ test "ISLE coverage: bxor (bitwise XOR)" {
 
     // Build IR: fn(a: i64, b: i64) -> i64 { return a ^ b }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.returns.append(allocator, AbiParam.new(Type.I64));
@@ -187,7 +187,7 @@ test "ISLE coverage: ishl (logical left shift)" {
 
     // Build IR: fn(a: i32, shift: i32) -> i32 { return a << shift }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I32));
     try sig.params.append(allocator, AbiParam.new(Type.I32));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
@@ -239,7 +239,7 @@ test "ISLE coverage: ushr (unsigned right shift)" {
 
     // Build IR: fn(a: i64, shift: i64) -> i64 { return a >> shift (unsigned) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.returns.append(allocator, AbiParam.new(Type.I64));
@@ -291,7 +291,7 @@ test "ISLE coverage: sshr (signed right shift)" {
 
     // Build IR: fn(a: i32, shift: i32) -> i32 { return a >> shift (signed) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I32));
     try sig.params.append(allocator, AbiParam.new(Type.I32));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
@@ -343,7 +343,7 @@ test "ISLE coverage: rotl (rotate left)" {
 
     // Build IR: fn(a: i64, shift: i64) -> i64 { return rotl(a, shift) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.returns.append(allocator, AbiParam.new(Type.I64));
@@ -395,7 +395,7 @@ test "ISLE coverage: clz (count leading zeros)" {
 
     // Build IR: fn(a: i64) -> i64 { return clz(a) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.returns.append(allocator, AbiParam.new(Type.I64));
 
@@ -445,7 +445,7 @@ test "ISLE coverage: ctz (count trailing zeros)" {
 
     // Build IR: fn(a: i32) -> i32 { return ctz(a) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I32));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
 
@@ -495,7 +495,7 @@ test "ISLE coverage: bswap (byte swap)" {
 
     // Build IR: fn(a: i64) -> i64 { return bswap(a) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.returns.append(allocator, AbiParam.new(Type.I64));
 

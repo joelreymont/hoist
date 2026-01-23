@@ -26,7 +26,7 @@ test "lower simple iconst + return" {
     //   return v0
 
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transferred to func, func.deinit() frees it
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I64));
     var func = try Function.init(testing.allocator, "test_iconst", sig);
     defer func.deinit();
@@ -75,7 +75,7 @@ test "lower iadd + return" {
     //   return v2
 
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transferred to func, func.deinit() frees it
     try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
     try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I64));
@@ -133,7 +133,7 @@ test "lower conditional branch" {
     // block2:
     //   return
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transferred to func, func.deinit() frees it
     try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
 
     var func = try Function.init(testing.allocator, "test_brif", sig);
@@ -190,8 +190,8 @@ test "lower unconditional jump" {
     // block1:
     //   return
 
-    var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    const sig = Signature.init(testing.allocator, .fast);
+    // Note: sig ownership transferred to func, func.deinit() frees it
     var func = try Function.init(testing.allocator, "test_jump", sig);
     defer func.deinit();
 
