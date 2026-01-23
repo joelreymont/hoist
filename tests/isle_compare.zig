@@ -31,7 +31,7 @@ test "ISLE coverage: icmp eq (i64)" {
 
     // Build IR: fn(a: i64, b: i64) -> i32 { return a == b }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
@@ -85,7 +85,7 @@ test "ISLE coverage: icmp slt (i32)" {
 
     // Build IR: fn(a: i32, b: i32) -> i32 { return a < b (signed) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I32));
     try sig.params.append(allocator, AbiParam.new(Type.I32));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
@@ -138,7 +138,7 @@ test "ISLE coverage: icmp ult (unsigned <)" {
 
     // Build IR: fn(a: i64, b: i64) -> i32 { return a < b (unsigned) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
@@ -191,7 +191,7 @@ test "ISLE coverage: icmp ne (not equal)" {
 
     // Build IR: fn(a: i32, b: i32) -> i32 { return a != b }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I32));
     try sig.params.append(allocator, AbiParam.new(Type.I32));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
@@ -244,7 +244,7 @@ test "ISLE coverage: fcmp eq (f64)" {
 
     // Build IR: fn(a: f64, b: f64) -> i32 { return a == b }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
@@ -297,7 +297,7 @@ test "ISLE coverage: fcmp lt (f32 <)" {
 
     // Build IR: fn(a: f32, b: f32) -> i32 { return a < b }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F32));
     try sig.params.append(allocator, AbiParam.new(Type.F32));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
@@ -350,7 +350,7 @@ test "ISLE coverage: fcmp uno (unordered - NaN check)" {
 
     // Build IR: fn(a: f64, b: f64) -> i32 { return uno(a, b) }
     var sig = Signature.init(allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.params.append(allocator, AbiParam.new(Type.F64));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));

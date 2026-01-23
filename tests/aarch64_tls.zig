@@ -14,7 +14,7 @@ const ContextBuilder = hoist.context.ContextBuilder;
 // Local-Exec: MRS x0, TPIDR_EL0; ADD x0, x0, #offset
 test "TLS: Local-Exec model small offset" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i64_type = Type.I64;
     try sig.returns.append(testing.allocator, AbiParam.new(i64_type));
@@ -55,7 +55,7 @@ test "TLS: Local-Exec model small offset" {
 
 test "TLS: Local-Exec model large offset" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i64_type = Type.I64;
     try sig.returns.append(testing.allocator, AbiParam.new(i64_type));
@@ -96,7 +96,7 @@ test "TLS: Local-Exec model large offset" {
 
 test "TLS: Local-Exec model zero offset" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i64_type = Type.I64;
     try sig.returns.append(testing.allocator, AbiParam.new(i64_type));

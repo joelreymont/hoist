@@ -13,7 +13,7 @@ const CallConv = hoist.abi.CallConv;
 
 test "E2E: return constant i32" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.returns.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));
 
@@ -59,7 +59,7 @@ test "E2E: return constant i32" {
 
 test "E2E: simple arithmetic i32 add" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));
     try sig.params.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));
@@ -110,7 +110,7 @@ test "E2E: simple arithmetic i32 add" {
 
 test "E2E: arithmetic i64 multiply" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, hoist.signature.AbiParam.new(Type.I64));
     try sig.params.append(testing.allocator, hoist.signature.AbiParam.new(Type.I64));
@@ -161,7 +161,7 @@ test "E2E: arithmetic i64 multiply" {
 
 test "E2E: constant computation with optimization" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.returns.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));
 
@@ -227,7 +227,7 @@ test "E2E: constant computation with optimization" {
 
 test "E2E: aarch64 simple add" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, hoist.signature.AbiParam.new(Type.I64));
     try sig.params.append(testing.allocator, hoist.signature.AbiParam.new(Type.I64));
@@ -280,7 +280,7 @@ test "E2E: aarch64 simple add" {
 
 test "E2E: verify compilation stages" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));
     try sig.returns.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));

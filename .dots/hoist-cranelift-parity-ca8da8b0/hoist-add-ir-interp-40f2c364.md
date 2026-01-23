@@ -1,9 +1,10 @@
 ---
 title: Add ir interp
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.846025+02:00"
+created-at: "\"2026-01-14T15:42:46.846025+02:00\""
+closed-at: "2026-01-24T16:12:54.144279+02:00"
 ---
 
 Files: /Users/joel/Work/wasmtime/cranelift/interpreter/README.md:1-2

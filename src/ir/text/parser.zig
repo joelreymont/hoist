@@ -109,8 +109,15 @@ pub const Parser = struct {
     }
 
     fn parseInt(self: *Parser) ParseError!i64 {
+        // Handle negative numbers
+        const is_neg = self.current.type == .identifier and std.mem.eql(u8, self.current.lexeme, "-");
+        if (is_neg) self.advance();
+
         const tok = try self.expect(.integer);
-        return std.fmt.parseInt(i64, tok.lexeme, 10) catch return error.UnexpectedToken;
+        const base: u8 = if (tok.lexeme.len > 2 and tok.lexeme[0] == '0' and (tok.lexeme[1] == 'x' or tok.lexeme[1] == 'X')) 16 else 10;
+        const start: usize = if (base == 16) 2 else 0;
+        const val = std.fmt.parseInt(i64, tok.lexeme[start..], base) catch return error.UnexpectedToken;
+        return if (is_neg) -val else val;
     }
 
     fn parseSignature(self: *Parser) ParseError!Signature {
@@ -186,24 +193,115 @@ pub const Parser = struct {
         const op_tok = try self.expect(.identifier);
         const op = op_tok.lexeme;
 
+        // Check for type annotation (e.g., load.i32)
+        var result_ty: Type = Type.I32;
+        if (self.current.type == .identifier and std.mem.eql(u8, self.current.lexeme, ".")) {
+            self.advance(); // skip '.'
+            result_ty = try self.parseType();
+        }
+
         if (std.mem.eql(u8, op, "iconst")) {
-            const ty = Type.I32;
             const imm = try self.parseInt();
-            const val = try builder.iconst(ty, imm);
+            const val = try builder.iconst(result_ty, imm);
             if (result_id) |id| try self.value_map.put(id, val);
         } else if (std.mem.eql(u8, op, "iadd")) {
             const lhs = try self.parseValue();
             _ = try self.expect(.comma);
             const rhs = try self.parseValue();
-            const ty = Type.I32;
-            const val = try builder.iadd(ty, lhs, rhs);
+            const val = try builder.iadd(result_ty, lhs, rhs);
             if (result_id) |id| try self.value_map.put(id, val);
         } else if (std.mem.eql(u8, op, "isub")) {
             const lhs = try self.parseValue();
             _ = try self.expect(.comma);
             const rhs = try self.parseValue();
-            const ty = Type.I32;
-            const val = try builder.isub(ty, lhs, rhs);
+            const val = try builder.isub(result_ty, lhs, rhs);
+            if (result_id) |id| try self.value_map.put(id, val);
+        } else if (std.mem.eql(u8, op, "imul")) {
+            const lhs = try self.parseValue();
+            _ = try self.expect(.comma);
+            const rhs = try self.parseValue();
+            const val = try builder.imul(result_ty, lhs, rhs);
+            if (result_id) |id| try self.value_map.put(id, val);
+        } else if (std.mem.eql(u8, op, "ishl")) {
+            const lhs = try self.parseValue();
+            _ = try self.expect(.comma);
+            const rhs = try self.parseValue();
+            const val = try builder.ishl(result_ty, lhs, rhs);
+            if (result_id) |id| try self.value_map.put(id, val);
+        } else if (std.mem.eql(u8, op, "ushr")) {
+            const lhs = try self.parseValue();
+            _ = try self.expect(.comma);
+            const rhs = try self.parseValue();
+            const val = try builder.ushr(result_ty, lhs, rhs);
+            if (result_id) |id| try self.value_map.put(id, val);
+        } else if (std.mem.eql(u8, op, "sshr")) {
+            const lhs = try self.parseValue();
+            _ = try self.expect(.comma);
+            const rhs = try self.parseValue();
+            const val = try builder.sshr(result_ty, lhs, rhs);
+            if (result_id) |id| try self.value_map.put(id, val);
+        } else if (std.mem.eql(u8, op, "rotl")) {
+            const lhs = try self.parseValue();
+            _ = try self.expect(.comma);
+            const rhs = try self.parseValue();
+            const val = try builder.rotl(result_ty, lhs, rhs);
+            if (result_id) |id| try self.value_map.put(id, val);
+        } else if (std.mem.eql(u8, op, "rotr")) {
+            const lhs = try self.parseValue();
+            _ = try self.expect(.comma);
+            const rhs = try self.parseValue();
+            const val = try builder.rotr(result_ty, lhs, rhs);
+            if (result_id) |id| try self.value_map.put(id, val);
+        } else if (std.mem.eql(u8, op, "band")) {
+            const lhs = try self.parseValue();
+            _ = try self.expect(.comma);
+            const rhs = try self.parseValue();
+            const val = try builder.band(result_ty, lhs, rhs);
+            if (result_id) |id| try self.value_map.put(id, val);
+        } else if (std.mem.eql(u8, op, "bor")) {
+            const lhs = try self.parseValue();
+            _ = try self.expect(.comma);
+            const rhs = try self.parseValue();
+            const val = try builder.bor(result_ty, lhs, rhs);
+            if (result_id) |id| try self.value_map.put(id, val);
+        } else if (std.mem.eql(u8, op, "bxor")) {
+            const lhs = try self.parseValue();
+            _ = try self.expect(.comma);
+            const rhs = try self.parseValue();
+            const val = try builder.bxor(result_ty, lhs, rhs);
+            if (result_id) |id| try self.value_map.put(id, val);
+        } else if (std.mem.eql(u8, op, "bnot")) {
+            const arg = try self.parseValue();
+            const val = try builder.bnot(result_ty, arg);
+            if (result_id) |id| try self.value_map.put(id, val);
+        } else if (std.mem.eql(u8, op, "load")) {
+            const addr = try self.parseValue();
+            const val = try builder.load(result_ty, addr, .{});
+            if (result_id) |id| try self.value_map.put(id, val);
+        } else if (std.mem.eql(u8, op, "store")) {
+            const data = try self.parseValue();
+            _ = try self.expect(.comma);
+            const addr = try self.parseValue();
+            try builder.store(data, addr, .{});
+        } else if (std.mem.eql(u8, op, "sextend")) {
+            const arg = try self.parseValue();
+            const val = try builder.sextend(result_ty, arg);
+            if (result_id) |id| try self.value_map.put(id, val);
+        } else if (std.mem.eql(u8, op, "uextend")) {
+            const arg = try self.parseValue();
+            const val = try builder.uextend(result_ty, arg);
+            if (result_id) |id| try self.value_map.put(id, val);
+        } else if (std.mem.eql(u8, op, "ireduce")) {
+            const arg = try self.parseValue();
+            const val = try builder.ireduce(result_ty, arg);
+            if (result_id) |id| try self.value_map.put(id, val);
+        } else if (std.mem.eql(u8, op, "select")) {
+            const cond = try self.parseValue();
+            _ = try self.expect(.comma);
+            const then_val = try self.parseValue();
+            _ = try self.expect(.comma);
+            const else_val = try self.parseValue();
+            const val = try builder.select(result_ty, cond, then_val, else_val);
             if (result_id) |id| try self.value_map.put(id, val);
         } else if (std.mem.eql(u8, op, "icmp")) {
             const cc = try self.parseIntCC();
@@ -306,9 +404,9 @@ test "parse add function" {
     defer parser.deinit();
 
     const func = try parser.parseFunction();
+    // Note: sig ownership transferred to func, func.deinit() frees it
     defer {
         var f = func;
-        f.sig.deinit();
         f.deinit();
         testing.allocator.destroy(func);
     }
@@ -339,9 +437,9 @@ test "parse fib function" {
     defer parser.deinit();
 
     const func = try parser.parseFunction();
+    // Note: sig ownership transferred to func, func.deinit() frees it
     defer {
         var f = func;
-        f.sig.deinit();
         f.deinit();
         testing.allocator.destroy(func);
     }

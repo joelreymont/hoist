@@ -94,6 +94,24 @@ pub const MachTrap = struct {
     code: TrapCode,
 };
 
+/// Source line info entry - maps code offset to source location.
+pub const SourceLineInfo = struct {
+    /// Offset in code buffer.
+    offset: CodeOffset,
+    /// File index (into file table).
+    file: u32,
+    /// Line number (1-indexed).
+    line: u32,
+    /// Column number (1-indexed, 0 = unknown).
+    column: u32,
+    /// Is this a statement boundary?
+    is_stmt: bool,
+    /// Is this the end of the prologue?
+    prologue_end: bool,
+    /// Is this the start of the epilogue?
+    epilogue_begin: bool,
+};
+
 /// Label fixup record - tracks unresolved label references.
 const LabelFixup = struct {
     /// Label being referenced.
@@ -231,6 +249,12 @@ pub const MachBuffer = struct {
     jump_tables: std.ArrayList(JumpTable),
     /// Map from IR Block to MachLabel for exception handling.
     block_labels: std.AutoHashMap(Block, MachLabel),
+    /// Source line info entries for debug info.
+    source_lines: std.ArrayList(SourceLineInfo),
+    /// Source file paths (indexed by file ID).
+    source_files: std.ArrayList([]const u8),
+    /// Map from file path to file ID for deduplication.
+    source_file_map: std.StringHashMap(u32),
     /// Allocator for dynamic allocations.
     allocator: Allocator,
 
@@ -247,6 +271,9 @@ pub const MachBuffer = struct {
             .const_pool_map = std.AutoHashMap(u64, u32).init(allocator),
             .jump_tables = std.ArrayList(JumpTable){},
             .block_labels = std.AutoHashMap(Block, MachLabel).init(allocator),
+            .source_lines = std.ArrayList(SourceLineInfo){},
+            .source_files = std.ArrayList([]const u8){},
+            .source_file_map = std.StringHashMap(u32).init(allocator),
             .allocator = allocator,
         };
     }
@@ -268,6 +295,13 @@ pub const MachBuffer = struct {
         }
         self.jump_tables.deinit(self.allocator);
         self.block_labels.deinit();
+        self.source_lines.deinit(self.allocator);
+        // Free source file paths
+        for (self.source_files.items) |path| {
+            self.allocator.free(path);
+        }
+        self.source_files.deinit(self.allocator);
+        self.source_file_map.deinit();
     }
 
     /// Get current code offset.
@@ -297,6 +331,68 @@ pub const MachBuffer = struct {
         var bytes: [8]u8 = undefined;
         std.mem.writeInt(u64, &bytes, value, .little);
         try self.data.appendSlice(self.allocator, &bytes);
+    }
+
+    /// Intern a source file path and return its index.
+    pub fn internSourceFile(self: *MachBuffer, path: []const u8) !u32 {
+        if (self.source_file_map.get(path)) |idx| {
+            return idx;
+        }
+        const idx: u32 = @intCast(self.source_files.items.len);
+        const owned = try self.allocator.dupe(u8, path);
+        try self.source_files.append(self.allocator, owned);
+        try self.source_file_map.put(owned, idx);
+        return idx;
+    }
+
+    /// Record source location at current code offset.
+    pub fn recordSourceLoc(
+        self: *MachBuffer,
+        file: []const u8,
+        line: u32,
+        column: u32,
+    ) !void {
+        const file_idx = try self.internSourceFile(file);
+        try self.source_lines.append(self.allocator, .{
+            .offset = self.curOffset(),
+            .file = file_idx,
+            .line = line,
+            .column = column,
+            .is_stmt = true,
+            .prologue_end = false,
+            .epilogue_begin = false,
+        });
+    }
+
+    /// Record source location with full control over flags.
+    pub fn recordSourceLocFull(
+        self: *MachBuffer,
+        file_idx: u32,
+        line: u32,
+        column: u32,
+        is_stmt: bool,
+        prologue_end: bool,
+        epilogue_begin: bool,
+    ) !void {
+        try self.source_lines.append(self.allocator, .{
+            .offset = self.curOffset(),
+            .file = file_idx,
+            .line = line,
+            .column = column,
+            .is_stmt = is_stmt,
+            .prologue_end = prologue_end,
+            .epilogue_begin = epilogue_begin,
+        });
+    }
+
+    /// Mark current offset as end of prologue.
+    pub fn markPrologueEnd(self: *MachBuffer, file_idx: u32, line: u32) !void {
+        try self.recordSourceLocFull(file_idx, line, 0, true, true, false);
+    }
+
+    /// Mark current offset as start of epilogue.
+    pub fn markEpilogueBegin(self: *MachBuffer, file_idx: u32, line: u32) !void {
+        try self.recordSourceLocFull(file_idx, line, 0, true, false, true);
     }
 
     /// Allocate a new label.
@@ -712,6 +808,54 @@ test "MachBuffer trap records" {
     try testing.expectEqual(@as(usize, 1), buf.traps.items.len);
     try testing.expectEqual(@as(CodeOffset, 0), buf.traps.items[0].offset);
     try testing.expectEqual(TrapCode.unreachable_code_reached, buf.traps.items[0].code);
+}
+
+test "MachBuffer source line info" {
+    var buf = MachBuffer.init(testing.allocator);
+    defer buf.deinit();
+
+    // Record source location
+    try buf.recordSourceLoc("main.zig", 10, 1);
+    try buf.put4(0x12345678);
+
+    try buf.recordSourceLoc("main.zig", 11, 5);
+    try buf.put4(0xDEADBEEF);
+
+    // Different file
+    try buf.recordSourceLoc("util.zig", 5, 1);
+    try buf.put4(0xCAFEBABE);
+
+    try testing.expectEqual(@as(usize, 3), buf.source_lines.items.len);
+    try testing.expectEqual(@as(usize, 2), buf.source_files.items.len);
+
+    // Check first entry
+    try testing.expectEqual(@as(u32, 0), buf.source_lines.items[0].offset);
+    try testing.expectEqual(@as(u32, 0), buf.source_lines.items[0].file);
+    try testing.expectEqual(@as(u32, 10), buf.source_lines.items[0].line);
+
+    // Check file interning
+    try testing.expectEqual(@as(u32, 0), buf.source_lines.items[1].file);
+    try testing.expectEqual(@as(u32, 1), buf.source_lines.items[2].file);
+
+    // Check file paths
+    try testing.expectEqualStrings("main.zig", buf.source_files.items[0]);
+    try testing.expectEqualStrings("util.zig", buf.source_files.items[1]);
+}
+
+test "MachBuffer prologue/epilogue markers" {
+    var buf = MachBuffer.init(testing.allocator);
+    defer buf.deinit();
+
+    const file_idx = try buf.internSourceFile("test.zig");
+    try buf.markPrologueEnd(file_idx, 5);
+    try buf.put4(0x12345678);
+    try buf.markEpilogueBegin(file_idx, 20);
+
+    try testing.expectEqual(@as(usize, 2), buf.source_lines.items.len);
+    try testing.expect(buf.source_lines.items[0].prologue_end);
+    try testing.expect(!buf.source_lines.items[0].epilogue_begin);
+    try testing.expect(!buf.source_lines.items[1].prologue_end);
+    try testing.expect(buf.source_lines.items[1].epilogue_begin);
 }
 
 /// ELF Rela entry for relocations.

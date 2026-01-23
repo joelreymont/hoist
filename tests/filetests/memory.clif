@@ -1,0 +1,15 @@
+test verify
+test roundtrip
+
+function "load_store"(i64, i32) -> i32 {
+block0(v0: i64, v1: i32):
+  store v1, v0
+  v2 = load.i32 v0
+  return v2
+}
+
+function "load_offset"(i64) -> i64 {
+block0(v0: i64):
+  v1 = load.i64 v0+8
+  return v1
+}

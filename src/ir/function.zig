@@ -87,6 +87,9 @@ pub const Function = struct {
         }
         self.signatures.deinit();
 
+        // Main function signature
+        self.sig.deinit();
+
         // Function metadata
         self.func_metadata.deinit();
     }

@@ -45,7 +45,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .stc => |i| try emitRX(0x42, i.src, i.base, 0, i.offset, buffer),
 
         // Branch
-        .brc => |i| try emitRI(0xA7, i.mask, zeroReg(), @bitCast(@as(i32, i.offset) >> 1), buffer),
+        .brc => |i| try emitRI(0xA7, i.mask, zeroReg(), @bitCast(i.offset >> 1), buffer),
         .brasl => |i| try emitRIL(0xC0, 0x5, i.link.toReg(), @bitCast(i.offset >> 1), buffer),
         .basr => |i| try emitRR(0x0D, i.link.toReg(), i.target, buffer),
         .bcr => |i| try emitRR(0x07, regAtEnc(i.mask), i.target, buffer),

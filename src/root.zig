@@ -1,4 +1,20 @@
 pub const context = @import("context.zig");
+pub const interpreter = @import("interpreter/interpreter.zig");
+
+pub const target = struct {
+    pub const Target = @import("target/target.zig").Target;
+    pub const Arch = @import("target/target.zig").Arch;
+    pub const Os = @import("target/target.zig").Os;
+    pub const ObjFmt = @import("target/target.zig").ObjFmt;
+    pub const Abi = @import("target/target.zig").Abi;
+    pub const CallConv = @import("target/target.zig").CallConv;
+    pub const targets = @import("target/target.zig").targets;
+    pub const Features = @import("target/features.zig").Features;
+    pub const AArch64Features = @import("target/features.zig").AArch64Features;
+    pub const X86Features = @import("target/features.zig").X86Features;
+    pub const FeatureDetector = @import("target/features.zig").FeatureDetector;
+    pub const isa = @import("target/isa.zig");
+};
 
 pub const bforest = @import("foundation/bforest.zig");
 pub const bitset = @import("foundation/bitset.zig");
@@ -79,6 +95,8 @@ pub const abi = @import("machinst/abi.zig");
 pub const regalloc = struct {
     pub const liveness = @import("regalloc/liveness.zig");
     pub const interference = @import("regalloc/interference.zig");
+    pub const remat = @import("regalloc/remat.zig");
+    pub const coalesce = @import("regalloc/coalesce.zig");
     pub const LinearScanAllocator = @import("machinst/regalloc.zig").LinearScanAllocator;
     pub const Allocation = @import("machinst/regalloc.zig").Allocation;
 };
@@ -131,6 +149,9 @@ test {
     _ = @import("codegen/lower_helpers.zig");
     _ = @import("codegen/isle_ctx.zig");
     _ = @import("codegen/opts/alias.zig");
+    _ = @import("codegen/opts/loop_unroll.zig");
+    _ = @import("codegen/opts/inliner.zig");
+    _ = @import("codegen/parallel.zig");
     _ = @import("regalloc/regalloc_properties.zig");
 }
 
@@ -160,6 +181,9 @@ pub const aarch64_isle_impl = @import("backends/aarch64/isle_impl.zig");
 pub const aarch64_isle_coverage = @import("backends/aarch64/isle_coverage.zig");
 pub const aarch64_isa = @import("backends/aarch64/isa.zig");
 pub const aarch64_legalize = @import("backends/aarch64/legalize.zig");
+pub const aarch64_compact_unwind = @import("backends/aarch64/compact_unwind.zig");
+pub const aarch64_probestack = @import("backends/aarch64/probestack.zig");
+pub const aarch64_dwarf_line = @import("backends/aarch64/dwarf_line.zig");
 pub const aarch64_lower_generated = @import("generated/aarch64_lower_generated.zig");
 
 pub const riscv64_inst = @import("backends/riscv64/inst.zig");
@@ -221,4 +245,5 @@ pub const ir = struct {
     pub const domtree = @import("ir/domtree.zig");
     pub const Block = @import("ir/entities.zig").Block;
     pub const Inst = @import("ir/entities.zig").Inst;
+    pub const Verifier = @import("ir/verifier.zig").Verifier;
 };

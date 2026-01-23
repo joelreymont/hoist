@@ -13,7 +13,7 @@ const egraph_rules = hoist.ir_ns.egraph_rules;
 test "E-graph: constant folding x+0 → x" {
     // Create function: fn(x: i32) -> i32 { return x + 0; }
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));
     try sig.returns.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));
@@ -93,7 +93,7 @@ test "E-graph: constant folding x+0 → x" {
 test "E-graph: strength reduction x*2 → x<<1" {
     // Create function: fn(x: i32) -> i32 { return x * 2; }
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));
     try sig.returns.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));
@@ -173,7 +173,7 @@ test "E-graph: strength reduction x*2 → x<<1" {
 test "E-graph: idempotence x-x → 0" {
     // Create function: fn(x: i32) -> i32 { return x - x; }
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));
     try sig.returns.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));
@@ -245,7 +245,7 @@ test "E-graph: CSE via hash-consing" {
     //   return a + b;
     // }
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));
     try sig.params.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));
@@ -332,7 +332,7 @@ test "E-graph: CSE via hash-consing" {
 test "E-graph: termination on fixpoint" {
     // Create function: fn(x: i32) -> i32 { return x + 0 + 0 + 0; }
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));
     try sig.returns.append(testing.allocator, hoist.signature.AbiParam.new(Type.I32));

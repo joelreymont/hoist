@@ -23,7 +23,7 @@ test "struct args: 8-byte value in single register" {
 
     // Simulate 8-byte struct with i64
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
@@ -81,7 +81,7 @@ test "struct args: 16-byte struct in register pair" {
 
     // Signature: fn process(s: Struct16) -> i32
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(allocator, AbiParam.new(struct_type));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
@@ -145,7 +145,7 @@ test "struct args: large struct passed by pointer" {
 
     // Signature: fn process(s: Struct24) -> i32
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(allocator, AbiParam.new(struct_type));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
@@ -208,7 +208,7 @@ test "struct args: HFA with 2 floats in vector registers" {
 
     // Signature: fn process(hfa: HFA) -> f32
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(allocator, AbiParam.new(hfa_type));
     try sig.returns.append(allocator, AbiParam.new(Type.F32));
@@ -272,7 +272,7 @@ test "struct args: HFA with 4 doubles in vector registers" {
 
     // Signature: fn process(hfa: HFA4) -> f64
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(allocator, AbiParam.new(hfa_type));
     try sig.returns.append(allocator, AbiParam.new(Type.F64));
@@ -336,7 +336,7 @@ test "struct args: mixed int-float struct uses general registers" {
 
     // Signature: fn process(s: Mixed) -> i32
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(allocator, AbiParam.new(mixed_type));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
@@ -404,7 +404,7 @@ test "struct args: multiple small structs" {
 
     // Signature: fn process(s1: Struct8, s2: Struct8, n: i32) -> i32
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(allocator, AbiParam.new(struct1_type));
     try sig.params.append(allocator, AbiParam.new(struct2_type));

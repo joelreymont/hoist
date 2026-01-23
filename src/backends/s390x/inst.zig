@@ -310,13 +310,261 @@ pub const Inst = union(enum) {
     ret,
 
     /// Get operands for register allocation.
-    pub fn getOperands(inst: *const Inst, alloc: std.mem.Allocator) !struct {
-        uses: []const Reg,
-        defs: []const WritableReg,
-    } {
-        _ = alloc;
-        _ = inst;
-        return .{ .uses = &.{}, .defs = &.{} };
+    pub fn getOperands(self: *const Inst, collector: *OperandCollector) !void {
+        switch (self.*) {
+            // ALU instructions with 2 sources
+            .agr => |i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .sgr => |i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .sgfr => |i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .msgr => |i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .ngr => |i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .ogr => |i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .xgr => |i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            // ALU with immediate
+            .agfi => |i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .aghi => |i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .mghi => |i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            // Divide (uses implicit register pair)
+            .dsgr => |i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .dlgr => |i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            // Shifts/rotates
+            .sllg => |i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .srlg => |i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .srag => |i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .rllg => |i| {
+                try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            // Loads from memory
+            .lg => |i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .l => |i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .lh => |i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .lb => |i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            // Load immediate
+            .lghi => |i| {
+                try collector.regDef(i.dst);
+            },
+            // Stores to memory
+            .stg => |i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+            },
+            .st => |i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+            },
+            .sth => |i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+            },
+            .stc => |i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+            },
+            // Branches
+            .brc => {},
+            .brasl => |i| {
+                try collector.regDef(i.link);
+            },
+            .basr => |i| {
+                try collector.regUse(i.target);
+                try collector.regDef(i.link);
+            },
+            .bcr => |i| {
+                try collector.regUse(i.target);
+            },
+            // FP ALU
+            .adbr => |i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .aebr => |i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .sdbr => |i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .sebr => |i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .mdbr => |i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .meebr => |i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .ddbr => |i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .debr => |i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            // FP loads
+            .ld => |i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            .le => |i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
+            // FP stores
+            .std => |i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+            },
+            .ste => |i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+            },
+            // Pseudo
+            .ret => {},
+        }
+    }
+
+    /// Get defined (output) registers for this instruction.
+    pub fn getDefs(self: *const Inst, allocator: std.mem.Allocator) ![]VReg {
+        var collector = OperandCollector.init(allocator);
+        defer collector.deinit();
+
+        try self.getOperands(&collector);
+
+        var vregs = std.ArrayList(VReg){};
+        defer vregs.deinit(allocator);
+
+        for (collector.defs.items) |writable_reg| {
+            if (writable_reg.toReg().toVReg()) |vreg| {
+                try vregs.append(allocator, vreg);
+            }
+        }
+
+        return try vregs.toOwnedSlice(allocator);
+    }
+
+    /// Get used (input) registers for this instruction.
+    pub fn getUses(self: *const Inst, allocator: std.mem.Allocator) ![]VReg {
+        var collector = OperandCollector.init(allocator);
+        defer collector.deinit();
+
+        try self.getOperands(&collector);
+
+        var vregs = std.ArrayList(VReg){};
+        defer vregs.deinit(allocator);
+
+        for (collector.uses.items) |reg| {
+            if (reg.toVReg()) |vreg| {
+                try vregs.append(allocator, vreg);
+            }
+        }
+
+        return try vregs.toOwnedSlice(allocator);
+    }
+};
+
+/// Operand collector for s390x register allocation.
+pub const OperandCollector = struct {
+    uses: std.ArrayList(Reg),
+    defs: std.ArrayList(WritableReg),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) OperandCollector {
+        return .{
+            .uses = std.ArrayList(Reg){},
+            .defs = std.ArrayList(WritableReg){},
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *OperandCollector) void {
+        self.uses.deinit(self.allocator);
+        self.defs.deinit(self.allocator);
+    }
+
+    pub fn regUse(self: *OperandCollector, reg: Reg) !void {
+        try self.uses.append(self.allocator, reg);
+    }
+
+    pub fn regDef(self: *OperandCollector, reg: WritableReg) !void {
+        try self.defs.append(self.allocator, reg);
     }
 };
 

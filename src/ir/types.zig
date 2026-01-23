@@ -36,13 +36,28 @@ pub const Type = packed struct {
     pub const F64 = Type{ .raw = 0x7b };
     pub const F128 = Type{ .raw = 0x7c };
 
-    // Common vector types
+    // Reference types (WebAssembly)
+    pub const FUNCREF = Type{ .raw = 0x7e }; // WebAssembly funcref
+    pub const EXTERNREF = Type{ .raw = 0x7f }; // WebAssembly externref
+
+    // Small vector types (sub-register, packed)
+    pub const I8X2 = Type{ .raw = 0x84 }; // 16 bits total
+    pub const I8X4 = Type{ .raw = 0x94 }; // 32 bits total
+    pub const I8X8 = Type{ .raw = 0xa4 }; // 64 bits total
+    pub const I16X2 = Type{ .raw = 0x85 }; // 32 bits total
+    pub const I16X4 = Type{ .raw = 0x95 }; // 64 bits total
+    pub const I32X2 = Type{ .raw = 0x86 }; // 64 bits total
+
+    // Common 128-bit vector types
     pub const I8X16 = Type{ .raw = 0xb4 };
     pub const I16X8 = Type{ .raw = 0xa5 };
     pub const I32X4 = Type{ .raw = 0x96 };
     pub const I64X2 = Type{ .raw = 0x87 };
     pub const F32X4 = Type{ .raw = 0x9a };
     pub const F64X2 = Type{ .raw = 0x8b };
+    pub const F32X2 = Type{ .raw = 0x8a }; // 64 bits total
+    pub const F16X4 = Type{ .raw = 0x99 }; // 64 bits total
+    pub const F16X8 = Type{ .raw = 0xa9 }; // 128 bits total
 
     pub fn eql(self: Type, other: Type) bool {
         return self.raw == other.raw;
@@ -75,6 +90,21 @@ pub const Type = packed struct {
 
     pub fn isFloat(self: Type) bool {
         return self.eql(F16) or self.eql(F32) or self.eql(F64) or self.eql(F128);
+    }
+
+    /// Check if type is a WebAssembly reference type.
+    pub fn isRef(self: Type) bool {
+        return self.raw >= REFERENCE_BASE and self.raw < VECTOR_BASE;
+    }
+
+    /// Check if type is funcref.
+    pub fn isFuncRef(self: Type) bool {
+        return self.eql(FUNCREF);
+    }
+
+    /// Check if type is externref.
+    pub fn isExternRef(self: Type) bool {
+        return self.eql(EXTERNREF);
     }
 
     /// Get lane type of vector (or self for scalars).
@@ -345,4 +375,99 @@ test "Type int constructors" {
 
     try std.testing.expect(Type.intWithByteSize(4).?.eql(Type.I32));
     try std.testing.expect(Type.intWithByteSize(8).?.eql(Type.I64));
+}
+
+test "Type small vectors" {
+    // I8X2: 2 lanes of i8 = 16 bits
+    try std.testing.expect(Type.I8X2.isVector());
+    try std.testing.expectEqual(@as(u32, 2), Type.I8X2.laneCount());
+    try std.testing.expect(Type.I8X2.laneType().eql(Type.I8));
+    try std.testing.expectEqual(@as(u32, 16), Type.I8X2.bits());
+    try std.testing.expectEqual(@as(u32, 2), Type.I8X2.bytes());
+
+    // I8X4: 4 lanes of i8 = 32 bits
+    try std.testing.expect(Type.I8X4.isVector());
+    try std.testing.expectEqual(@as(u32, 4), Type.I8X4.laneCount());
+    try std.testing.expect(Type.I8X4.laneType().eql(Type.I8));
+    try std.testing.expectEqual(@as(u32, 32), Type.I8X4.bits());
+    try std.testing.expectEqual(@as(u32, 4), Type.I8X4.bytes());
+
+    // I8X8: 8 lanes of i8 = 64 bits
+    try std.testing.expect(Type.I8X8.isVector());
+    try std.testing.expectEqual(@as(u32, 8), Type.I8X8.laneCount());
+    try std.testing.expect(Type.I8X8.laneType().eql(Type.I8));
+    try std.testing.expectEqual(@as(u32, 64), Type.I8X8.bits());
+    try std.testing.expectEqual(@as(u32, 8), Type.I8X8.bytes());
+
+    // I16X2: 2 lanes of i16 = 32 bits
+    try std.testing.expect(Type.I16X2.isVector());
+    try std.testing.expectEqual(@as(u32, 2), Type.I16X2.laneCount());
+    try std.testing.expectEqual(@as(u32, 32), Type.I16X2.bits());
+
+    // I16X4: 4 lanes of i16 = 64 bits
+    try std.testing.expect(Type.I16X4.isVector());
+    try std.testing.expectEqual(@as(u32, 4), Type.I16X4.laneCount());
+    try std.testing.expectEqual(@as(u32, 64), Type.I16X4.bits());
+
+    // I32X2: 2 lanes of i32 = 64 bits
+    try std.testing.expect(Type.I32X2.isVector());
+    try std.testing.expectEqual(@as(u32, 2), Type.I32X2.laneCount());
+    try std.testing.expectEqual(@as(u32, 64), Type.I32X2.bits());
+
+    // F32X2: 2 lanes of f32 = 64 bits
+    try std.testing.expect(Type.F32X2.isVector());
+    try std.testing.expectEqual(@as(u32, 2), Type.F32X2.laneCount());
+    try std.testing.expect(Type.F32X2.laneType().eql(Type.F32));
+    try std.testing.expectEqual(@as(u32, 64), Type.F32X2.bits());
+
+    // F16X4: 4 lanes of f16 = 64 bits
+    try std.testing.expect(Type.F16X4.isVector());
+    try std.testing.expectEqual(@as(u32, 4), Type.F16X4.laneCount());
+    try std.testing.expect(Type.F16X4.laneType().eql(Type.F16));
+    try std.testing.expectEqual(@as(u32, 64), Type.F16X4.bits());
+
+    // F16X8: 8 lanes of f16 = 128 bits
+    try std.testing.expect(Type.F16X8.isVector());
+    try std.testing.expectEqual(@as(u32, 8), Type.F16X8.laneCount());
+    try std.testing.expectEqual(@as(u32, 128), Type.F16X8.bits());
+}
+
+test "Type vector constructor" {
+    // Create small vectors via vector()
+    try std.testing.expect(Type.vector(Type.I8, 2).?.eql(Type.I8X2));
+    try std.testing.expect(Type.vector(Type.I8, 4).?.eql(Type.I8X4));
+    try std.testing.expect(Type.vector(Type.I8, 8).?.eql(Type.I8X8));
+    try std.testing.expect(Type.vector(Type.I8, 16).?.eql(Type.I8X16));
+    try std.testing.expect(Type.vector(Type.I16, 2).?.eql(Type.I16X2));
+    try std.testing.expect(Type.vector(Type.I32, 2).?.eql(Type.I32X2));
+    try std.testing.expect(Type.vector(Type.F32, 2).?.eql(Type.F32X2));
+
+    // Invalid: non-power-of-two
+    try std.testing.expect(Type.vector(Type.I8, 3) == null);
+    // Invalid: too small
+    try std.testing.expect(Type.vector(Type.I8, 1) == null);
+    // Invalid: non-lane type
+    try std.testing.expect(Type.vector(Type.I8X2, 2) == null);
+}
+
+test "Type reference types" {
+    // Funcref
+    try std.testing.expect(Type.FUNCREF.isRef());
+    try std.testing.expect(Type.FUNCREF.isFuncRef());
+    try std.testing.expect(!Type.FUNCREF.isExternRef());
+    try std.testing.expect(!Type.FUNCREF.isInt());
+    try std.testing.expect(!Type.FUNCREF.isFloat());
+    try std.testing.expect(!Type.FUNCREF.isVector());
+
+    // Externref
+    try std.testing.expect(Type.EXTERNREF.isRef());
+    try std.testing.expect(Type.EXTERNREF.isExternRef());
+    try std.testing.expect(!Type.EXTERNREF.isFuncRef());
+    try std.testing.expect(!Type.EXTERNREF.isInt());
+    try std.testing.expect(!Type.EXTERNREF.isFloat());
+
+    // Non-reference types
+    try std.testing.expect(!Type.I32.isRef());
+    try std.testing.expect(!Type.F64.isRef());
+    try std.testing.expect(!Type.I32X4.isRef());
 }

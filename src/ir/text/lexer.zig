@@ -109,10 +109,22 @@ pub const Lexer = struct {
     fn readNumber(self: *Lexer) Token {
         const start = self.pos;
         const line_num = self.line;
-        while (self.peek()) |c| {
-            if (c >= '0' and c <= '9') {
-                _ = self.advance();
-            } else break;
+
+        // Check for hex prefix
+        if (self.peek() == '0' and (self.peekNext() == 'x' or self.peekNext() == 'X')) {
+            _ = self.advance(); // '0'
+            _ = self.advance(); // 'x'
+            while (self.peek()) |c| {
+                if ((c >= '0' and c <= '9') or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F')) {
+                    _ = self.advance();
+                } else break;
+            }
+        } else {
+            while (self.peek()) |c| {
+                if (c >= '0' and c <= '9') {
+                    _ = self.advance();
+                } else break;
+            }
         }
         return Token{
             .type = .integer,

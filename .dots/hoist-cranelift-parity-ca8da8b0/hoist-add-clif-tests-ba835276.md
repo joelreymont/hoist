@@ -1,9 +1,10 @@
 ---
 title: Add clif tests
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.816800+02:00"
+created-at: "\"2026-01-14T15:42:46.816800+02:00\""
+closed-at: "2026-01-24T15:57:54.822609+02:00"
 ---
 
 Files: /Users/joel/Work/wasmtime/cranelift/docs/testing.md:23-75

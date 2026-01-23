@@ -19,7 +19,7 @@ const FunctionBuilder = hoist.builder.FunctionBuilder;
 // Tests loop header, back edge, phi nodes via block parameters
 test "E2E: while loop with phi node" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, AbiParam.new(Type.I32));
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
@@ -146,7 +146,7 @@ test "E2E: while loop with phi node" {
 // Tests multiple loop headers and nested phi nodes
 test "E2E: nested loops with phi nodes" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, AbiParam.new(Type.I32));
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
@@ -304,7 +304,7 @@ test "E2E: nested loops with phi nodes" {
 // Tests phi node with multiple incoming values
 test "E2E: loop with accumulator phi" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, AbiParam.new(Type.I32));
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));

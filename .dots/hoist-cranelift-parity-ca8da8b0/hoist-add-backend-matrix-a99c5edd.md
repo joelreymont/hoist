@@ -1,9 +1,10 @@
 ---
 title: Add backend matrix
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.840310+02:00"
+created-at: "\"2026-01-14T15:42:46.840310+02:00\""
+closed-at: "2026-01-25T15:37:27.313033+02:00"
 ---
 
 Files: build.zig:331-340

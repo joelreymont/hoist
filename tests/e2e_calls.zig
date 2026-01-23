@@ -94,7 +94,7 @@ test "compile function with call" {
 // Verifies register allocation handles caller-saved registers correctly
 test "compile function with multiple calls" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i32_type = Type{ .int = .{ .width = 32 } };
     try sig.params.append(AbiParam.new(i32_type));
@@ -168,7 +168,7 @@ test "compile function with multiple calls" {
 // Test function call with no arguments
 test "compile function with nullary call" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i32_type = Type{ .int = .{ .width = 32 } };
     try sig.returns.append(AbiParam.new(i32_type));
@@ -218,7 +218,7 @@ test "compile function with nullary call" {
 // Test ABI lowering for aarch64
 test "compile aarch64 function with call" {
     var sig = Signature.init(testing.allocator, .apple_aarch64);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i64_type = Type{ .int = .{ .width = 64 } };
     const params = [_]AbiParam{
@@ -280,7 +280,7 @@ test "compile aarch64 function with call" {
 
 test "compile aarch64 preserve_all callconv" {
     var sig = Signature.init(testing.allocator, .preserve_all);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i64_type = Type{ .int = .{ .width = 64 } };
     const params = [_]AbiParam{

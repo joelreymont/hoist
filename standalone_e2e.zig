@@ -14,23 +14,42 @@ const InstructionData = hoist.instruction_data.InstructionData;
 const Imm64 = hoist.immediates.Imm64;
 const compile = hoist.codegen.compile;
 
-fn allocExecutableMemory(allocator: std.mem.Allocator, size: usize) ![]align(16384) u8 {
-    const mem = try allocator.alignedAlloc(u8, @enumFromInt(14), size);
-    return mem;
-}
-
-fn makeExecutable(memory: []align(16384) u8) !void {
-    const prot = std.posix.PROT.READ | std.posix.PROT.EXEC;
-    try std.posix.mprotect(memory, prot);
-}
-
-fn freeExecutableMemory(allocator: std.mem.Allocator, memory: []align(16384) u8) void {
-    // page_allocator doesn't support individual frees - memory is released on process exit
-    _ = allocator;
-    _ = memory;
-}
+const pthread_jit_write_protect_np = struct {
+    extern "c" fn pthread_jit_write_protect_np(enabled: c_int) void;
+}.pthread_jit_write_protect_np;
 
 extern "c" fn sys_icache_invalidate(start: *const anyopaque, len: usize) void;
+
+fn allocExecutableMemory(size: usize) ![]align(std.heap.page_size_min) u8 {
+    const page_size = std.heap.pageSize();
+    const aligned_size = std.mem.alignForward(usize, size, page_size);
+
+    if (builtin.os.tag == .macos and (builtin.cpu.arch == .aarch64 or builtin.cpu.arch == .aarch64_be)) {
+        const prot = std.posix.PROT.READ | std.posix.PROT.WRITE | std.posix.PROT.EXEC;
+        const flags = std.posix.MAP{ .TYPE = .PRIVATE, .ANONYMOUS = true, .JIT = true };
+        const mem = try std.posix.mmap(null, aligned_size, prot, flags, -1, 0);
+        pthread_jit_write_protect_np(0); // Allow writing
+        return mem;
+    } else {
+        const prot = std.posix.PROT.READ | std.posix.PROT.WRITE;
+        const flags = std.posix.MAP{ .TYPE = .PRIVATE, .ANONYMOUS = true };
+        return try std.posix.mmap(null, aligned_size, prot, flags, -1, 0);
+    }
+}
+
+fn makeExecutable(memory: []align(std.heap.page_size_min) u8) !void {
+    if (builtin.os.tag == .macos and (builtin.cpu.arch == .aarch64 or builtin.cpu.arch == .aarch64_be)) {
+        pthread_jit_write_protect_np(1); // Enable execute, disable write
+        sys_icache_invalidate(memory.ptr, memory.len);
+    } else {
+        const prot = std.posix.PROT.READ | std.posix.PROT.EXEC;
+        try std.posix.mprotect(memory, prot);
+    }
+}
+
+fn freeExecutableMemory(memory: []align(std.heap.page_size_min) u8) void {
+    std.posix.munmap(memory);
+}
 
 pub fn main() !void {
     std.debug.print("\n=== Standalone E2E Test: return 42 ===\n", .{});
@@ -44,7 +63,7 @@ pub fn main() !void {
 
     // Build IR for: fn() -> i32 { return 42; }
     var sig = Signature.init(allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.returns.append(allocator, hoist.signature.AbiParam.new(Type.I32));
 
     var func = try Function.init(allocator, "test_return_42", sig);
@@ -114,17 +133,12 @@ pub fn main() !void {
 
     // Allocate executable memory
     std.debug.print("\n--- Executing JIT Code ---\n", .{});
-    const exec_mem = try allocExecutableMemory(allocator, compiled.code.items.len);
-    defer freeExecutableMemory(allocator, exec_mem);
+    const exec_mem = try allocExecutableMemory(compiled.code.items.len);
+    defer freeExecutableMemory(exec_mem);
 
     @memcpy(exec_mem[0..compiled.code.items.len], compiled.code.items);
 
     try makeExecutable(exec_mem);
-
-    // Flush instruction cache
-    if (builtin.cpu.arch == .aarch64 or builtin.cpu.arch == .aarch64_be) {
-        sys_icache_invalidate(exec_mem.ptr, exec_mem.len);
-    }
 
     // Call the JIT function
     const FnType = *const fn () callconv(.c) i32;

@@ -16,7 +16,7 @@ const ContextBuilder = hoist.context.ContextBuilder;
 // Should lower to: CMP a, b; CCMP c, d, #nzcv, cond; CSEL
 test "CCMP: AND pattern (a < b) && (c < d)" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i32_type = Type.I32;
 
@@ -157,7 +157,7 @@ test "CCMP: AND pattern (a < b) && (c < d)" {
 // Example: select((a < b) || (c < d), 1, 0)
 test "CCMP: OR pattern (a < b) || (c < d)" {
     var sig = Signature.init(testing.allocator, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     const i32_type = Type.I32;
 

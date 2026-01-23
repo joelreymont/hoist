@@ -22,7 +22,7 @@ const ValueListPool = hoist.value_list.ValueListPool;
 // Test function with conditional branches: if (x > 0) return x; else return 0;
 test "E2E: conditional branch if-then-else" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, AbiParam.new(Type.I32));
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
@@ -110,7 +110,7 @@ test "E2E: conditional branch if-then-else" {
 // Test br_table: switch (x) { case 0: return 100; case 1: return 200; case 2: return 300; default: return 0; }
 test "E2E: br_table switch statement" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     try sig.params.append(testing.allocator, AbiParam.new(Type.I32));
     try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
@@ -252,7 +252,7 @@ test "E2E: br_table switch statement" {
 
 test "E2E: brz branch if zero" {
     var sig = Signature.init(testing.allocator, .system_v);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
 
     // Function signature: fn(i64) -> i64
     try sig.params.append(testing.allocator, AbiParam.new(Type.int(64).?));

@@ -1,15 +1,15 @@
 const std = @import("std");
 const testing = std.testing;
 
-const root = @import("root");
-const Inst = root.x64_inst.Inst;
-const Reg = root.x64_inst.Reg;
-const WritableReg = root.x64_inst.WritableReg;
-const PReg = root.reg.PReg;
-const OperandSize = root.x64_inst.OperandSize;
-const MachBuffer = root.buffer.MachBuffer;
+const hoist = @import("hoist");
+const Inst = hoist.x64_inst.Inst;
+const Reg = hoist.x64_inst.Reg;
+const WritableReg = hoist.x64_inst.WritableReg;
+const PReg = hoist.reg.PReg;
+const OperandSize = hoist.x64_inst.OperandSize;
+const MachBuffer = hoist.buffer.MachBuffer;
 
-/// Test MOV encoding: mov rax, rbx
+// Test MOV encoding: mov rax, rbx
 test "x64 encode mov" {
     var buffer = MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -33,7 +33,7 @@ test "x64 encode mov" {
     try testing.expect(buffer.data.items.len > 0);
 }
 
-/// Test ADD encoding: add rax, rbx
+// Test ADD encoding: add rax, rbx
 test "x64 encode add" {
     var buffer = MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -58,7 +58,7 @@ test "x64 encode add" {
     try testing.expect(buffer.data.items.len > 0);
 }
 
-/// Test PUSH encoding: push rbx
+// Test PUSH encoding: push rbx
 test "x64 encode push" {
     var buffer = MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -78,7 +78,7 @@ test "x64 encode push" {
     try testing.expect(buffer.data.items.len > 0);
 }
 
-/// Test POP encoding: pop rbx
+// Test POP encoding: pop rbx
 test "x64 encode pop" {
     var buffer = MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -99,7 +99,7 @@ test "x64 encode pop" {
     try testing.expect(buffer.data.items.len > 0);
 }
 
-/// Test IMM encoding: add rax, 42
+// Test IMM encoding: add rax, 42
 test "x64 encode add immediate" {
     var buffer = MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -123,7 +123,7 @@ test "x64 encode add immediate" {
     try testing.expect(buffer.data.items.len > 0);
 }
 
-/// Test extended register encoding: mov r8, r9
+// Test extended register encoding: mov r8, r9
 test "x64 encode extended registers" {
     var buffer = MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -147,7 +147,7 @@ test "x64 encode extended registers" {
     try testing.expect(buffer.data.items.len > 0);
 }
 
-/// Test memory load: mov rax, [rbx + 8]
+// Test memory load: mov rax, [rbx + 8]
 test "x64 encode load" {
     var buffer = MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -172,7 +172,7 @@ test "x64 encode load" {
     try testing.expect(buffer.data.items.len > 0);
 }
 
-/// Test memory store: mov [rbx + 16], rax
+// Test memory store: mov [rbx + 16], rax
 test "x64 encode store" {
     var buffer = MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -196,7 +196,7 @@ test "x64 encode store" {
     try testing.expect(buffer.data.items.len > 0);
 }
 
-/// Test RET encoding
+// Test RET encoding
 test "x64 encode ret" {
     var buffer = MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -210,7 +210,7 @@ test "x64 encode ret" {
     try testing.expectEqual(@as(u8, 0xC3), buffer.data.items[0]);
 }
 
-/// Test 32-bit operand size
+// Test 32-bit operand size
 test "x64 encode 32bit" {
     var buffer = MachBuffer.init(testing.allocator);
     defer buffer.deinit();

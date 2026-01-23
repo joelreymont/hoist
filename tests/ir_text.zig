@@ -60,7 +60,7 @@ test "round-trip simple add" {
     const alloc = testing.allocator;
 
     var sig = Signature.init(alloc, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(alloc, AbiParam.new(Type.I32));
     try sig.params.append(alloc, AbiParam.new(Type.I32));
     try sig.returns.append(alloc, AbiParam.new(Type.I32));
@@ -97,7 +97,7 @@ test "round-trip branch" {
     const alloc = testing.allocator;
 
     var sig = Signature.init(alloc, .fast);
-    defer sig.deinit();
+    // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(alloc, AbiParam.new(Type.I32));
     try sig.returns.append(alloc, AbiParam.new(Type.I32));
 
