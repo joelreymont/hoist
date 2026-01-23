@@ -23,6 +23,7 @@ const a64_inst = @import("../backends/aarch64/inst.zig");
 const a64_abi = @import("../backends/aarch64/abi.zig");
 const linear_scan_mod = @import("../regalloc/linear_scan.zig");
 const ir_print = @import("../ir/print.zig");
+const egraph_mod = @import("../ir/egraph.zig");
 const ir = struct {
     pub const Type = @import("../ir/types.zig").Type;
     pub const I32 = @import("../ir/types.zig").Type.I32;
@@ -933,7 +934,6 @@ fn runRangeOptimization(ctx: *Context) CodegenError!bool {
 }
 
 fn runEGraphOptimization(ctx: *Context) CodegenError!bool {
-    const egraph_mod = @import("../ir/egraph.zig");
     const egraph_rules = @import("../ir/egraph_rules.zig");
 
     var eg = egraph_mod.EGraph.init(ctx.allocator);
@@ -967,9 +967,81 @@ fn runEGraphOptimization(ctx: *Context) CodegenError!bool {
 
     _ = iterations;
 
-    // TODO: Extract optimized IR back from e-graph
-    // For now, just return false (no changes applied)
-    return false;
+    // Extract optimized IR from e-graph
+    var extractor = egraph_mod.Extractor.init(ctx.allocator, &eg);
+    defer extractor.deinit();
+
+    // Rebuild IR from extracted e-nodes
+    var changed = false;
+    var block_iter = ctx.func.layout.blockIter();
+    while (block_iter.next()) |block| {
+        var inst_iter = ctx.func.layout.blockInsts(block);
+        while (inst_iter.next()) |inst| {
+            // Get result value
+            const results = ctx.func.dfg.instResults(inst);
+            if (results.len == 0) continue;
+            const result_val = results[0];
+
+            // Get e-class for this result
+            const eclass_id = builder.value_map.get(result_val) orelse continue;
+
+            // Extract best e-node
+            const best_node = extractor.extractBest(eclass_id) catch continue;
+
+            // Check if extracted e-node differs from original
+            const inst_data = ctx.func.dfg.insts.get(inst) orelse continue;
+            const orig_op = inst_data.opcode();
+
+            if (best_node.op != orig_op) {
+                // Rewrite instruction with optimized operation
+                if (rebuildInstFromENode(ctx, inst, best_node, &builder)) {
+                    changed = true;
+                } else |_| {}
+            }
+        }
+    }
+
+    return changed;
+}
+
+/// Rebuild an IR instruction from an extracted e-node.
+fn rebuildInstFromENode(
+    ctx: *Context,
+    inst: ir.Inst,
+    enode: @import("../ir/egraph.zig").ENode,
+    builder: *@import("../ir/egraph.zig").EGraphBuilder,
+) !void {
+    // Get operand values by extracting e-classes
+    var operands = try ctx.allocator.alloc(ir.Value, enode.children.len);
+    defer ctx.allocator.free(operands);
+
+    for (enode.children, 0..) |child_eclass, i| {
+        // Find IR value for this e-class
+        const canon_child = builder.eg.uf.find(child_eclass);
+        var value_iter = builder.value_map.iterator();
+        var found = false;
+        while (value_iter.next()) |entry| {
+            const canon_val = builder.eg.uf.find(entry.value_ptr.*);
+            if (canon_val == canon_child) {
+                operands[i] = entry.key_ptr.*;
+                found = true;
+                break;
+            }
+        }
+        if (!found) return error.ValueNotFound;
+    }
+
+    // Build new instruction data
+    const new_data: ir.InstructionData = switch (enode.children.len) {
+        0 => .{ .nullary = .{ .opcode = enode.op } },
+        1 => .{ .unary = .{ .opcode = enode.op, .arg = operands[0] } },
+        2 => .{ .binary = .{ .opcode = enode.op, .args = .{ operands[0], operands[1] } } },
+        3 => .{ .ternary = .{ .opcode = enode.op, .args = .{ operands[0], operands[1], operands[2] } } },
+        else => return error.TooManyOperands,
+    };
+
+    // Replace instruction
+    try ctx.func.dfg.insts.set(ctx.allocator, inst, new_data);
 }
 
 /// Eliminate unreachable code.

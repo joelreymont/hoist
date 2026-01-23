@@ -1423,10 +1423,25 @@ pub fn aarch64_global_value(
                 },
             });
         },
-        .dyn_scale_target_const => {
-            // Dynamic scale for scalable vectors
-            // TODO: Implement proper scalable vector support
-            @panic("TODO: Implement dyn_scale_target_const for scalable vectors");
+        .dyn_scale_target_const => |scale_data| {
+            // Dynamic scale for scalable vectors - query runtime vector length
+            // SVE: RDVL instruction gets vector length in bytes
+            // factor is constant multiplier
+            const tmp = try ctx.allocTempReg(.int);
+
+            // Read vector length register (RDVL Xd, #imm)
+            // RDVL stores (VL/8) * imm into Xd
+            // For scale factor, we multiply by the constant
+            const factor = scale_data.constant;
+
+            try ctx.emit(Inst{
+                .rdvl = .{
+                    .dst = WritableReg.fromReg(tmp),
+                    .imm = @intCast(factor),
+                },
+            });
+
+            return tmp;
         },
     }
 
