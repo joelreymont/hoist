@@ -431,7 +431,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
 
         else => |tag| {
             std.debug.print("Unimplemented instruction in emit: {s}\n", .{@tagName(tag)});
-            @panic("Unimplemented instruction in emit");
+            return error.UnimplementedInstruction;
         },
     }
 }

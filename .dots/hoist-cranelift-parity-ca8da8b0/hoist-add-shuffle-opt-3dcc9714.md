@@ -1,9 +1,10 @@
 ---
 title: Add shuffle opt
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.805519+02:00"
+created-at: "\"2026-01-14T15:42:46.805519+02:00\""
+closed-at: "2026-01-24T00:55:56.094252+02:00"
 ---
 
 Files: docs/feature_gap_analysis.md:103-107

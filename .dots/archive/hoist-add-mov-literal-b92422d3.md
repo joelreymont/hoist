@@ -1,9 +1,10 @@
 ---
 title: Add MOV literal pool fallback
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-01-16T15:06:15.815248+02:00"
+created-at: "\"2026-01-16T15:06:15.815248+02:00\""
+closed-at: "2026-01-24T00:31:23.711668+02:00"
 ---
 
 Files: src/backends/aarch64/legalize.zig:140-157

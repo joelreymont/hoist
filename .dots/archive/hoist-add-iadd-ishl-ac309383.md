@@ -1,9 +1,10 @@
 ---
 title: Add iadd_ishl fold patterns
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-01-16T15:04:57.078858+02:00"
+created-at: "\"2026-01-16T15:04:57.078858+02:00\""
+closed-at: "2026-01-24T00:25:48.547622+02:00"
 ---
 
 Files: src/generated/aarch64_lower.isle

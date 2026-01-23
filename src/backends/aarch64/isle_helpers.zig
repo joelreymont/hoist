@@ -67,6 +67,14 @@ pub fn imm12_from_u64(val: u64) ?Imm12 {
     return Imm12.maybeFromU64(val);
 }
 
+/// Extractor: Try to extract Imm12 from Value.
+/// Returns the Imm12 if value fits in 12-bit encoding.
+pub fn imm12_from_value(value: lower_mod.Value, ctx: *const lower_mod.LowerCtx(Inst)) ?Imm12 {
+    const const_val = intValue(value, ctx) orelse return null;
+    if (const_val < 0 or const_val > 4095) return null;
+    return Imm12.maybeFromU64(@intCast(const_val));
+}
+
 /// Extractor: Try to extract Imm12 from negated Value.
 /// Returns the Imm12 if -value fits in 12-bit encoding.
 pub fn imm12_from_negated_value(value: lower_mod.Value, ctx: *const lower_mod.LowerCtx(Inst)) ?Imm12 {
@@ -3041,8 +3049,9 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
                     fp_count += @intCast(field_count);
                     continue;
                 } else {
-                    // Fall through to stack handling
-                    // TODO: Stack HFA handling
+                    // Stack HFA: fields spill to stack when FP regs exhausted
+                    stack_offset += arg_type.bytes();
+                    continue;
                 }
             } else if (classification.class == .general) {
                 // Non-HFA structs ≤16 bytes: load as 1-2 i64 values in X0-X7
@@ -3810,8 +3819,9 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                     fp_count += @intCast(field_count);
                     continue;
                 } else {
-                    // Fall through to stack handling
-                    // TODO: Stack HFA handling
+                    // Stack HFA: fields spill to stack when FP regs exhausted
+                    stack_offset += arg_type.bytes();
+                    continue;
                 }
             } else if (classification.class == .general) {
                 // Non-HFA structs ≤16 bytes: load as 1-2 i64 values in X0-X7
@@ -4310,8 +4320,9 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                     fp_count += @intCast(field_count);
                     continue;
                 } else {
-                    // Fall through to stack handling
-                    // TODO: Stack HFA handling
+                    // Stack HFA: fields spill to stack when FP regs exhausted
+                    stack_offset += arg_type.bytes();
+                    continue;
                 }
             } else if (classification.class == .general) {
                 // Non-HFA structs ≤16 bytes: load as 1-2 i64 values in X0-X7

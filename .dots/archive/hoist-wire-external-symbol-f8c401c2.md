@@ -1,9 +1,10 @@
 ---
 title: Wire external symbol resolution
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-01-16T15:05:45.814139+02:00"
+created-at: "\"2026-01-16T15:05:45.814139+02:00\""
+closed-at: "2026-01-24T00:10:05.644678+02:00"
 ---
 
 Files: src/backends/aarch64/isle_helpers.zig:3753-3763

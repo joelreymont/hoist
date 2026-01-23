@@ -1,9 +1,10 @@
 ---
 title: Add div-by-constant opt
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-01-16T15:05:08.959473+02:00"
+created-at: "\"2026-01-16T15:05:08.959473+02:00\""
+closed-at: "2026-01-24T00:30:27.716639+02:00"
 ---
 
 Files: src/codegen/optimize.zig or src/backends/aarch64/isle_impl.zig

@@ -237,12 +237,87 @@ pub const MatchCompiler = struct {
         rule: *trie.Rule,
         iflet: sema.IfLet,
     ) !trie.BindingId {
-        _ = self;
-        _ = ruleset;
-        _ = rule;
-        _ = iflet;
-        // TODO: Implement if-let compilation
-        return trie.BindingId.new(0);
+        // Evaluate the RHS expression to get a binding
+        const expr_binding = try self.compileExpr(ruleset, iflet.expr);
+
+        // Match the LHS pattern against the expression binding
+        // This adds constraints that must succeed for the guard to pass
+        return try self.compilePatternWithSource(ruleset, rule, iflet.pattern, expr_binding);
+    }
+
+    /// Compile a pattern against a specific source binding (for if-let).
+    fn compilePatternWithSource(
+        self: *Self,
+        ruleset: *trie.RuleSet,
+        rule: *trie.Rule,
+        pattern: sema.Pattern,
+        source_id: trie.BindingId,
+    ) error{ OutOfMemory, ConflictingConstraints }!trie.BindingId {
+        return switch (pattern) {
+            .var_pat => source_id,
+            .wildcard => source_id,
+            .const_bool => |c| {
+                const constraint = trie.Constraint{
+                    .const_bool = .{ .val = c.val, .ty = sema.TypeId.new(0) },
+                };
+                try rule.setConstraint(source_id, constraint);
+                return source_id;
+            },
+            .const_int => |c| {
+                const constraint = trie.Constraint{
+                    .const_int = .{ .val = c.val, .ty = c.ty },
+                };
+                try rule.setConstraint(source_id, constraint);
+                return source_id;
+            },
+            .const_prim => |c| {
+                const constraint = trie.Constraint{
+                    .const_prim = .{ .val = c.val },
+                };
+                try rule.setConstraint(source_id, constraint);
+                return source_id;
+            },
+            .bind_pattern => |b| {
+                return try self.compilePatternWithSource(ruleset, rule, b.subpat.*, source_id);
+            },
+            .and_pat => |a| {
+                var last: trie.BindingId = source_id;
+                for (a.subpats) |subpat| {
+                    last = try self.compilePatternWithSource(ruleset, rule, subpat, source_id);
+                }
+                return last;
+            },
+            .term => |t| {
+                const term = self.termenv.getTerm(t.term_id);
+                switch (term.kind) {
+                    .decl => |decl| {
+                        // Constructor pattern - add variant constraint
+                        const ret_ty = self.typeenv.getType(decl.ret_ty);
+                        if (ret_ty == .enum_type) {
+                            const variant_id = self.findVariantForTerm(decl.ret_ty, t.term_id);
+                            if (variant_id) |vid| {
+                                const field_count = self.getVariantFieldCount(vid);
+                                const constraint = trie.Constraint{
+                                    .variant = .{
+                                        .ty = decl.ret_ty,
+                                        .variant = vid,
+                                        .field_count = trie.TupleIndex.new(@intCast(field_count)),
+                                    },
+                                };
+                                try rule.setConstraint(source_id, constraint);
+                            }
+                        }
+                        // TODO: Compile field patterns recursively
+                        return source_id;
+                    },
+                    .extractor => {
+                        // TODO: Handle extractor patterns
+                        return source_id;
+                    },
+                    .extern_func => return error.OutOfMemory,
+                }
+            },
+        };
     }
 
     /// Compile an expression into a binding.

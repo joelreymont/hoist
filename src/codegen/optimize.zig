@@ -165,7 +165,7 @@ fn runCopyProp(allocator: Allocator, func: *Function) !bool {
 fn runLICM(allocator: Allocator, func: *Function) !bool {
     _ = allocator;
     _ = func;
-    // TODO: LICM requires reconciling CFG types between domtree and ControlFlowGraph
+    // TODO: Implement LICM pass struct
     return false;
 }
 

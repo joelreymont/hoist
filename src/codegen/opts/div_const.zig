@@ -285,8 +285,19 @@ test "magicU64 comprehensive" {
 }
 
 test "magicS32 comprehensive" {
-    // Test a few key values (full test suite would use property testing)
+    // Test vectors from Cranelift div_const.rs
+    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x7fffffff)), .shift_by = 30 }, magicS32(-0x80000000));
+    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0xbfffffff)), .shift_by = 29 }, magicS32(-0x7FFFFFFF));
+    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x7ffffffd)), .shift_by = 30 }, magicS32(-0x7FFFFFFE));
+    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0xbba4baad)), .shift_by = 23 }, magicS32(-31415927));
+    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x9df73135)), .shift_by = 9 }, magicS32(-1337));
+    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x7fffffff)), .shift_by = 7 }, magicS32(-256));
+    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x99999999)), .shift_by = 1 }, magicS32(-5));
+    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x55555555)), .shift_by = 1 }, magicS32(-3));
+    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x7fffffff)), .shift_by = 0 }, magicS32(-2));
+    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x80000001)), .shift_by = 0 }, magicS32(2));
     try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x55555556)), .shift_by = 0 }, magicS32(3));
+    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x80000001)), .shift_by = 1 }, magicS32(4));
     try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x66666667)), .shift_by = 1 }, magicS32(5));
     try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x2aaaaaab)), .shift_by = 0 }, magicS32(6));
     try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x92492493)), .shift_by = 2 }, magicS32(7));
@@ -296,13 +307,34 @@ test "magicS32 comprehensive" {
     try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x2aaaaaab)), .shift_by = 1 }, magicS32(12));
     try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x51eb851f)), .shift_by = 3 }, magicS32(25));
     try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x10624dd3)), .shift_by = 3 }, magicS32(125));
-    // Computed values for larger divisors
     try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x68db8bad)), .shift_by = 8 }, magicS32(625));
+    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x6208cecb)), .shift_by = 9 }, magicS32(1337));
+    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x445b4553)), .shift_by = 23 }, magicS32(31415927));
+    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x80000003)), .shift_by = 30 }, magicS32(0x7ffffffe));
+    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x40000001)), .shift_by = 29 }, magicS32(0x7fffffff));
 }
 
 test "magicS64 comprehensive" {
-    // Test a few key values (full test suite would use property testing)
+    // Test vectors from Cranelift div_const.rs
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffffffffffff)), .shift_by = 62 }, magicS64(-0x8000000000000000));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0xbfffffffffffffff)), .shift_by = 61 }, magicS64(-0x7FFFFFFFFFFFFFFF));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7ffffffffffffffd)), .shift_by = 62 }, magicS64(-0x7FFFFFFFFFFFFFFE));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x6c3b8b1635a4412f)), .shift_by = 59 }, magicS64(-0x0ddc0ffeebadf00d));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x800000007fffffff)), .shift_by = 31 }, magicS64(-0x100000001));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffffffffffff)), .shift_by = 31 }, magicS64(-0x100000000));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffff7fffffff)), .shift_by = 31 }, magicS64(-0xFFFFFFFF));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7ffffffefffffffd)), .shift_by = 31 }, magicS64(-0xFFFFFFFE));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7ffffffe7ffffffb)), .shift_by = 31 }, magicS64(-0xFFFFFFFD));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x6cd8a54d2036f6b5)), .shift_by = 31 }, magicS64(-0xDeadBeef));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7749755a31e1683d)), .shift_by = 24 }, magicS64(-31415927));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x9df731356bccaf63)), .shift_by = 9 }, magicS64(-1337));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffffffffffff)), .shift_by = 7 }, magicS64(-256));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x9999999999999999)), .shift_by = 1 }, magicS64(-5));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x5555555555555555)), .shift_by = 1 }, magicS64(-3));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffffffffffff)), .shift_by = 0 }, magicS64(-2));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000000000001)), .shift_by = 0 }, magicS64(2));
     try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x5555555555555556)), .shift_by = 0 }, magicS64(3));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000000000001)), .shift_by = 1 }, magicS64(4));
     try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x6666666666666667)), .shift_by = 1 }, magicS64(5));
     try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x2aaaaaaaaaaaaaab)), .shift_by = 0 }, magicS64(6));
     try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x4924924924924925)), .shift_by = 1 }, magicS64(7));
@@ -310,4 +342,19 @@ test "magicS64 comprehensive" {
     try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x6666666666666667)), .shift_by = 2 }, magicS64(10));
     try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x2e8ba2e8ba2e8ba3)), .shift_by = 1 }, magicS64(11));
     try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x2aaaaaaaaaaaaaab)), .shift_by = 1 }, magicS64(12));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0xa3d70a3d70a3d70b)), .shift_by = 4 }, magicS64(25));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x20c49ba5e353f7cf)), .shift_by = 4 }, magicS64(125));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x346dc5d63886594b)), .shift_by = 7 }, magicS64(625));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x6208ceca9433509d)), .shift_by = 9 }, magicS64(1337));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x88b68aa5ce1e97c3)), .shift_by = 24 }, magicS64(31415927));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x93275ab2dfc9094b)), .shift_by = 31 }, magicS64(0x00000000deadbeef));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000180000005)), .shift_by = 31 }, magicS64(0x00000000fffffffd));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000100000003)), .shift_by = 31 }, magicS64(0x00000000fffffffe));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000080000001)), .shift_by = 31 }, magicS64(0x00000000ffffffff));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000000000001)), .shift_by = 31 }, magicS64(0x0000000100000000));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffff80000001)), .shift_by = 31 }, magicS64(0x0000000100000001));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x93c474e9ca5bbed1)), .shift_by = 59 }, magicS64(0x0ddc0ffeebadf00d));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x2000000000000001)), .shift_by = 60 }, magicS64(0x7ffffffffffffffd));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000000000003)), .shift_by = 62 }, magicS64(0x7ffffffffffffffe));
+    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x4000000000000001)), .shift_by = 61 }, magicS64(0x7fffffffffffffff));
 }

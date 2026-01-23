@@ -1,9 +1,10 @@
 ---
 title: Reconcile CFG types
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-01-16T15:05:35.714345+02:00"
+created-at: "\"2026-01-16T15:05:35.714345+02:00\""
+closed-at: "2026-01-24T00:09:22.706513+02:00"
 ---
 
 Files: src/codegen/optimize.zig:168, src/ir/cfg.zig

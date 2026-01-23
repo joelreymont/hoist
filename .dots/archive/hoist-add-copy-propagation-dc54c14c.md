@@ -1,9 +1,10 @@
 ---
 title: Add copy propagation pass
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-01-16T15:05:07.646437+02:00"
+created-at: "\"2026-01-16T15:05:07.646437+02:00\""
+closed-at: "2026-01-24T00:26:02.698474+02:00"
 ---
 
 Files: src/codegen/optimize.zig (new section)

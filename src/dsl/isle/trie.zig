@@ -700,11 +700,67 @@ fn findBestEquality(
     subset: *const RuleSubset,
     allocator: Allocator,
 ) !?struct { a: BindingId, b: BindingId } {
-    _ = ruleset;
-    _ = subset;
-    _ = allocator;
-    // TODO: Implement equality constraint selection
-    return null;
+    // Collect candidate binding pairs from all rules
+    var pairs = std.ArrayList(struct { a: BindingId, b: BindingId, score: usize }){};
+    defer pairs.deinit(allocator);
+
+    // For each rule, examine all merged bindings
+    for (subset.indices.items) |rule_idx| {
+        const rule = &ruleset.rules.items[rule_idx];
+
+        // Skip rules with no equality constraints
+        if (rule.equals.isEmpty()) continue;
+
+        // Collect all bindings in this rule
+        var bindings = std.ArrayList(BindingId){};
+        defer bindings.deinit(allocator);
+
+        for (0..rule.equals.parent.items.len) |i| {
+            const binding = BindingId.new(@intCast(i));
+            try bindings.append(allocator, binding);
+        }
+
+        // Test pairs to find those that split rules
+        for (bindings.items, 0..) |a, i| {
+            for (bindings.items[i + 1 ..]) |b| {
+                var equal_count: usize = 0;
+                var not_equal_count: usize = 0;
+
+                // Count how this pair splits the subset
+                for (subset.indices.items) |idx| {
+                    const r = &ruleset.rules.items[idx];
+                    const root_a = r.equals.find(a);
+                    const root_b = r.equals.find(b);
+
+                    if (std.meta.eql(root_a, root_b)) {
+                        equal_count += 1;
+                    } else {
+                        not_equal_count += 1;
+                    }
+                }
+
+                // Good split if both branches non-empty
+                if (equal_count > 0 and not_equal_count > 0) {
+                    const score = @min(equal_count, not_equal_count);
+                    try pairs.append(allocator, .{ .a = a, .b = b, .score = score });
+                }
+            }
+        }
+    }
+
+    if (pairs.items.len == 0) return null;
+
+    // Pick pair with best balance
+    var best_idx: usize = 0;
+    var best_score: usize = 0;
+    for (pairs.items, 0..) |pair, i| {
+        if (pair.score > best_score) {
+            best_score = pair.score;
+            best_idx = i;
+        }
+    }
+
+    return .{ .a = pairs.items[best_idx].a, .b = pairs.items[best_idx].b };
 }
 
 test "Binding hash-consing" {

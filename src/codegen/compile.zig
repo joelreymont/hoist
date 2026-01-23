@@ -116,6 +116,8 @@ pub const CodegenError = error{
     InvalidLabel,
     /// Invalid constant size in pool.
     InvalidConstantSize,
+    /// Unimplemented instruction reached emit stage.
+    UnimplementedInstruction,
 };
 
 /// Compilation result type.

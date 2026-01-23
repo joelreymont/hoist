@@ -20,6 +20,8 @@ const Opcode = @import("../../ir/opcodes.zig").Opcode;
 const InstructionData = ir.InstructionData;
 const instruction_data = @import("../../ir/instruction_data.zig");
 const BinaryData = instruction_data.BinaryData;
+const UnaryData = instruction_data.UnaryData;
+const div_const = @import("div_const.zig");
 
 /// Strength reduction pass.
 pub const StrengthReduction = struct {
@@ -92,7 +94,136 @@ pub const StrengthReduction = struct {
     }
 
     /// Reduce unsigned divide by power-of-2 to right shift.
+    /// For non-power-of-2, use magic number multiply-shift.
     fn reduceUdiv(self: *StrengthReduction, func: *Function, inst: Inst, data: BinaryData) !void {
+        const ty = func.dfg.valueType(data.args[0]) orelse return;
+
+        // Try power-of-2 optimization first
+        if (try self.getPowerOfTwo(func, data.args[1])) |log2| {
+            // Create constant for shift amount
+            const shift_imm = @import("../../ir/immediates.zig").Imm64.new(log2);
+            const shift_inst_data = InstructionData{ .unary_imm = @import("../../ir/instruction_data.zig").UnaryImmData.init(.iconst, shift_imm) };
+            const shift_inst = try func.dfg.makeInst(shift_inst_data);
+            const shift_val = try func.dfg.appendInstResult(shift_inst, ty);
+
+            const new_data = InstructionData{ .binary = BinaryData.init(.ushr, data.args[0], shift_val) };
+            const inst_mut = func.dfg.insts.getMut(inst) orelse return;
+            inst_mut.* = new_data;
+            self.changed = true;
+            return;
+        }
+
+        // Try magic number optimization for non-power-of-2
+        const divisor = try self.getConstantU64(func, data.args[1]) orelse return;
+        if (divisor == 0 or divisor == 1) return;
+
+        if (ty.eql(Type.I32)) {
+            try self.reduceUdiv32Magic(func, inst, data, @intCast(divisor));
+        } else if (ty.eql(Type.I64)) {
+            try self.reduceUdiv64Magic(func, inst, data, divisor);
+        }
+    }
+
+    /// Reduce u32 divide by constant using magic numbers.
+    fn reduceUdiv32Magic(self: *StrengthReduction, func: *Function, inst: Inst, data: BinaryData, divisor: u32) !void {
+        const magic = div_const.magicU32(divisor);
+        const ty = Type.I32;
+
+        const Imm64 = @import("../../ir/immediates.zig").Imm64;
+        const UnaryImmData = @import("../../ir/instruction_data.zig").UnaryImmData;
+
+        // Load magic multiplier
+        const mul_imm = Imm64.new(magic.mul_by);
+        const mul_const_data = InstructionData{ .unary_imm = UnaryImmData.init(.iconst, mul_imm) };
+        const mul_const_inst = try func.dfg.makeInst(mul_const_data);
+        const mul_const_val = try func.dfg.appendInstResult(mul_const_inst, ty);
+
+        // Multiply: dividend * magic
+        const mul_data = InstructionData{ .binary = BinaryData.init(.umulhi, data.args[0], mul_const_val) };
+        const mul_inst = try func.dfg.makeInst(mul_data);
+        var result_val = try func.dfg.appendInstResult(mul_inst, ty);
+
+        // Add dividend if needed
+        if (magic.do_add) {
+            const add_data = InstructionData{ .binary = BinaryData.init(.iadd, result_val, data.args[0]) };
+            const add_inst = try func.dfg.makeInst(add_data);
+            result_val = try func.dfg.appendInstResult(add_inst, ty);
+
+            // Right shift by 1
+            const shift1_imm = Imm64.new(1);
+            const shift1_data = InstructionData{ .unary_imm = UnaryImmData.init(.iconst, shift1_imm) };
+            const shift1_inst = try func.dfg.makeInst(shift1_data);
+            const shift1_val = try func.dfg.appendInstResult(shift1_inst, ty);
+
+            const shr1_data = InstructionData{ .binary = BinaryData.init(.ushr, result_val, shift1_val) };
+            const shr1_inst = try func.dfg.makeInst(shr1_data);
+            result_val = try func.dfg.appendInstResult(shr1_inst, ty);
+        }
+
+        // Final shift
+        const shift_imm = Imm64.new(if (magic.shift_by > 0) magic.shift_by else 0);
+        const shift_data = InstructionData{ .unary_imm = UnaryImmData.init(.iconst, shift_imm) };
+        const shift_inst = try func.dfg.makeInst(shift_data);
+        const shift_val = try func.dfg.appendInstResult(shift_inst, ty);
+
+        const new_data = InstructionData{ .binary = BinaryData.init(.ushr, result_val, shift_val) };
+        const inst_mut = func.dfg.insts.getMut(inst) orelse return;
+        inst_mut.* = new_data;
+
+        self.changed = true;
+    }
+
+    /// Reduce u64 divide by constant using magic numbers.
+    fn reduceUdiv64Magic(self: *StrengthReduction, func: *Function, inst: Inst, data: BinaryData, divisor: u64) !void {
+        const magic = div_const.magicU64(divisor);
+        const ty = Type.I64;
+
+        const Imm64 = @import("../../ir/immediates.zig").Imm64;
+        const UnaryImmData = @import("../../ir/instruction_data.zig").UnaryImmData;
+
+        // Load magic multiplier
+        const mul_imm = Imm64.new(@bitCast(magic.mul_by));
+        const mul_const_data = InstructionData{ .unary_imm = UnaryImmData.init(.iconst, mul_imm) };
+        const mul_const_inst = try func.dfg.makeInst(mul_const_data);
+        const mul_const_val = try func.dfg.appendInstResult(mul_const_inst, ty);
+
+        // Multiply: dividend * magic
+        const mul_data = InstructionData{ .binary = BinaryData.init(.umulhi, data.args[0], mul_const_val) };
+        const mul_inst = try func.dfg.makeInst(mul_data);
+        var result_val = try func.dfg.appendInstResult(mul_inst, ty);
+
+        // Add dividend if needed
+        if (magic.do_add) {
+            const add_data = InstructionData{ .binary = BinaryData.init(.iadd, result_val, data.args[0]) };
+            const add_inst = try func.dfg.makeInst(add_data);
+            result_val = try func.dfg.appendInstResult(add_inst, ty);
+
+            // Right shift by 1
+            const shift1_imm = Imm64.new(1);
+            const shift1_data = InstructionData{ .unary_imm = UnaryImmData.init(.iconst, shift1_imm) };
+            const shift1_inst = try func.dfg.makeInst(shift1_data);
+            const shift1_val = try func.dfg.appendInstResult(shift1_inst, ty);
+
+            const shr1_data = InstructionData{ .binary = BinaryData.init(.ushr, result_val, shift1_val) };
+            const shr1_inst = try func.dfg.makeInst(shr1_data);
+            result_val = try func.dfg.appendInstResult(shr1_inst, ty);
+        }
+
+        // Final shift
+        const shift_imm = Imm64.new(if (magic.shift_by > 0) magic.shift_by else 0);
+        const shift_data = InstructionData{ .unary_imm = UnaryImmData.init(.iconst, shift_imm) };
+        const shift_inst = try func.dfg.makeInst(shift_data);
+        const shift_val = try func.dfg.appendInstResult(shift_inst, ty);
+
+        const new_data = InstructionData{ .binary = BinaryData.init(.ushr, result_val, shift_val) };
+        const inst_mut = func.dfg.insts.getMut(inst) orelse return;
+        inst_mut.* = new_data;
+
+        self.changed = true;
+    }
+
+    /// Old power-of-2 path, now integrated above - unused.
+    fn reduceUdiv_OLD(self: *StrengthReduction, func: *Function, inst: Inst, data: BinaryData) !void {
         const log2 = try self.getPowerOfTwo(func, data.args[1]) orelse return;
 
         // Create constant for shift amount
@@ -267,9 +398,8 @@ pub const StrengthReduction = struct {
         self.changed = true;
     }
 
-    /// Check if a value is a constant power of two.
-    /// Returns the power if true, null otherwise.
-    fn getPowerOfTwo(self: *StrengthReduction, func: *const Function, value: Value) !?u6 {
+    /// Get constant u64 value from a Value.
+    fn getConstantU64(self: *StrengthReduction, func: *const Function, value: Value) !?u64 {
         _ = self;
         const value_def = func.dfg.valueDef(value) orelse return null;
         const defining_inst = switch (value_def) {
@@ -283,9 +413,14 @@ pub const StrengthReduction = struct {
             else => return null,
         };
 
-        // Convert to unsigned for power-of-2 check
         if (imm_val <= 0) return null;
-        const uval: u64 = @intCast(imm_val);
+        return @intCast(imm_val);
+    }
+
+    /// Check if a value is a constant power of two.
+    /// Returns the power if true, null otherwise.
+    fn getPowerOfTwo(self: *StrengthReduction, func: *const Function, value: Value) !?u6 {
+        const uval = try self.getConstantU64(func, value) orelse return null;
 
         // Check if power of 2: exactly one bit set
         if (uval == 0 or (uval & (uval - 1)) != 0) return null;

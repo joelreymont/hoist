@@ -154,24 +154,37 @@ pub const ExtractorCodegen = struct {
                             }
                         }
                     },
-                    .extractor => {
-                        // Nested extractor call
-                        try self.emitIndent(indent);
-                        try writer.print("if (extractor_{s}(ctx, {s}", .{ term_name, source_expr });
+                    .extractor => |ext| {
+                        // Nested extractor call - returns tuple of extracted values
+                        const result_var = try std.fmt.allocPrint(
+                            self.allocator,
+                            "extracted_{d}",
+                            .{@intFromPtr(&pattern)}, // unique ID from pattern addr
+                        );
+                        defer self.allocator.free(result_var);
 
-                        // Pass extractor arguments
+                        try self.emitIndent(indent);
+                        try writer.print("const {s} = extractor_{s}(ctx, {s}", .{ result_var, term_name, source_expr });
+
+                        // Pass extractor arguments if any
                         for (0..t.args.len) |i| {
                             try writer.print(", arg{d}", .{i});
                         }
 
-                        try writer.writeAll(") == null) return null;\n");
+                        try writer.writeAll(") orelse return null;\n");
 
-                        // Recursively match nested patterns if needed
-                        for (t.args, 0..) |arg, i| {
-                            _ = arg;
-                            _ = i;
-                            // TODO: Handle nested pattern bindings
+                        // Match nested patterns against extracted fields
+                        for (t.args, 0..) |arg_pat, i| {
+                            const field_expr = try std.fmt.allocPrint(
+                                self.allocator,
+                                "{s}[{d}]",
+                                .{ result_var, i },
+                            );
+                            defer self.allocator.free(field_expr);
+                            try self.emitPatternMatch(arg_pat, field_expr, indent);
                         }
+
+                        _ = ext;
                     },
                     .extern_func => {
                         return error.ExternalFunctionInPattern;

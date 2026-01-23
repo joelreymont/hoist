@@ -1,9 +1,10 @@
 ---
 title: Verify div magic constants
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-01-16T15:06:17.592649+02:00"
+created-at: "\"2026-01-16T15:06:17.592649+02:00\""
+closed-at: "2026-01-24T00:32:04.868626+02:00"
 ---
 
 Files: src/codegen/div_const.zig
