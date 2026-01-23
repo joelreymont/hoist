@@ -1,29 +1,30 @@
 /// ISLE extractor and constructor helpers for aarch64.
 /// These functions are called from ISLE-generated code via extern declarations.
 const std = @import("std");
-const root = @import("root");
-const Inst = root.aarch64_inst.Inst;
-const Reg = root.aarch64_inst.Reg;
-const PReg = root.machinst.PReg;
-const Imm12 = root.aarch64_inst.Imm12;
-const ImmShift = root.aarch64_inst.ImmShift;
-const ImmLogic = root.aarch64_inst.ImmLogic;
-const ExtendOp = root.aarch64_inst.ExtendOp;
-const VecALUOp = root.aarch64_inst.VecALUOp;
-const VecMisc2 = root.aarch64_inst.VecMisc2;
-const OperandSize = root.aarch64_inst.OperandSize;
-const lower_mod = root.lower;
-const types = root.types;
-const trapcode = root.trapcode;
+const builtin = @import("builtin");
+
+const hoist = if (builtin.is_test) @import("../../root.zig") else @import("root");
+const Inst = hoist.aarch64_inst.Inst;
+const Reg = hoist.aarch64_inst.Reg;
+const PReg = hoist.machinst.PReg;
+const Imm12 = hoist.aarch64_inst.Imm12;
+const ImmLogic = hoist.aarch64_inst.ImmLogic;
+const ExtendOp = hoist.aarch64_inst.ExtendOp;
+const VecALUOp = hoist.aarch64_inst.VecALUOp;
+const VecMisc2 = hoist.aarch64_inst.VecMisc2;
+const OperandSize = hoist.aarch64_inst.OperandSize;
+const lower_mod = hoist.lower;
+const types = hoist.types;
+const trapcode = hoist.trapcode;
 const emit = @import("emit.zig");
-const entities = root.entities;
+const entities = hoist.entities;
 const abi_mod = @import("abi.zig");
-const signature_mod = root.function.signature;
+const signature_mod = hoist.function.signature;
 
 // Type aliases for IR types
 const Type = types.Type;
-const IntCC = root.condcodes.IntCC;
-const FloatCC = root.condcodes.FloatCC;
+const IntCC = hoist.condcodes.IntCC;
+const FloatCC = hoist.condcodes.FloatCC;
 const TrapCode = trapcode.TrapCode;
 const StackSlot = entities.StackSlot;
 const SigRef = entities.SigRef;
@@ -102,15 +103,7 @@ pub fn u64_to_u6(val: u64) u6 {
     return @intCast(val & 0x3F);
 }
 
-/// Extractor: Try to extract ImmShift from u64.
-pub fn imm_shift_from_u64(val: u64) ?ImmShift {
-    return ImmShift.maybeFromU64(val);
-}
 
-/// Constructor: Convert u8 to ImmShift (must be < 64).
-pub fn imm_shift_from_u8(val: u8) ?ImmShift {
-    return ImmShift.maybeFromU64(val);
-}
 
 /// Constructor: Create ImmLogic from u64 for given type.
 pub fn imm_logic_from_u64(ty: types.Type, val: u64) ?ImmLogic {
@@ -262,7 +255,7 @@ pub fn valid_str_shift(val: lower_mod.Value, shift: u64) ?u64 {
 
 /// Convert IntCC to aarch64 CondCode.
 /// Maps IR condition codes to ARM condition codes.
-pub fn intccToCondCode(cc: root.condcodes.IntCC) root.aarch64_inst.CondCode {
+pub fn intccToCondCode(cc: hoist.condcodes.IntCC) hoist.aarch64_inst.CondCode {
     return switch (cc) {
         .eq => .eq,
         .ne => .ne,
@@ -282,7 +275,7 @@ pub const intcc_to_cond_code = intccToCondCode;
 
 /// Constructor: Create CMP instruction (register, register).
 /// CMP is an alias for SUBS with XZR as destination.
-pub fn aarch64_cmp_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Value, cc: root.condcodes.IntCC, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_cmp_rr(ty: hoist.types.Type, x: lower_mod.Value, y: lower_mod.Value, cc: hoist.condcodes.IntCC, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_cmp_rr");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
@@ -297,7 +290,7 @@ pub fn aarch64_cmp_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Valu
 
 /// Constructor: Create CMP instruction (register, immediate).
 /// CMP is an alias for SUBS with XZR as destination.
-pub fn aarch64_cmp_imm(ty: root.types.Type, x: lower_mod.Value, imm: i64, cc: root.condcodes.IntCC, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_cmp_imm(ty: hoist.types.Type, x: lower_mod.Value, imm: i64, cc: hoist.condcodes.IntCC, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_cmp_imm");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
@@ -311,7 +304,7 @@ pub fn aarch64_cmp_imm(ty: root.types.Type, x: lower_mod.Value, imm: i64, cc: ro
 
 /// Constructor: Create CMN instruction (register, register).
 /// CMN is an alias for ADDS with XZR as destination.
-pub fn aarch64_cmn_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_cmn_rr(ty: hoist.types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_cmn_rr");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
@@ -325,7 +318,7 @@ pub fn aarch64_cmn_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Valu
 
 /// Constructor: Create CCMP instruction (register, register).
 /// Conditional compare - compares if condition holds, else sets flags to nzcv.
-pub fn aarch64_ccmp_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Value, nzcv: u4, cond: root.aarch64_inst.CondCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_ccmp_rr(ty: hoist.types.Type, x: lower_mod.Value, y: lower_mod.Value, nzcv: u4, cond: hoist.aarch64_inst.CondCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_ccmp_rr");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
@@ -341,7 +334,7 @@ pub fn aarch64_ccmp_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Val
 
 /// Constructor: Create CCMP instruction (register, immediate).
 /// Conditional compare with 5-bit immediate.
-pub fn aarch64_ccmp_imm(ty: root.types.Type, x: lower_mod.Value, imm: u5, nzcv: u4, cond: root.aarch64_inst.CondCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_ccmp_imm(ty: hoist.types.Type, x: lower_mod.Value, imm: u5, nzcv: u4, cond: hoist.aarch64_inst.CondCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_ccmp_imm");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
@@ -356,7 +349,7 @@ pub fn aarch64_ccmp_imm(ty: root.types.Type, x: lower_mod.Value, imm: u5, nzcv: 
 
 /// Constructor: Create CMN instruction (register, immediate).
 /// CMN is an alias for ADDS with XZR as destination.
-pub fn aarch64_cmn_imm(ty: root.types.Type, x: lower_mod.Value, imm: i64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_cmn_imm(ty: hoist.types.Type, x: lower_mod.Value, imm: i64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_cmn_imm");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
@@ -371,11 +364,11 @@ pub fn aarch64_cmn_imm(ty: root.types.Type, x: lower_mod.Value, imm: i64, ctx: *
 /// This emits the flags-producing instruction (e.g., CMP or CCMP), then emits CSEL.
 /// Used for select patterns where we have a comparison and want to choose between two values.
 pub fn aarch64_csel(
-    ty: root.types.Type,
+    ty: hoist.types.Type,
     true_val: lower_mod.Value,
     false_val: lower_mod.Value,
     flags_inst: Inst,
-    cc: root.condcodes.IntCC,
+    cc: hoist.condcodes.IntCC,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_csel");
@@ -407,7 +400,7 @@ pub fn aarch64_csel(
 
 /// Constructor: Create TST instruction (register, register).
 /// TST is an alias for ANDS with XZR as destination.
-pub fn aarch64_tst_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_tst_rr(ty: hoist.types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_tst_rr");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
@@ -421,7 +414,7 @@ pub fn aarch64_tst_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Valu
 
 /// Constructor: Create TST instruction (register, immediate).
 /// TST is an alias for ANDS with XZR as destination.
-pub fn aarch64_tst_imm(ty: root.types.Type, x: lower_mod.Value, imm: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_tst_imm(ty: hoist.types.Type, x: lower_mod.Value, imm: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_tst_imm");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
@@ -434,7 +427,7 @@ pub fn aarch64_tst_imm(ty: root.types.Type, x: lower_mod.Value, imm: u64, ctx: *
 }
 
 /// Constructor: Create MUL instruction (register, register).
-pub fn aarch64_mul_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_mul_rr(ty: hoist.types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_mul_rr");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
@@ -449,7 +442,7 @@ pub fn aarch64_mul_rr(ty: root.types.Type, x: lower_mod.Value, y: lower_mod.Valu
 }
 
 /// Constructor: Sign-extend byte (SXTB).
-pub fn aarch64_sxtb(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_sxtb(dst_ty: hoist.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_sxtb");
     const dst_size = typeToOperandSize(dst_ty);
     const src_reg = try getValueReg(ctx, src);
@@ -461,7 +454,7 @@ pub fn aarch64_sxtb(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_m
 }
 
 /// Constructor: Zero-extend byte (UXTB).
-pub fn aarch64_uxtb(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_uxtb(dst_ty: hoist.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_uxtb");
     const dst_size = typeToOperandSize(dst_ty);
     const src_reg = try getValueReg(ctx, src);
@@ -473,7 +466,7 @@ pub fn aarch64_uxtb(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_m
 }
 
 /// Constructor: Sign-extend halfword (SXTH).
-pub fn aarch64_sxth(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_sxth(dst_ty: hoist.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_sxth");
     const dst_size = typeToOperandSize(dst_ty);
     const src_reg = try getValueReg(ctx, src);
@@ -485,7 +478,7 @@ pub fn aarch64_sxth(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_m
 }
 
 /// Constructor: Zero-extend halfword (UXTH).
-pub fn aarch64_uxth(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_uxth(dst_ty: hoist.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_uxth");
     const dst_size = typeToOperandSize(dst_ty);
     const src_reg = try getValueReg(ctx, src);
@@ -521,7 +514,7 @@ pub fn aarch64_uxtw(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst 
 /// On ARM64, this is just a register move with the target size.
 /// I64 -> I32: move to W register (implicit truncation)
 /// I64 -> I16/I8: move to W register, then truncate with mask
-pub fn aarch64_ireduce(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_ireduce(dst_ty: hoist.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_ireduce");
     const dst_size = typeToOperandSize(dst_ty);
     const src_reg = try getValueReg(ctx, src);
@@ -533,7 +526,7 @@ pub fn aarch64_ireduce(dst_ty: root.types.Type, src: lower_mod.Value, ctx: *lowe
 }
 
 /// Constructor: Convert signed integer to float (SCVTF).
-pub fn aarch64_scvtf(dst_ty: root.types.Type, src_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_scvtf(dst_ty: hoist.types.Type, src_ty: hoist.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_scvtf");
     const src_size = typeToOperandSize(src_ty);
     const dst_size = typeToFpuOperandSize(dst_ty);
@@ -547,7 +540,7 @@ pub fn aarch64_scvtf(dst_ty: root.types.Type, src_ty: root.types.Type, src: lowe
 }
 
 /// Constructor: Convert unsigned integer to float (UCVTF).
-pub fn aarch64_ucvtf(dst_ty: root.types.Type, src_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_ucvtf(dst_ty: hoist.types.Type, src_ty: hoist.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_ucvtf");
     const src_size = typeToOperandSize(src_ty);
     const dst_size = typeToFpuOperandSize(dst_ty);
@@ -581,7 +574,7 @@ pub fn aarch64_fdemote(src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !In
 }
 
 /// Constructor: Bitcast - bitwise reinterpret between int and float (FMOV).
-pub fn aarch64_bitcast(dst_ty: root.types.Type, src_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_bitcast(dst_ty: hoist.types.Type, src_ty: hoist.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_bitcast");
 
     const dst_is_float = dst_ty.isFloat();
@@ -613,7 +606,7 @@ pub fn aarch64_bitcast(dst_ty: root.types.Type, src_ty: root.types.Type, src: lo
 
 /// Constructor: Bmask - convert to integer mask (CSET + NEG).
 /// Non-zero -> all 1s (-1), zero -> all 0s (0)
-pub fn aarch64_bmask(dst_ty: root.types.Type, src_ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_bmask(dst_ty: hoist.types.Type, src_ty: hoist.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_bmask");
 
     const src_reg = try getValueReg(ctx, src);
@@ -646,7 +639,7 @@ pub fn aarch64_bmask(dst_ty: root.types.Type, src_ty: root.types.Type, src: lowe
 }
 
 /// Constructor: Float round to nearest (FRINTN).
-pub fn aarch64_nearest(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_nearest(ty: hoist.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_nearest");
     const size = typeToFpuOperandSize(ty);
     const src_reg = try getValueRegFloat(ctx, src);
@@ -658,7 +651,7 @@ pub fn aarch64_nearest(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mo
 }
 
 /// Constructor: Float round toward zero (FRINTZ).
-pub fn aarch64_trunc(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_trunc(ty: hoist.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_trunc");
     const size = typeToFpuOperandSize(ty);
     const src_reg = try getValueRegFloat(ctx, src);
@@ -670,7 +663,7 @@ pub fn aarch64_trunc(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.
 }
 
 /// Constructor: Float round toward +infinity (FRINTP).
-pub fn aarch64_ceil(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_ceil(ty: hoist.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_ceil");
     const size = typeToFpuOperandSize(ty);
     const src_reg = try getValueRegFloat(ctx, src);
@@ -682,7 +675,7 @@ pub fn aarch64_ceil(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.L
 }
 
 /// Constructor: Float round toward -infinity (FRINTM).
-pub fn aarch64_floor(ty: root.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_floor(ty: hoist.types.Type, src: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_floor");
     const size = typeToFpuOperandSize(ty);
     const src_reg = try getValueRegFloat(ctx, src);
@@ -715,7 +708,7 @@ pub fn value_regs_from_values(lo: lower_mod.Value, hi: lower_mod.Value, ctx: *lo
 }
 
 /// Constructor: Atomic load with acquire semantics (LDAR).
-pub fn aarch64_atomic_load_acquire(ty: root.types.Type, addr: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_atomic_load_acquire(ty: hoist.types.Type, addr: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_atomic_load_acquire");
     const addr_reg = try getValueReg(ctx, addr);
     const size = typeToOperandSize(ty);
@@ -734,7 +727,7 @@ pub fn aarch64_atomic_load_acquire(ty: root.types.Type, addr: lower_mod.Value, c
 }
 
 /// Constructor: Atomic store with release semantics (STLR).
-pub fn aarch64_atomic_store_release(ty: root.types.Type, addr: lower_mod.Value, val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_atomic_store_release(ty: hoist.types.Type, addr: lower_mod.Value, val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_atomic_store_release");
     const addr_reg = try getValueReg(ctx, addr);
     const val_reg = try getValueReg(ctx, val);
@@ -754,13 +747,13 @@ pub fn aarch64_atomic_store_release(ty: root.types.Type, addr: lower_mod.Value, 
 }
 
 /// Constructor: Memory fence (DMB).
-pub fn aarch64_fence(ordering: root.atomics.AtomicOrdering) !Inst {
+pub fn aarch64_fence(ordering: hoist.atomics.AtomicOrdering) !Inst {
     recordRule("aarch64_fence");
     const barrier = switch (ordering) {
-        .seq_cst => root.aarch64_inst.BarrierOp.ish, // Sequential consistency: full barrier
-        .release => root.aarch64_inst.BarrierOp.ishst, // Release: store barrier
-        .acquire => root.aarch64_inst.BarrierOp.ishld, // Acquire: load barrier
-        .acq_rel => root.aarch64_inst.BarrierOp.ish, // Acquire-release: full barrier
+        .seq_cst => hoist.aarch64_inst.BarrierOp.ish, // Sequential consistency: full barrier
+        .release => hoist.aarch64_inst.BarrierOp.ishst, // Release: store barrier
+        .acquire => hoist.aarch64_inst.BarrierOp.ishld, // Acquire: load barrier
+        .acq_rel => hoist.aarch64_inst.BarrierOp.ish, // Acquire-release: full barrier
         else => return error.UnsupportedAtomicOrdering,
     };
 
@@ -768,7 +761,7 @@ pub fn aarch64_fence(ordering: root.atomics.AtomicOrdering) !Inst {
 }
 
 /// Helper: Convert IR type to aarch64 operand size.
-fn typeToOperandSize(ty: root.types.Type) root.aarch64_inst.OperandSize {
+fn typeToOperandSize(ty: hoist.types.Type) hoist.aarch64_inst.OperandSize {
     if (ty.bits() <= 32) {
         return .size32;
     } else {
@@ -777,7 +770,7 @@ fn typeToOperandSize(ty: root.types.Type) root.aarch64_inst.OperandSize {
 }
 
 /// Helper: Convert IR type to aarch64 FPU operand size.
-fn typeToFpuOperandSize(ty: root.types.Type) root.aarch64_inst.FpuOperandSize {
+fn typeToFpuOperandSize(ty: hoist.types.Type) hoist.aarch64_inst.FpuOperandSize {
     if (ty.bits() <= 32) {
         return .size32;
     } else if (ty.bits() <= 64) {
@@ -788,7 +781,7 @@ fn typeToFpuOperandSize(ty: root.types.Type) root.aarch64_inst.FpuOperandSize {
 }
 
 /// Helper: Convert IR type to register class.
-fn typeToRegClass(ty: root.types.Type) root.machinst.RegClass {
+fn typeToRegClass(ty: hoist.types.Type) hoist.machinst.RegClass {
     if (ty.isVector()) {
         return .vector;
     } else if (ty.isFloat()) {
@@ -923,14 +916,6 @@ test "imm12_from_u64" {
     try testing.expectEqual(@as(?Imm12, null), imm12_from_u64(0x10000));
 }
 
-test "imm_shift_from_u64" {
-    const testing = std.testing;
-
-    const sh1 = imm_shift_from_u64(32).?;
-    try testing.expectEqual(@as(u8, 32), sh1.imm);
-
-    try testing.expectEqual(@as(?ImmShift, null), imm_shift_from_u64(64));
-}
 
 test "u8_into_imm12" {
     const testing = std.testing;
@@ -943,35 +928,35 @@ test "u8_into_imm12" {
 test "intccToCondCode: equality conditions" {
     const testing = std.testing;
 
-    try testing.expectEqual(root.aarch64_inst.CondCode.eq, intccToCondCode(.eq));
-    try testing.expectEqual(root.aarch64_inst.CondCode.ne, intccToCondCode(.ne));
+    try testing.expectEqual(hoist.aarch64_inst.CondCode.eq, intccToCondCode(.eq));
+    try testing.expectEqual(hoist.aarch64_inst.CondCode.ne, intccToCondCode(.ne));
 }
 
 test "intccToCondCode: signed conditions" {
     const testing = std.testing;
 
-    try testing.expectEqual(root.aarch64_inst.CondCode.lt, intccToCondCode(.slt));
-    try testing.expectEqual(root.aarch64_inst.CondCode.ge, intccToCondCode(.sge));
-    try testing.expectEqual(root.aarch64_inst.CondCode.gt, intccToCondCode(.sgt));
-    try testing.expectEqual(root.aarch64_inst.CondCode.le, intccToCondCode(.sle));
+    try testing.expectEqual(hoist.aarch64_inst.CondCode.lt, intccToCondCode(.slt));
+    try testing.expectEqual(hoist.aarch64_inst.CondCode.ge, intccToCondCode(.sge));
+    try testing.expectEqual(hoist.aarch64_inst.CondCode.gt, intccToCondCode(.sgt));
+    try testing.expectEqual(hoist.aarch64_inst.CondCode.le, intccToCondCode(.sle));
 }
 
 test "intccToCondCode: unsigned conditions" {
     const testing = std.testing;
 
-    try testing.expectEqual(root.aarch64_inst.CondCode.lo, intccToCondCode(.ult));
-    try testing.expectEqual(root.aarch64_inst.CondCode.hs, intccToCondCode(.uge));
-    try testing.expectEqual(root.aarch64_inst.CondCode.hi, intccToCondCode(.ugt));
-    try testing.expectEqual(root.aarch64_inst.CondCode.ls, intccToCondCode(.ule));
+    try testing.expectEqual(hoist.aarch64_inst.CondCode.cc, intccToCondCode(.ult));
+    try testing.expectEqual(hoist.aarch64_inst.CondCode.cs, intccToCondCode(.uge));
+    try testing.expectEqual(hoist.aarch64_inst.CondCode.hi, intccToCondCode(.ugt));
+    try testing.expectEqual(hoist.aarch64_inst.CondCode.ls, intccToCondCode(.ule));
 }
 
 test "aarch64_cmp_rr: creates compare instruction" {
     const testing = std.testing;
 
-    var func = lower_mod.Function.init(testing.allocator);
+    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, &.{}, &.{}, .system_v));
     defer func.deinit();
 
-    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
     defer vcode.deinit();
 
     var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
@@ -980,19 +965,19 @@ test "aarch64_cmp_rr: creates compare instruction" {
     const v1 = lower_mod.Value.new(0);
     const v2 = lower_mod.Value.new(1);
 
-    const inst = try aarch64_cmp_rr(root.types.Type.I64, v1, v2, .eq, &ctx);
+    const inst = try aarch64_cmp_rr(hoist.types.Type.I64, v1, v2, .eq, &ctx);
 
     try testing.expectEqual(Inst.cmp_rr, @as(std.meta.Tag(Inst), inst));
-    try testing.expectEqual(root.aarch64_inst.OperandSize.size64, inst.cmp_rr.size);
+    try testing.expectEqual(hoist.aarch64_inst.OperandSize.size64, inst.cmp_rr.size);
 }
 
 test "aarch64_cmp_imm: creates compare immediate instruction" {
     const testing = std.testing;
 
-    var func = lower_mod.Function.init(testing.allocator);
+    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, &.{}, &.{}, .system_v));
     defer func.deinit();
 
-    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
     defer vcode.deinit();
 
     var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
@@ -1000,20 +985,20 @@ test "aarch64_cmp_imm: creates compare immediate instruction" {
 
     const v1 = lower_mod.Value.new(0);
 
-    const inst = try aarch64_cmp_imm(root.types.Type.I32, v1, 42, .ne, &ctx);
+    const inst = try aarch64_cmp_imm(hoist.types.Type.I32, v1, 42, .ne, &ctx);
 
     try testing.expectEqual(Inst.cmp_imm, @as(std.meta.Tag(Inst), inst));
-    try testing.expectEqual(root.aarch64_inst.OperandSize.size32, inst.cmp_imm.size);
+    try testing.expectEqual(hoist.aarch64_inst.OperandSize.size32, inst.cmp_imm.size);
     try testing.expectEqual(@as(u16, 42), inst.cmp_imm.imm);
 }
 
 test "aarch64_cmn_rr: creates compare negative instruction" {
     const testing = std.testing;
 
-    var func = lower_mod.Function.init(testing.allocator);
+    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, &.{}, &.{}, .system_v));
     defer func.deinit();
 
-    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
     defer vcode.deinit();
 
     var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
@@ -1022,19 +1007,19 @@ test "aarch64_cmn_rr: creates compare negative instruction" {
     const v1 = lower_mod.Value.new(0);
     const v2 = lower_mod.Value.new(1);
 
-    const inst = try aarch64_cmn_rr(root.types.Type.I64, v1, v2, &ctx);
+    const inst = try aarch64_cmn_rr(hoist.types.Type.I64, v1, v2, &ctx);
 
     try testing.expectEqual(Inst.cmn_rr, @as(std.meta.Tag(Inst), inst));
-    try testing.expectEqual(root.aarch64_inst.OperandSize.size64, inst.cmn_rr.size);
+    try testing.expectEqual(hoist.aarch64_inst.OperandSize.size64, inst.cmn_rr.size);
 }
 
 test "aarch64_cmn_imm: creates compare negative immediate instruction" {
     const testing = std.testing;
 
-    var func = lower_mod.Function.init(testing.allocator);
+    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, &.{}, &.{}, .system_v));
     defer func.deinit();
 
-    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
     defer vcode.deinit();
 
     var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
@@ -1042,20 +1027,20 @@ test "aarch64_cmn_imm: creates compare negative immediate instruction" {
 
     const v1 = lower_mod.Value.new(0);
 
-    const inst = try aarch64_cmn_imm(root.types.Type.I32, v1, 100, &ctx);
+    const inst = try aarch64_cmn_imm(hoist.types.Type.I32, v1, 100, &ctx);
 
     try testing.expectEqual(Inst.cmn_imm, @as(std.meta.Tag(Inst), inst));
-    try testing.expectEqual(root.aarch64_inst.OperandSize.size32, inst.cmn_imm.size);
+    try testing.expectEqual(hoist.aarch64_inst.OperandSize.size32, inst.cmn_imm.size);
     try testing.expectEqual(@as(u16, 100), inst.cmn_imm.imm);
 }
 
 test "aarch64_tst_rr: creates test bits instruction" {
     const testing = std.testing;
 
-    var func = lower_mod.Function.init(testing.allocator);
+    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, &.{}, &.{}, .system_v));
     defer func.deinit();
 
-    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
     defer vcode.deinit();
 
     var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
@@ -1064,19 +1049,19 @@ test "aarch64_tst_rr: creates test bits instruction" {
     const v1 = lower_mod.Value.new(0);
     const v2 = lower_mod.Value.new(1);
 
-    const inst = try aarch64_tst_rr(root.types.Type.I64, v1, v2, &ctx);
+    const inst = try aarch64_tst_rr(hoist.types.Type.I64, v1, v2, &ctx);
 
     try testing.expectEqual(Inst.tst_rr, @as(std.meta.Tag(Inst), inst));
-    try testing.expectEqual(root.aarch64_inst.OperandSize.size64, inst.tst_rr.size);
+    try testing.expectEqual(hoist.aarch64_inst.OperandSize.size64, inst.tst_rr.size);
 }
 
 test "aarch64_tst_imm: creates test bits immediate instruction" {
     const testing = std.testing;
 
-    var func = lower_mod.Function.init(testing.allocator);
+    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, &.{}, &.{}, .system_v));
     defer func.deinit();
 
-    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
     defer vcode.deinit();
 
     var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
@@ -1084,10 +1069,10 @@ test "aarch64_tst_imm: creates test bits immediate instruction" {
 
     const v1 = lower_mod.Value.new(0);
 
-    const inst = try aarch64_tst_imm(root.types.Type.I64, v1, 0xFF, &ctx);
+    const inst = try aarch64_tst_imm(hoist.types.Type.I64, v1, 0xFF, &ctx);
 
     try testing.expectEqual(Inst.tst_imm, @as(std.meta.Tag(Inst), inst));
-    try testing.expectEqual(root.aarch64_inst.OperandSize.size64, inst.tst_imm.imm.size);
+    try testing.expectEqual(hoist.aarch64_inst.OperandSize.size64, inst.tst_imm.imm.size);
 }
 
 /// Constructor: SSHLL - Signed shift-left-long (widen and shift).
@@ -6820,7 +6805,7 @@ pub fn aarch64_f64const(value: f64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
 /// - Z (Zero): bit 2
 /// - C (Carry): bit 1
 /// - V (Overflow): bit 0
-pub fn nzcv_for_ccmp_and_fail(cond: root.aarch64_inst.CondCode) u4 {
+pub fn nzcv_for_ccmp_and_fail(cond: hoist.aarch64_inst.CondCode) u4 {
     return switch (cond) {
         // EQ (Z==1): To fail, set Z=0. Use NZCV=0b0000
         .eq => 0b0000,

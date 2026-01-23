@@ -153,7 +153,7 @@ pub fn build(b: *std.Build) void {
     const run_egraph_opt = b.addRunArtifact(egraph_opt);
     test_step.dependOn(&run_egraph_opt.step);
 
-    // TODO: aarch64_tls.zig needs compileFunction API fix
+    // TODO: aarch64_tls needs ISLE root import fix
     // const aarch64_tls = b.addTest(.{
     //     .root_module = b.createModule(.{
     //         .root_source_file = b.path("tests/aarch64_tls.zig"),

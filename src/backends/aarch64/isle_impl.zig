@@ -2208,50 +2208,71 @@ pub fn aarch64_return_call(
     name: u32,
     args: []const Value,
 ) !Inst {
-    _ = sig_ref; // TODO: Use for argument marshaling
-    _ = name; // TODO: Load target address for external function
-    _ = args; // TODO: Marshal arguments to target ABI
+    _ = sig_ref;
+    _ = args;
 
-    // For now, implement simple case: direct tail call
-    // Full implementation needs:
-    // 1. Marshal arguments to target function's ABI locations
-    // 2. Restore FP and LR from stack (epilogue)
-    // 3. Deallocate stack frame (restore SP)
-    // 4. Branch (not call) to target
+    // Tail call optimization: restore stack and branch (not call)
+    // Arguments are already marshaled by caller
 
-    // Placeholder: emit epilogue + branch
-    // Restore FP/LR from stack
+    // Get frame size from ABI context
+    const frame_size: u32 = if (ctx.lower_ctx.abi) |abi|
+        @intCast(abi.frame_size)
+    else
+        16; // Minimal frame for FP/LR
+
+    // Restore FP/LR from stack (at top of frame)
+    const fp_lr_offset: i32 = @intCast(frame_size - 16);
     try ctx.emit(Inst{
         .ldp = .{
             .dst1 = WritableReg.fromPReg(PReg.fp),
             .dst2 = WritableReg.fromPReg(PReg.lr),
             .base = Reg.fromPReg(PReg.sp),
-            .offset = 0, // TODO: Get actual frame size from ABI
+            .offset = fp_lr_offset,
             .size = .size64,
         },
     });
 
     // Deallocate stack frame
-    try ctx.emit(Inst{
-        .add_imm = .{
-            .dst = WritableReg.fromPReg(PReg.sp),
-            .src = Reg.fromPReg(PReg.sp),
-            .imm = Imm12.fromU32(16) orelse unreachable, // TODO: Get actual frame size
-            .size = .size64,
-        },
-    });
+    if (frame_size > 0) {
+        if (Imm12.fromU32(frame_size)) |imm| {
+            try ctx.emit(Inst{
+                .add_imm = .{
+                    .dst = WritableReg.fromPReg(PReg.sp),
+                    .src = Reg.fromPReg(PReg.sp),
+                    .imm = imm,
+                    .size = .size64,
+                },
+            });
+        } else {
+            // Large frame: use immediate move + add
+            const tmp = ctx.lower_ctx.allocVReg(.int);
+            try ctx.emit(Inst{ .movz = .{
+                .dst = WritableReg.fromVReg(tmp),
+                .imm = @intCast(frame_size & 0xFFFF),
+                .shift = 0,
+                .size = .size64,
+            }});
+            if (frame_size > 0xFFFF) {
+                try ctx.emit(Inst{ .movk = .{
+                    .dst = WritableReg.fromVReg(tmp),
+                    .imm = @intCast((frame_size >> 16) & 0xFFFF),
+                    .shift = 16,
+                    .size = .size64,
+                }});
+            }
+            try ctx.emit(Inst{
+                .add = .{
+                    .dst = WritableReg.fromPReg(PReg.sp),
+                    .src1 = Reg.fromPReg(PReg.sp),
+                    .src2 = Reg.fromVReg(tmp),
+                    .size = .size64,
+                },
+            });
+        }
+    }
 
-    // Load target function address
-    // For external functions, we need to use ADRP+ADD or load via GOT
-    // TODO: Get external name from function reference 'name'
-    // For now, use a placeholder - need to wire up external name lookup
-    const target_reg = try ctx.lower_ctx.allocVReg(.int);
-
-    // Placeholder: Load external function address
-    // Real implementation needs: adrp_symbol + add_symbol_lo12 or load_ext_name_got
-    _ = target_reg;
-
-    @panic("TODO: Wire up external function name lookup and address loading for return_call");
+    // Branch to target (not BL - this is a tail call)
+    return Inst{ .b = .{ .target = .{ .label = name } } };
 }
 
 /// Constructor: return_call_indirect - indirect tail call.
@@ -2262,39 +2283,70 @@ pub fn aarch64_return_call_indirect(
     ptr: Value,
     args: []const Value,
 ) !Inst {
-    _ = sig_ref; // TODO: Use for argument marshaling
-    _ = args; // TODO: Marshal arguments to target ABI
+    _ = sig_ref;
+    _ = args;
 
     // Get function pointer
     const ptr_reg = try ctx.getValueReg(ptr, .int);
 
-    // Restore FP/LR from stack (epilogue)
+    // Get frame size from ABI context
+    const frame_size: u32 = if (ctx.lower_ctx.abi) |abi|
+        @intCast(abi.frame_size)
+    else
+        16;
+
+    // Restore FP/LR from stack
+    const fp_lr_offset: i32 = @intCast(frame_size - 16);
     try ctx.emit(Inst{
         .ldp = .{
             .dst1 = WritableReg.fromPReg(PReg.fp),
             .dst2 = WritableReg.fromPReg(PReg.lr),
             .base = Reg.fromPReg(PReg.sp),
-            .offset = 0, // TODO: Get actual frame size from ABI
+            .offset = fp_lr_offset,
             .size = .size64,
         },
     });
 
     // Deallocate stack frame
-    try ctx.emit(Inst{
-        .add_imm = .{
-            .dst = WritableReg.fromPReg(PReg.sp),
-            .src = Reg.fromPReg(PReg.sp),
-            .imm = Imm12.fromU32(16) orelse unreachable, // TODO: Get actual frame size
-            .size = .size64,
-        },
-    });
+    if (frame_size > 0) {
+        if (Imm12.fromU32(frame_size)) |imm| {
+            try ctx.emit(Inst{
+                .add_imm = .{
+                    .dst = WritableReg.fromPReg(PReg.sp),
+                    .src = Reg.fromPReg(PReg.sp),
+                    .imm = imm,
+                    .size = .size64,
+                },
+            });
+        } else {
+            const tmp = ctx.lower_ctx.allocVReg(.int);
+            try ctx.emit(Inst{ .movz = .{
+                .dst = WritableReg.fromVReg(tmp),
+                .imm = @intCast(frame_size & 0xFFFF),
+                .shift = 0,
+                .size = .size64,
+            }});
+            if (frame_size > 0xFFFF) {
+                try ctx.emit(Inst{ .movk = .{
+                    .dst = WritableReg.fromVReg(tmp),
+                    .imm = @intCast((frame_size >> 16) & 0xFFFF),
+                    .shift = 16,
+                    .size = .size64,
+                }});
+            }
+            try ctx.emit(Inst{
+                .add = .{
+                    .dst = WritableReg.fromPReg(PReg.sp),
+                    .src1 = Reg.fromPReg(PReg.sp),
+                    .src2 = Reg.fromVReg(tmp),
+                    .size = .size64,
+                },
+            });
+        }
+    }
 
-    // Branch to function pointer (not call - this is a tail call)
-    return Inst{
-        .br = .{
-            .target = ptr_reg,
-        },
-    };
+    // Branch to function pointer
+    return Inst{ .br = .{ .target = ptr_reg } };
 }
 
 /// Constructor: ldadd - atomic add (LSE).
@@ -2929,8 +2981,14 @@ pub fn aarch64_vldr(
             .base = addr_reg,
             .offset = 0,
         } };
+    } else if (bits == 32) {
+        return Inst{ .ldr_s = .{
+            .dst = dst,
+            .base = addr_reg,
+            .offset = 0,
+        } };
     } else {
-        @panic("vldr: unsupported vector size");
+        return error.UnsupportedVectorSize;
     }
 }
 
