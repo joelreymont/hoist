@@ -4027,15 +4027,15 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
     }
 
     // Direct call: BL (branch with link)
-    // Convert ExternalName to string for CallTarget
-    // TODO: Proper ExternalName->string conversion (currently using testcase name)
+    // Format ExternalName to symbol name per Cranelift conventions
     const symbol_name = switch (name) {
         .testcase => |n| n,
         .user => |u| blk: {
-            // For now, format user external names as "u{namespace}:{index}"
-            // This is a temporary workaround - proper symbol resolution TBD
-            _ = u;
-            break :blk "external_user_func";
+            // Format user names as u{namespace}:{index}
+            var buf: [64]u8 = undefined;
+            const formatted = std.fmt.bufPrint(&buf, "u{d}:{d}", .{ u.namespace, u.index }) catch "external_user_func";
+            const owned = try ctx.getAllocator().dupe(u8, formatted);
+            break :blk owned;
         },
     };
     try ctx.emit(Inst{ .bl = .{ .target = .{ .external_name = symbol_name } } });
