@@ -1,9 +1,10 @@
 ---
 title: Wire regalloc2
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.746924+02:00"
+created-at: "\"2026-01-14T15:42:46.746924+02:00\""
+closed-at: "2026-01-23T21:23:48.707784+02:00"
 ---
 
 Files: src/machinst/regalloc_pipeline.zig:1-80

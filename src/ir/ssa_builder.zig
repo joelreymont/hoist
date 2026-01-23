@@ -57,11 +57,11 @@ pub const SSABuilder = struct {
         self.variables.deinit();
 
         var sit = self.sealed.valueIterator();
-        while (sit.next()) |st| st.undef_vars.deinit();
+        while (sit.next()) |st| st.undef_vars.deinit(self.alloc);
         self.sealed.deinit();
 
-        self.calls.deinit();
-        self.results.deinit();
+        self.calls.deinit(self.alloc);
+        self.results.deinit(self.alloc);
     }
 
     pub fn defVar(self: *SSABuilder, variable: Variable, val: Value, block: Block) !void {

@@ -1,9 +1,10 @@
 ---
 title: Add regalloc tests
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.764951+02:00"
+created-at: "\"2026-01-14T15:42:46.764951+02:00\""
+closed-at: "2026-01-23T21:35:04.959623+02:00"
 ---
 
 Files: fuzz/fuzz_regalloc.zig:1-80

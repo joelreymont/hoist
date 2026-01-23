@@ -64,7 +64,9 @@ pub const FunctionBuilder = struct {
     }
 
     pub fn createBlock(self: *Self) !Block {
-        return try self.func.dfg.addBlock();
+        const blk = try self.func.dfg.addBlock();
+        try self.func.layout.appendBlock(blk);
+        return blk;
     }
 
     pub fn switchToBlock(self: *Self, block: Block) void {
