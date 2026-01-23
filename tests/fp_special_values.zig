@@ -9,7 +9,7 @@ const Type = hoist.types.Type;
 const InstructionData = hoist.instruction_data.InstructionData;
 const Ieee32 = hoist.immediates.Ieee32;
 const Ieee64 = hoist.immediates.Ieee64;
-const compile_mod = @import("hoist").codegen.compile;
+const compile_mod = @import("hoist").codegen_compile;
 
 // Test that f32 NaN constant can be compiled.
 test "FP special values: f32 NaN" {
@@ -28,9 +28,9 @@ test "FP special values: f32 NaN" {
     // Create f32 NaN constant
     const nan_bits: u32 = 0x7FC00000; // Canonical quiet NaN
     const const_data = InstructionData{
-        .unary_ieee32 = .{
+        .unary_imm = .{
             .opcode = .f32const,
-            .imm = Ieee32.new(nan_bits),
+            .imm = hoist.immediates.Imm64.new(@as(i64, @bitCast(@as(u64, nan_bits)))),
         },
     };
     const const_inst = try func.dfg.makeInst(const_data);
@@ -48,11 +48,12 @@ test "FP special values: f32 NaN" {
     try func.layout.appendInst(ret_inst, entry);
 
     // Compile - should succeed
-    const result = try compile_mod.compileFunction(testing.allocator, &func, .aarch64);
-    defer testing.allocator.free(result.code);
+    var ctx = @import("hoist").codegen_context.Context.init(testing.allocator);
+    defer ctx.deinit();
+    const result = try compile_mod.compile(&ctx, &func, &.{ .arch = .aarch64, .opt_level = .none, .verify = false, .features = .{ .bits = 0 } });
 
     // Verify code was generated
-    try testing.expect(result.code.len > 0);
+    try testing.expect(result.code.items.len > 0);
 }
 
 // Test that f32 positive infinity constant can be compiled.
@@ -72,9 +73,9 @@ test "FP special values: f32 positive infinity" {
     // Create f32 +infinity constant
     const inf_bits: u32 = 0x7F800000; // +Inf
     const const_data = InstructionData{
-        .unary_ieee32 = .{
+        .unary_imm = .{
             .opcode = .f32const,
-            .imm = Ieee32.new(inf_bits),
+            .imm = hoist.immediates.Imm64.new(@as(i64, @bitCast(@as(u64, inf_bits)))),
         },
     };
     const const_inst = try func.dfg.makeInst(const_data);
@@ -92,11 +93,12 @@ test "FP special values: f32 positive infinity" {
     try func.layout.appendInst(ret_inst, entry);
 
     // Compile - should succeed
-    const result = try compile_mod.compileFunction(testing.allocator, &func, .aarch64);
-    defer testing.allocator.free(result.code);
+    var ctx = @import("hoist").codegen_context.Context.init(testing.allocator);
+    defer ctx.deinit();
+    const result = try compile_mod.compile(&ctx, &func, &.{ .arch = .aarch64, .opt_level = .none, .verify = false, .features = .{ .bits = 0 } });
 
     // Verify code was generated
-    try testing.expect(result.code.len > 0);
+    try testing.expect(result.code.items.len > 0);
 }
 
 // Test that f32 negative infinity constant can be compiled.
@@ -116,9 +118,9 @@ test "FP special values: f32 negative infinity" {
     // Create f32 -infinity constant
     const neg_inf_bits: u32 = 0xFF800000; // -Inf
     const const_data = InstructionData{
-        .unary_ieee32 = .{
+        .unary_imm = .{
             .opcode = .f32const,
-            .imm = Ieee32.new(neg_inf_bits),
+            .imm = hoist.immediates.Imm64.new(@as(i64, @bitCast(@as(u64, neg_inf_bits)))),
         },
     };
     const const_inst = try func.dfg.makeInst(const_data);
@@ -136,11 +138,12 @@ test "FP special values: f32 negative infinity" {
     try func.layout.appendInst(ret_inst, entry);
 
     // Compile - should succeed
-    const result = try compile_mod.compileFunction(testing.allocator, &func, .aarch64);
-    defer testing.allocator.free(result.code);
+    var ctx = @import("hoist").codegen_context.Context.init(testing.allocator);
+    defer ctx.deinit();
+    const result = try compile_mod.compile(&ctx, &func, &.{ .arch = .aarch64, .opt_level = .none, .verify = false, .features = .{ .bits = 0 } });
 
     // Verify code was generated
-    try testing.expect(result.code.len > 0);
+    try testing.expect(result.code.items.len > 0);
 }
 
 // Test that f64 NaN constant can be compiled.
@@ -160,9 +163,9 @@ test "FP special values: f64 NaN" {
     // Create f64 NaN constant
     const nan_bits: u64 = 0x7FF8000000000000; // Canonical quiet NaN
     const const_data = InstructionData{
-        .unary_ieee64 = .{
+        .unary_imm = .{
             .opcode = .f64const,
-            .imm = Ieee64.new(nan_bits),
+            .imm = hoist.immediates.Imm64.new(@as(i64, @bitCast(nan_bits))),
         },
     };
     const const_inst = try func.dfg.makeInst(const_data);
@@ -180,11 +183,12 @@ test "FP special values: f64 NaN" {
     try func.layout.appendInst(ret_inst, entry);
 
     // Compile - should succeed
-    const result = try compile_mod.compileFunction(testing.allocator, &func, .aarch64);
-    defer testing.allocator.free(result.code);
+    var ctx = @import("hoist").codegen_context.Context.init(testing.allocator);
+    defer ctx.deinit();
+    const result = try compile_mod.compile(&ctx, &func, &.{ .arch = .aarch64, .opt_level = .none, .verify = false, .features = .{ .bits = 0 } });
 
     // Verify code was generated
-    try testing.expect(result.code.len > 0);
+    try testing.expect(result.code.items.len > 0);
 }
 
 // Test that f64 positive infinity constant can be compiled.
@@ -204,9 +208,9 @@ test "FP special values: f64 positive infinity" {
     // Create f64 +infinity constant
     const inf_bits: u64 = 0x7FF0000000000000; // +Inf
     const const_data = InstructionData{
-        .unary_ieee64 = .{
+        .unary_imm = .{
             .opcode = .f64const,
-            .imm = Ieee64.new(inf_bits),
+            .imm = hoist.immediates.Imm64.new(@as(i64, @bitCast(inf_bits))),
         },
     };
     const const_inst = try func.dfg.makeInst(const_data);
@@ -224,11 +228,12 @@ test "FP special values: f64 positive infinity" {
     try func.layout.appendInst(ret_inst, entry);
 
     // Compile - should succeed
-    const result = try compile_mod.compileFunction(testing.allocator, &func, .aarch64);
-    defer testing.allocator.free(result.code);
+    var ctx = @import("hoist").codegen_context.Context.init(testing.allocator);
+    defer ctx.deinit();
+    const result = try compile_mod.compile(&ctx, &func, &.{ .arch = .aarch64, .opt_level = .none, .verify = false, .features = .{ .bits = 0 } });
 
     // Verify code was generated
-    try testing.expect(result.code.len > 0);
+    try testing.expect(result.code.items.len > 0);
 }
 
 // Test that f64 negative infinity constant can be compiled.
@@ -248,9 +253,9 @@ test "FP special values: f64 negative infinity" {
     // Create f64 -infinity constant
     const neg_inf_bits: u64 = 0xFFF0000000000000; // -Inf
     const const_data = InstructionData{
-        .unary_ieee64 = .{
+        .unary_imm = .{
             .opcode = .f64const,
-            .imm = Ieee64.new(neg_inf_bits),
+            .imm = hoist.immediates.Imm64.new(@as(i64, @bitCast(neg_inf_bits))),
         },
     };
     const const_inst = try func.dfg.makeInst(const_data);
@@ -268,11 +273,12 @@ test "FP special values: f64 negative infinity" {
     try func.layout.appendInst(ret_inst, entry);
 
     // Compile - should succeed
-    const result = try compile_mod.compileFunction(testing.allocator, &func, .aarch64);
-    defer testing.allocator.free(result.code);
+    var ctx = @import("hoist").codegen_context.Context.init(testing.allocator);
+    defer ctx.deinit();
+    const result = try compile_mod.compile(&ctx, &func, &.{ .arch = .aarch64, .opt_level = .none, .verify = false, .features = .{ .bits = 0 } });
 
     // Verify code was generated
-    try testing.expect(result.code.len > 0);
+    try testing.expect(result.code.items.len > 0);
 }
 
 // Test that f32 zero (both +0.0 and -0.0) can be compiled.
@@ -292,9 +298,9 @@ test "FP special values: f32 signed zeros" {
         try func.layout.appendBlock(entry);
 
         const const_data = InstructionData{
-            .unary_ieee32 = .{
+            .unary_imm = .{
                 .opcode = .f32const,
-                .imm = Ieee32.new(0x00000000), // +0.0
+                .imm = hoist.immediates.Imm64.new(@as(i64, @bitCast(@as(u64, 0x00000000)))), // +0.0
             },
         };
         const const_inst = try func.dfg.makeInst(const_data);
@@ -310,9 +316,10 @@ test "FP special values: f32 signed zeros" {
         const ret_inst = try func.dfg.makeInst(ret_data);
         try func.layout.appendInst(ret_inst, entry);
 
-        const result = try compile_mod.compileFunction(testing.allocator, &func, .aarch64);
-        defer testing.allocator.free(result.code);
-        try testing.expect(result.code.len > 0);
+        var ctx = @import("hoist").codegen_context.Context.init(testing.allocator);
+    defer ctx.deinit();
+    const result = try compile_mod.compile(&ctx, &func, &.{ .arch = .aarch64, .opt_level = .none, .verify = false, .features = .{ .bits = 0 } });
+        try testing.expect(result.code.items.len > 0);
     }
 
     // Test -0.0
@@ -324,9 +331,9 @@ test "FP special values: f32 signed zeros" {
         try func.layout.appendBlock(entry);
 
         const const_data = InstructionData{
-            .unary_ieee32 = .{
+            .unary_imm = .{
                 .opcode = .f32const,
-                .imm = Ieee32.new(0x80000000), // -0.0
+                .imm = hoist.immediates.Imm64.new(@as(i64, @bitCast(@as(u64, 0x80000000)))), // -0.0
             },
         };
         const const_inst = try func.dfg.makeInst(const_data);
@@ -342,8 +349,9 @@ test "FP special values: f32 signed zeros" {
         const ret_inst = try func.dfg.makeInst(ret_data);
         try func.layout.appendInst(ret_inst, entry);
 
-        const result = try compile_mod.compileFunction(testing.allocator, &func, .aarch64);
-        defer testing.allocator.free(result.code);
-        try testing.expect(result.code.len > 0);
+        var ctx = @import("hoist").codegen_context.Context.init(testing.allocator);
+    defer ctx.deinit();
+    const result = try compile_mod.compile(&ctx, &func, &.{ .arch = .aarch64, .opt_level = .none, .verify = false, .features = .{ .bits = 0 } });
+        try testing.expect(result.code.items.len > 0);
     }
 }

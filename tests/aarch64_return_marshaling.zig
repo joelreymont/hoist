@@ -8,6 +8,8 @@ const AbiParam = hoist.signature.AbiParam;
 const Type = hoist.types.Type;
 const InstructionData = hoist.instruction_data.InstructionData;
 const Imm64 = hoist.immediates.Imm64;
+const Ieee64 = hoist.immediates.Ieee64;
+const Ieee64 = hoist.immediates.Ieee64;
 const ContextBuilder = hoist.context.ContextBuilder;
 const ExternalName = hoist.entities.ExternalName;
 
@@ -76,7 +78,7 @@ test "Return marshaling: single f64 in V0" {
     const const_data = InstructionData{
         .unary_imm = .{
             .opcode = .f64const,
-            .imm = Imm64.fromF64(3.14),
+            .imm = Ieee64.fromF64(3.14),
         },
     };
     const const_inst = try func.dfg.makeInst(const_data);
@@ -340,7 +342,7 @@ test "Return marshaling: mixed i64+f64 in X0+V0" {
     const fp_data = InstructionData{
         .unary_imm = .{
             .opcode = .f64const,
-            .imm = Imm64.fromF64(2.5),
+            .imm = Ieee64.fromF64(2.5),
         },
     };
     const fp_inst = try func.dfg.makeInst(fp_data);

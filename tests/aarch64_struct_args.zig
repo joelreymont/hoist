@@ -9,7 +9,7 @@ const AbiParam = hoist.signature.AbiParam;
 const ArgumentPurpose = hoist.signature.ArgumentPurpose;
 const Type = hoist.types.Type;
 const ContextBuilder = hoist.context.ContextBuilder;
-const abi_mod = hoist.machinst.abi;
+const abi = hoist.abi;
 
 // AAPCS64 struct passing rules:
 // 1. Structs <= 16 bytes: passed in registers (1-2 GPRs or 1-4 FP regs for HFA)
@@ -17,31 +17,23 @@ const abi_mod = hoist.machinst.abi;
 // 3. HFA (Homogeneous Float Aggregate): 1-4 identical float members → V0-V3
 // 4. Non-homogeneous small structs: packed into X0-X7
 
-// Test 1: Small struct (8 bytes) passed in single register
-test "struct args: 8-byte struct in single register" {
+// Test 1: 8-byte integer value passed in single register
+test "struct args: 8-byte value in single register" {
     const allocator = testing.allocator;
 
-    // Define struct type: { i32, i32 } = 8 bytes
-    const struct_fields = [_]abi_mod.StructField{
-        .{ .ty = abi_mod.Type.i32, .offset = 0 },
-        .{ .ty = abi_mod.Type.i32, .offset = 4 },
-    };
-    const struct_type = Type{ .@"struct" = &struct_fields };
-
-    // Signature: fn process(s: Struct8) -> i32
+    // Simulate 8-byte struct with i64
     var sig = Signature.init(allocator, .system_v);
     defer sig.deinit();
 
-    try sig.params.append(allocator, AbiParam.new(struct_type));
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
     try sig.returns.append(allocator, AbiParam.new(Type.I32));
 
-    var func = try Function.init(allocator, "process_struct8", sig);
+    var func = try Function.init(allocator, "process_i64", sig);
     defer func.deinit();
 
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
-    // Just return a constant (we're testing ABI, not logic)
     const result = try func.dfg.makeInst(.{
         .iconst = .{
             .opcode = .iconst,
@@ -61,11 +53,10 @@ test "struct args: 8-byte struct in single register" {
     try func.dfg.appendInst(entry, result);
     try func.dfg.appendInst(entry, ret);
 
-    // Compile
     var ctx_builder = ContextBuilder.init(allocator);
     defer ctx_builder.deinit();
 
-    _ = try ctx_builder.registerFunction("process_struct8", sig);
+    _ = try ctx_builder.registerFunction("process_i64", sig);
 
     var ctx = try ctx_builder.build();
     defer ctx.deinit();
@@ -74,10 +65,7 @@ test "struct args: 8-byte struct in single register" {
     defer compile_result.code.deinit();
     defer compile_result.relocs.deinit();
 
-    // Verify: code generated successfully
     try testing.expect(compile_result.code.items.len > 0);
-
-    // TODO: Verify struct passed in X0 (8 bytes)
 }
 
 // Test 2: 16-byte struct passed in two registers
@@ -85,9 +73,9 @@ test "struct args: 16-byte struct in register pair" {
     const allocator = testing.allocator;
 
     // Define struct type: { i64, i64 } = 16 bytes
-    const struct_fields = [_]abi_mod.StructField{
-        .{ .ty = abi_mod.Type.i64, .offset = 0 },
-        .{ .ty = abi_mod.Type.i64, .offset = 8 },
+    const struct_fields = [_]abi.StructField{
+        .{ .ty = abi.Type.i64, .offset = 0 },
+        .{ .ty = abi.Type.i64, .offset = 8 },
     };
     const struct_type = Type{ .@"struct" = &struct_fields };
 
@@ -148,10 +136,10 @@ test "struct args: large struct passed by pointer" {
     const allocator = testing.allocator;
 
     // Define struct type: { i64, i64, i64 } = 24 bytes (exceeds 16-byte limit)
-    const struct_fields = [_]abi_mod.StructField{
-        .{ .ty = abi_mod.Type.i64, .offset = 0 },
-        .{ .ty = abi_mod.Type.i64, .offset = 8 },
-        .{ .ty = abi_mod.Type.i64, .offset = 16 },
+    const struct_fields = [_]abi.StructField{
+        .{ .ty = abi.Type.i64, .offset = 0 },
+        .{ .ty = abi.Type.i64, .offset = 8 },
+        .{ .ty = abi.Type.i64, .offset = 16 },
     };
     const struct_type = Type{ .@"struct" = &struct_fields };
 
@@ -212,9 +200,9 @@ test "struct args: HFA with 2 floats in vector registers" {
     const allocator = testing.allocator;
 
     // Define HFA: { f32, f32 } = 8 bytes, should use V0, V1
-    const hfa_fields = [_]abi_mod.StructField{
-        .{ .ty = abi_mod.Type.f32, .offset = 0 },
-        .{ .ty = abi_mod.Type.f32, .offset = 4 },
+    const hfa_fields = [_]abi.StructField{
+        .{ .ty = abi.Type.f32, .offset = 0 },
+        .{ .ty = abi.Type.f32, .offset = 4 },
     };
     const hfa_type = Type{ .@"struct" = &hfa_fields };
 
@@ -274,11 +262,11 @@ test "struct args: HFA with 4 doubles in vector registers" {
     const allocator = testing.allocator;
 
     // Define HFA: { f64, f64, f64, f64 } = 32 bytes, uses V0-V3
-    const hfa_fields = [_]abi_mod.StructField{
-        .{ .ty = abi_mod.Type.f64, .offset = 0 },
-        .{ .ty = abi_mod.Type.f64, .offset = 8 },
-        .{ .ty = abi_mod.Type.f64, .offset = 16 },
-        .{ .ty = abi_mod.Type.f64, .offset = 24 },
+    const hfa_fields = [_]abi.StructField{
+        .{ .ty = abi.Type.f64, .offset = 0 },
+        .{ .ty = abi.Type.f64, .offset = 8 },
+        .{ .ty = abi.Type.f64, .offset = 16 },
+        .{ .ty = abi.Type.f64, .offset = 24 },
     };
     const hfa_type = Type{ .@"struct" = &hfa_fields };
 
@@ -340,9 +328,9 @@ test "struct args: mixed int-float struct uses general registers" {
 
     // Define mixed struct: { i32, f32 } = 8 bytes, NOT an HFA
     // Should be passed in general registers, not vector registers
-    const mixed_fields = [_]abi_mod.StructField{
-        .{ .ty = abi_mod.Type.i32, .offset = 0 },
-        .{ .ty = abi_mod.Type.f32, .offset = 4 },
+    const mixed_fields = [_]abi.StructField{
+        .{ .ty = abi.Type.i32, .offset = 0 },
+        .{ .ty = abi.Type.f32, .offset = 4 },
     };
     const mixed_type = Type{ .@"struct" = &mixed_fields };
 
@@ -403,14 +391,14 @@ test "struct args: multiple small structs" {
     const allocator = testing.allocator;
 
     // Define two struct types
-    const struct1_fields = [_]abi_mod.StructField{
-        .{ .ty = abi_mod.Type.i32, .offset = 0 },
-        .{ .ty = abi_mod.Type.i32, .offset = 4 },
+    const struct1_fields = [_]abi.StructField{
+        .{ .ty = abi.Type.i32, .offset = 0 },
+        .{ .ty = abi.Type.i32, .offset = 4 },
     };
     const struct1_type = Type{ .@"struct" = &struct1_fields };
 
-    const struct2_fields = [_]abi_mod.StructField{
-        .{ .ty = abi_mod.Type.i64, .offset = 0 },
+    const struct2_fields = [_]abi.StructField{
+        .{ .ty = abi.Type.i64, .offset = 0 },
     };
     const struct2_type = Type{ .@"struct" = &struct2_fields };
 

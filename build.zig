@@ -163,18 +163,17 @@ pub fn build(b: *std.Build) void {
     const run_aarch64_tls = b.addRunArtifact(aarch64_tls);
     test_step.dependOn(&run_aarch64_tls.step);
 
-    // TODO: fp_special_values.zig needs API fixes (unary_ieee32/64)
-    // const fp_special_values = b.addTest(.{
-    //     .root_module = b.createModule(.{
-    //         .root_source_file = b.path("tests/fp_special_values.zig"),
-    //         .target = target,
-    //         .optimize = optimize,
-    //     }),
-    // });
-    // fp_special_values.root_module.addImport("hoist", lib.root_module);
-    // applyFlags(fp_special_values, enable_lto, debug_info, strip_debug, pic, single_threaded);
-    // const run_fp_special_values = b.addRunArtifact(fp_special_values);
-    // test_step.dependOn(&run_fp_special_values.step);
+    const fp_special_values = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/fp_special_values.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    fp_special_values.root_module.addImport("hoist", lib.root_module);
+    applyFlags(fp_special_values, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_fp_special_values = b.addRunArtifact(fp_special_values);
+    test_step.dependOn(&run_fp_special_values.step);
 
     const aarch64_ccmp = b.addTest(.{
         .root_module = b.createModule(.{
@@ -214,7 +213,7 @@ pub fn build(b: *std.Build) void {
     // const run_e2e_tail_calls = b.addRunArtifact(e2e_tail_calls);
     // test_step.dependOn(&run_e2e_tail_calls.step);
 
-    // TODO: aarch64_struct_args.zig needs abi export fix
+    // TODO: aarch64_struct_args.zig needs struct type support in ir/types.zig
     // const aarch64_struct_args = b.addTest(.{
     //     .root_module = b.createModule(.{
     //         .root_source_file = b.path("tests/aarch64_struct_args.zig"),
@@ -241,7 +240,7 @@ pub fn build(b: *std.Build) void {
     const run_aarch64_stack_args = b.addRunArtifact(aarch64_stack_args);
     test_step.dependOn(&run_aarch64_stack_args.step);
 
-    // TODO: aarch64_return_marshaling.zig needs Imm64.fromF64 and makeSig fixes
+    // TODO: aarch64_return_marshaling.zig needs makeSig API (removed/changed)
     // const aarch64_return_marshaling = b.addTest(.{
     //     .root_module = b.createModule(.{
     //         .root_source_file = b.path("tests/aarch64_return_marshaling.zig"),
