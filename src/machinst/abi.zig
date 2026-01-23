@@ -203,6 +203,8 @@ pub const ABISignature = struct {
     rets: []const Type,
     /// Calling convention.
     call_conv: CallConv,
+    /// Whether this is a variadic function.
+    is_varargs: bool,
 
     pub fn init(
         args: []const Type,
@@ -213,6 +215,7 @@ pub const ABISignature = struct {
             .args = args,
             .rets = rets,
             .call_conv = call_conv,
+            .is_varargs = false,
         };
     }
 };

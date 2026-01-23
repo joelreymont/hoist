@@ -190,6 +190,18 @@ pub fn build(b: *std.Build) void {
     const run_aarch64_ccmp = b.addRunArtifact(aarch64_ccmp);
     test_step.dependOn(&run_aarch64_ccmp.step);
 
+    const riscv64_encoding = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/riscv64_encoding.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    riscv64_encoding.root_module.addImport("hoist", lib.root_module);
+    applyFlags(riscv64_encoding, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_riscv64_encoding = b.addRunArtifact(riscv64_encoding);
+    test_step.dependOn(&run_riscv64_encoding.step);
+
     // TODO: e2e_tail_calls.zig needs API fixes (iconst, fconst, etc.)
     // const e2e_tail_calls = b.addTest(.{
     //     .root_module = b.createModule(.{

@@ -188,13 +188,17 @@ pub const SpillSlot = struct {
     }
 };
 
-/// Value register(s) - handles wide values that need 1-2 registers.
-/// For example: i128 on 64-bit, or f64 on 32-bit architectures.
+/// Value register(s) - handles wide values that need 1-4 registers.
+/// For example: i128 on 64-bit, or multi-return values.
 pub const ValueRegs = union(enum) {
     /// Single register.
     one: Reg,
     /// Two registers for wide values (low, high).
     two: struct { low: Reg, high: Reg },
+    /// Three registers for multi-return.
+    three: struct { r0: Reg, r1: Reg, r2: Reg },
+    /// Four registers for multi-return.
+    four: struct { r0: Reg, r1: Reg, r2: Reg, r3: Reg },
 
     pub fn single(reg: Reg) ValueRegs {
         return .{ .one = reg };
@@ -204,10 +208,20 @@ pub const ValueRegs = union(enum) {
         return .{ .two = .{ .low = low, .high = high } };
     }
 
+    pub fn triple(r0: Reg, r1: Reg, r2: Reg) ValueRegs {
+        return .{ .three = .{ .r0 = r0, .r1 = r1, .r2 = r2 } };
+    }
+
+    pub fn quad(r0: Reg, r1: Reg, r2: Reg, r3: Reg) ValueRegs {
+        return .{ .four = .{ .r0 = r0, .r1 = r1, .r2 = r2, .r3 = r3 } };
+    }
+
     pub fn len(self: ValueRegs) usize {
         return switch (self) {
             .one => 1,
             .two => 2,
+            .three => 3,
+            .four => 4,
         };
     }
 
@@ -219,6 +233,19 @@ pub const ValueRegs = union(enum) {
                 1 => p.high,
                 else => null,
             },
+            .three => |t| switch (index) {
+                0 => t.r0,
+                1 => t.r1,
+                2 => t.r2,
+                else => null,
+            },
+            .four => |q| switch (index) {
+                0 => q.r0,
+                1 => q.r1,
+                2 => q.r2,
+                3 => q.r3,
+                else => null,
+            },
         };
     }
 
@@ -226,6 +253,8 @@ pub const ValueRegs = union(enum) {
         switch (self) {
             .one => |r| try writer.print("{f}", .{r}),
             .two => |p| try writer.print("[{f},{f}]", .{ p.low, p.high }),
+            .three => |t| try writer.print("[{f},{f},{f}]", .{ t.r0, t.r1, t.r2 }),
+            .four => |q| try writer.print("[{f},{f},{f},{f}]", .{ q.r0, q.r1, q.r2, q.r3 }),
         }
     }
 };

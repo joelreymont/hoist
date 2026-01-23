@@ -102,6 +102,16 @@ pub const LivenessInfo = struct {
         const range2 = self.getRange(vreg2) orelse return false;
         return range1.overlaps(range2.*);
     }
+
+    /// Compute liveness from VCode.
+    /// The VCode type must have an `insns` field containing instruction slice.
+    pub fn compute(
+        comptime Inst: type,
+        allocator: std.mem.Allocator,
+        vcode: anytype,
+    ) !LivenessInfo {
+        return computeLiveness(Inst, vcode.insns.items, allocator);
+    }
 };
 
 /// Helper to track per-vreg information during liveness computation

@@ -1,9 +1,10 @@
 ---
 title: Wire s390 fp
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.488993+02:00"
+created-at: "\"2026-01-14T15:42:46.488993+02:00\""
+closed-at: "2026-01-23T14:15:35.604470+02:00"
 ---
 
 Files: src/backends/s390x/lower.isle (new), src/backends/s390x/inst.zig (new)

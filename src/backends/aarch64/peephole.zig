@@ -6,10 +6,17 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const peephole_mod = @import("../../codegen/peephole.zig");
 const inst_mod = @import("inst.zig");
+const reg_mod = @import("../../machinst/reg.zig");
 
 const Inst = inst_mod.Inst;
 const Reg = inst_mod.Reg;
+const PReg = reg_mod.PReg;
+const RegClass = reg_mod.RegClass;
 const OperandSize = inst_mod.OperandSize;
+
+inline fn regEq(a: Reg, b: Reg) bool {
+    return a.bits == b.bits;
+}
 
 pub const AArch64PeepholeOptimizer = peephole_mod.PeepholeOptimizer(Inst);
 
@@ -42,7 +49,7 @@ pub fn combineLoadPairs(
         }
 
         // Must have same base register
-        if (!ldr1.base.eq(ldr2.base)) {
+        if (!regEq(ldr1.base, ldr2.base)) {
             i += 1;
             continue;
         }
@@ -60,7 +67,7 @@ pub fn combineLoadPairs(
         // 1. Base register must not be written between loads
         // 2. First destination must not be written before second load
         // 3. Destinations must be different registers
-        if (ldr1.dst.toReg().eq(ldr2.dst.toReg())) {
+        if (regEq(ldr1.dst.toReg(), ldr2.dst.toReg())) {
             i += 1;
             continue;
         }
@@ -124,7 +131,7 @@ pub fn combineStorePairs(
         }
 
         // Must have same base register
-        if (!str1.base.eq(str2.base)) {
+        if (!regEq(str1.base, str2.base)) {
             i += 1;
             continue;
         }
@@ -184,7 +191,7 @@ pub fn eliminateDeadMoves(
         // Check for MOV Xd, Xd
         if (inst.* == .mov_rr) {
             const mov = inst.mov_rr;
-            if (mov.dst.toReg().eq(mov.src)) {
+            if (regEq(mov.dst.toReg(), mov.src)) {
                 // Dead move - remove it
                 _ = insts.orderedRemove(i);
                 optimizer.stats.dead_moves_eliminated += 1;
@@ -195,9 +202,9 @@ pub fn eliminateDeadMoves(
         }
 
         // Check for FMOV Vd, Vd
-        if (inst.* == .fmov_rr) {
-            const fmov = inst.fmov_rr;
-            if (fmov.dst.toReg().eq(fmov.src)) {
+        if (inst.* == .fmov) {
+            const fmov = inst.fmov;
+            if (regEq(fmov.dst.toReg(), fmov.src)) {
                 // Dead move - remove it
                 _ = insts.orderedRemove(i);
                 optimizer.stats.dead_moves_eliminated += 1;
@@ -218,17 +225,17 @@ test "combineLoadPairs: adjacent loads with consecutive offsets" {
 
     var optimizer = AArch64PeepholeOptimizer.init(allocator);
 
-    const x0 = Reg.gpr(0);
-    const x1 = Reg.gpr(1);
-    const sp = Reg.gpr(31);
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const sp = Reg.fromPReg(PReg.new(.int, 31));
     const x0_w = inst_mod.WritableReg.fromReg(x0);
     const x1_w = inst_mod.WritableReg.fromReg(x1);
 
-    var insts = std.ArrayList(Inst).init(allocator);
-    defer insts.deinit();
+    var insts: std.ArrayList(Inst) = .{};
+    defer insts.deinit(allocator);
 
     // LDR X0, [SP, #0]
-    try insts.append(.{ .ldr = .{
+    try insts.append(allocator, .{ .ldr = .{
         .dst = x0_w,
         .base = sp,
         .offset = 0,
@@ -236,7 +243,7 @@ test "combineLoadPairs: adjacent loads with consecutive offsets" {
     } });
 
     // LDR X1, [SP, #8]
-    try insts.append(.{ .ldr = .{
+    try insts.append(allocator, .{ .ldr = .{
         .dst = x1_w,
         .base = sp,
         .offset = 8,
@@ -251,9 +258,9 @@ test "combineLoadPairs: adjacent loads with consecutive offsets" {
     try testing.expectEqual(@as(u32, 1), optimizer.stats.load_pairs_formed);
 
     const ldp = insts.items[0].ldp;
-    try testing.expect(ldp.dst1.toReg().eq(x0));
-    try testing.expect(ldp.dst2.toReg().eq(x1));
-    try testing.expect(ldp.base.eq(sp));
+    try testing.expect(regEq(ldp.dst1.toReg(), x0));
+    try testing.expect(regEq(ldp.dst2.toReg(), x1));
+    try testing.expect(regEq(ldp.base, sp));
     try testing.expectEqual(@as(i16, 0), ldp.offset);
 }
 
@@ -263,15 +270,15 @@ test "combineLoadPairs: loads with same destination - skip" {
 
     var optimizer = AArch64PeepholeOptimizer.init(allocator);
 
-    const x0 = Reg.gpr(0);
-    const sp = Reg.gpr(31);
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const sp = Reg.fromPReg(PReg.new(.int, 31));
     const x0_w = inst_mod.WritableReg.fromReg(x0);
 
-    var insts = std.ArrayList(Inst).init(allocator);
-    defer insts.deinit();
+    var insts: std.ArrayList(Inst) = .{};
+    defer insts.deinit(allocator);
 
     // LDR X0, [SP, #0]
-    try insts.append(.{ .ldr = .{
+    try insts.append(allocator, .{ .ldr = .{
         .dst = x0_w,
         .base = sp,
         .offset = 0,
@@ -279,7 +286,7 @@ test "combineLoadPairs: loads with same destination - skip" {
     } });
 
     // LDR X0, [SP, #8] - same destination!
-    try insts.append(.{ .ldr = .{
+    try insts.append(allocator, .{ .ldr = .{
         .dst = x0_w,
         .base = sp,
         .offset = 8,
@@ -299,15 +306,15 @@ test "combineStorePairs: adjacent stores with consecutive offsets" {
 
     var optimizer = AArch64PeepholeOptimizer.init(allocator);
 
-    const x0 = Reg.gpr(0);
-    const x1 = Reg.gpr(1);
-    const sp = Reg.gpr(31);
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const sp = Reg.fromPReg(PReg.new(.int, 31));
 
-    var insts = std.ArrayList(Inst).init(allocator);
-    defer insts.deinit();
+    var insts: std.ArrayList(Inst) = .{};
+    defer insts.deinit(allocator);
 
     // STR X0, [SP, #16]
-    try insts.append(.{ .str = .{
+    try insts.append(allocator, .{ .str = .{
         .src = x0,
         .base = sp,
         .offset = 16,
@@ -315,7 +322,7 @@ test "combineStorePairs: adjacent stores with consecutive offsets" {
     } });
 
     // STR X1, [SP, #24]
-    try insts.append(.{ .str = .{
+    try insts.append(allocator, .{ .str = .{
         .src = x1,
         .base = sp,
         .offset = 24,
@@ -330,9 +337,9 @@ test "combineStorePairs: adjacent stores with consecutive offsets" {
     try testing.expectEqual(@as(u32, 1), optimizer.stats.store_pairs_formed);
 
     const stp = insts.items[0].stp;
-    try testing.expect(stp.src1.eq(x0));
-    try testing.expect(stp.src2.eq(x1));
-    try testing.expect(stp.base.eq(sp));
+    try testing.expect(regEq(stp.src1, x0));
+    try testing.expect(regEq(stp.src2, x1));
+    try testing.expect(regEq(stp.base, sp));
     try testing.expectEqual(@as(i16, 16), stp.offset);
 }
 
@@ -342,14 +349,14 @@ test "eliminateDeadMoves: removes mov reg, reg" {
 
     var optimizer = AArch64PeepholeOptimizer.init(allocator);
 
-    const x0 = Reg.gpr(0);
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
     const x0_w = inst_mod.WritableReg.fromReg(x0);
 
-    var insts = std.ArrayList(Inst).init(allocator);
-    defer insts.deinit();
+    var insts: std.ArrayList(Inst) = .{};
+    defer insts.deinit(allocator);
 
     // MOV X0, X0 - dead move
-    try insts.append(.{ .mov_rr = .{
+    try insts.append(allocator, .{ .mov_rr = .{
         .dst = x0_w,
         .src = x0,
         .size = .size64,

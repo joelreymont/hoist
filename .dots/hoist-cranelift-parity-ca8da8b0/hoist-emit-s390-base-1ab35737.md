@@ -1,9 +1,10 @@
 ---
 title: Emit s390 base
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.471368+02:00"
+created-at: "\"2026-01-14T15:42:46.471368+02:00\""
+closed-at: "2026-01-23T14:14:37.551433+02:00"
 ---
 
 Files: docs/architecture/06-backends.md:11-18, src/backends/x64/emit.zig:11-30

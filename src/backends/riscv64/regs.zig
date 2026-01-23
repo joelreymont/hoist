@@ -83,12 +83,12 @@ pub const FPR = struct {
 // Constructors for GPRs
 
 pub fn gprPreg(enc: u8) PReg {
-    return PReg.init(enc, .int);
+    return PReg.new(.int, @intCast(enc));
 }
 
 pub fn gpr(enc: u8) Reg {
     const preg = gprPreg(enc);
-    return Reg.fromVirtualReg(preg.index(), .int);
+    return Reg.fromPReg(preg);
 }
 
 pub fn zero() Reg {

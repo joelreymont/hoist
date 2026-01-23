@@ -171,7 +171,12 @@ pub fn compile(
     for (buffer.traps.items, 0..) |mtrap, i| {
         traps[i] = .{
             .offset = mtrap.offset,
-            .code = mtrap.code,
+            .code = switch (mtrap.code) {
+                .stack_overflow => .stack_overflow,
+                .heap_out_of_bounds => .heap_out_of_bounds,
+                .int_div_by_zero => .integer_divide_by_zero,
+                .unreachable_code_reached => .unreachable_code_reached,
+            },
         };
     }
 
@@ -225,8 +230,20 @@ fn convertRelocKind(kind: buffer_mod.Reloc) RelocationKind {
     return switch (kind) {
         .abs8, .aarch64_abs64 => .abs64,
         .x86_pc_rel_32, .aarch64_call26, .aarch64_jump26 => .pc_rel32,
-        .aarch64_adr_prel_pg_hi21, .aarch64_add_abs_lo12_nc, .aarch64_ldst64_abs_lo12_nc => .got_pc_rel32,
-        .abs4 => .abs64, // Treat 4-byte as 8-byte for simplicity
+        .aarch64_adr_prel_pg_hi21,
+        .aarch64_add_abs_lo12_nc,
+        .aarch64_ldst64_abs_lo12_nc,
+        .aarch64_adr_got_page,
+        .aarch64_ld64_got_lo12_nc,
+        .aarch64_tlsle_add_tprel_hi12,
+        .aarch64_tlsle_add_tprel_lo12_nc,
+        .aarch64_tlsie_adr_gottprel_page21,
+        .aarch64_tlsie_ld64_gottprel_lo12_nc,
+        .aarch64_tlsdesc_adr_page21,
+        .aarch64_tlsdesc_ld64_lo12,
+        .aarch64_tlsdesc_add_lo12,
+        .aarch64_tlsdesc_call => .got_pc_rel32,
+        .abs4 => .abs64,
     };
 }
 

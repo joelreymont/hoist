@@ -68,6 +68,8 @@ pub const Context = struct {
             .arch = switch (self.target.arch) {
                 .x86_64 => .x86_64,
                 .aarch64 => .aarch64,
+                .riscv64 => .riscv64,
+                .s390x => .s390x,
             },
             .opt_level = switch (self.opt_level) {
                 .none => .none,
@@ -93,6 +95,8 @@ pub const Context = struct {
         return switch (arch) {
             .x86_64 => "x86_64",
             .aarch64 => "aarch64",
+            .riscv64 => "riscv64",
+            .s390x => "s390x",
         };
     }
 
@@ -103,7 +107,13 @@ pub const Context = struct {
                 .linux, .macos => .system_v,
                 .windows => .windows_fastcall,
             },
-            .aarch64 => .apple_aarch64,
+            .aarch64 => switch (os) {
+                .linux => .system_v,
+                .macos => .apple_aarch64,
+                .windows => .windows_fastcall,
+            },
+            .riscv64 => .system_v,
+            .s390x => .system_v,
         };
     }
 };
@@ -120,6 +130,8 @@ pub const TargetConfig = struct {
 pub const Arch = enum {
     x86_64,
     aarch64,
+    riscv64,
+    s390x,
 };
 
 /// Supported operating systems.

@@ -1059,6 +1059,9 @@ pub const Aarch64ABICallee = struct {
     /// Whether this function is marked as cold (rarely executed).
     /// Hints to optimizer to de-prioritize inlining and code placement.
     is_cold: bool,
+    /// Varargs save area offset for variadic functions.
+    /// Only used when sig.is_varargs is true.
+    varargs_save_offset: ?i16,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -1089,6 +1092,7 @@ pub const Aarch64ABICallee = struct {
             .platform = platform,
             .red_zone_allowed = red_zone_allowed,
             .is_cold = is_cold,
+            .varargs_save_offset = null,
         };
     }
 
@@ -1106,8 +1110,19 @@ pub const Aarch64ABICallee = struct {
         else
             size;
 
+        // If variadic, add space for varargs save area
+        var locals_with_varargs = effective_locals;
+        if (self.sig.is_varargs) {
+            // Varargs save area goes after callee-saves
+            const callee_save_pairs = (self.clobbered_callee_saves.items.len + 1) / 2;
+            const callee_save_size = callee_save_pairs * 16;
+            const varargs_offset: i16 = @intCast(16 + callee_save_size); // After FP/LR and callee-saves
+            self.varargs_save_offset = varargs_offset;
+            locals_with_varargs += VarargsRegisterSaveArea.total_size;
+        }
+
         self.frame_size = calculateFrameSize(
-            effective_locals,
+            locals_with_varargs,
             @intCast(self.clobbered_callee_saves.items.len),
         );
 
@@ -1313,6 +1328,14 @@ pub const Aarch64ABICallee = struct {
                     .size = .size64,
                 } }, buffer);
                 stack_offset += 16; // Reserve 16 bytes for alignment
+            }
+        }
+
+        // 4. Save varargs register save area if variadic
+        if (self.sig.is_varargs) {
+            if (self.varargs_save_offset) |offset| {
+                const save_area = VarargsRegisterSaveArea.init(offset);
+                try save_area.emitSaveAll(buffer);
             }
         }
     }

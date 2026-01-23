@@ -121,6 +121,7 @@ pub const Signature = struct {
     params: std.ArrayList(AbiParam),
     returns: std.ArrayList(AbiParam),
     call_conv: CallConv,
+    is_varargs: bool,
     allocator: Allocator,
 
     pub fn init(allocator: Allocator, call_conv: CallConv) Signature {
@@ -128,6 +129,7 @@ pub const Signature = struct {
             .params = .{},
             .returns = .{},
             .call_conv = call_conv,
+            .is_varargs = false,
             .allocator = allocator,
         };
     }
@@ -141,6 +143,7 @@ pub const Signature = struct {
         self.params.clearRetainingCapacity();
         self.returns.clearRetainingCapacity();
         self.call_conv = call_conv;
+        self.is_varargs = false;
     }
 
     pub fn specialParamIndex(self: *const Signature, purpose: ArgumentPurpose) ?usize {

@@ -1,9 +1,10 @@
 ---
 title: Add rv tests
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.447821+02:00"
+created-at: "\"2026-01-14T15:42:46.447821+02:00\""
+closed-at: "2026-01-23T13:26:52.607785+02:00"
 ---
 
 Files: tests (new), src/backends/riscv64/emit.zig (new)

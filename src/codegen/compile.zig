@@ -1119,6 +1119,8 @@ fn lower(ctx: *Context, target: *const Target) CodegenError!void {
     switch (target.arch) {
         .aarch64 => try lowerAArch64(ctx),
         .x86_64 => try lowerX86_64(ctx),
+        .riscv64 => try lowerRiscv64(ctx),
+        .s390x => try lowerS390x(ctx),
     }
 }
 
@@ -1319,6 +1321,7 @@ fn emitAArch64WithAllocation(
     const emit_mod = @import("../backends/aarch64/emit.zig");
     const buffer_mod = @import("../machinst/buffer.zig");
     const abi_mod = @import("../backends/aarch64/abi.zig");
+    const peephole_mod = @import("../backends/aarch64/peephole.zig");
 
     // Create machine code buffer
     var buffer = buffer_mod.MachBuffer.init(ctx.allocator);
@@ -1370,6 +1373,9 @@ fn emitAArch64WithAllocation(
         try vcode_to_ir_blocks.put(entry.value_ptr.*, entry.key_ptr.*);
     }
 
+    // Initialize peephole optimizer
+    var peephole = peephole_mod.AArch64PeepholeOptimizer.init(ctx.allocator);
+
     // Emit each block with label binding
     for (vcode.blocks.items, 0..) |vcode_block, block_idx| {
         // Create and bind label for this block
@@ -1381,36 +1387,47 @@ fn emitAArch64WithAllocation(
             try buffer.registerBlockLabel(ir_block, label);
         }
 
-        // Emit instructions in this block
+        // Collect and rewrite block instructions
         const insn_start = vcode_block.insn_start;
         const insn_end = vcode_block.insn_end;
+        var block_insts = std.ArrayList(a64_inst.Inst){};
+        defer block_insts.deinit(ctx.allocator);
+        try block_insts.ensureTotalCapacity(ctx.allocator, insn_end - insn_start);
+
         for (vcode.insns.items[insn_start..insn_end]) |inst| {
             var rewritten_inst = inst;
 
             // Rewrite virtual registers to physical registers
             try rewriteInstRegs(&rewritten_inst, RegMapper{ .result = result, .scratch = null });
 
-            // Special handling for redundant moves
+            // Skip redundant moves (mov reg, reg)
             if (rewritten_inst == .mov_rr) {
                 const dst_reg = rewritten_inst.mov_rr.dst.toReg();
                 const src_reg = rewritten_inst.mov_rr.src;
                 if (dst_reg.toRealReg()) |dst_real| {
                     if (src_reg.toRealReg()) |src_real| {
                         if (dst_real.hwEnc() == src_real.hwEnc()) {
-                            // Redundant mov - skip it
                             continue;
                         }
                     }
                 }
             }
 
+            block_insts.appendAssumeCapacity(rewritten_inst);
+        }
+
+        // Run peephole optimizations on block
+        try peephole.optimize(&block_insts);
+
+        // Emit optimized instructions
+        for (block_insts.items) |inst| {
             // Emit epilogue before return instructions
-            if (rewritten_inst == .ret) {
+            if (inst == .ret) {
                 try abi_callee.emitEpilogue(&buffer);
             }
 
-            // Emit instruction using generic emit function
-            try emit_mod.emit(rewritten_inst, &buffer);
+            // Emit instruction
+            try emit_mod.emit(inst, &buffer);
         }
     }
 
@@ -4606,6 +4623,20 @@ fn lowerX86_64(ctx: *Context) CodegenError!void {
     return error.UnsupportedTarget;
 }
 
+/// Lower IR to RISC-V 64 VCode.
+fn lowerRiscv64(ctx: *Context) CodegenError!void {
+    // TODO: RISC-V 64 lowering not yet implemented
+    _ = ctx;
+    return error.UnsupportedTarget;
+}
+
+/// Lower IR to s390x VCode.
+fn lowerS390x(ctx: *Context) CodegenError!void {
+    // TODO: s390x lowering not yet implemented
+    _ = ctx;
+    return error.UnsupportedTarget;
+}
+
 /// Lower a single instruction.
 fn lowerInstruction(lower_ctx: anytype, inst: ir.Inst, target: *const Target) CodegenError!void {
     _ = lower_ctx;
@@ -4812,6 +4843,8 @@ pub const Target = struct {
     pub const Architecture = enum {
         aarch64,
         x86_64,
+        riscv64,
+        s390x,
     };
 
     pub const OptLevel = enum {

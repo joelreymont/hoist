@@ -1,9 +1,10 @@
 ---
 title: Add s390 tests
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.512747+02:00"
+created-at: "\"2026-01-14T15:42:46.512747+02:00\""
+closed-at: "2026-01-23T14:21:00.378295+02:00"
 ---
 
 Files: tests (new), src/backends/s390x/emit.zig (new)

@@ -158,6 +158,21 @@ pub const aarch64_isa = @import("backends/aarch64/isa.zig");
 pub const aarch64_legalize = @import("backends/aarch64/legalize.zig");
 pub const aarch64_lower_generated = @import("generated/aarch64_lower_generated.zig");
 
+pub const riscv64_inst = @import("backends/riscv64/inst.zig");
+pub const riscv64_emit = @import("backends/riscv64/emit.zig");
+pub const riscv64_abi = @import("backends/riscv64/abi.zig");
+pub const riscv64_lower = @import("backends/riscv64/lower.zig");
+pub const riscv64_isle_impl = @import("backends/riscv64/isle_impl.zig");
+pub const riscv64_isa = @import("backends/riscv64/isa.zig");
+pub const riscv64_lower_generated = @import("generated/riscv64_lower_generated.zig");
+
+pub const s390x_inst = @import("backends/s390x/inst.zig");
+pub const s390x_emit = @import("backends/s390x/emit.zig");
+pub const s390x_abi = @import("backends/s390x/abi.zig");
+pub const s390x_lower = @import("backends/s390x/lower.zig");
+pub const s390x_isa = @import("backends/s390x/isa.zig");
+pub const s390x_regs = @import("backends/s390x/regs.zig");
+
 pub const backends = struct {
     pub const aarch64 = struct {
         pub const inst = aarch64_inst;
@@ -170,6 +185,25 @@ pub const backends = struct {
         pub const lower_generated = aarch64_lower_generated;
         pub const isa = aarch64_isa;
         pub const legalize = aarch64_legalize;
+    };
+
+    pub const riscv64 = struct {
+        pub const inst = riscv64_inst;
+        pub const emit = riscv64_emit;
+        pub const abi = riscv64_abi;
+        pub const lower = riscv64_lower;
+        pub const isle_impl = riscv64_isle_impl;
+        pub const lower_generated = riscv64_lower_generated;
+        pub const isa = riscv64_isa;
+    };
+
+    pub const s390x = struct {
+        pub const inst = s390x_inst;
+        pub const emit = s390x_emit;
+        pub const abi = s390x_abi;
+        pub const lower = s390x_lower;
+        pub const isa = s390x_isa;
+        pub const regs = s390x_regs;
     };
 };
 

@@ -1,0 +1,224 @@
+;; riscv64 ISLE lowering rules
+
+;; Integer arithmetic
+
+(rule (lower (iadd ty x y))
+      (rv_add ty x y))
+
+(rule (lower (isub ty x y))
+      (rv_sub ty x y))
+
+(rule (lower (imul ty x y))
+      (rv_mul ty x y))
+
+(rule (lower (sdiv ty x y))
+      (rv_div ty x y))
+
+(rule (lower (udiv ty x y))
+      (rv_divu ty x y))
+
+(rule (lower (srem ty x y))
+      (rv_rem ty x y))
+
+(rule (lower (urem ty x y))
+      (rv_remu ty x y))
+
+;; Immediate forms
+
+(rule (lower (iadd ty x (iconst k)))
+      (if-let $true (simm12 k))
+      (rv_addi ty x k))
+
+;; Bitwise operations
+
+(rule (lower (band ty x y))
+      (rv_and ty x y))
+
+(rule (lower (bor ty x y))
+      (rv_or ty x y))
+
+(rule (lower (bxor ty x y))
+      (rv_xor ty x y))
+
+(rule (lower (band ty x (iconst k)))
+      (if-let $true (simm12 k))
+      (rv_andi ty x k))
+
+(rule (lower (bor ty x (iconst k)))
+      (if-let $true (simm12 k))
+      (rv_ori ty x k))
+
+(rule (lower (bxor ty x (iconst k)))
+      (if-let $true (simm12 k))
+      (rv_xori ty x k))
+
+;; Shift operations
+
+(rule (lower (ishl ty x y))
+      (rv_sll ty x y))
+
+(rule (lower (ushr ty x y))
+      (rv_srl ty x y))
+
+(rule (lower (sshr ty x y))
+      (rv_sra ty x y))
+
+(rule (lower (ishl ty x (iconst k)))
+      (if-let $true (uimm6 k))
+      (rv_slli ty x k))
+
+(rule (lower (ushr ty x (iconst k)))
+      (if-let $true (uimm6 k))
+      (rv_srli ty x k))
+
+(rule (lower (sshr ty x (iconst k)))
+      (if-let $true (uimm6 k))
+      (rv_srai ty x k))
+
+;; Comparison operations
+
+(rule (lower (icmp (slt) ty x y))
+      (rv_slt ty x y))
+
+(rule (lower (icmp (ult) ty x y))
+      (rv_sltu ty x y))
+
+(rule (lower (icmp (slt) ty x (iconst k)))
+      (if-let $true (simm12 k))
+      (rv_slti ty x k))
+
+(rule (lower (icmp (ult) ty x (iconst k)))
+      (if-let $true (simm12 k))
+      (rv_sltiu ty x k))
+
+;; Load/store
+
+(rule (lower (load ty addr _flags _offset))
+      (rv_load ty addr))
+
+(rule (lower (store val addr _flags _offset))
+      (rv_store val addr))
+
+;; Control flow
+
+(rule (lower (jump target))
+      (rv_jmp target))
+
+(rule (lower (brif cond target))
+      (rv_brif cond target))
+
+(rule (lower (return))
+      (rv_ret))
+
+;; Constant materialization
+
+(rule (lower (iconst ty k))
+      (rv_iconst ty k))
+
+;; Floating-point operations
+
+(rule (lower (fadd ty x y))
+      (rv_fadd ty x y))
+
+(rule (lower (fsub ty x y))
+      (rv_fsub ty x y))
+
+(rule (lower (fmul ty x y))
+      (rv_fmul ty x y))
+
+(rule (lower (fdiv ty x y))
+      (rv_fdiv ty x y))
+
+(rule (lower (fsqrt ty x))
+      (rv_fsqrt ty x))
+
+(rule (lower (fmin ty x y))
+      (rv_fmin ty x y))
+
+(rule (lower (fmax ty x y))
+      (rv_fmax ty x y))
+
+;; FP comparisons
+
+(rule (lower (fcmp (eq) ty x y))
+      (rv_feq ty x y))
+
+(rule (lower (fcmp (lt) ty x y))
+      (rv_flt ty x y))
+
+(rule (lower (fcmp (le) ty x y))
+      (rv_fle ty x y))
+
+;; FP conversions
+
+(rule (lower (fcvt_from_sint ty x))
+      (rv_fcvt_from_sint ty x))
+
+(rule (lower (fcvt_from_uint ty x))
+      (rv_fcvt_from_uint ty x))
+
+(rule (lower (fcvt_to_sint ty x))
+      (rv_fcvt_to_sint ty x))
+
+(rule (lower (fcvt_to_uint ty x))
+      (rv_fcvt_to_uint ty x))
+
+(rule (lower (fdemote x))
+      (rv_fcvt_s_d x))
+
+(rule (lower (fpromote x))
+      (rv_fcvt_d_s x))
+
+;; FP load/store
+
+(rule (lower (load (f32) addr _flags _offset))
+      (rv_flw addr))
+
+(rule (lower (load (f64) addr _flags _offset))
+      (rv_fld addr))
+
+(rule (lower (store (f32 val) addr _flags _offset))
+      (rv_fsw val addr))
+
+(rule (lower (store (f64 val) addr _flags _offset))
+      (rv_fsd val addr))
+
+;; Atomics
+
+(rule (lower (atomic_rmw (add) ty addr val _ordering))
+      (rv_amoadd ty addr val))
+
+(rule (lower (atomic_rmw (swap) ty addr val _ordering))
+      (rv_amoswap ty addr val))
+
+(rule (lower (atomic_rmw (and) ty addr val _ordering))
+      (rv_amoand ty addr val))
+
+(rule (lower (atomic_rmw (or) ty addr val _ordering))
+      (rv_amoor ty addr val))
+
+(rule (lower (atomic_rmw (xor) ty addr val _ordering))
+      (rv_amoxor ty addr val))
+
+(rule (lower (atomic_rmw (smin) ty addr val _ordering))
+      (rv_amomin ty addr val))
+
+(rule (lower (atomic_rmw (smax) ty addr val _ordering))
+      (rv_amomax ty addr val))
+
+(rule (lower (atomic_rmw (umin) ty addr val _ordering))
+      (rv_amominu ty addr val))
+
+(rule (lower (atomic_rmw (umax) ty addr val _ordering))
+      (rv_amomaxu ty addr val))
+
+(rule (lower (atomic_load ty addr _ordering))
+      (rv_lr ty addr))
+
+(rule (lower (atomic_store val addr _ordering))
+      (rv_sc val addr))
+
+;; Fence
+
+(rule (lower (fence _ordering))
+      (rv_fence))

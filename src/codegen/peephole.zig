@@ -216,7 +216,7 @@ test "canFormPair" {
     try testing.expect(!canFormPair(0, 4)); // diff = 4, not 8
 
     // Invalid: base offset out of range
-    try testing.expect(!canFormPair(504, 512)); // base 504 OK, but result out of range
+    try testing.expect(!canFormPair(512, 520)); // base 512 too large (> 504)
 }
 
 // ============================================================================

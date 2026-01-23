@@ -3242,28 +3242,156 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
         }
     }
 
-    // TODO: Second pass: Handle stack arguments
-    // This is complex because we must avoid corrupting arguments during frame deallocation
-    // For now, only support tail calls where all args fit in registers
+    // Second pass: Handle stack arguments
+    // Stack args must be copied BEFORE frame deallocation to avoid corruption.
+    // Strategy: copy all stack args to temporaries first, then copy to final positions.
     if (stack_offset > 0) {
-        std.log.err("Tail calls with stack arguments not yet implemented", .{});
-        return error.TailCallStackArgsNotSupported;
+        var stack_args = std.ArrayList(struct { val: lower_mod.Value, ty: types.Type }).init(ctx.getAllocator());
+        defer stack_args.deinit();
+
+        // Collect stack arguments
+        int_count = 0;
+        fp_count = 0;
+        for (args) |arg_value| {
+            const arg_type = ctx.func.dfg.valueType(arg_value);
+            if (arg_type.isFloat() or arg_type.isVector()) {
+                if (fp_count >= abi_spec.float_arg_regs.len) {
+                    try stack_args.append(.{ .val = arg_value, .ty = arg_type });
+                }
+                fp_count += 1;
+            } else {
+                if (int_count >= abi_spec.int_arg_regs.len) {
+                    try stack_args.append(.{ .val = arg_value, .ty = arg_type });
+                }
+                int_count += 1;
+            }
+        }
+
+        // Copy stack args to temp registers first
+        var temps = std.ArrayList(Reg).init(ctx.getAllocator());
+        defer temps.deinit();
+
+        for (stack_args.items) |arg| {
+            const arg_reg = try ctx.getValueReg(arg.val, if (arg.ty.isFloat() or arg.ty.isVector()) .float else .int);
+            const temp = lower_mod.WritableReg.allocReg(if (arg.ty.isFloat() or arg.ty.isVector()) .float else .int, ctx);
+
+            if (arg.ty.isFloat() or arg.ty.isVector()) {
+                try ctx.emit(Inst{ .fmov_rr = .{
+                    .dst = temp,
+                    .src = arg_reg.toReg(),
+                    .size = typeToFpuOperandSize(arg.ty),
+                } });
+            } else {
+                try ctx.emit(Inst{ .mov_rr = .{
+                    .dst = temp,
+                    .src = arg_reg.toReg(),
+                    .size = .size64,
+                } });
+            }
+            try temps.append(temp.toReg());
+        }
+
+        // After frame deallocation, copy from temps to stack
+        // This happens after SP adjustment, so we emit a placeholder
+        // that will be filled in after frame restoration
+        for (temps.items, 0..) |temp, i| {
+            const arg = stack_args.items[i];
+            const offset: i32 = @intCast(i * 8);
+
+            if (arg.ty.isFloat() or arg.ty.isVector()) {
+                try ctx.emit(Inst{ .str_fp = .{
+                    .src = temp,
+                    .base = Reg.gpr(31), // SP
+                    .offset = offset,
+                    .size = typeToFpuOperandSize(arg.ty),
+                } });
+            } else {
+                try ctx.emit(Inst{ .str = .{
+                    .src = temp,
+                    .base = Reg.gpr(31), // SP
+                    .offset = offset,
+                    .size = .size64,
+                } });
+            }
+        }
     }
 
-    // Restore frame: deallocate stack, restore FP/LR
-    const frame_size = ctx.getFrameSize();
-    if (frame_size > 0) {
-        // TODO: Restore callee-saved registers
-        // TODO: Restore FP/LR from stack
-        // For now, just adjust SP
-        try ctx.emit(Inst{
-            .add_imm = .{
-                .dst = lower_mod.WritableReg.fromReg(Reg.gpr(31)), // SP
-                .rn = Reg.gpr(31),
-                .imm = @intCast(frame_size),
+    // Restore callee-saved registers and frame
+    const abi_callee = ctx.getABICallee();
+    const sp = Reg.gpr(31);
+    const fp = Reg.gpr(29);
+    const lr = Reg.gpr(30);
+
+    // 1. Restore callee-save registers in reverse order
+    var restore_offset: i32 = 16;
+    var i: usize = 0;
+    while (i < abi_callee.clobbered_callee_saves.items.len) : (i += 2) {
+        const reg1 = Reg.fromPReg(abi_callee.clobbered_callee_saves.items[i]);
+
+        if (i + 1 < abi_callee.clobbered_callee_saves.items.len) {
+            const reg2 = Reg.fromPReg(abi_callee.clobbered_callee_saves.items[i + 1]);
+            try ctx.emit(Inst{ .ldp = .{
+                .dst1 = lower_mod.WritableReg.fromReg(reg1),
+                .dst2 = lower_mod.WritableReg.fromReg(reg2),
+                .base = sp,
+                .offset = @intCast(restore_offset),
+                .size = .size64,
+            } });
+            restore_offset += 16;
+        } else {
+            try ctx.emit(Inst{ .ldr = .{
+                .dst = lower_mod.WritableReg.fromReg(reg1),
+                .base = sp,
+                .offset = @intCast(restore_offset),
+                .size = .size64,
+            } });
+            restore_offset += 16;
+        }
+    }
+
+    // 2. Restore FP/LR and deallocate frame
+    const frame_size = abi_callee.frame_size;
+    const max_stp_offset: u32 = 504;
+
+    if (frame_size <= max_stp_offset) {
+        // Small frame: restore FP/LR and deallocate in one instruction
+        try ctx.emit(Inst{ .ldp = .{
+            .dst1 = lower_mod.WritableReg.fromReg(fp),
+            .dst2 = lower_mod.WritableReg.fromReg(lr),
+            .base = sp,
+            .offset = @intCast(frame_size),
+            .size = .size64,
+        } });
+    } else {
+        // Large frame: restore FP/LR first
+        try ctx.emit(Inst{ .ldp = .{
+            .dst1 = lower_mod.WritableReg.fromReg(fp),
+            .dst2 = lower_mod.WritableReg.fromReg(lr),
+            .base = sp,
+            .offset = 0,
+            .size = .size64,
+        } });
+
+        // Deallocate FP/LR space
+        try ctx.emit(Inst{ .add_imm = .{
+            .dst = lower_mod.WritableReg.fromReg(sp),
+            .rn = sp,
+            .imm = 16,
+            .is_64 = true,
+        } });
+
+        // Deallocate remaining frame
+        var remaining = frame_size - 16;
+        while (remaining > 0) {
+            const chunk = @min(remaining, 4095);
+            try ctx.emit(Inst{ .add_imm = .{
+                .dst = lower_mod.WritableReg.fromReg(sp),
+                .rn = sp,
+                .imm = @intCast(chunk),
                 .is_64 = true,
-            },
-        });
+            } });
+            remaining -= chunk;
+        }
     }
 
     // Branch to target (B, not BL - no link register update)
@@ -3345,17 +3473,82 @@ pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args:
         return error.TailCallStackArgsNotSupported;
     }
 
-    // Restore frame
-    const frame_size = ctx.getFrameSize();
-    if (frame_size > 0) {
-        try ctx.emit(Inst{
-            .add_imm = .{
-                .dst = lower_mod.WritableReg.fromReg(Reg.gpr(31)), // SP
-                .rn = Reg.gpr(31),
-                .imm = @intCast(frame_size),
+    // Restore callee-saved registers and frame
+    const abi_callee = ctx.getABICallee();
+    const sp = Reg.gpr(31);
+    const fp = Reg.gpr(29);
+    const lr = Reg.gpr(30);
+
+    // 1. Restore callee-save registers in reverse order
+    var offset: i32 = 16;
+    var i: usize = 0;
+    while (i < abi_callee.clobbered_callee_saves.items.len) : (i += 2) {
+        const reg1 = Reg.fromPReg(abi_callee.clobbered_callee_saves.items[i]);
+
+        if (i + 1 < abi_callee.clobbered_callee_saves.items.len) {
+            const reg2 = Reg.fromPReg(abi_callee.clobbered_callee_saves.items[i + 1]);
+            try ctx.emit(Inst{ .ldp = .{
+                .dst1 = lower_mod.WritableReg.fromReg(reg1),
+                .dst2 = lower_mod.WritableReg.fromReg(reg2),
+                .base = sp,
+                .offset = @intCast(offset),
+                .size = .size64,
+            } });
+            offset += 16;
+        } else {
+            try ctx.emit(Inst{ .ldr = .{
+                .dst = lower_mod.WritableReg.fromReg(reg1),
+                .base = sp,
+                .offset = @intCast(offset),
+                .size = .size64,
+            } });
+            offset += 16;
+        }
+    }
+
+    // 2. Restore FP/LR and deallocate frame
+    const frame_size = abi_callee.frame_size;
+    const max_stp_offset: u32 = 504;
+
+    if (frame_size <= max_stp_offset) {
+        // Small frame: restore FP/LR and deallocate in one instruction
+        try ctx.emit(Inst{ .ldp = .{
+            .dst1 = lower_mod.WritableReg.fromReg(fp),
+            .dst2 = lower_mod.WritableReg.fromReg(lr),
+            .base = sp,
+            .offset = @intCast(frame_size),
+            .size = .size64,
+        } });
+    } else {
+        // Large frame: restore FP/LR first
+        try ctx.emit(Inst{ .ldp = .{
+            .dst1 = lower_mod.WritableReg.fromReg(fp),
+            .dst2 = lower_mod.WritableReg.fromReg(lr),
+            .base = sp,
+            .offset = 0,
+            .size = .size64,
+        } });
+
+        // Deallocate FP/LR space
+        try ctx.emit(Inst{ .add_imm = .{
+            .dst = lower_mod.WritableReg.fromReg(sp),
+            .rn = sp,
+            .imm = 16,
+            .is_64 = true,
+        } });
+
+        // Deallocate remaining frame
+        var remaining = frame_size - 16;
+        while (remaining > 0) {
+            const chunk = @min(remaining, 4095);
+            try ctx.emit(Inst{ .add_imm = .{
+                .dst = lower_mod.WritableReg.fromReg(sp),
+                .rn = sp,
+                .imm = @intCast(chunk),
                 .is_64 = true,
-            },
-        });
+            } });
+            remaining -= chunk;
+        }
     }
 
     // Branch via register (BR, not BLR - no link register update)
@@ -3480,18 +3673,32 @@ fn vectorSizeFromType(ty: types.Type) emit.VectorSize {
 /// Call operations (ISLE constructors)
 pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
     recordRule("aarch64_call");
+    // Get signature and calling convention
+    const sig = ctx.getSig(sig_ref);
+    const call_conv = if (sig) |s| s.call_conv else signature_mod.CallConv.system_v;
+    const is_varargs = if (sig) |s| s.is_varargs else false;
+
     // Validate signature if available
-    if (ctx.getSig(sig_ref)) |sig| {
-        // Check argument count matches
-        if (args.len != sig.params.items.len) {
-            std.log.err("Call argument count mismatch: got {}, expected {}", .{ args.len, sig.params.items.len });
-            return error.SignatureArgumentCountMismatch;
+    if (sig) |s| {
+        // For variadic calls, args.len >= fixed params
+        const expected = s.params.items.len;
+        if (is_varargs) {
+            if (args.len < expected) {
+                std.log.err("Call argument count mismatch: got {}, expected >= {}", .{ args.len, expected });
+                return error.SignatureArgumentCountMismatch;
+            }
+        } else {
+            if (args.len != expected) {
+                std.log.err("Call argument count mismatch: got {}, expected {}", .{ args.len, expected });
+                return error.SignatureArgumentCountMismatch;
+            }
         }
 
-        // Check argument types match
-        for (args, 0..) |arg_value, i| {
+        // Check fixed argument types match
+        for (0..expected) |i| {
+            const arg_value = args[i];
             const arg_type = ctx.func.dfg.valueType(arg_value);
-            const param_type = sig.params.items[i].value_type;
+            const param_type = s.params.items[i].value_type;
             if (!arg_type.eq(param_type)) {
                 std.log.err("Call argument {} type mismatch: got {}, expected {}", .{ i, arg_type, param_type });
                 return error.SignatureArgumentTypeMismatch;
@@ -3499,9 +3706,6 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
         }
     }
 
-    // Get signature and calling convention
-    const sig = ctx.getSig(sig_ref);
-    const call_conv = if (sig) |s| s.call_conv else signature_mod.CallConv.system_v;
     const abi_spec = abi_mod.abiSpecForCallConv(call_conv);
 
     // Check if callee uses indirect return (sret) and pass pointer in X8
@@ -3953,18 +4157,32 @@ fn marshalReturnValues(sig_ref: SigRef, ctx: *lower_mod.LowerCtx(Inst)) !lower_m
 
 pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
     recordRule("aarch64_call_indirect");
+    // Get signature and calling convention
+    const sig = ctx.getSig(sig_ref);
+    const call_conv = if (sig) |s| s.call_conv else signature_mod.CallConv.system_v;
+    const is_varargs = if (sig) |s| s.is_varargs else false;
+
     // Validate signature if available
-    if (ctx.getSig(sig_ref)) |sig| {
-        // Check argument count matches
-        if (args.len != sig.params.items.len) {
-            std.log.err("Call_indirect argument count mismatch: got {}, expected {}", .{ args.len, sig.params.items.len });
-            return error.SignatureArgumentCountMismatch;
+    if (sig) |s| {
+        // For variadic calls, args.len >= fixed params
+        const expected = s.params.items.len;
+        if (is_varargs) {
+            if (args.len < expected) {
+                std.log.err("Call_indirect argument count mismatch: got {}, expected >= {}", .{ args.len, expected });
+                return error.SignatureArgumentCountMismatch;
+            }
+        } else {
+            if (args.len != expected) {
+                std.log.err("Call_indirect argument count mismatch: got {}, expected {}", .{ args.len, expected });
+                return error.SignatureArgumentCountMismatch;
+            }
         }
 
-        // Check argument types match
-        for (args, 0..) |arg_value, i| {
+        // Check fixed argument types match
+        for (0..expected) |i| {
+            const arg_value = args[i];
             const arg_type = ctx.func.dfg.valueType(arg_value);
-            const param_type = sig.params.items[i].value_type;
+            const param_type = s.params.items[i].value_type;
             if (!arg_type.eq(param_type)) {
                 std.log.err("Call_indirect argument {} type mismatch: got {}, expected {}", .{ i, arg_type, param_type });
                 return error.SignatureArgumentTypeMismatch;
@@ -3972,9 +4190,6 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
         }
     }
 
-    // Get signature and calling convention
-    const sig = ctx.getSig(sig_ref);
-    const call_conv = if (sig) |s| s.call_conv else signature_mod.CallConv.system_v;
     const abi_spec = abi_mod.abiSpecForCallConv(call_conv);
 
     // Check if callee uses indirect return (sret) and pass pointer in X8

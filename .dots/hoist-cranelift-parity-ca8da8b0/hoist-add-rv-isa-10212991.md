@@ -1,9 +1,10 @@
 ---
 title: Add rv isa
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.436396+02:00"
+created-at: "\"2026-01-14T15:42:46.436396+02:00\""
+closed-at: "2026-01-23T11:00:36.698880+02:00"
 ---
 
 Files: src/backends/x64/isa.zig:1-60, src/context.zig:61-88

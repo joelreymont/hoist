@@ -2,7 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 
 const root = @import("root");
-const reg_mod = root.reg;
+const reg_mod = @import("../../machinst/reg.zig");
 
 pub const Reg = reg_mod.Reg;
 pub const PReg = reg_mod.PReg;
@@ -1023,6 +1023,20 @@ pub const Inst = union(enum) {
 
     /// No operation (pseudo - addi x0, x0, 0).
     nop,
+
+    // ============ Register allocation support ============
+
+    /// Get defined (output) registers for this instruction.
+    pub fn getDefs(self: *const Inst, allocator: std.mem.Allocator) ![]VReg {
+        _ = self;
+        return allocator.alloc(VReg, 0);
+    }
+
+    /// Get used (input) registers for this instruction.
+    pub fn getUses(self: *const Inst, allocator: std.mem.Allocator) ![]VReg {
+        _ = self;
+        return allocator.alloc(VReg, 0);
+    }
 };
 
 /// Floating-point rounding mode.

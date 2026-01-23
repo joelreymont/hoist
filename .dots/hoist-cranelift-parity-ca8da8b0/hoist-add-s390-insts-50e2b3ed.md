@@ -1,9 +1,10 @@
 ---
 title: Add s390 insts
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.459593+02:00"
+created-at: "\"2026-01-14T15:42:46.459593+02:00\""
+closed-at: "2026-01-23T14:13:02.952508+02:00"
 ---
 
 Files: docs/architecture/06-backends.md:11-18, src/backends/x64/inst.zig:12-93
