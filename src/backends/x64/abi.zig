@@ -72,8 +72,12 @@ pub const X64ABICallee = struct {
     call_conv: ?abi_mod.ABICallingConvention,
     /// Callee-save registers to preserve.
     clobbered_callee_saves: std.ArrayList(PReg),
-    /// Stack frame size.
+    /// Stack frame size (local slots only).
     frame_size: u32,
+    /// Shadow space size (Win64: 32 bytes).
+    shadow_size: u32,
+    /// Struct return pointer register (SysV: RAX, Win64: RCX implicit in return).
+    sret_reg: ?PReg,
 
     pub fn init(
         _allocator: std.mem.Allocator,
@@ -86,12 +90,16 @@ pub const X64ABICallee = struct {
             .aapcs64 => unreachable,
         };
 
+        const shadow_sz: u32 = if (sig.call_conv == .windows_fastcall) 32 else 0;
+
         return .{
             .sig = sig,
             .abi = abi,
             .call_conv = null,
             .clobbered_callee_saves = std.ArrayList(PReg){},
             .frame_size = 0,
+            .shadow_size = shadow_sz,
+            .sret_reg = null,
         };
     }
 
@@ -135,13 +143,14 @@ pub const X64ABICallee = struct {
             try emit_fn(.{ .push_r = .{ .src = reg } }, buffer);
         }
 
-        // Allocate stack frame (if needed)
-        if (self.frame_size > 0) {
+        // Allocate stack frame + shadow space (if needed)
+        const total_size = self.frame_size + self.shadow_size;
+        if (total_size > 0) {
             const rsp_w = WritableReg.fromReg(rsp);
             try emit_fn(.{
-                .sub_rr = .{
+                .sub_imm = .{
                     .dst = rsp_w,
-                    .src = rsp, // SUB RSP, imm would be better
+                    .imm = @intCast(total_size),
                     .size = .size64,
                 },
             }, buffer);
@@ -156,13 +165,14 @@ pub const X64ABICallee = struct {
     ) !void {
         const emit_fn = @import("emit.zig").emit;
 
-        // Deallocate stack frame (if needed)
-        if (self.frame_size > 0) {
+        // Deallocate stack frame + shadow space (if needed)
+        const total_size = self.frame_size + self.shadow_size;
+        if (total_size > 0) {
             const rsp = Reg.fromPReg(PReg.new(.int, 4));
             const rsp_w = WritableReg.fromReg(rsp);
-            try emit_fn(.{ .add_rr = .{
+            try emit_fn(.{ .add_imm = .{
                 .dst = rsp_w,
-                .src = rsp,
+                .imm = @intCast(total_size),
                 .size = .size64,
             } }, buffer);
         }
@@ -257,4 +267,48 @@ test "Windows fastcall ABI" {
 
     // 5th on stack
     try testing.expect(arg_locs[4].slots[0] == .stack);
+}
+
+/// Check if signature needs struct return (sret) handling.
+/// Sret is passed as an implicit first parameter (pointer in RDI/RCX).
+pub fn needsStructReturn(params: []const @import("../../ir/signature.zig").AbiParam) bool {
+    const sig_mod = @import("../../ir/signature.zig");
+    for (params) |param| {
+        if (param.purpose == sig_mod.ArgumentPurpose.struct_return) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Get sret register for calling convention.
+/// SysV: RDI (first int arg reg, hw_enc=7).
+/// Win64: RCX (first int arg reg, hw_enc=1).
+pub fn sretReg(cc: abi_mod.CallConv) PReg {
+    return switch (cc) {
+        .system_v => PReg.new(.int, 7), // RDI
+        .windows_fastcall => PReg.new(.int, 1), // RCX
+        .aapcs64 => unreachable,
+    };
+}
+
+test "needsStructReturn" {
+    const sig_mod = @import("../../ir/signature.zig");
+    const AbiParam = sig_mod.AbiParam;
+    const Type = @import("../../ir/types.zig").Type;
+
+    // No sret param
+    const args1 = [_]AbiParam{AbiParam.new(Type.i64)};
+    try testing.expectEqual(false, needsStructReturn(&args1));
+
+    // Explicit struct_return param
+    const args2 = [_]AbiParam{
+        AbiParam.special(Type.i64, sig_mod.ArgumentPurpose.struct_return),
+    };
+    try testing.expectEqual(true, needsStructReturn(&args2));
+}
+
+test "sretReg" {
+    try testing.expectEqual(PReg.new(.int, 7), sretReg(.system_v)); // RDI
+    try testing.expectEqual(PReg.new(.int, 1), sretReg(.windows_fastcall)); // RCX
 }

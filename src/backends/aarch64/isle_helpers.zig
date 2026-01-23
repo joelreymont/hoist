@@ -3317,6 +3317,20 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
         }
     }
 
+    // Load target address via GOT before frame restoration
+    const symbol_name = switch (name) {
+        .testcase => |n| n,
+        .user => |u| blk: {
+            var buf: [64]u8 = undefined;
+            const formatted = std.fmt.bufPrint(&buf, "u{d}:{d}", .{ u.namespace, u.index }) catch "external_user_func";
+            const owned = try ctx.getAllocator().dupe(u8, formatted);
+            break :blk owned;
+        },
+    };
+    const target_reg = Reg.gpr(9); // X9: caller-saved, safe across tail call setup
+    const tmp = lower_mod.WritableReg.fromReg(target_reg);
+    try ctx.emit(Inst{ .load_ext_name_got = .{ .dst = tmp, .symbol = symbol_name } });
+
     // Restore callee-saved registers and frame
     const abi_callee = ctx.getABICallee();
     const sp = Reg.gpr(31);
@@ -3395,8 +3409,8 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
         }
     }
 
-    // Branch to target (B, not BL - no link register update)
-    return Inst{ .b = .{ .target = .{ .symbol = name } } };
+    // Branch to target via register (BR, not BL - no link register update)
+    return Inst{ .br = .{ .target = target_reg } };
 }
 
 pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
@@ -4026,7 +4040,7 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
         }
     }
 
-    // Direct call: BL (branch with link)
+    // Call via GOT for PIC: ADRP+LDR+BLR
     // Format ExternalName to symbol name per Cranelift conventions
     const symbol_name = switch (name) {
         .testcase => |n| n,
@@ -4038,7 +4052,11 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
             break :blk owned;
         },
     };
-    try ctx.emit(Inst{ .bl = .{ .target = .{ .external_name = symbol_name } } });
+
+    // Load function address via GOT and call indirectly
+    const tmp = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .load_ext_name_got = .{ .dst = tmp, .symbol = symbol_name } });
+    try ctx.emit(Inst{ .blr = .{ .target = tmp.toReg() } });
 
     // Marshal return values according to AAPCS64
     return marshalReturnValues(sig_ref, ctx);

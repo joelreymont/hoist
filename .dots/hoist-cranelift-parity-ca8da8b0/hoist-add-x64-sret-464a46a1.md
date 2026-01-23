@@ -1,9 +1,10 @@
 ---
 title: Add x64 sret
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.600755+02:00"
+created-at: "\"2026-01-14T15:42:46.600755+02:00\""
+closed-at: "2026-01-23T15:08:12.400447+02:00"
 ---
 
 Files: src/backends/x64/abi.zig:19-57, src/backends/x64/lower.zig:12-55

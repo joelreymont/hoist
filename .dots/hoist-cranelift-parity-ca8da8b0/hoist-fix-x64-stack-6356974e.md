@@ -1,9 +1,10 @@
 ---
 title: Fix x64 stack
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.588722+02:00"
+created-at: "\"2026-01-14T15:42:46.588722+02:00\""
+closed-at: "2026-01-23T15:01:25.978889+02:00"
 ---
 
 Files: src/backends/x64/abi.zig:138-168

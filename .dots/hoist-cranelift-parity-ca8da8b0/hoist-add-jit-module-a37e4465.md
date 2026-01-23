@@ -1,9 +1,10 @@
 ---
 title: Add jit module
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.647285+02:00"
+created-at: "\"2026-01-14T15:42:46.647285+02:00\""
+closed-at: "2026-01-23T15:17:26.328914+02:00"
 ---
 
 Files: /Users/joel/Work/wasmtime/cranelift/jit/README.md:1-6
