@@ -4143,16 +4143,16 @@ fn marshalReturnValues(sig_ref: SigRef, ctx: *lower_mod.LowerCtx(Inst)) !lower_m
     }
 
     // Return the collected registers
-    // ValueRegs supports up to 2 registers currently
-    // TODO: Extend ValueRegs to support more return values
-    if (reg_count == 1) {
-        return lower_mod.ValueRegs.one(regs[0]);
-    } else if (reg_count == 2) {
-        return lower_mod.ValueRegs.two(regs[0], regs[1]);
-    } else {
-        std.log.err("Multiple return values beyond 2 not yet supported in ValueRegs", .{});
-        return error.TooManyReturnValues;
-    }
+    return switch (reg_count) {
+        1 => lower_mod.ValueRegs.one(regs[0]),
+        2 => lower_mod.ValueRegs.two(regs[0], regs[1]),
+        3 => lower_mod.ValueRegs.triple(regs[0], regs[1], regs[2]),
+        4 => lower_mod.ValueRegs.quad(regs[0], regs[1], regs[2], regs[3]),
+        else => {
+            std.log.err("Return value count {} exceeds max 4", .{reg_count});
+            return error.TooManyReturnValues;
+        },
+    };
 }
 
 pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {

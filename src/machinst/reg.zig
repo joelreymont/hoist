@@ -263,6 +263,8 @@ pub const ValueRegs = union(enum) {
 pub const WritableValueRegs = union(enum) {
     one: WritableReg,
     two: struct { low: WritableReg, high: WritableReg },
+    three: struct { r0: WritableReg, r1: WritableReg, r2: WritableReg },
+    four: struct { r0: WritableReg, r1: WritableReg, r2: WritableReg, r3: WritableReg },
 
     pub fn single(reg: WritableReg) WritableValueRegs {
         return .{ .one = reg };
@@ -272,10 +274,20 @@ pub const WritableValueRegs = union(enum) {
         return .{ .two = .{ .low = low, .high = high } };
     }
 
+    pub fn triple(r0: WritableReg, r1: WritableReg, r2: WritableReg) WritableValueRegs {
+        return .{ .three = .{ .r0 = r0, .r1 = r1, .r2 = r2 } };
+    }
+
+    pub fn quad(r0: WritableReg, r1: WritableReg, r2: WritableReg, r3: WritableReg) WritableValueRegs {
+        return .{ .four = .{ .r0 = r0, .r1 = r1, .r2 = r2, .r3 = r3 } };
+    }
+
     pub fn toValueRegs(self: WritableValueRegs) ValueRegs {
         return switch (self) {
             .one => |r| ValueRegs.single(r.toReg()),
             .two => |p| ValueRegs.pair(p.low.toReg(), p.high.toReg()),
+            .three => |t| ValueRegs.triple(t.r0.toReg(), t.r1.toReg(), t.r2.toReg()),
+            .four => |q| ValueRegs.quad(q.r0.toReg(), q.r1.toReg(), q.r2.toReg(), q.r3.toReg()),
         };
     }
 };
