@@ -5,6 +5,9 @@ const root = @import("../root.zig");
 const types = @import("../ir/types.zig");
 const sig_mod = @import("../ir/signature.zig");
 
+pub const data = @import("data.zig");
+pub const DataDesc = data.DataDesc;
+
 /// Function or data identifier in module.
 pub const FuncOrDataId = union(enum) {
     func: FuncId,
@@ -81,6 +84,17 @@ pub fn Module(comptime Impl: type) type {
             return self.impl.declareFunction(name, linkage, signature);
         }
 
+        /// Declare data.
+        pub fn declareData(
+            self: *Self,
+            name: []const u8,
+            linkage: Linkage,
+            writable: bool,
+            tls: bool,
+        ) !DataId {
+            return self.impl.declareData(name, linkage, writable, tls);
+        }
+
         /// Define a function.
         pub fn defineFunction(
             self: *Self,
@@ -88,6 +102,15 @@ pub fn Module(comptime Impl: type) type {
             ctx: anytype,
         ) !void {
             return self.impl.defineFunction(func, ctx);
+        }
+
+        /// Define data.
+        pub fn defineData(
+            self: *Self,
+            id: DataId,
+            desc: *const DataDesc,
+        ) !void {
+            return self.impl.defineData(id, desc);
         }
 
         /// Finalize the module.

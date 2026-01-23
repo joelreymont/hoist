@@ -9,8 +9,10 @@ const symbols = @import("../module/symbols.zig");
 const jit_mem = @import("memory.zig");
 
 const FuncId = module.FuncId;
+const DataId = module.DataId;
 const Linkage = module.Linkage;
 const ModuleDeclarations = module.ModuleDeclarations;
+const DataDesc = module.DataDesc;
 
 /// JIT-compiled blob with relocations.
 const CompiledBlob = struct {
@@ -91,6 +93,7 @@ const Reloc = struct {
 /// Relocation target.
 const RelocTarget = union(enum) {
     func: FuncId,
+    data: DataId,
     symbol: []const u8,
 };
 
@@ -100,8 +103,10 @@ pub const JitModule = struct {
     mem: *jit_mem.Mem,
     decls: ModuleDeclarations,
     funcs: std.ArrayList(?CompiledBlob),
+    data: std.ArrayList(?CompiledBlob),
     syms: std.StringHashMap(usize),
     to_finalize: std.ArrayList(FuncId),
+    data_to_finalize: std.ArrayList(DataId),
 
     pub fn init(alloc: Allocator) !JitModule {
         const mem = try alloc.create(jit_mem.Mem);

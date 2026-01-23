@@ -249,7 +249,7 @@ pub const Aarch64ISA = struct {
         ctx: compile_mod.CompileCtx,
         func: *const lower_mod.Function,
     ) !compile_mod.CompiledCode {
-        return compileWithLinearScan(ctx, func);
+        return compileWithRegalloc2(ctx, func);
     }
 
     /// Compile function using regalloc2 for register allocation.

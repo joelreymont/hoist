@@ -1,9 +1,10 @@
 ---
 title: Wire a64 regalloc
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.752808+02:00"
+created-at: "\"2026-01-14T15:42:46.752808+02:00\""
+closed-at: "2026-01-23T18:55:57.901439+02:00"
 ---
 
 Files: src/backends/aarch64/isa.zig:247-288
