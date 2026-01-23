@@ -9,6 +9,7 @@ const types = @import("types.zig");
 const opcodes = @import("opcodes.zig");
 const instruction_data = @import("instruction_data.zig");
 const dfg_mod = @import("dfg.zig");
+const ssa_builder = @import("ssa_builder.zig");
 
 const Function = function.Function;
 const Block = entities.Block;
@@ -34,19 +35,32 @@ const IntCC = @import("condcodes.zig").IntCC;
 const FloatCC = @import("condcodes.zig").FloatCC;
 const MemFlags = @import("memflags.zig").MemFlags;
 const ValueList = @import("value_list.zig").ValueList;
+const SSABuilder = ssa_builder.SSABuilder;
+const Variable = ssa_builder.Variable;
 
 /// Function builder - ergonomic IR construction.
 pub const FunctionBuilder = struct {
     func: *Function,
     current_block: ?Block,
+    ssa: SSABuilder,
+    var_types: std.AutoHashMap(Variable, Type),
+    next_var: u32,
 
     const Self = @This();
 
-    pub fn init(func: *Function) Self {
+    pub fn init(alloc: Allocator, func: *Function) !Self {
         return .{
             .func = func,
             .current_block = null,
+            .ssa = try SSABuilder.init(alloc),
+            .var_types = std.AutoHashMap(Variable, Type).init(alloc),
+            .next_var = 0,
         };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.ssa.deinit();
+        self.var_types.deinit();
     }
 
     pub fn createBlock(self: *Self) !Block {
@@ -55,6 +69,29 @@ pub const FunctionBuilder = struct {
 
     pub fn switchToBlock(self: *Self, block: Block) void {
         self.current_block = block;
+    }
+
+    pub fn sealBlock(self: *Self, block: Block) !void {
+        try self.ssa.sealBlock(self.func, block);
+    }
+
+    pub fn declareVar(self: *Self, ty: Type) !Variable {
+        const var_idx = self.next_var;
+        self.next_var += 1;
+        const variable = @as(Variable, @enumFromInt(var_idx));
+        try self.var_types.put(variable, ty);
+        return variable;
+    }
+
+    pub fn defVar(self: *Self, variable: Variable, val: Value) !void {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+        try self.ssa.defVar(variable, val, block);
+    }
+
+    pub fn useVar(self: *Self, variable: Variable) !Value {
+        const block = self.current_block orelse return error.NoCurrentBlock;
+        const ty = self.var_types.get(variable) orelse return error.UndeclaredVariable;
+        return try self.ssa.useVar(self.func, variable, ty, block);
     }
 
     pub fn appendBlockParam(self: *Self, block: Block, ty: Type) !Value {

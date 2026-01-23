@@ -1,9 +1,10 @@
 ---
 title: Add ir lexer
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.665360+02:00"
+created-at: "\"2026-01-14T15:42:46.665360+02:00\""
+closed-at: "2026-01-23T19:32:18.648021+02:00"
 ---
 
 Files: docs/ir.md:79-112, /Users/joel/Work/wasmtime/cranelift/reader/README.md:1-3

@@ -365,6 +365,39 @@ pub const DataFlowGraph = struct {
         return val;
     }
 
+    pub fn removeBlockParam(self: *Self, val: Value) void {
+        const def = self.valueDef(val) orelse return;
+        const param = def.param orelse return;
+        const block_data = self.blocks.getMut(param.block) orelse return;
+        const params = self.value_lists.asMutSlice(block_data.params);
+        // Find and remove
+        for (params, 0..) |p, i| {
+            if (std.meta.eql(p, val)) {
+                _ = self.value_lists.removeAt(&block_data.params, i);
+                break;
+            }
+        }
+    }
+
+    pub fn changeToAlias(self: *Self, val: Value, original: Value) void {
+        if (self.values.getMut(val)) |data| {
+            const ty = data.getType();
+            data.* = ValueData.alias(ty, original);
+        }
+    }
+
+    pub fn appendBranchArg(self: *Self, branch_inst: Inst, val: Value) !void {
+        const inst_data = self.insts.getMut(branch_inst) orelse return;
+        switch (inst_data.*) {
+            .jump => |*jmp| try self.value_lists.push(&jmp.args, val),
+            .branch => |*br| {
+                // Append to then_args by default
+                try self.value_lists.push(&br.then_args, val);
+            },
+            else => {},
+        }
+    }
+
     pub fn resolveAliases(self: *const Self, val: Value) Value {
         var current = val;
         while (self.values.get(current)) |data| {

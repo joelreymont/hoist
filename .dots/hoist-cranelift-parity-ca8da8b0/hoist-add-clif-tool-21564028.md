@@ -1,9 +1,10 @@
 ---
 title: Add clif tool
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.682659+02:00"
+created-at: "\"2026-01-14T15:42:46.682659+02:00\""
+closed-at: "2026-01-23T20:20:08.226444+02:00"
 ---
 
 Files: /Users/joel/Work/wasmtime/cranelift/reader/README.md:1-3

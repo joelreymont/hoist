@@ -24,7 +24,7 @@ pub const Inst = root.entities.Inst;
 pub const Value = root.entities.Value;
 pub const StackSlot = root.entities.StackSlot;
 pub const SigRef = root.entities.SigRef;
-pub const Signature = root.ir.signature.Signature;
+pub const Signature = root.signature.Signature;
 
 pub const VReg = reg_mod.VReg;
 pub const Reg = reg_mod.Reg;

@@ -517,4 +517,17 @@ pub fn build(b: *std.Build) void {
 
     // Make library depend on ISLE code generation
     // lib.step.dependOn(&isle_step.step);
+
+    // CLIF tool
+    const clif = b.addExecutable(.{
+        .name = "clif",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/clif.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    clif.root_module.addImport("hoist", lib.root_module);
+    applyFlags(clif, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    b.installArtifact(clif);
 }

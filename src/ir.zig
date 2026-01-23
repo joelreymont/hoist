@@ -14,3 +14,5 @@ pub const ControlFlowGraph = @import("ir/cfg.zig").ControlFlowGraph;
 pub const DominatorTree = @import("ir/domtree.zig").DominatorTree;
 pub const LoopInfo = @import("ir/loops.zig").LoopInfo;
 pub const InstructionData = @import("ir/instruction_data.zig").InstructionData;
+pub const SSABuilder = @import("ir/ssa_builder.zig").SSABuilder;
+pub const Variable = @import("ir/ssa_builder.zig").Variable;

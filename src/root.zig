@@ -46,6 +46,10 @@ pub const debuginfo = @import("ir/debuginfo.zig");
 // SSA tests
 test {
     _ = @import("ir/ssa_tests.zig");
+    _ = @import("ir/text/lexer.zig");
+    _ = @import("ir/text/parser.zig");
+    _ = @import("ir/text/printer.zig");
+    _ = @import("ir/text/printer_tests.zig");
 }
 
 pub const isle_sema = @import("dsl/isle/sema.zig");
@@ -207,4 +211,10 @@ pub const backends = struct {
     };
 };
 
-pub const ir = @import("ir/function.zig");
+pub const ir = struct {
+    pub const text = struct {
+        pub const Lexer = @import("ir/text/lexer.zig").Lexer;
+        pub const Parser = @import("ir/text/parser.zig").Parser;
+        pub const Printer = @import("ir/text/printer.zig").Printer;
+    };
+};

@@ -693,7 +693,7 @@ test "SCCP: constant branch folding" {
     try fbuilder.appendBlock(block1);
     try fbuilder.appendBlock(block2);
 
-    fbuilder.switchToBlock(entry);
+    try fbuilder.switchToBlock(entry);
     const zero = try fbuilder.iconst(Type.I32, 0);
 
     // Create branch manually since builder doesn't have branch helper
@@ -703,10 +703,10 @@ test "SCCP: constant branch folding" {
     const branch_inst = try func.dfg.makeInst(branch_data);
     try func.layout.appendInst(branch_inst, entry);
 
-    fbuilder.switchToBlock(block1);
+    try fbuilder.switchToBlock(block1);
     try fbuilder.ret();
 
-    fbuilder.switchToBlock(block2);
+    try fbuilder.switchToBlock(block2);
     try fbuilder.ret();
 
     // Run SCCP
