@@ -1,9 +1,10 @@
 ---
 title: Add regalloc2 core
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.741176+02:00"
+created-at: "\"2026-01-14T15:42:46.741176+02:00\""
+closed-at: "2026-01-23T21:23:06.474096+02:00"
 ---
 
 Files: src/machinst/regalloc.zig:13-16, src/machinst/regalloc2/*.zig

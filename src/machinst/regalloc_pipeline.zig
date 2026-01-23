@@ -10,6 +10,8 @@ const regalloc = @import("../regalloc/regalloc.zig");
 const liveness_mod = @import("../regalloc/liveness.zig");
 const linear_scan_mod = @import("../regalloc/linear_scan.zig");
 const machinst = @import("machinst.zig");
+const regalloc2_liveness = @import("regalloc2/liveness.zig");
+const regalloc2_api = @import("regalloc2/api.zig");
 
 const LivenessInfo = liveness_mod.LivenessInfo;
 const LinearScanAllocator = linear_scan_mod.LinearScanAllocator;
