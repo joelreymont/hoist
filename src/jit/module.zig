@@ -118,8 +118,10 @@ pub const JitModule = struct {
             .mem = mem,
             .decls = ModuleDeclarations.init(alloc),
             .funcs = std.ArrayList(?CompiledBlob).init(alloc),
+            .data = std.ArrayList(?CompiledBlob).init(alloc),
             .syms = std.StringHashMap(usize).init(alloc),
             .to_finalize = std.ArrayList(FuncId).init(alloc),
+            .data_to_finalize = std.ArrayList(DataId).init(alloc),
         };
     }
 
@@ -129,9 +131,16 @@ pub const JitModule = struct {
                 blob.deinit();
             }
         }
+        for (self.data.items) |*maybe_blob| {
+            if (maybe_blob.*) |*blob| {
+                blob.deinit();
+            }
+        }
         self.funcs.deinit();
+        self.data.deinit();
         self.syms.deinit();
         self.to_finalize.deinit();
+        self.data_to_finalize.deinit();
         self.decls.deinit();
         self.mem.deinit();
         self.alloc.destroy(self.mem);
@@ -149,6 +158,23 @@ pub const JitModule = struct {
         try self.funcs.append(null);
         try self.decls.names.put(name_copy, .{ .func = id });
         _ = linkage;
+        return id;
+    }
+
+    pub fn declareData(
+        self: *JitModule,
+        name: []const u8,
+        linkage: Linkage,
+        writable: bool,
+        tls: bool,
+    ) !DataId {
+        _ = linkage;
+        _ = writable;
+        _ = tls;
+        const name_copy = try self.alloc.dupe(u8, name);
+        const id = DataId.from(@intCast(self.data.items.len));
+        try self.data.append(null);
+        try self.decls.names.put(name_copy, .{ .data = id });
         return id;
     }
 
@@ -170,27 +196,93 @@ pub const JitModule = struct {
         try self.to_finalize.append(id);
     }
 
+    pub fn defineData(
+        self: *JitModule,
+        id: DataId,
+        desc: *const DataDesc,
+    ) !void {
+        var blob = CompiledBlob.init(self.alloc);
+        const bytes = switch (desc.init) {
+            .uninit => @panic("uninit data"),
+            .zeros => |sz| blk: {
+                blob.size = sz;
+                blob.ptr = self.mem.ptr + self.mem.len;
+                @memset(blob.ptr[0..sz], 0);
+                break :blk blob.ptr[0..sz];
+            },
+            .bytes => |b| blk: {
+                blob.size = b.len;
+                blob.ptr = self.mem.ptr + self.mem.len;
+                @memcpy(blob.ptr[0..b.len], b);
+                break :blk blob.ptr[0..b.len];
+            },
+        };
+        _ = bytes;
+
+        for (desc.func_relocs.items) |fr| {
+            try blob.relocs.append(.{
+                .kind = .abs8,
+                .offset = fr.offset,
+                .target = .{ .func = fr.func },
+                .addend = 0,
+            });
+        }
+        for (desc.data_relocs.items) |dr| {
+            try blob.relocs.append(.{
+                .kind = .abs8,
+                .offset = dr.offset,
+                .target = switch (dr.target) {
+                    .func => |f| .{ .func = f },
+                    .data => |d| .{ .data = d },
+                    .symbol => |s| .{ .symbol = s },
+                },
+                .addend = dr.addend,
+            });
+        }
+
+        self.data.items[id.idx] = blob;
+        try self.data_to_finalize.append(id);
+    }
+
     pub fn finalize(self: *JitModule) !void {
+        const getAddr = struct {
+            fn f(s: *JitModule, target: RelocTarget) usize {
+                return switch (target) {
+                    .func => |fid| blk: {
+                        const b = s.funcs.items[fid.idx] orelse unreachable;
+                        break :blk @intFromPtr(b.ptr);
+                    },
+                    .data => |did| blk: {
+                        const b = s.data.items[did.idx] orelse unreachable;
+                        break :blk @intFromPtr(b.ptr);
+                    },
+                    .symbol => |sym| s.syms.get(sym) orelse unreachable,
+                };
+            }
+        }.f;
+
         for (self.to_finalize.items) |id| {
             if (self.funcs.items[id.idx]) |*blob| {
-                blob.performRelocs(struct {
-                    fn getAddr(s: *JitModule, target: RelocTarget) usize {
-                        return switch (target) {
-                            .func => |fid| blk: {
-                                const b = s.funcs.items[fid.idx] orelse unreachable;
-                                break :blk @intFromPtr(b.ptr);
-                            },
-                            .symbol => |sym| s.syms.get(sym) orelse unreachable,
-                        };
-                    }
-                }.getAddr);
+                blob.performRelocs(getAddr);
             }
         }
         self.to_finalize.clearRetainingCapacity();
+
+        for (self.data_to_finalize.items) |id| {
+            if (self.data.items[id.idx]) |*blob| {
+                blob.performRelocs(getAddr);
+            }
+        }
+        self.data_to_finalize.clearRetainingCapacity();
     }
 
     pub fn getFn(self: *const JitModule, id: FuncId, comptime T: type) T {
         const blob = self.funcs.items[id.idx] orelse unreachable;
+        return @ptrCast(@alignCast(blob.ptr));
+    }
+
+    pub fn getData(self: *const JitModule, id: DataId, comptime T: type) T {
+        const blob = self.data.items[id.idx] orelse unreachable;
         return @ptrCast(@alignCast(blob.ptr));
     }
 

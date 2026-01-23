@@ -1063,3 +1063,54 @@ test "try_call with external function reference" {
     // Test compilation would go here, but requires full lowering infrastructure
     // For now, this validates the FuncRef system and IR building
 }
+
+test "JIT module multi-function" {
+    const alloc = testing.allocator;
+    const jit_mod = @import("hoist").jit.module;
+    const module = @import("hoist").module.module;
+
+    var jit = try jit_mod.JitModule.init(alloc);
+    defer jit.deinit();
+
+    var sig = Signature.init(alloc);
+    defer sig.deinit();
+    try sig.params.append(.{ .ty = Type.i32, .purpose = .normal, .extension = .none });
+    try sig.returns.append(.{ .ty = Type.i32, .purpose = .normal, .extension = .none });
+
+    const id1 = try jit.declareFunction("add_one", .@"export", sig);
+    const id2 = try jit.declareFunction("add_two", .@"export", sig);
+
+    try testing.expect(id1.idx == 0);
+    try testing.expect(id2.idx == 1);
+
+    const decls = jit.declarations();
+    try testing.expect(decls.getName("add_one").?.func.idx == 0);
+    try testing.expect(decls.getName("add_two").?.func.idx == 1);
+}
+
+test "JIT module data object" {
+    const alloc = testing.allocator;
+    const jit_mod = @import("hoist").jit.module;
+    const module = @import("hoist").module.module;
+    const DataDesc = module.DataDesc;
+
+    var jit = try jit_mod.JitModule.init(alloc);
+    defer jit.deinit();
+
+    const data_id = try jit.declareData("global_var", .@"export", true, false);
+    try testing.expect(data_id.idx == 0);
+
+    var desc = DataDesc.new(alloc);
+    defer desc.deinit();
+    const bytes = [_]u8{ 0x42, 0x43, 0x44, 0x45 };
+    desc.init = .{ .bytes = &bytes };
+
+    try jit.defineData(data_id, &desc);
+    try jit.finalize();
+
+    const ptr = jit.getData(data_id, *const [4]u8);
+    try testing.expectEqual(@as(u8, 0x42), ptr[0]);
+    try testing.expectEqual(@as(u8, 0x43), ptr[1]);
+    try testing.expectEqual(@as(u8, 0x44), ptr[2]);
+    try testing.expectEqual(@as(u8, 0x45), ptr[3]);
+}

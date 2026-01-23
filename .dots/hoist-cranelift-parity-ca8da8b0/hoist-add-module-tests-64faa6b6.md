@@ -1,9 +1,10 @@
 ---
 title: Add module tests
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.659303+02:00"
+created-at: "\"2026-01-14T15:42:46.659303+02:00\""
+closed-at: "2026-01-23T19:01:22.025463+02:00"
 ---
 
 Files: src/backends/aarch64/jit_harness.zig:139-223
