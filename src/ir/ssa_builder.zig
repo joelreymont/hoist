@@ -46,8 +46,8 @@ pub const SSABuilder = struct {
             .alloc = alloc,
             .variables = AutoHashMap(Variable, AutoHashMap(Block, Value)).init(alloc),
             .sealed = AutoHashMap(Block, BlockState).init(alloc),
-            .calls = ArrayList(Call).init(alloc),
-            .results = ArrayList(Value).init(alloc),
+            .calls = ArrayList(Call){},
+            .results = ArrayList(Value){},
         };
     }
 

@@ -16,7 +16,7 @@ pub fn buildCFG(allocator: Allocator, func: *const Function) !CFG {
     errdefer cfg.deinit();
 
     // Iterate blocks and find terminator instructions
-    var block_iter = func.layout.blocks();
+    var block_iter = func.layout.blockIter();
     while (block_iter.next()) |block| {
         try analyzeBlock(&cfg, func, block);
     }

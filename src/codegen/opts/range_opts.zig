@@ -30,7 +30,7 @@ pub const RangeOptimizer = struct {
             .allocator = allocator,
             .function = function,
             .analysis = analysis,
-            .dead_insts = std.ArrayList(Inst).init(allocator),
+            .dead_insts = std.ArrayList(Inst){},
             .replacements = std.AutoHashMap(Inst, Value).init(allocator),
         };
     }
@@ -44,7 +44,7 @@ pub const RangeOptimizer = struct {
     pub fn optimize(self: *RangeOptimizer) !bool {
         var changed = false;
 
-        var block_iter = self.function.layout.blocks();
+        var block_iter = self.function.layout.blockIter();
         while (block_iter.next()) |block| {
             if (try self.optimizeBlock(block)) {
                 changed = true;
@@ -82,11 +82,10 @@ pub const RangeOptimizer = struct {
 
     /// Optimize single instruction.
     fn optimizeInst(self: *RangeOptimizer, inst: Inst) !bool {
-        const data = self.function.dfg.insts.items[@intFromEnum(inst)];
+        const data = self.function.dfg.insts.get(inst) orelse return false;
 
-        return switch (data) {
-            .icmp => |ic| try self.optimizeIcmp(inst, ic.cond, ic.args),
-            .branch_icmp => |bi| try self.optimizeBranchIcmp(inst, bi),
+        return switch (data.*) {
+            .int_compare => |ic| try self.optimizeIcmp(inst, ic.cond, ic.args),
             else => false,
         };
     }
@@ -100,16 +99,16 @@ pub const RangeOptimizer = struct {
         const result = evaluateIcmp(cond, lhs_range, rhs_range) orelse return false;
 
         // Replace with constant
-        const const_val = if (result) 1 else 0;
+        const const_val: i64 = if (result) 1 else 0;
         const const_data = InstructionData{
             .unary_imm = .{
                 .opcode = .iconst,
-                .imm = .{ .bits = const_val },
+                .imm = .{ .value = const_val },
             },
         };
 
         const const_inst = try self.function.dfg.makeInst(const_data);
-        const ty = self.function.dfg.valueType(self.function.dfg.instResults(inst)[0]);
+        const ty = self.function.dfg.valueType(self.function.dfg.instResults(inst)[0]) orelse return false;
         _ = try self.function.dfg.appendInstResult(const_inst, ty);
 
         try self.replacements.put(inst, self.function.dfg.instResults(const_inst)[0]);
@@ -149,11 +148,11 @@ pub const RangeOptimizer = struct {
 
     /// Apply value replacements.
     fn applyReplacements(self: *RangeOptimizer) !void {
-        var inst_iter = self.function.layout.blocks();
+        var inst_iter = self.function.layout.blockIter();
         while (inst_iter.next()) |block| {
             var insts = self.function.layout.blockInsts(block);
             while (insts.next()) |inst| {
-                const data_ptr = &self.function.dfg.insts.items[@intFromEnum(inst)];
+                const data_ptr = self.function.dfg.insts.getMut(inst) orelse continue;
 
                 // Replace operands
                 switch (data_ptr.*) {
@@ -167,7 +166,7 @@ pub const RangeOptimizer = struct {
                     .binary_imm64 => |*bi| {
                         bi.arg = try self.resolveReplacement(bi.arg);
                     },
-                    .icmp => |*ic| {
+                    .int_compare => |*ic| {
                         ic.args[0] = try self.resolveReplacement(ic.args[0]);
                         ic.args[1] = try self.resolveReplacement(ic.args[1]);
                     },
@@ -179,9 +178,11 @@ pub const RangeOptimizer = struct {
 
     /// Resolve replacement for value.
     fn resolveReplacement(self: *RangeOptimizer, value: Value) !Value {
-        if (self.function.dfg.valueInst(value)) |inst| {
-            if (self.replacements.get(inst)) |replacement| {
-                return replacement;
+        if (self.function.dfg.valueDef(value)) |def| {
+            if (def.inst()) |inst| {
+                if (self.replacements.get(inst)) |replacement| {
+                    return replacement;
+                }
             }
         }
         return value;

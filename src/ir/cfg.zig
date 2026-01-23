@@ -300,7 +300,7 @@ pub const ControlFlowGraph = struct {
         if (!self.valid) return error.CFGNotComputed;
 
         // Validate all blocks in layout
-        var block_iter = func.layout.blocks();
+        var block_iter = func.layout.blockIter();
         while (block_iter.next()) |block| {
             try self.validateBlock(func, block);
         }

@@ -22,9 +22,9 @@ test "printer - simple add" {
     var func = try Function.init(alloc, "add", sig);
     defer func.deinit();
 
-    var fb = FunctionBuilder.init(&func);
+    var fb = try FunctionBuilder.init(testing.allocator, &func);
     const blk = try fb.createBlock();
-    try fb.switchToBlock(blk);
+    fb.switchToBlock(blk);
 
     const v0 = try fb.appendBlockParam(blk, Type.I32);
     const v1 = try fb.appendBlockParam(blk, Type.I32);
@@ -52,21 +52,21 @@ test "printer - branch" {
     var func = try Function.init(alloc, "fib", sig);
     defer func.deinit();
 
-    var fb = FunctionBuilder.init(&func);
+    var fb = try FunctionBuilder.init(testing.allocator, &func);
     const b0 = try fb.createBlock();
     const b1 = try fb.createBlock();
     const b2 = try fb.createBlock();
 
-    try fb.switchToBlock(b0);
+    fb.switchToBlock(b0);
     const v0 = try fb.appendBlockParam(b0, Type.I32);
     const v1 = try fb.iconst(Type.I32, 1);
     const v2 = try fb.icmp(Type.I32, IntCC.sle, v0, v1);
     try fb.brif(v2, b1, b2);
 
-    try fb.switchToBlock(b1);
+    fb.switchToBlock(b1);
     try fb.jumpArgs(b1, &.{v0});
 
-    try fb.switchToBlock(b2);
+    fb.switchToBlock(b2);
     try fb.jumpArgs(b2, &.{v1});
 
     var pr = Printer.init(alloc, &func);

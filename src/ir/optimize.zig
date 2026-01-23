@@ -32,7 +32,7 @@ pub const OptimizationPass = struct {
         self.changed = false;
 
         // Iterate over all instructions
-        var block_iter = self.func.layout.blocks();
+        var block_iter = self.func.layout.blockIter();
         while (block_iter.next()) |block| {
             var inst_iter = self.func.layout.blockInsts(block);
             while (inst_iter.next()) |inst| {

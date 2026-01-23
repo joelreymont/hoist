@@ -69,6 +69,49 @@ pub const AArch64Features = struct {
     }
 };
 
+/// x86_64 CPU features.
+pub const X86Features = struct {
+    pub const SSE: u6 = 0;
+    pub const SSE2: u6 = 1;
+    pub const SSE3: u6 = 2;
+    pub const SSSE3: u6 = 3;
+    pub const SSE41: u6 = 4;
+    pub const SSE42: u6 = 5;
+    pub const AVX: u6 = 6;
+    pub const AVX2: u6 = 7;
+    pub const AVX512F: u6 = 8;
+    pub const AVX512VL: u6 = 9;
+    pub const AVX512BW: u6 = 10;
+    pub const AVX512DQ: u6 = 11;
+    pub const FMA: u6 = 12;
+    pub const BMI1: u6 = 13;
+    pub const BMI2: u6 = 14;
+    pub const LZCNT: u6 = 15;
+    pub const POPCNT: u6 = 16;
+    pub const AES: u6 = 17;
+    pub const PCLMULQDQ: u6 = 18;
+
+    /// Baseline x86_64 features (SSE2).
+    pub fn baseline() Features {
+        var features = Features.init();
+        features.enable(SSE);
+        features.enable(SSE2);
+        return features;
+    }
+
+    /// Modern x86_64 features.
+    pub fn modern() Features {
+        var features = baseline();
+        features.enable(SSE3);
+        features.enable(SSSE3);
+        features.enable(SSE41);
+        features.enable(SSE42);
+        features.enable(POPCNT);
+        features.enable(LZCNT);
+        return features;
+    }
+};
+
 /// Feature detection from CPU.
 pub const FeatureDetector = struct {
     features: Features,
@@ -83,21 +126,74 @@ pub const FeatureDetector = struct {
 
     /// Detect features from current CPU using OS-specific APIs.
     pub fn detect(self: *FeatureDetector) !void {
-        switch (builtin.os.tag) {
-            .linux => try self.detectLinux(),
-            .macos => try self.detectMacOS(),
-            else => self.features = AArch64Features.baseline(),
+        switch (builtin.cpu.arch) {
+            .x86_64 => try self.detectX86(),
+            .aarch64 => switch (builtin.os.tag) {
+                .linux => try self.detectAArch64Linux(),
+                .macos => try self.detectAArch64MacOS(),
+                else => self.features = AArch64Features.baseline(),
+            },
+            else => self.features = Features.init(),
         }
     }
 
-    fn detectLinux(self: *FeatureDetector) !void {
-        // Read /proc/cpuinfo or getauxval(AT_HWCAP)
+    fn detectX86(self: *FeatureDetector) !void {
+        self.features = X86Features.baseline();
+
+        const leaf1 = cpuid(1, 0);
+        const leaf7 = cpuid(7, 0);
+
+        // ECX bits from leaf 1
+        if (leaf1[2] & (1 << 0) != 0) self.features.enable(X86Features.SSE3);
+        if (leaf1[2] & (1 << 9) != 0) self.features.enable(X86Features.SSSE3);
+        if (leaf1[2] & (1 << 19) != 0) self.features.enable(X86Features.SSE41);
+        if (leaf1[2] & (1 << 20) != 0) self.features.enable(X86Features.SSE42);
+        if (leaf1[2] & (1 << 25) != 0) self.features.enable(X86Features.AES);
+        if (leaf1[2] & (1 << 1) != 0) self.features.enable(X86Features.PCLMULQDQ);
+        if (leaf1[2] & (1 << 28) != 0) self.features.enable(X86Features.AVX);
+        if (leaf1[2] & (1 << 12) != 0) self.features.enable(X86Features.FMA);
+
+        // EDX bits from leaf 1
+        if (leaf1[3] & (1 << 23) != 0) self.features.enable(X86Features.POPCNT);
+
+        // EBX bits from leaf 7
+        if (leaf7[1] & (1 << 3) != 0) self.features.enable(X86Features.BMI1);
+        if (leaf7[1] & (1 << 5) != 0) self.features.enable(X86Features.AVX2);
+        if (leaf7[1] & (1 << 8) != 0) self.features.enable(X86Features.BMI2);
+        if (leaf7[1] & (1 << 16) != 0) self.features.enable(X86Features.AVX512F);
+        if (leaf7[1] & (1 << 17) != 0) self.features.enable(X86Features.AVX512DQ);
+        if (leaf7[1] & (1 << 30) != 0) self.features.enable(X86Features.AVX512BW);
+        if (leaf7[1] & (1 << 31) != 0) self.features.enable(X86Features.AVX512VL);
+
+        // LZCNT check
+        const leaf80000001 = cpuid(0x80000001, 0);
+        if (leaf80000001[2] & (1 << 5) != 0) self.features.enable(X86Features.LZCNT);
+    }
+
+    fn cpuid(leaf: u32, subleaf: u32) [4]u32 {
+        var eax: u32 = leaf;
+        var ebx: u32 = undefined;
+        var ecx: u32 = subleaf;
+        var edx: u32 = undefined;
+
+        asm volatile ("cpuid"
+            : [eax] "={eax}" (eax),
+              [ebx] "={ebx}" (ebx),
+              [ecx] "={ecx}" (ecx),
+              [edx] "={edx}" (edx),
+            : [eax_in] "{eax}" (eax),
+              [ecx_in] "{ecx}" (ecx),
+        );
+
+        return [4]u32{ eax, ebx, ecx, edx };
+    }
+
+    fn detectAArch64Linux(self: *FeatureDetector) !void {
         const hwcap = try getHwCap();
         self.features = featuresFromHwCap(hwcap);
     }
 
-    fn detectMacOS(self: *FeatureDetector) !void {
-        // Use sysctl to query CPU features
+    fn detectAArch64MacOS(self: *FeatureDetector) !void {
         const hwcap = try getHwCapMacOS();
         self.features = featuresFromHwCap(hwcap);
     }
@@ -137,7 +233,7 @@ pub const FeatureDetector = struct {
         return 0; // Feature detection failed - use baseline
     }
 
-    fn featuresFromHwCap(hwcap: u64) AArch64Features {
+    fn featuresFromHwCap(hwcap: u64) Features {
         // Linux HWCAP bits (from linux/arch/arm64/include/uapi/asm/hwcap.h)
         const HWCAP_ASIMD = (1 << 1);
         const HWCAP_AES = (1 << 3);
@@ -145,22 +241,19 @@ pub const FeatureDetector = struct {
         const HWCAP_SHA2 = (1 << 6);
         const HWCAP_CRC32 = (1 << 7);
         const HWCAP_ATOMICS = (1 << 8); // LSE
-        const HWCAP_FPHP = (1 << 9); // FP16
-        const HWCAP_ASIMDHP = (1 << 10); // FP16 vector
         const HWCAP_ASIMDDP = (1 << 20); // DotProd
         const HWCAP_SVE = (1 << 22);
 
         var feat = AArch64Features.baseline();
 
-        if (hwcap & HWCAP_ASIMD != 0) feat.neon = true;
-        if (hwcap & HWCAP_AES != 0) feat.aes = true;
-        if (hwcap & HWCAP_SHA1 != 0) feat.sha2 = true;
-        if (hwcap & HWCAP_SHA2 != 0) feat.sha2 = true;
-        if (hwcap & HWCAP_CRC32 != 0) feat.crc = true;
-        if (hwcap & HWCAP_ATOMICS != 0) feat.lse = true;
-        if (hwcap & HWCAP_FPHP != 0) feat.fp16 = true;
-        if (hwcap & HWCAP_ASIMDDP != 0) feat.dotprod = true;
-        if (hwcap & HWCAP_SVE != 0) feat.sve = true;
+        if (hwcap & HWCAP_ASIMD != 0) feat.enable(AArch64Features.NEON);
+        if (hwcap & HWCAP_AES != 0) feat.enable(AArch64Features.AES);
+        if (hwcap & HWCAP_SHA1 != 0) feat.enable(AArch64Features.SHA2);
+        if (hwcap & HWCAP_SHA2 != 0) feat.enable(AArch64Features.SHA2);
+        if (hwcap & HWCAP_CRC32 != 0) feat.enable(AArch64Features.CRC);
+        if (hwcap & HWCAP_ATOMICS != 0) feat.enable(AArch64Features.LSE);
+        if (hwcap & HWCAP_ASIMDDP != 0) feat.enable(AArch64Features.DOTPROD);
+        if (hwcap & HWCAP_SVE != 0) feat.enable(AArch64Features.SVE);
 
         return feat;
     }

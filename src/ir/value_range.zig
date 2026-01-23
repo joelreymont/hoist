@@ -79,14 +79,13 @@ pub const ValueRange = struct {
 
     /// Range from IR type.
     pub fn fromType(ty: Type) ValueRange {
-        return switch (ty) {
-            .i8 => full(8, true),
-            .i16 => full(16, true),
-            .i32 => full(32, true),
-            .i64 => full(64, true),
-            .f32, .f64 => unreachable, // No range analysis for floats
-            .isize => full(64, true),
-        };
+        if (ty.eql(Type.I8)) return full(8, true);
+        if (ty.eql(Type.I16)) return full(16, true);
+        if (ty.eql(Type.I32)) return full(32, true);
+        if (ty.eql(Type.I64)) return full(64, true);
+        if (ty.eql(Type.I128)) return full(128, true);
+        // Unsupported: floats, vectors, etc.
+        return full(64, true);
     }
 
     /// Check if range is empty (unreachable).
@@ -427,7 +426,7 @@ pub const RangeAnalysis = struct {
             .allocator = allocator,
             .function = function,
             .ranges = std.AutoHashMap(Value, ValueRange).init(allocator),
-            .visit_order = std.ArrayList(Block).init(allocator),
+            .visit_order = std.ArrayList(Block){},
         };
     }
 
@@ -470,7 +469,7 @@ pub const RangeAnalysis = struct {
         self.visit_order.clearRetainingCapacity();
 
         // Use function layout order (approximation of RPO)
-        var block_iter = self.function.layout.blocks();
+        var block_iter = self.function.layout.blockIter();
         while (block_iter.next()) |block| {
             try self.visit_order.append(self.allocator, block);
         }
@@ -478,11 +477,11 @@ pub const RangeAnalysis = struct {
 
     /// Initialize ranges for block parameters.
     fn initializeRanges(self: *RangeAnalysis) !void {
-        var block_iter = self.function.layout.blocks();
+        var block_iter = self.function.layout.blockIter();
         while (block_iter.next()) |block| {
             const params = self.function.dfg.blockParams(block);
             for (params) |param| {
-                const ty = self.function.dfg.valueType(param);
+                const ty = self.function.dfg.valueType(param) orelse continue;
                 const range = ValueRange.fromType(ty);
                 try self.ranges.put(param, range);
             }
@@ -506,21 +505,20 @@ pub const RangeAnalysis = struct {
 
     /// Visit instruction, compute result ranges.
     fn visitInst(self: *RangeAnalysis, inst: Inst) !bool {
-        const data = self.function.dfg.insts.items[@intFromEnum(inst)];
+        const data = self.function.dfg.insts.get(inst) orelse return false;
         const results = self.function.dfg.instResults(inst);
 
         if (results.len == 0) return false;
 
         const result = results[0];
-        const ty = self.function.dfg.valueType(result);
+        const ty = self.function.dfg.valueType(result) orelse return false;
 
         // Compute range based on opcode
-        const new_range = switch (data) {
+        const new_range = switch (data.*) {
             .unary_imm => |u| blk: {
                 if (u.opcode == .iconst) {
-                    const bits = ty.bits() orelse 64;
-                    const signed = ty.isSigned();
-                    break :blk ValueRange.constant(u.imm.bits, bits, signed);
+                    const bits = ty.bits();
+                    break :blk ValueRange.constant(u.imm.bits(), @intCast(bits), true);
                 }
                 break :blk ValueRange.fromType(ty);
             },
@@ -563,22 +561,21 @@ pub const RangeAnalysis = struct {
     /// Visit binary operation with immediate.
     fn visitBinaryImm(self: *RangeAnalysis, opcode: Opcode, arg: Value, imm: Imm64, ty: Type) !ValueRange {
         const arg_range = self.ranges.get(arg) orelse ValueRange.fromType(ty);
-        const bits = ty.bits() orelse 64;
-        const signed = ty.isSigned();
-        const imm_range = ValueRange.constant(imm.bits, bits, signed);
+        const bits = ty.bits();
+        const imm_range = ValueRange.constant(imm.bits(), @intCast(bits), true);
 
         return switch (opcode) {
             .iadd_imm => arg_range.add(imm_range),
-            .ishl_imm => if (imm.bits >= 0 and imm.bits < 64)
-                arg_range.shl(@intCast(imm.bits))
+            .ishl_imm => if (imm.bits() >= 0 and imm.bits() < 64)
+                arg_range.shl(@intCast(imm.bits()))
             else
                 ValueRange.fromType(ty),
-            .ushr_imm => if (imm.bits >= 0 and imm.bits < 64)
-                arg_range.ushr(@intCast(imm.bits))
+            .ushr_imm => if (imm.bits() >= 0 and imm.bits() < 64)
+                arg_range.ushr(@intCast(imm.bits()))
             else
                 ValueRange.fromType(ty),
-            .sshr_imm => if (imm.bits >= 0 and imm.bits < 64)
-                arg_range.sshr(@intCast(imm.bits))
+            .sshr_imm => if (imm.bits() >= 0 and imm.bits() < 64)
+                arg_range.sshr(@intCast(imm.bits()))
             else
                 ValueRange.fromType(ty),
             else => ValueRange.fromType(ty),

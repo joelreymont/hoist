@@ -95,21 +95,14 @@ pub const FunctionBuilder = struct {
     }
 
     pub fn appendBlockParam(self: *Self, block: Block, ty: Type) !Value {
-        const block_data = try self.func.dfg.blocks.getOrDefault(block);
-        const num: u16 = @intCast(self.func.dfg.value_lists.len(block_data.params));
-        const val_idx = self.func.dfg.values.elems.items.len;
-        const value_data = try self.func.dfg.values.getOrDefault(Value.new(val_idx));
-        const val = Value.new(val_idx);
-        value_data.* = dfg_mod.ValueData.param(ty, num, block);
-        try self.func.dfg.value_lists.push(&block_data.params, val);
-        return val;
+        return try self.func.dfg.appendBlockParam(block, ty);
     }
 
     pub fn appendBlock(self: *Self, block: Block) !void {
         try self.func.layout.appendBlock(block);
     }
 
-    fn buildValueList(self: *Self, values: []const Value) !ValueList {
+    pub fn buildValueList(self: *Self, values: []const Value) !ValueList {
         var list = ValueList.default();
         for (values) |val| {
             try self.func.dfg.value_lists.push(&list, val);
@@ -503,7 +496,7 @@ test "FunctionBuilder basic" {
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
-    var builder = FunctionBuilder.init(&func);
+    var builder = try FunctionBuilder.init(testing.allocator, &func);
     const block = try builder.createBlock();
     try builder.appendBlock(block);
     builder.switchToBlock(block);
@@ -516,7 +509,7 @@ test "FunctionBuilder iconst and iadd" {
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
-    var builder = FunctionBuilder.init(&func);
+    var builder = try FunctionBuilder.init(testing.allocator, &func);
     const block = try builder.createBlock();
     try builder.appendBlock(block);
     builder.switchToBlock(block);

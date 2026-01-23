@@ -81,6 +81,9 @@ pub const Context = struct {
     /// Debug output options.
     debug: DebugOptions,
 
+    /// Target configuration (features, arch).
+    target: ?*const @import("compile.zig").Target,
+
     pub fn init(allocator: std.mem.Allocator) Context {
         return .{
             .allocator = allocator,
@@ -91,6 +94,7 @@ pub const Context = struct {
             .compiled_code = null,
             .want_disasm = false,
             .debug = DebugOptions.init(),
+            .target = null,
         };
     }
 
@@ -104,6 +108,7 @@ pub const Context = struct {
             .compiled_code = null,
             .want_disasm = false,
             .debug = DebugOptions.init(),
+            .target = null,
         };
     }
 

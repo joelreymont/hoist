@@ -26,7 +26,7 @@ test "E2E: while loop with phi node" {
 
     var func = try Function.init(testing.allocator, "while_loop", sig);
     defer func.deinit();
-    var ir_builder = FunctionBuilder.init(&func);
+    var ir_builder = try FunctionBuilder.init(testing.allocator, &func);
 
     // Create blocks: entry -> loop_header -> loop_body -> loop_exit
     const entry = try func.dfg.blocks.add();
@@ -42,7 +42,7 @@ test "E2E: while loop with phi node" {
     // Entry block: jump to loop header
     const param = try func.dfg.appendBlockParam(entry, Type.I32);
 
-    try ir_builder.switchToBlock(entry);
+    ir_builder.switchToBlock(entry);
     try ir_builder.jumpArgs(loop_header, &.{param});
 
     // Loop header: phi node via block parameter (loop counter)
@@ -104,7 +104,7 @@ test "E2E: while loop with phi node" {
     try func.layout.appendInst(sub_inst, loop_body);
 
     // Jump back to loop header (back edge)
-    try ir_builder.switchToBlock(loop_body);
+    ir_builder.switchToBlock(loop_body);
     try ir_builder.jumpArgs(loop_header, &.{sub_val});
 
     // Loop exit: return final counter value
@@ -153,7 +153,7 @@ test "E2E: nested loops with phi nodes" {
 
     var func = try Function.init(testing.allocator, "nested_loops", sig);
     defer func.deinit();
-    var ir_builder = FunctionBuilder.init(&func);
+    var ir_builder = try FunctionBuilder.init(testing.allocator, &func);
 
     // Create blocks
     const entry = try func.dfg.blocks.add();
@@ -173,7 +173,7 @@ test "E2E: nested loops with phi nodes" {
     const param2 = try func.dfg.appendBlockParam(entry, Type.I32);
 
     // Entry: jump to outer loop
-    try ir_builder.switchToBlock(entry);
+    ir_builder.switchToBlock(entry);
     try ir_builder.jumpArgs(outer_header, &.{param2});
 
     // Outer loop header: phi node for outer counter
@@ -200,7 +200,7 @@ test "E2E: nested loops with phi nodes" {
     const outer_cmp_result = try func.dfg.appendInstResult(outer_cmp_inst, Type.I8);
     try func.layout.appendInst(outer_cmp_inst, outer_header);
 
-    try ir_builder.switchToBlock(outer_header);
+    ir_builder.switchToBlock(outer_header);
     try ir_builder.brifArgs(outer_cmp_result, inner_header, &.{outer_counter}, outer_exit, &.{});
 
     // Inner loop header: phi node for inner counter
@@ -249,7 +249,7 @@ test "E2E: nested loops with phi nodes" {
     const inner_sub_val = try func.dfg.appendInstResult(inner_sub_inst, Type.I32);
     try func.layout.appendInst(inner_sub_inst, inner_body);
 
-    try ir_builder.switchToBlock(inner_body);
+    ir_builder.switchToBlock(inner_body);
     try ir_builder.jumpArgs(inner_header, &.{inner_sub_val});
 
     // Inner exit: decrement outer counter and jump back
@@ -263,7 +263,7 @@ test "E2E: nested loops with phi nodes" {
     const outer_sub_val = try func.dfg.appendInstResult(outer_sub_inst, Type.I32);
     try func.layout.appendInst(outer_sub_inst, inner_exit);
 
-    try ir_builder.switchToBlock(inner_exit);
+    ir_builder.switchToBlock(inner_exit);
     try ir_builder.jumpArgs(outer_header, &.{outer_sub_val});
 
     // Outer exit: return final value
@@ -311,7 +311,7 @@ test "E2E: loop with accumulator phi" {
 
     var func = try Function.init(testing.allocator, "loop_accumulator", sig);
     defer func.deinit();
-    var ir_builder = FunctionBuilder.init(&func);
+    var ir_builder = try FunctionBuilder.init(testing.allocator, &func);
 
     // sum = 0; while (n > 0) { sum = sum + n; n = n - 1; } return sum;
     const entry = try func.dfg.blocks.add();
@@ -337,7 +337,7 @@ test "E2E: loop with accumulator phi" {
     const sum_init = try func.dfg.appendInstResult(zero_inst, Type.I32);
     try func.layout.appendInst(zero_inst, entry);
 
-    try ir_builder.switchToBlock(entry);
+    ir_builder.switchToBlock(entry);
     try ir_builder.jumpArgs(loop_header, &.{ param3, sum_init });
 
     // Loop header: phi nodes for both n and sum
@@ -407,7 +407,7 @@ test "E2E: loop with accumulator phi" {
     const sub_val = try func.dfg.appendInstResult(sub_inst, Type.I32);
     try func.layout.appendInst(sub_inst, loop_body);
 
-    try ir_builder.switchToBlock(loop_body);
+    ir_builder.switchToBlock(loop_body);
     try ir_builder.jumpArgs(loop_header, &.{ sub_val, add_val });
 
     // Loop exit: return sum

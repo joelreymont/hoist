@@ -651,6 +651,7 @@ pub fn compile(
 
     // Set the function pointer in context
     ctx.func = func;
+    ctx.target = target;
 
     // 1. Verify IR (if enabled)
     try verifyIf(ctx, func, target);
@@ -763,7 +764,13 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
     // 7. Resolve value aliases
     ctx.func.dfg.resolveAllAliases();
 
-    // 8. E-graph optimization (if opt_level > 0)
+    // 8. Range-based optimization (if opt_level >= basic)
+    if (opt_level != .none) {
+        _ = try runRangeOptimization(ctx);
+        try dumpIrStage(ctx, "range");
+    }
+
+    // 9. E-graph optimization (if opt_level > 0)
     if (opt_level != .none) {
         _ = try runEGraphOptimization(ctx);
         try dumpIrStage(ctx, "egraph");
@@ -899,6 +906,29 @@ fn runAliasAnalysis(ctx: *Context) CodegenError!bool {
 /// Performs equality saturation with algebraic rewrites,
 /// then extracts cheapest equivalent expressions.
 /// Returns true if any optimizations were applied.
+fn runRangeOptimization(ctx: *Context) CodegenError!bool {
+    const range_mod = @import("../ir/value_range.zig");
+    const range_opts = @import("opts/range_opts.zig");
+
+    var analysis = range_mod.RangeAnalysis.init(ctx.allocator, ctx.func);
+    defer analysis.deinit();
+
+    analysis.analyze() catch |err| {
+        return switch (err) {
+            error.OutOfMemory => CodegenError.OutOfMemory,
+        };
+    };
+
+    var opt = range_opts.RangeOptimizer.init(ctx.allocator, ctx.func, &analysis);
+    defer opt.deinit();
+
+    return opt.optimize() catch |err| {
+        return switch (err) {
+            error.OutOfMemory => CodegenError.OutOfMemory,
+        };
+    };
+}
+
 fn runEGraphOptimization(ctx: *Context) CodegenError!bool {
     const egraph_mod = @import("../ir/egraph.zig");
     const egraph_rules = @import("../ir/egraph_rules.zig");
@@ -993,7 +1023,7 @@ pub const IRBuilder = struct {
         return .{
             .allocator = allocator,
             .func = func,
-            .builder = ir.FunctionBuilder.init(func),
+            .builder = try ir.FunctionBuilder.init(allocator, func),
         };
     }
 
@@ -1008,8 +1038,8 @@ pub const IRBuilder = struct {
     }
 
     /// Switch to building into a specific block.
-    pub fn switchToBlock(self: *Self, block: Block) !void {
-        try self.builder.switchToBlock(block);
+    pub fn switchToBlock(self: *Self, block: Block) void {
+        self.builder.switchToBlock(block);
     }
 
     /// Emit iconst instruction.
@@ -1054,7 +1084,7 @@ pub fn buildIR(allocator: std.mem.Allocator, func: *Function) CodegenError!void 
     // Create entry block
     const entry = ir_builder.createBlock() catch return error.IRBuildFailed;
     ir_builder.appendBlock(entry) catch return error.IRBuildFailed;
-    try ir_builder.switchToBlock(entry);
+    ir_builder.switchToBlock(entry);
 
     // TODO: Convert frontend AST/input to IR instructions
     // For now, just emit a return instruction
@@ -1117,7 +1147,7 @@ fn legalize(ctx: *Context) CodegenError!void {
 fn lower(ctx: *Context, target: *const Target) CodegenError!void {
     // Determine instruction type based on target architecture
     switch (target.arch) {
-        .aarch64 => try lowerAArch64(ctx),
+        .aarch64 => try lowerAArch64(ctx, target),
         .x86_64 => try lowerX86_64(ctx),
         .riscv64 => try lowerRiscv64(ctx),
         .s390x => try lowerS390x(ctx),
@@ -1125,7 +1155,7 @@ fn lower(ctx: *Context, target: *const Target) CodegenError!void {
 }
 
 /// Lower IR to AArch64 VCode.
-fn lowerAArch64(ctx: *Context) CodegenError!void {
+fn lowerAArch64(ctx: *Context, _: *const Target) CodegenError!void {
     const Inst = @import("../backends/aarch64/inst.zig").Inst;
     const VCodeBuilder = @import("../machinst/vcode_builder.zig").VCodeBuilder;
     const BlockIndex = @import("../machinst/vcode.zig").BlockIndex;
@@ -4839,6 +4869,8 @@ pub const Target = struct {
     opt_level: OptLevel,
     /// Enable verification.
     verify: bool,
+    /// CPU features.
+    features: @import("../target/features.zig").Features,
 
     pub const Architecture = enum {
         aarch64,
@@ -4858,6 +4890,7 @@ pub const Target = struct {
             .arch = arch,
             .opt_level = .none,
             .verify = false,
+            .features = @import("../target/features.zig").Features.init(),
         };
     }
 };
@@ -4928,15 +4961,15 @@ test "optimize: remove constant phis" {
 
     try func.dfg.setBlockParams(b2, &[_]ir.Type{ir.I32});
 
-    var builder = ir.FunctionBuilder.init(&func);
-    try builder.switchToBlock(b0);
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    builder.switchToBlock(b0);
     const v0 = try builder.iconst(ir.I32, 7);
     try builder.brifArgs(v0, b1, &.{}, b2, &.{v0});
 
-    try builder.switchToBlock(b1);
+    builder.switchToBlock(b1);
     try builder.jumpArgs(b2, &.{v0});
 
-    try builder.switchToBlock(b2);
+    builder.switchToBlock(b2);
     const param = func.dfg.blockParams(b2)[0];
     const ret = ir.InstructionData{ .unary = .{
         .opcode = .@"return",
@@ -4986,7 +5019,7 @@ test "IRBuilder: emit instructions" {
     var builder = IRBuilder.init(testing.allocator, &func);
     const block = try builder.createBlock();
     try builder.appendBlock(block);
-    try builder.switchToBlock(block);
+    builder.switchToBlock(block);
 
     const v1 = try builder.emitIconst(ir.Type.I32, 10);
     const v2 = try builder.emitIconst(ir.Type.I32, 20);
@@ -5010,10 +5043,10 @@ test "IRBuilder: emit control flow" {
     try builder.appendBlock(block1);
     try builder.appendBlock(block2);
 
-    try builder.switchToBlock(block1);
+    builder.switchToBlock(block1);
     try builder.emitJump(block2);
 
-    try builder.switchToBlock(block2);
+    builder.switchToBlock(block2);
     try builder.emitReturn();
 
     try testing.expectEqual(@as(usize, 2), func.dfg.insts.elems.items.len);
@@ -5150,10 +5183,10 @@ test "IRBuilder: switch to block" {
     try builder.appendBlock(block1);
     try builder.appendBlock(block2);
 
-    try builder.switchToBlock(block1);
+    builder.switchToBlock(block1);
     try testing.expectEqual(block1, builder.builder.current_block.?);
 
-    try builder.switchToBlock(block2);
+    builder.switchToBlock(block2);
     try testing.expectEqual(block2, builder.builder.current_block.?);
 }
 
@@ -5165,7 +5198,7 @@ test "IRBuilder: emit iconst with different types" {
     var builder = IRBuilder.init(testing.allocator, &func);
     const block = try builder.createBlock();
     try builder.appendBlock(block);
-    try builder.switchToBlock(block);
+    builder.switchToBlock(block);
 
     const v1 = try builder.emitIconst(ir.Type.I32, 42);
     const v2 = try builder.emitIconst(ir.Type.I64, 100);
@@ -5187,7 +5220,7 @@ test "IRBuilder: emit multiple iconsts" {
     var builder = IRBuilder.init(testing.allocator, &func);
     const block = try builder.createBlock();
     try builder.appendBlock(block);
-    try builder.switchToBlock(block);
+    builder.switchToBlock(block);
 
     _ = try builder.emitIconst(ir.Type.I32, 1);
     _ = try builder.emitIconst(ir.Type.I32, 2);
@@ -5206,7 +5239,7 @@ test "IRBuilder: emit iadd" {
     var builder = IRBuilder.init(testing.allocator, &func);
     const block = try builder.createBlock();
     try builder.appendBlock(block);
-    try builder.switchToBlock(block);
+    builder.switchToBlock(block);
 
     const v1 = try builder.emitIconst(ir.Type.I32, 10);
     const v2 = try builder.emitIconst(ir.Type.I32, 20);
@@ -5224,7 +5257,7 @@ test "IRBuilder: emit isub" {
     var builder = IRBuilder.init(testing.allocator, &func);
     const block = try builder.createBlock();
     try builder.appendBlock(block);
-    try builder.switchToBlock(block);
+    builder.switchToBlock(block);
 
     const v1 = try builder.emitIconst(ir.Type.I32, 100);
     const v2 = try builder.emitIconst(ir.Type.I32, 30);
@@ -5242,7 +5275,7 @@ test "IRBuilder: emit imul" {
     var builder = IRBuilder.init(testing.allocator, &func);
     const block = try builder.createBlock();
     try builder.appendBlock(block);
-    try builder.switchToBlock(block);
+    builder.switchToBlock(block);
 
     const v1 = try builder.emitIconst(ir.Type.I32, 5);
     const v2 = try builder.emitIconst(ir.Type.I32, 7);
@@ -5260,7 +5293,7 @@ test "IRBuilder: emit chained arithmetic" {
     var builder = IRBuilder.init(testing.allocator, &func);
     const block = try builder.createBlock();
     try builder.appendBlock(block);
-    try builder.switchToBlock(block);
+    builder.switchToBlock(block);
 
     const v1 = try builder.emitIconst(ir.Type.I32, 10);
     const v2 = try builder.emitIconst(ir.Type.I32, 20);
@@ -5283,7 +5316,7 @@ test "IRBuilder: emit return" {
     var builder = IRBuilder.init(testing.allocator, &func);
     const block = try builder.createBlock();
     try builder.appendBlock(block);
-    try builder.switchToBlock(block);
+    builder.switchToBlock(block);
 
     try builder.emitReturn();
 
@@ -5302,7 +5335,7 @@ test "IRBuilder: emit jump" {
     try builder.appendBlock(block1);
     try builder.appendBlock(block2);
 
-    try builder.switchToBlock(block1);
+    builder.switchToBlock(block1);
     try builder.emitJump(block2);
 
     try testing.expectEqual(@as(usize, 1), func.dfg.insts.elems.items.len);
@@ -5322,13 +5355,13 @@ test "IRBuilder: emit control flow with multiple blocks" {
     try builder.appendBlock(middle);
     try builder.appendBlock(exit);
 
-    try builder.switchToBlock(entry);
+    builder.switchToBlock(entry);
     try builder.emitJump(middle);
 
-    try builder.switchToBlock(middle);
+    builder.switchToBlock(middle);
     try builder.emitJump(exit);
 
-    try builder.switchToBlock(exit);
+    builder.switchToBlock(exit);
     try builder.emitReturn();
 
     try testing.expectEqual(@as(usize, 3), func.dfg.insts.elems.items.len);
@@ -5342,7 +5375,7 @@ test "IRBuilder: value tracking with simple expression" {
     var builder = IRBuilder.init(testing.allocator, &func);
     const block = try builder.createBlock();
     try builder.appendBlock(block);
-    try builder.switchToBlock(block);
+    builder.switchToBlock(block);
 
     const v1 = try builder.emitIconst(ir.Type.I32, 10);
     const v2 = try builder.emitIconst(ir.Type.I32, 20);
@@ -5367,7 +5400,7 @@ test "IRBuilder: value types are preserved" {
     var builder = IRBuilder.init(testing.allocator, &func);
     const block = try builder.createBlock();
     try builder.appendBlock(block);
-    try builder.switchToBlock(block);
+    builder.switchToBlock(block);
 
     const v_i32 = try builder.emitIconst(ir.Type.I32, 42);
     const v_i64 = try builder.emitIconst(ir.Type.I64, 100);
@@ -5387,7 +5420,7 @@ test "IRBuilder: build simple function" {
     var builder = IRBuilder.init(testing.allocator, &func);
     const entry = try builder.createBlock();
     try builder.appendBlock(entry);
-    try builder.switchToBlock(entry);
+    builder.switchToBlock(entry);
 
     const a = try builder.emitIconst(ir.Type.I32, 5);
     const b = try builder.emitIconst(ir.Type.I32, 3);
@@ -5418,22 +5451,22 @@ test "IRBuilder: build function with conditional flow" {
     try builder.appendBlock(else_block);
     try builder.appendBlock(merge);
 
-    try builder.switchToBlock(entry);
+    builder.switchToBlock(entry);
     const val = try builder.emitIconst(ir.Type.I32, 10);
     _ = val;
     try builder.emitJump(then_block);
 
-    try builder.switchToBlock(then_block);
+    builder.switchToBlock(then_block);
     const t1 = try builder.emitIconst(ir.Type.I32, 5);
     _ = try builder.emitIadd(ir.Type.I32, t1, t1);
     try builder.emitJump(merge);
 
-    try builder.switchToBlock(else_block);
+    builder.switchToBlock(else_block);
     const e1 = try builder.emitIconst(ir.Type.I32, 20);
     _ = try builder.emitIsub(ir.Type.I32, e1, e1);
     try builder.emitJump(merge);
 
-    try builder.switchToBlock(merge);
+    builder.switchToBlock(merge);
     try builder.emitReturn();
 
     try testing.expectEqual(@as(usize, 4), func.layout.blocks.elems.items.len);
@@ -5457,20 +5490,20 @@ test "IRBuilder: build function with loop structure" {
     try builder.appendBlock(loop_body);
     try builder.appendBlock(loop_exit);
 
-    try builder.switchToBlock(entry);
+    builder.switchToBlock(entry);
     _ = try builder.emitIconst(ir.Type.I32, 0);
     try builder.emitJump(loop_header);
 
-    try builder.switchToBlock(loop_header);
+    builder.switchToBlock(loop_header);
     try builder.emitJump(loop_body);
 
-    try builder.switchToBlock(loop_body);
+    builder.switchToBlock(loop_body);
     const v1 = try builder.emitIconst(ir.Type.I32, 1);
     const v2 = try builder.emitIconst(ir.Type.I32, 2);
     _ = try builder.emitIadd(ir.Type.I32, v1, v2);
     try builder.emitJump(loop_header);
 
-    try builder.switchToBlock(loop_exit);
+    builder.switchToBlock(loop_exit);
     try builder.emitReturn();
 
     try testing.expectEqual(@as(usize, 4), func.layout.blocks.elems.items.len);
@@ -5489,11 +5522,11 @@ test "IRBuilder: emit instructions in different blocks" {
     try builder.appendBlock(block1);
     try builder.appendBlock(block2);
 
-    try builder.switchToBlock(block1);
+    builder.switchToBlock(block1);
     _ = try builder.emitIconst(ir.Type.I32, 10);
     _ = try builder.emitIconst(ir.Type.I32, 20);
 
-    try builder.switchToBlock(block2);
+    builder.switchToBlock(block2);
     _ = try builder.emitIconst(ir.Type.I32, 30);
     try builder.emitReturn();
 
@@ -5508,7 +5541,7 @@ test "IRBuilder: empty function with just return" {
     var builder = IRBuilder.init(testing.allocator, &func);
     const block = try builder.createBlock();
     try builder.appendBlock(block);
-    try builder.switchToBlock(block);
+    builder.switchToBlock(block);
 
     try builder.emitReturn();
 
@@ -5531,16 +5564,16 @@ test "IRBuilder: multiple jumps to same block" {
     try builder.appendBlock(b2);
     try builder.appendBlock(merge);
 
-    try builder.switchToBlock(entry);
+    builder.switchToBlock(entry);
     try builder.emitJump(b1);
 
-    try builder.switchToBlock(b1);
+    builder.switchToBlock(b1);
     try builder.emitJump(merge);
 
-    try builder.switchToBlock(b2);
+    builder.switchToBlock(b2);
     try builder.emitJump(merge);
 
-    try builder.switchToBlock(merge);
+    builder.switchToBlock(merge);
     try builder.emitReturn();
 
     try testing.expectEqual(@as(usize, 4), func.dfg.insts.elems.items.len);

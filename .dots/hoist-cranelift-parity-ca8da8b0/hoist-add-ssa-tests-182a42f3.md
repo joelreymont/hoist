@@ -1,9 +1,10 @@
 ---
 title: Add ssa tests
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.711855+02:00"
+created-at: "\"2026-01-14T15:42:46.711855+02:00\""
+closed-at: "2026-01-23T21:02:35.265841+02:00"
 ---
 
 Files: src/ir/ssa_tests.zig:1-120

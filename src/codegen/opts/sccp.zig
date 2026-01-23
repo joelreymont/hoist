@@ -682,7 +682,7 @@ test "SCCP: constant branch folding" {
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
-    var fbuilder = ir.FunctionBuilder.init(&func);
+    var fbuilder = try ir.FunctionBuilder.init(testing.allocator, &func);
 
     // Build: if (iconst 0) then block1 else block2
     const entry = try fbuilder.createBlock();
@@ -693,7 +693,7 @@ test "SCCP: constant branch folding" {
     try fbuilder.appendBlock(block1);
     try fbuilder.appendBlock(block2);
 
-    try fbuilder.switchToBlock(entry);
+    fbuilder.switchToBlock(entry);
     const zero = try fbuilder.iconst(Type.I32, 0);
 
     // Create branch manually since builder doesn't have branch helper
@@ -703,10 +703,10 @@ test "SCCP: constant branch folding" {
     const branch_inst = try func.dfg.makeInst(branch_data);
     try func.layout.appendInst(branch_inst, entry);
 
-    try fbuilder.switchToBlock(block1);
+    fbuilder.switchToBlock(block1);
     try fbuilder.ret();
 
-    try fbuilder.switchToBlock(block2);
+    fbuilder.switchToBlock(block2);
     try fbuilder.ret();
 
     // Run SCCP

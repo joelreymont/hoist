@@ -276,12 +276,12 @@ pub const Parser = struct {
 
         const func = try self.alloc.create(Function);
         func.* = try Function.init(self.alloc, name, sig);
-        var builder = FunctionBuilder.init(func);
+        var builder = try FunctionBuilder.init(self.alloc, func);
 
         while (self.current.type == .block) {
             const blk = try self.parseBlockHeader(&builder);
             try builder.appendBlock(blk);
-            try builder.switchToBlock(blk);
+            builder.switchToBlock(blk);
 
             while (self.current.type != .block and self.current.type != .rbrace and self.current.type != .eof) {
                 try self.parseInstruction(&builder);

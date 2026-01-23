@@ -68,7 +68,7 @@ test "round-trip simple add" {
     var func = try Function.init(alloc, "add", sig);
     defer func.deinit();
 
-    var fb = FunctionBuilder.init(&func);
+    var fb = try FunctionBuilder.init(testing.allocator, &func);
     const blk = try fb.createBlock();
     fb.switchToBlock(blk);
 
@@ -104,7 +104,7 @@ test "round-trip branch" {
     var func = try Function.init(alloc, "fib", sig);
     defer func.deinit();
 
-    var fb = FunctionBuilder.init(&func);
+    var fb = try FunctionBuilder.init(testing.allocator, &func);
     const b0 = try fb.createBlock();
     const b1 = try fb.createBlock();
     const b2 = try fb.createBlock();

@@ -7,6 +7,8 @@ const Function = root.function.Function;
 const compile_mod = root.codegen.compile;
 const signature_mod = root.signature;
 const Verifier = @import("ir/verifier.zig").Verifier;
+const Features = @import("target/features.zig").Features;
+const FeatureDetector = @import("target/features.zig").FeatureDetector;
 
 /// Compiler configuration and context.
 /// Central API for configuring and invoking the compiler.
@@ -35,6 +37,7 @@ pub const Context = struct {
             .target = .{
                 .arch = .aarch64,
                 .os = .macos,
+                .features = Features.init(),
             },
             .opt_level = .none,
             .call_conv = defaultCallConv(.aarch64, .macos),
@@ -77,6 +80,7 @@ pub const Context = struct {
                 .aggressive => .speed_and_size,
             },
             .verify = self.verify,
+            .features = self.target.features,
         };
 
         // Create a codegen Context for compilation with the function
@@ -124,6 +128,8 @@ pub const TargetConfig = struct {
     arch: Arch,
     /// Target operating system.
     os: OS,
+    /// CPU features.
+    features: Features,
 };
 
 /// Supported architectures.
@@ -188,7 +194,15 @@ pub const ContextBuilder = struct {
             .windows => .windows,
             else => return error.UnsupportedOS,
         };
-        return self.target(arch, os);
+
+        var detector = FeatureDetector.init(self.ctx.allocator);
+        detector.detect() catch |err| {
+            std.log.warn("Feature detection failed: {}, using baseline", .{err});
+        };
+
+        _ = self.target(arch, os);
+        self.ctx.target.features = detector.getFeatures();
+        return self;
     }
 
     pub fn optLevel(self: *ContextBuilder, level: OptLevel) *ContextBuilder {
