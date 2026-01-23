@@ -1,9 +1,10 @@
 ---
 title: Add x64 branch
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.307948+02:00"
+created-at: "\"2026-01-14T15:42:46.307948+02:00\""
+closed-at: "2026-01-23T10:05:48.107474+02:00"
 ---
 
 Files: src/backends/x64/inst.zig:53-70, src/backends/x64/inst.zig:160-236

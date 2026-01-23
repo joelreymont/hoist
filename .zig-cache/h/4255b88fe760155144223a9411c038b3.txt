@@ -341,7 +341,7 @@
 11012 76903869 1769142747038552398 52de3b64341621355873b0b5e52f85ff 0 /Users/joel/Work/hoist/src/ir/types.zig
 4402 76422615 1769079531533930100 bcd79e14dd1410c58fc7eb580a807e4b 0 /Users/joel/Work/hoist/src/ir/entities.zig
 7128 76422634 1769079531592591689 574c88cbec84b833e474f9db9ff46e2a 0 /Users/joel/Work/hoist/src/ir/opcodes.zig
-8857 76903859 1769142747036412985 580a1fed15d7040043e8a739784a8930 0 /Users/joel/Work/hoist/src/ir/instructions.zig
+8861 76903859 1769153576954753553 81020595c189ee93d92a40b8277740c7 0 /Users/joel/Work/hoist/src/ir/instructions.zig
 1455 76422625 1769079531563704157 88134eed0f33fd044c831cf41fd8c6b8 0 /Users/joel/Work/hoist/src/ir/instruction_format.zig
 2909 76903868 1769142747038354231 e91934cbb019978a23d16c63a07f1bdd 0 /Users/joel/Work/hoist/src/ir/trapcode.zig
 5221 76422603 1769079531501199546 4dc556d1c09493af43604b2583e0f9dc 0 /Users/joel/Work/hoist/src/ir/condcodes.zig
@@ -381,7 +381,7 @@
 18136 76413711 1769077775658748442 e6e7ef383fe8470af9c8f531b3c45812 0 /Users/joel/Work/hoist/src/dsl/isle/codegen.zig
 9130 76413709 1769077775655576562 22600afed4e3a678ed29f4d2203f989e 0 /Users/joel/Work/hoist/src/dsl/isle/compile.zig
 19647 76413721 1769077775675558386 bc6c5b10a782de19096416f2e4b6238f 0 /Users/joel/Work/hoist/src/dsl/isle/runtime.zig
-18092 76903840 1769142747031633367 d5cac599f23d7e28f7ff237014873d36 0 /Users/joel/Work/hoist/src/dsl/isle/codegen/match.zig
+21987 76903840 1769154712991627505 6e6043b06c0106c985b2841245b4a129 0 /Users/joel/Work/hoist/src/dsl/isle/codegen/match.zig
 15043 76903837 1769142747030836327 b7a6504bdb2450e91d2aa777c4bb6075 0 /Users/joel/Work/hoist/src/dsl/isle/codegen/constructors.zig
 18283 76903839 1769142747031366576 6ae113b250fa9f73bd2a89263675fd2a 0 /Users/joel/Work/hoist/src/dsl/isle/codegen/extractors.zig
 8741 76903875 1769142747040694228 c29a5b462752de2d81dd147323d7c500 0 /Users/joel/Work/hoist/src/machinst/reg.zig
@@ -390,7 +390,7 @@
 11652 76422739 1769079536174911537 c83f966aa07c9ea08b358663a0f45df2 0 /Users/joel/Work/hoist/src/machinst/vcode.zig
 38356 76903872 1769142747039800979 9b58366e84e46a1dc5d6bd909ddd029f 0 /Users/joel/Work/hoist/src/machinst/abi.zig
 25976 76413513 1769077774946935091 2acb9cfc7f2d5b59958362f1506f9fe3 0 /Users/joel/Work/hoist/src/regalloc/liveness.zig
-10887 76903879 1769142747045940303 d753600c781da48dd7779e61d33a9e15 0 /Users/joel/Work/hoist/src/regalloc/interference.zig
+10975 76903879 1769153370475437836 c16e02a73dc2570c08b5dec591ccb460 0 /Users/joel/Work/hoist/src/regalloc/interference.zig
 6295 76890307 1769140266621416363 944c5807e87ec7c369bfe14a5bb6e36d 0 /Users/joel/Work/hoist/src/machinst/regalloc.zig
 4215 76903876 1769142747041353435 bc3b69f1b34fa644971496991646f037 0 /Users/joel/Work/hoist/src/machinst/regalloc2/types.zig
 3819 76413691 1769077775595581424 1a61f5f72efa990ee234ee2bb9f48dbf 0 /Users/joel/Work/hoist/src/machinst/regalloc2/api.zig
@@ -412,15 +412,15 @@
 18909 76903870 1769142747038770481 c805e9d50383cf9c5bd817ead1586a2a 0 /Users/joel/Work/hoist/src/ir/value_range.zig
 20560 76413654 1769077775455556824 988dd982b7bb7e1d4e51f42809218bd2 0 /Users/joel/Work/hoist/src/codegen/opts/alias.zig
 14039 76413509 1769077774932527401 7a02cf6c1411158eadf7c10ecedcae34 0 /Users/joel/Work/hoist/src/regalloc/regalloc_properties.zig
-17026 76903816 1769142747014806685 cf0d809f3a990c99c36ed897b9556e1c 0 /Users/joel/Work/hoist/src/backends/aarch64/legalize.zig
+18754 76903816 1769154854238999480 73e632e303d059d27e61f54117a9b855 0 /Users/joel/Work/hoist/src/backends/aarch64/legalize.zig
 4905 76413627 1769077775359022794 54a40a81e62836bdcf1d596778805fd9 0 /Users/joel/Work/hoist/src/backends/aarch64/frame_layout_test.zig
 6847 76413618 1769077775322301693 2f48469f23276a4439d310af71d08ee3 0 /Users/joel/Work/hoist/src/backends/aarch64/arg_classification_test.zig
 6616 76413610 1769077775293562647 0ad58cac6a6438d0ad384f97d7d4b9da 0 /Users/joel/Work/hoist/src/backends/aarch64/abi_callconv_test.zig
 10937 76413607 1769077775280416835 ae2bbbd8e11cde6990146a5ca6c79822 0 /Users/joel/Work/hoist/src/backends/aarch64/encoding_property_test.zig
 7860 76903818 1769142747015813101 63b874528da72b1e18404440104d78ef 0 /Users/joel/Work/hoist/src/backends/aarch64/lower_test.zig
 12984 76413613 1769077775303034704 bc413c335540bfcffcb11a1febc1756e 0 /Users/joel/Work/hoist/src/backends/aarch64/zcheck_properties.zig
-6521 76903822 1769142747019233970 b2b2e3821a2dd0c05f1586d356adb2c5 0 /Users/joel/Work/hoist/src/backends/x64/inst.zig
-7153 76903821 1769142747018965804 c590a4d580a89d19d32cb0e9a8fff346 0 /Users/joel/Work/hoist/src/backends/x64/emit.zig
+24719 76974439 1769155684737938988 96e62a95ceed5fd294579a4eade690c0 0 /Users/joel/Work/hoist/src/backends/x64/inst.zig
+17631 76903821 1769156162030392369 02284dfb8001bec70300c35db8e9395e 0 /Users/joel/Work/hoist/src/backends/x64/emit.zig
 7820 76903820 1769142747018672471 6690428d1a7924111b249fa7b405084a 0 /Users/joel/Work/hoist/src/backends/x64/abi.zig
 2886 76903825 1769142747020270927 fde7f75a21c7ccbce8251e5bf93de531 0 /Users/joel/Work/hoist/src/backends/x64/lower.zig
 2961 76903823 1769142747019511636 6016054af6335404b442b2506b85c58b 0 /Users/joel/Work/hoist/src/backends/x64/isa.zig
@@ -428,7 +428,7 @@
 457923 76951679 1769150767491474926 13ca5f932a8cfe35333a760dfe7c87cc 0 /Users/joel/Work/hoist/src/backends/aarch64/emit.zig
 139886 76903809 1769142747007383489 cb8b37c69b86aa37c2e0f6b41c1269f8 0 /Users/joel/Work/hoist/src/backends/aarch64/abi.zig
 6695 76413609 1769077775290766893 ecf4cc4fc7d162b5f7468140b1382326 0 /Users/joel/Work/hoist/src/backends/aarch64/lower.zig
-230447 76918945 1769145214483923342 f68837734f30cab59f6c2e907ee398e4 0 /Users/joel/Work/hoist/src/backends/aarch64/isle_helpers.zig
+236339 76970302 1769154964267295407 73720b1087978f2715af244850e6591c 0 /Users/joel/Work/hoist/src/backends/aarch64/isle_helpers.zig
 84335 76903815 1769143924560657640 5cba3480a570af0e46d2bddedc305966 0 /Users/joel/Work/hoist/src/backends/aarch64/isle_impl.zig
 10982 76413615 1769077775313059845 73224ff002814b8926424b0eb0efcfe2 0 /Users/joel/Work/hoist/src/backends/aarch64/isle_coverage.zig
 73810 76903813 1769142747012473106 6b5ccf75379530e98c62455c2abf1831 0 /Users/joel/Work/hoist/src/backends/aarch64/isa.zig

@@ -1,6 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
+const builtin = @import("builtin");
 
 /// CPU feature bit flags.
 pub const Features = struct {
@@ -80,11 +81,88 @@ pub const FeatureDetector = struct {
         };
     }
 
-    /// Detect features from current CPU.
-    /// Simplified - in real implementation would use OS-specific APIs.
+    /// Detect features from current CPU using OS-specific APIs.
     pub fn detect(self: *FeatureDetector) !void {
-        // Placeholder - would use cpuid on x86 or AT_HWCAP on aarch64
-        self.features = AArch64Features.baseline();
+        switch (builtin.os.tag) {
+            .linux => try self.detectLinux(),
+            .macos => try self.detectMacOS(),
+            else => self.features = AArch64Features.baseline(),
+        }
+    }
+
+    fn detectLinux(self: *FeatureDetector) !void {
+        // Read /proc/cpuinfo or getauxval(AT_HWCAP)
+        const hwcap = try getHwCap();
+        self.features = featuresFromHwCap(hwcap);
+    }
+
+    fn detectMacOS(self: *FeatureDetector) !void {
+        // Use sysctl to query CPU features
+        const hwcap = try getHwCapMacOS();
+        self.features = featuresFromHwCap(hwcap);
+    }
+
+    fn getHwCap() !u64 {
+        const AT_HWCAP = 16;
+        const auxv_file = try std.fs.openFileAbsolute("/proc/self/auxv", .{});
+        defer auxv_file.close();
+
+        var buf: [16]u8 = undefined;
+        while (true) {
+            const n = try auxv_file.read(&buf);
+            if (n < 16) break;
+
+            const key = std.mem.readInt(u64, buf[0..8], .little);
+            const val = std.mem.readInt(u64, buf[8..16], .little);
+
+            if (key == AT_HWCAP) return val;
+            if (key == 0) break; // AT_NULL
+        }
+
+        return 0; // Not found
+    }
+
+    fn getHwCapMacOS() !u64 {
+        // Use sysctlbyname
+        var hwcap: u64 = 0;
+        var len: usize = @sizeOf(u64);
+
+        // Query hw.optional features
+        // This is simplified - real implementation would check multiple sysctls
+        const rc = std.c.sysctlbyname("hw.optional.arm.FEAT_LSE", &hwcap, &len, null, 0);
+        if (rc == 0) {
+            return hwcap;
+        }
+
+        return 0; // Feature detection failed - use baseline
+    }
+
+    fn featuresFromHwCap(hwcap: u64) AArch64Features {
+        // Linux HWCAP bits (from linux/arch/arm64/include/uapi/asm/hwcap.h)
+        const HWCAP_ASIMD = (1 << 1);
+        const HWCAP_AES = (1 << 3);
+        const HWCAP_SHA1 = (1 << 5);
+        const HWCAP_SHA2 = (1 << 6);
+        const HWCAP_CRC32 = (1 << 7);
+        const HWCAP_ATOMICS = (1 << 8); // LSE
+        const HWCAP_FPHP = (1 << 9); // FP16
+        const HWCAP_ASIMDHP = (1 << 10); // FP16 vector
+        const HWCAP_ASIMDDP = (1 << 20); // DotProd
+        const HWCAP_SVE = (1 << 22);
+
+        var feat = AArch64Features.baseline();
+
+        if (hwcap & HWCAP_ASIMD != 0) feat.neon = true;
+        if (hwcap & HWCAP_AES != 0) feat.aes = true;
+        if (hwcap & HWCAP_SHA1 != 0) feat.sha2 = true;
+        if (hwcap & HWCAP_SHA2 != 0) feat.sha2 = true;
+        if (hwcap & HWCAP_CRC32 != 0) feat.crc = true;
+        if (hwcap & HWCAP_ATOMICS != 0) feat.lse = true;
+        if (hwcap & HWCAP_FPHP != 0) feat.fp16 = true;
+        if (hwcap & HWCAP_ASIMDDP != 0) feat.dotprod = true;
+        if (hwcap & HWCAP_SVE != 0) feat.sve = true;
+
+        return feat;
     }
 
     /// Parse features from string like "+neon,+crc,-sve".

@@ -1,9 +1,10 @@
 ---
 title: Wire x64 lower
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.331109+02:00"
+created-at: "\"2026-01-14T15:42:46.331109+02:00\""
+closed-at: "2026-01-23T10:23:46.592920+02:00"
 ---
 
 Files: src/backends/x64/lower.zig:12-55

@@ -1,9 +1,10 @@
 ---
 title: Add x64 tests
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-01-14T15:42:46.383556+02:00"
+created-at: "\"2026-01-14T15:42:46.383556+02:00\""
+closed-at: "2026-01-23T10:21:02.876632+02:00"
 ---
 
 Files: src/backends/x64/emit.zig:11-30, src/backends/x64/lower.zig:12-55

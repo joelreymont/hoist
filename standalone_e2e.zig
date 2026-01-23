@@ -81,10 +81,8 @@ pub fn main() !void {
     // Compile to machine code
     std.debug.print("\n--- Compiling to ARM64 ---\n", .{});
     var builder = ContextBuilder.init(allocator);
-    var ctx = builder
-        .targetNative()
-        .optLevel(.none)
-        .build();
+    const native_builder = try builder.targetNative();
+    var ctx = native_builder.optLevel(.none).build();
     const compiled = try ctx.compileFunction(&func);
 
     std.debug.print("Generated {} bytes of machine code\n", .{compiled.code.items.len});
