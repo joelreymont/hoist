@@ -16,6 +16,26 @@ const LANE_BASE: u16 = 0x70;
 const REFERENCE_BASE: u16 = 0x7E;
 const VECTOR_BASE: u16 = 0x80;
 const DYNAMIC_VECTOR_BASE: u16 = 0x100;
+const STRUCT_BASE: u16 = 0x200;
+
+/// A field within a struct type.
+pub const StructField = struct {
+    ty: Type,
+    offset: u32,
+
+    pub fn eql(a: StructField, b: StructField) bool {
+        return a.ty.raw == b.ty.raw and a.offset == b.offset;
+    }
+};
+
+/// Index into StructStore.
+pub const StructId = enum(u16) {
+    _,
+
+    pub fn index(self: StructId) u16 {
+        return @intFromEnum(self);
+    }
+};
 
 /// SSA value type.
 pub const Type = packed struct {
@@ -59,6 +79,22 @@ pub const Type = packed struct {
     pub const F16X4 = Type{ .raw = 0x99 }; // 64 bits total
     pub const F16X8 = Type{ .raw = 0xa9 }; // 128 bits total
 
+    // Dynamic/scalable vector types (SVE)
+    // Encoding: DYNAMIC_VECTOR_BASE + (log2_min_lanes << 4) + lane_bits_encoding
+    // These represent vectors with runtime-determined length (VL * min_lanes)
+    pub const I8X8XN = Type{ .raw = 0x104 }; // min 8 lanes of i8, scalable
+    pub const I8X16XN = Type{ .raw = 0x114 }; // min 16 lanes of i8, scalable
+    pub const I16X4XN = Type{ .raw = 0x105 }; // min 4 lanes of i16, scalable
+    pub const I16X8XN = Type{ .raw = 0x115 }; // min 8 lanes of i16, scalable
+    pub const I32X2XN = Type{ .raw = 0x106 }; // min 2 lanes of i32, scalable
+    pub const I32X4XN = Type{ .raw = 0x116 }; // min 4 lanes of i32, scalable
+    pub const I64X2XN = Type{ .raw = 0x107 }; // min 2 lanes of i64, scalable
+    pub const F32X2XN = Type{ .raw = 0x10a }; // min 2 lanes of f32, scalable
+    pub const F32X4XN = Type{ .raw = 0x11a }; // min 4 lanes of f32, scalable
+    pub const F64X2XN = Type{ .raw = 0x10b }; // min 2 lanes of f64, scalable
+    pub const F16X4XN = Type{ .raw = 0x109 }; // min 4 lanes of f16, scalable
+    pub const F16X8XN = Type{ .raw = 0x119 }; // min 8 lanes of f16, scalable
+
     pub fn eql(self: Type, other: Type) bool {
         return self.raw == other.raw;
     }
@@ -76,11 +112,36 @@ pub const Type = packed struct {
     }
 
     pub fn isVector(self: Type) bool {
-        return self.raw >= VECTOR_BASE and !self.isDynamicVector();
+        return self.raw >= VECTOR_BASE and !self.isDynamicVector() and !self.isStruct();
     }
 
     pub fn isDynamicVector(self: Type) bool {
-        return self.raw >= DYNAMIC_VECTOR_BASE;
+        return self.raw >= DYNAMIC_VECTOR_BASE and self.raw < STRUCT_BASE;
+    }
+
+    pub fn isStruct(self: Type) bool {
+        return self.raw >= STRUCT_BASE;
+    }
+
+    pub fn getStructId(self: Type) ?StructId {
+        if (!self.isStruct()) return null;
+        return @enumFromInt(self.raw - STRUCT_BASE);
+    }
+
+    pub fn fromStructId(id: StructId) Type {
+        return .{ .raw = STRUCT_BASE + id.index() };
+    }
+
+    /// Get struct fields from a StructStore. Returns null for non-structs.
+    pub fn getStructFields(self: Type, store: *const StructStore) ?[]const StructField {
+        const id = self.getStructId() orelse return null;
+        return store.getFields(id);
+    }
+
+    /// Get struct size in bytes. Returns null for non-structs.
+    pub fn structBytes(self: Type, store: *const StructStore) ?u32 {
+        const id = self.getStructId() orelse return null;
+        return store.getSize(id);
     }
 
     pub fn isInt(self: Type) bool {
@@ -268,6 +329,60 @@ pub const Type = packed struct {
         return self.replaceLanes(double_lane);
     }
 
+    /// Convert a fixed vector type to its scalable/dynamic counterpart.
+    /// E.g., I32X4 -> I32X4XN (scalable with min 4 lanes).
+    pub fn vectorToDynamic(self: Type) ?Type {
+        if (!self.isVector()) return null;
+        return switch (self.raw) {
+            I8X8.raw => I8X8XN,
+            I8X16.raw => I8X16XN,
+            I16X4.raw => I16X4XN,
+            I16X8.raw => I16X8XN,
+            I32X2.raw => I32X2XN,
+            I32X4.raw => I32X4XN,
+            I64X2.raw => I64X2XN,
+            F16X4.raw => F16X4XN,
+            F16X8.raw => F16X8XN,
+            F32X2.raw => F32X2XN,
+            F32X4.raw => F32X4XN,
+            F64X2.raw => F64X2XN,
+            else => null,
+        };
+    }
+
+    /// Convert a dynamic/scalable vector type to its fixed counterpart.
+    /// E.g., I32X4XN -> I32X4 (fixed 4 lanes).
+    pub fn dynamicToVector(self: Type) ?Type {
+        if (!self.isDynamicVector()) return null;
+        return switch (self.raw) {
+            I8X8XN.raw => I8X8,
+            I8X16XN.raw => I8X16,
+            I16X4XN.raw => I16X4,
+            I16X8XN.raw => I16X8,
+            I32X2XN.raw => I32X2,
+            I32X4XN.raw => I32X4,
+            I64X2XN.raw => I64X2,
+            F16X4XN.raw => F16X4,
+            F16X8XN.raw => F16X8,
+            F32X2XN.raw => F32X2,
+            F32X4XN.raw => F32X4,
+            F64X2XN.raw => F64X2,
+            else => null,
+        };
+    }
+
+    /// Get minimum lane count for dynamic vectors.
+    /// For fixed vectors, returns the actual lane count.
+    pub fn minLaneCount(self: Type) u32 {
+        if (self.isDynamicVector()) {
+            if (self.dynamicToVector()) |fixed| {
+                return fixed.laneCount();
+            }
+            return 0;
+        }
+        return self.laneCount();
+    }
+
     /// Format as string (i32, f64, i32x4, etc.).
     pub fn format(self: Type, writer: anytype) !void {
         if (self.isInvalid()) {
@@ -289,11 +404,89 @@ pub const Type = packed struct {
             else => "?",
         };
 
-        if (self.isVector()) {
+        if (self.isStruct()) {
+            if (self.getStructId()) |id| {
+                try writer.print("struct#{d}", .{id.index()});
+            } else {
+                try writer.writeAll("struct?");
+            }
+        } else if (self.isDynamicVector()) {
+            try writer.print("{s}x{d}xn", .{ lane_str, self.minLaneCount() });
+        } else if (self.isVector()) {
             try writer.print("{s}x{d}", .{ lane_str, self.laneCount() });
         } else {
             try writer.writeAll(lane_str);
         }
+    }
+};
+
+/// Hash-consed storage for struct types.
+pub const StructStore = struct {
+    alloc: std.mem.Allocator,
+    fields: std.ArrayListUnmanaged(StructField),
+    /// Maps (start_idx, len) -> StructId for deduplication.
+    structs: std.ArrayListUnmanaged(StructEntry),
+
+    const StructEntry = struct {
+        start: u32,
+        len: u16,
+        size: u32,
+    };
+
+    pub fn init(alloc: std.mem.Allocator) StructStore {
+        return .{
+            .alloc = alloc,
+            .fields = .{},
+            .structs = .{},
+        };
+    }
+
+    pub fn deinit(self: *StructStore) void {
+        self.fields.deinit(self.alloc);
+        self.structs.deinit(self.alloc);
+    }
+
+    fn fieldsEql(a: []const StructField, b: []const StructField) bool {
+        if (a.len != b.len) return false;
+        for (a, b) |af, bf| {
+            if (!af.eql(bf)) return false;
+        }
+        return true;
+    }
+
+    /// Intern a struct type, returning its ID.
+    pub fn intern(self: *StructStore, fields: []const StructField, size: u32) !StructId {
+        // Check for existing match
+        for (self.structs.items, 0..) |entry, i| {
+            if (entry.len == fields.len and entry.size == size) {
+                const existing = self.fields.items[entry.start..][0..entry.len];
+                if (fieldsEql(existing, fields)) {
+                    return @enumFromInt(@as(u16, @intCast(i)));
+                }
+            }
+        }
+
+        // Add new struct
+        const start: u32 = @intCast(self.fields.items.len);
+        try self.fields.appendSlice(self.alloc, fields);
+        const id: u16 = @intCast(self.structs.items.len);
+        try self.structs.append(self.alloc, .{
+            .start = start,
+            .len = @intCast(fields.len),
+            .size = size,
+        });
+        return @enumFromInt(id);
+    }
+
+    /// Get fields for a struct ID.
+    pub fn getFields(self: *const StructStore, id: StructId) []const StructField {
+        const entry = self.structs.items[id.index()];
+        return self.fields.items[entry.start..][0..entry.len];
+    }
+
+    /// Get total size of a struct in bytes.
+    pub fn getSize(self: *const StructStore, id: StructId) u32 {
+        return self.structs.items[id.index()].size;
     }
 };
 
@@ -470,4 +663,95 @@ test "Type reference types" {
     try std.testing.expect(!Type.I32.isRef());
     try std.testing.expect(!Type.F64.isRef());
     try std.testing.expect(!Type.I32X4.isRef());
+}
+
+test "Type dynamic vectors" {
+    // isDynamicVector
+    try std.testing.expect(Type.I32X4XN.isDynamicVector());
+    try std.testing.expect(Type.I8X16XN.isDynamicVector());
+    try std.testing.expect(Type.F32X4XN.isDynamicVector());
+    try std.testing.expect(!Type.I32X4.isDynamicVector());
+    try std.testing.expect(!Type.I32.isDynamicVector());
+
+    // vectorToDynamic
+    try std.testing.expect(Type.I32X4.vectorToDynamic().?.eql(Type.I32X4XN));
+    try std.testing.expect(Type.I8X16.vectorToDynamic().?.eql(Type.I8X16XN));
+    try std.testing.expect(Type.F32X4.vectorToDynamic().?.eql(Type.F32X4XN));
+    try std.testing.expect(Type.F64X2.vectorToDynamic().?.eql(Type.F64X2XN));
+    try std.testing.expect(Type.I32.vectorToDynamic() == null);
+
+    // dynamicToVector
+    try std.testing.expect(Type.I32X4XN.dynamicToVector().?.eql(Type.I32X4));
+    try std.testing.expect(Type.I8X16XN.dynamicToVector().?.eql(Type.I8X16));
+    try std.testing.expect(Type.F32X4XN.dynamicToVector().?.eql(Type.F32X4));
+    try std.testing.expect(Type.F64X2XN.dynamicToVector().?.eql(Type.F64X2));
+    try std.testing.expect(Type.I32X4.dynamicToVector() == null);
+
+    // minLaneCount
+    try std.testing.expectEqual(@as(u32, 4), Type.I32X4XN.minLaneCount());
+    try std.testing.expectEqual(@as(u32, 16), Type.I8X16XN.minLaneCount());
+    try std.testing.expectEqual(@as(u32, 4), Type.F32X4XN.minLaneCount());
+    try std.testing.expectEqual(@as(u32, 2), Type.F64X2XN.minLaneCount());
+    // Fixed vectors return actual lane count
+    try std.testing.expectEqual(@as(u32, 4), Type.I32X4.minLaneCount());
+}
+
+test "StructStore basic" {
+    var store = StructStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    // Create struct { i32, f64 }
+    const fields1 = [_]StructField{
+        .{ .ty = Type.I32, .offset = 0 },
+        .{ .ty = Type.F64, .offset = 8 },
+    };
+    const id1 = try store.intern(&fields1, 16);
+
+    // Same fields should return same ID
+    const id1_dup = try store.intern(&fields1, 16);
+    try std.testing.expectEqual(id1.index(), id1_dup.index());
+
+    // Different struct
+    const fields2 = [_]StructField{
+        .{ .ty = Type.F32, .offset = 0 },
+        .{ .ty = Type.F32, .offset = 4 },
+    };
+    const id2 = try store.intern(&fields2, 8);
+    try std.testing.expect(id1.index() != id2.index());
+
+    // Retrieve fields
+    const got = store.getFields(id1);
+    try std.testing.expectEqual(@as(usize, 2), got.len);
+    try std.testing.expect(got[0].ty.eql(Type.I32));
+    try std.testing.expect(got[1].ty.eql(Type.F64));
+
+    // Size
+    try std.testing.expectEqual(@as(u32, 16), store.getSize(id1));
+    try std.testing.expectEqual(@as(u32, 8), store.getSize(id2));
+}
+
+test "Type struct" {
+    var store = StructStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    const fields = [_]StructField{
+        .{ .ty = Type.I32, .offset = 0 },
+    };
+    const id = try store.intern(&fields, 4);
+    const ty = Type.fromStructId(id);
+
+    try std.testing.expect(ty.isStruct());
+    try std.testing.expect(!ty.isInt());
+    try std.testing.expect(!ty.isVector());
+    try std.testing.expectEqual(id.index(), ty.getStructId().?.index());
+
+    const got = ty.getStructFields(&store);
+    try std.testing.expect(got != null);
+    try std.testing.expectEqual(@as(usize, 1), got.?.len);
+
+    try std.testing.expectEqual(@as(u32, 4), ty.structBytes(&store).?);
+
+    // Non-struct returns null
+    try std.testing.expect(Type.I32.getStructFields(&store) == null);
+    try std.testing.expect(Type.I32.structBytes(&store) == null);
 }

@@ -26,10 +26,13 @@ fn initRegIndex(map: *[reg_map_len]u8, regs: []const machinst.PReg) void {
     }
 }
 
+const spill_size_sve: u32 = 256; // Max 2048-bit SVE
+
 fn spillSlotSize(reg_class: machinst.RegClass) u32 {
     return switch (reg_class) {
         .int, .float => spill_size_int,
         .vector => spill_size_vec,
+        .scalable_vector, .predicate => spill_size_sve,
     };
 }
 
@@ -249,6 +252,7 @@ pub const LinearScanAllocator = struct {
             .int => self.int_reg_index[hw],
             .float => self.float_reg_index[hw],
             .vector => self.vector_reg_index[hw],
+            .scalable_vector, .predicate => return null, // SVE not yet supported
         };
         if (idx == invalid_reg_idx) return null;
         return idx;
@@ -263,6 +267,8 @@ pub const LinearScanAllocator = struct {
             .int => self.int_regs.items[idx],
             .float => self.float_regs.items[idx],
             .vector => self.vector_regs.items[idx],
+            .scalable_vector => machinst.PReg.new(.scalable_vector, @intCast(idx)),
+            .predicate => machinst.PReg.new(.predicate, @intCast(idx)),
         };
     }
 
@@ -270,6 +276,7 @@ pub const LinearScanAllocator = struct {
         return switch (reg_class) {
             .int, .float => &self.free_spill_slots_8,
             .vector => &self.free_spill_slots_16,
+            .scalable_vector, .predicate => &self.free_spill_slots_16, // Placeholder
         };
     }
 
@@ -502,7 +509,7 @@ pub const LinearScanAllocator = struct {
         return switch (class) {
             .int => &self.free_int_regs,
             .float => &self.free_float_regs,
-            .vector => &self.free_vector_regs,
+            .vector, .scalable_vector, .predicate => &self.free_vector_regs, // SVE placeholder
         };
     }
 
@@ -512,6 +519,7 @@ pub const LinearScanAllocator = struct {
             .int => @intCast(self.int_regs.items.len),
             .float => @intCast(self.float_regs.items.len),
             .vector => @intCast(self.vector_regs.items.len),
+            .scalable_vector, .predicate => 0, // SVE not yet supported
         };
     }
 

@@ -7,13 +7,22 @@ pub const RegClass = enum(u8) {
     int = 0,
     /// Floating-point register.
     float = 1,
-    /// Vector register.
+    /// Vector register (NEON V0-V31 / SIMD).
     vector = 2,
+    /// Scalable vector register (SVE Z0-Z31).
+    scalable_vector = 3,
+    /// Predicate register (SVE P0-P15).
+    predicate = 4,
 
-    pub const count = 3;
+    pub const count = 5;
 
     pub fn index(self: RegClass) u8 {
         return @intFromEnum(self);
+    }
+
+    /// Check if this is an SVE register class.
+    pub fn isSve(self: RegClass) bool {
+        return self == .scalable_vector or self == .predicate;
     }
 };
 

@@ -15,6 +15,58 @@ pub const fp = PReg.new(.int, 29); // X29 - Frame Pointer
 pub const lr = PReg.new(.int, 30); // X30 - Link Register
 pub const sp = PReg.new(.int, 31); // SP - Stack Pointer
 
+// SVE scalable vector registers Z0-Z31
+pub const z0 = PReg.new(.scalable_vector, 0);
+pub const z1 = PReg.new(.scalable_vector, 1);
+pub const z2 = PReg.new(.scalable_vector, 2);
+pub const z3 = PReg.new(.scalable_vector, 3);
+pub const z4 = PReg.new(.scalable_vector, 4);
+pub const z5 = PReg.new(.scalable_vector, 5);
+pub const z6 = PReg.new(.scalable_vector, 6);
+pub const z7 = PReg.new(.scalable_vector, 7);
+pub const z8 = PReg.new(.scalable_vector, 8);
+pub const z9 = PReg.new(.scalable_vector, 9);
+pub const z10 = PReg.new(.scalable_vector, 10);
+pub const z11 = PReg.new(.scalable_vector, 11);
+pub const z12 = PReg.new(.scalable_vector, 12);
+pub const z13 = PReg.new(.scalable_vector, 13);
+pub const z14 = PReg.new(.scalable_vector, 14);
+pub const z15 = PReg.new(.scalable_vector, 15);
+pub const z16 = PReg.new(.scalable_vector, 16);
+pub const z17 = PReg.new(.scalable_vector, 17);
+pub const z18 = PReg.new(.scalable_vector, 18);
+pub const z19 = PReg.new(.scalable_vector, 19);
+pub const z20 = PReg.new(.scalable_vector, 20);
+pub const z21 = PReg.new(.scalable_vector, 21);
+pub const z22 = PReg.new(.scalable_vector, 22);
+pub const z23 = PReg.new(.scalable_vector, 23);
+pub const z24 = PReg.new(.scalable_vector, 24);
+pub const z25 = PReg.new(.scalable_vector, 25);
+pub const z26 = PReg.new(.scalable_vector, 26);
+pub const z27 = PReg.new(.scalable_vector, 27);
+pub const z28 = PReg.new(.scalable_vector, 28);
+pub const z29 = PReg.new(.scalable_vector, 29);
+pub const z30 = PReg.new(.scalable_vector, 30);
+pub const z31 = PReg.new(.scalable_vector, 31);
+
+// SVE predicate registers P0-P15
+pub const p0 = PReg.new(.predicate, 0);
+pub const p1 = PReg.new(.predicate, 1);
+pub const p2 = PReg.new(.predicate, 2);
+pub const p3 = PReg.new(.predicate, 3);
+pub const p4 = PReg.new(.predicate, 4);
+pub const p5 = PReg.new(.predicate, 5);
+pub const p6 = PReg.new(.predicate, 6);
+pub const p7 = PReg.new(.predicate, 7);
+pub const p8 = PReg.new(.predicate, 8);
+pub const p9 = PReg.new(.predicate, 9);
+pub const p10 = PReg.new(.predicate, 10);
+pub const p11 = PReg.new(.predicate, 11);
+pub const p12 = PReg.new(.predicate, 12);
+pub const p13 = PReg.new(.predicate, 13);
+pub const p14 = PReg.new(.predicate, 14);
+pub const p15 = PReg.new(.predicate, 15);
+
 /// ARM64 machine instruction.
 /// Minimal bootstrap set - full aarch64 backend needs ~100+ variants.
 pub const Inst = union(enum) {
@@ -2098,6 +2150,61 @@ pub const Inst = union(enum) {
         idx: u8, // Element index in rm
     },
 
+    // ==================== SVE Instructions ====================
+
+    /// SVE ADD (vectors, unpredicated) - ADD Zd.T, Zn.T, Zm.T
+    /// Computes dst = src1 + src2 (element-wise addition).
+    sve_add: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: SveElemSize,
+    },
+
+    /// SVE SUB (vectors, unpredicated) - SUB Zd.T, Zn.T, Zm.T
+    /// Computes dst = src1 - src2 (element-wise subtraction).
+    sve_sub: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: SveElemSize,
+    },
+
+    /// SVE MUL (vectors, unpredicated) - MUL Zd.T, Zn.T, Zm.T
+    /// Computes dst = src1 * src2 (element-wise multiplication).
+    sve_mul: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        size: SveElemSize,
+    },
+
+    /// SVE AND (vectors, unpredicated) - AND Zd.D, Zn.D, Zm.D
+    /// Computes dst = src1 & src2 (bitwise AND).
+    sve_and: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    /// SVE ORR (vectors, unpredicated) - ORR Zd.D, Zn.D, Zm.D
+    /// Computes dst = src1 | src2 (bitwise OR).
+    sve_orr: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    /// SVE EOR (vectors, unpredicated) - EOR Zd.D, Zn.D, Zm.D
+    /// Computes dst = src1 ^ src2 (bitwise XOR).
+    sve_eor: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+    },
+
+    // ==================== End SVE Instructions ====================
+
     /// Call - saves return address to link register and jumps.
     /// Pseudo-instruction that becomes BL.
     call: struct {
@@ -2460,6 +2567,13 @@ pub const Inst = union(enum) {
             .vec_uqxtn => |i| try writer.print("vec_uqxtn{s}.{f} {f}, {f}", .{ if (i.high) "2" else "", i.size, i.dst, i.src }),
             .vec_fcvtl => |i| try writer.print("vec_fcvtl{s} {f}, {f}", .{ if (i.high) "2" else "", i.dst, i.src }),
             .vec_fcvtn => |i| try writer.print("vec_fcvtn{s} {f}, {f}", .{ if (i.high) "2" else "", i.dst, i.src }),
+            // SVE instructions
+            .sve_add => |i| try writer.print("sve_add.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .sve_sub => |i| try writer.print("sve_sub.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .sve_mul => |i| try writer.print("sve_mul.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
+            .sve_and => |i| try writer.print("sve_and {f}, {f}, {f}", .{ i.dst, i.src1, i.src2 }),
+            .sve_orr => |i| try writer.print("sve_orr {f}, {f}, {f}", .{ i.dst, i.src1, i.src2 }),
+            .sve_eor => |i| try writer.print("sve_eor {f}, {f}, {f}", .{ i.dst, i.src1, i.src2 }),
             .call => |i| try writer.print("call {f}", .{i.target}),
             .call_indirect => |i| try writer.print("call {f}", .{i.target}),
             .ret_call => try writer.print("ret", .{}),
@@ -3591,6 +3705,37 @@ pub const Inst = union(enum) {
                 try collector.regUse(i.src);
                 try collector.regDef(i.dst);
             },
+            // SVE instructions
+            .sve_add => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .sve_sub => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .sve_mul => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .sve_and => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .sve_orr => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
+            .sve_eor => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regDef(i.dst);
+            },
             .ret => {
                 // No operands to collect (implicit use of X30/LR handled by ABI)
             },
@@ -3813,6 +3958,42 @@ pub const VecElemSize = enum {
             .size32x2 => try writer.print("2s", .{}),
             .size32x4 => try writer.print("4s", .{}),
             .size64x2 => try writer.print("2d", .{}),
+        }
+    }
+};
+
+/// SVE element size for scalable vector operations.
+pub const SveElemSize = enum {
+    B, // 8-bit elements
+    H, // 16-bit elements
+    S, // 32-bit elements
+    D, // 64-bit elements
+
+    pub fn bits(self: SveElemSize) u32 {
+        return switch (self) {
+            .B => 8,
+            .H => 16,
+            .S => 32,
+            .D => 64,
+        };
+    }
+
+    /// Returns the size field encoding (2 bits)
+    pub fn sizeBits(self: SveElemSize) u2 {
+        return switch (self) {
+            .B => 0b00,
+            .H => 0b01,
+            .S => 0b10,
+            .D => 0b11,
+        };
+    }
+
+    pub fn format(self: SveElemSize, writer: anytype) !void {
+        switch (self) {
+            .B => try writer.print("b", .{}),
+            .H => try writer.print("h", .{}),
+            .S => try writer.print("s", .{}),
+            .D => try writer.print("d", .{}),
         }
     }
 };
@@ -4844,6 +5025,71 @@ pub fn aarch64_msr(sysreg: SystemReg, src: Reg) Inst {
     return .{ .msr = .{
         .sysreg = sysreg,
         .src = src,
+    } };
+}
+
+// ==================== SVE Constructors ====================
+
+/// SVE ADD - Add vectors (unpredicated)
+/// Computes dst = src1 + src2 (element-wise on scalable vectors).
+pub fn aarch64_sve_add(dst: WritableReg, src1: Reg, src2: Reg, size: SveElemSize) Inst {
+    return .{ .sve_add = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// SVE SUB - Subtract vectors (unpredicated)
+/// Computes dst = src1 - src2 (element-wise on scalable vectors).
+pub fn aarch64_sve_sub(dst: WritableReg, src1: Reg, src2: Reg, size: SveElemSize) Inst {
+    return .{ .sve_sub = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// SVE MUL - Multiply vectors (unpredicated)
+/// Computes dst = src1 * src2 (element-wise on scalable vectors).
+pub fn aarch64_sve_mul(dst: WritableReg, src1: Reg, src2: Reg, size: SveElemSize) Inst {
+    return .{ .sve_mul = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+        .size = size,
+    } };
+}
+
+/// SVE AND - Bitwise AND vectors (unpredicated)
+/// Computes dst = src1 & src2 (bitwise on scalable vectors).
+pub fn aarch64_sve_and(dst: WritableReg, src1: Reg, src2: Reg) Inst {
+    return .{ .sve_and = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+    } };
+}
+
+/// SVE ORR - Bitwise OR vectors (unpredicated)
+/// Computes dst = src1 | src2 (bitwise on scalable vectors).
+pub fn aarch64_sve_orr(dst: WritableReg, src1: Reg, src2: Reg) Inst {
+    return .{ .sve_orr = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
+    } };
+}
+
+/// SVE EOR - Bitwise XOR vectors (unpredicated)
+/// Computes dst = src1 ^ src2 (bitwise on scalable vectors).
+pub fn aarch64_sve_eor(dst: WritableReg, src1: Reg, src2: Reg) Inst {
+    return .{ .sve_eor = .{
+        .dst = dst,
+        .src1 = src1,
+        .src2 = src2,
     } };
 }
 

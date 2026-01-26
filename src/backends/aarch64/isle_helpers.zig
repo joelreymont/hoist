@@ -45,6 +45,14 @@ const VecALUModOp = enum {
     Fmls,
 };
 
+/// SVE element size for scalable vector operations
+const SveElemSize = enum {
+    B, // 8-bit
+    H, // 16-bit
+    S, // 32-bit
+    D, // 64-bit
+};
+
 // ISLE rule coverage tracking (optional, for testing)
 const isle_coverage_mod = @import("isle_coverage.zig");
 var global_isle_coverage: ?*isle_coverage_mod.IsleRuleCoverage = null;
@@ -2047,6 +2055,23 @@ pub fn not_i64x2(ty: types.Type) ?types.Type {
     return ty;
 }
 
+/// Extractor: Match scalable/dynamic vector types, return SVE element size
+/// Returns the SveElemSize for dynamic vector types, null for fixed-size vectors.
+pub fn sve_elem_size(ty: types.Type) ?SveElemSize {
+    // Check if this is a dynamic/scalable vector type
+    if (!ty.isDynamicVector()) return null;
+
+    // Get element bits from the dynamic vector type
+    const lane_bits = ty.laneBits();
+    return switch (lane_bits) {
+        8 => .B,
+        16 => .H,
+        32 => .S,
+        64 => .D,
+        else => null,
+    };
+}
+
 /// Trap operations (ISLE constructors)
 pub fn aarch64_trap(trap_code: TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_trap");
@@ -3733,7 +3758,7 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
     const abi_spec = abi_mod.abiSpecForCallConv(call_conv);
 
     // Check if callee uses indirect return (sret) and pass pointer in X8
-    const needs_sret = if (sig) |s| abi_mod.needsStructReturnPointer(s.returns.items) else false;
+    const needs_sret = if (sig) |s| abi_mod.needsStructReturnPointer(s.returns.items, null) else false;
 
     var sret_param_index: ?usize = null;
     if (needs_sret) {
@@ -4095,7 +4120,7 @@ fn marshalReturnValues(sig_ref: SigRef, ctx: *lower_mod.LowerCtx(Inst)) !lower_m
     if (returns.len == 1) {
         // Single return value - use classifyReturn
         const ret_type = returns[0].value_type;
-        const ret_loc = abi_mod.classifyReturn(ret_type);
+        const ret_loc = abi_mod.classifyReturn(ret_type, null);
 
         return switch (ret_loc) {
             .single_reg => |preg| lower_mod.ValueRegs.single(Reg.fromPReg(preg)),
@@ -4222,7 +4247,7 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
     const abi_spec = abi_mod.abiSpecForCallConv(call_conv);
 
     // Check if callee uses indirect return (sret) and pass pointer in X8
-    const needs_sret = if (sig) |s| abi_mod.needsStructReturnPointer(s.returns.items) else false;
+    const needs_sret = if (sig) |s| abi_mod.needsStructReturnPointer(s.returns.items, null) else false;
 
     var sret_param_index: ?usize = null;
     if (needs_sret) {
@@ -7212,4 +7237,114 @@ pub fn nzcv_for_ccmp_and_fail(cond: hoist.aarch64_inst.CondCode) u4 {
         // AL (always): Cannot fail, use 0b0000
         .al => 0b0000,
     };
+}
+
+// ==================== SVE Constructors ====================
+
+/// SVE ADD: element-wise addition on scalable vectors
+pub fn aarch64_sve_add(size: SveElemSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_sve_add");
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.scalable_vector, ctx);
+
+    const elem_size: Inst.SveElemSize = switch (size) {
+        .B => .B,
+        .H => .H,
+        .S => .S,
+        .D => .D,
+    };
+
+    return Inst{ .sve_add = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}
+
+/// SVE SUB: element-wise subtraction on scalable vectors
+pub fn aarch64_sve_sub(size: SveElemSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_sve_sub");
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.scalable_vector, ctx);
+
+    const elem_size: Inst.SveElemSize = switch (size) {
+        .B => .B,
+        .H => .H,
+        .S => .S,
+        .D => .D,
+    };
+
+    return Inst{ .sve_sub = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}
+
+/// SVE MUL: element-wise multiplication on scalable vectors
+pub fn aarch64_sve_mul(size: SveElemSize, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_sve_mul");
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.scalable_vector, ctx);
+
+    const elem_size: Inst.SveElemSize = switch (size) {
+        .B => .B,
+        .H => .H,
+        .S => .S,
+        .D => .D,
+    };
+
+    return Inst{ .sve_mul = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+        .size = elem_size,
+    } };
+}
+
+/// SVE AND: bitwise AND on scalable vectors (unpredicated)
+pub fn aarch64_sve_and(x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_sve_and");
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.scalable_vector, ctx);
+
+    return Inst{ .sve_and = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+    } };
+}
+
+/// SVE ORR: bitwise OR on scalable vectors (unpredicated)
+pub fn aarch64_sve_orr(x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_sve_orr");
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.scalable_vector, ctx);
+
+    return Inst{ .sve_orr = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+    } };
+}
+
+/// SVE EOR: bitwise XOR on scalable vectors (unpredicated)
+pub fn aarch64_sve_eor(x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_sve_eor");
+    const x_reg = try getValueReg(ctx, x);
+    const y_reg = try getValueReg(ctx, y);
+    const dst = lower_mod.WritableReg.allocReg(.scalable_vector, ctx);
+
+    return Inst{ .sve_eor = .{
+        .dst = dst,
+        .src1 = x_reg,
+        .src2 = y_reg,
+    } };
 }

@@ -132,6 +132,32 @@
 (rule (sshr_vec_imm x amt size)
       (vec_shift_imm (VecShiftImmOp.Sshr) amt x size))
 
+;; ==================== SVE (Scalable Vector Extension) ====================
+
+;; SVE element size helper - maps dynamic vector types to SveElemSize
+(decl sve_elem_size (Type) SveElemSize)
+(extern extractor sve_elem_size sve_elem_size)
+
+;; SVE arithmetic helpers
+(decl add_sve (Value Value SveElemSize) Aarch64Inst)
+(rule (add_sve x y size) (aarch64_sve_add size x y))
+
+(decl sub_sve (Value Value SveElemSize) Aarch64Inst)
+(rule (sub_sve x y size) (aarch64_sve_sub size x y))
+
+(decl mul_sve (Value Value SveElemSize) Aarch64Inst)
+(rule (mul_sve x y size) (aarch64_sve_mul size x y))
+
+;; SVE bitwise helpers
+(decl and_sve (Value Value) Aarch64Inst)
+(rule (and_sve x y) (aarch64_sve_and x y))
+
+(decl or_sve (Value Value) Aarch64Inst)
+(rule (or_sve x y) (aarch64_sve_orr x y))
+
+(decl xor_sve (Value Value) Aarch64Inst)
+(rule (xor_sve x y) (aarch64_sve_eor x y))
+
 ;; Flags infrastructure combinators
 
 ;; Combine a flags-producing instruction with a flags-consuming instruction

@@ -82,6 +82,8 @@ pub const CodegenError = error{
     SpillOffsetOutOfRange,
     /// Unsupported calling convention for target.
     UnsupportedCallConv,
+    /// Unsupported register class for target.
+    UnsupportedRegClass,
     /// Unsupported target architecture.
     UnsupportedTarget,
     /// Code emission failed.
@@ -299,11 +301,12 @@ const ScratchState = struct {
         self.vector.reset();
     }
 
-    fn pool(self: *ScratchState, reg_class: reg_mod.RegClass) *ScratchPool {
+    fn pool(self: *ScratchState, reg_class: reg_mod.RegClass) CodegenError!*ScratchPool {
         return switch (reg_class) {
             .int => &self.int,
             .float => &self.float,
             .vector => &self.vector,
+            .scalable_vector, .predicate => error.UnsupportedRegClass,
         };
     }
 };
@@ -355,6 +358,8 @@ fn appendSpillLoad(
     const sp = reg_mod.Reg.fromPReg(reg_mod.PReg.new(.int, 31));
     const dst = reg_mod.WritableReg.fromReg(reg_mod.Reg.fromPReg(value_preg));
 
+    if (reg_class.isSve()) return error.UnsupportedRegClass;
+
     if (offset <= spill_imm9_max) {
         const off: i16 = @intCast(offset);
         const inst: a64_inst.Inst = switch (reg_class) {
@@ -376,6 +381,7 @@ fn appendSpillLoad(
                 .offset = off,
                 .size = .size128,
             } },
+            .scalable_vector, .predicate => unreachable,
         };
         try insns.append(allocator, inst);
         return;
@@ -384,7 +390,7 @@ fn appendSpillLoad(
     const addr_preg = if (reg_class == .int)
         value_preg
     else
-        try scratch.pool(.int).alloc();
+        try (try scratch.pool(.int)).alloc();
     try appendSpillAddr(insns, allocator, addr_preg, offset);
 
     const base = reg_mod.Reg.fromPReg(addr_preg);
@@ -407,6 +413,7 @@ fn appendSpillLoad(
             .offset = 0,
             .size = .size128,
         } },
+        .scalable_vector, .predicate => unreachable,
     };
     try insns.append(allocator, inst);
 }
@@ -419,6 +426,8 @@ fn appendSpillStore(
     value_preg: reg_mod.PReg,
     offset: u32,
 ) CodegenError!void {
+    if (reg_class.isSve()) return error.UnsupportedRegClass;
+
     const sp = reg_mod.Reg.fromPReg(reg_mod.PReg.new(.int, 31));
     const src = reg_mod.Reg.fromPReg(value_preg);
 
@@ -443,12 +452,13 @@ fn appendSpillStore(
                 .offset = off,
                 .size = .size128,
             } },
+            .scalable_vector, .predicate => unreachable,
         };
         try insns.append(allocator, inst);
         return;
     }
 
-    const addr_preg = try scratch.pool(.int).alloc();
+    const addr_preg = try (try scratch.pool(.int)).alloc();
     try appendSpillAddr(insns, allocator, addr_preg, offset);
 
     const base = reg_mod.Reg.fromPReg(addr_preg);
@@ -471,6 +481,7 @@ fn appendSpillStore(
             .offset = 0,
             .size = .size128,
         } },
+        .scalable_vector, .predicate => unreachable,
     };
     try insns.append(allocator, inst);
 }
@@ -481,7 +492,7 @@ fn mapScratch(
     vreg: reg_mod.VReg,
 ) CodegenError!reg_mod.PReg {
     if (map.get(vreg)) |preg| return preg;
-    const preg = try scratch.pool(vreg.class()).alloc();
+    const preg = try (try scratch.pool(vreg.class())).alloc();
     try map.add(vreg, preg);
     return preg;
 }
@@ -1384,7 +1395,7 @@ fn lowerAArch64(ctx: *Context, _: *const Target) CodegenError!void {
     );
     defer liveness_info.deinit();
 
-    const has_sret = a64_abi.needsStructReturnPointer(ctx.func.sig.returns.items);
+    const has_sret = a64_abi.needsStructReturnPointer(ctx.func.sig.returns.items, null);
     var pools = try buildAarch64Pools(ctx.allocator, ctx.func.sig.call_conv, has_sret);
     defer pools.deinit(ctx.allocator);
 

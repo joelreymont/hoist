@@ -427,7 +427,7 @@ pub fn ABIMachineSpec(comptime WordSize: type) type {
                         stack_offset.* = std.mem.alignForward(i64, stack_offset.*, self.stack_align);
                     }
                 },
-                .float, .vector => {
+                .float, .vector, .scalable_vector => {
                     if (float_reg_idx.* < self.float_arg_regs.len) {
                         const preg = self.float_arg_regs[float_reg_idx.*];
                         try slots.append(allocator, .{ .reg = .{
@@ -436,6 +436,26 @@ pub fn ABIMachineSpec(comptime WordSize: type) type {
                             .extension = .none,
                         } });
                         float_reg_idx.* += 1;
+                    } else {
+                        try slots.append(allocator, .{ .stack = .{
+                            .offset = stack_offset.*,
+                            .ty = arg_ty,
+                            .extension = .none,
+                        } });
+                        stack_offset.* += @as(i64, @intCast(arg_ty.bytes()));
+                        stack_offset.* = std.mem.alignForward(i64, stack_offset.*, self.stack_align);
+                    }
+                },
+                .predicate => {
+                    // Predicate registers: treat as int for now
+                    if (int_reg_idx.* < self.int_arg_regs.len) {
+                        const preg = self.int_arg_regs[int_reg_idx.*];
+                        try slots.append(allocator, .{ .reg = .{
+                            .preg = preg,
+                            .ty = arg_ty,
+                            .extension = .none,
+                        } });
+                        int_reg_idx.* += 1;
                     } else {
                         try slots.append(allocator, .{ .stack = .{
                             .offset = stack_offset.*,
@@ -504,7 +524,7 @@ pub fn ABIMachineSpec(comptime WordSize: type) type {
                             }
                         }
                     },
-                    .float, .vector => {
+                    .float, .vector, .scalable_vector => {
                         if (float_reg_idx < self.float_ret_regs.len) {
                             const preg = self.float_ret_regs[float_reg_idx];
                             try slots.append(allocator, .{ .reg = .{
@@ -513,6 +533,20 @@ pub fn ABIMachineSpec(comptime WordSize: type) type {
                                 .extension = .none,
                             } });
                             float_reg_idx += 1;
+                        } else {
+                            return error.TooManyReturns;
+                        }
+                    },
+                    .predicate => {
+                        // Predicate returns: treat as int
+                        if (int_reg_idx < self.int_ret_regs.len) {
+                            const preg = self.int_ret_regs[int_reg_idx];
+                            try slots.append(allocator, .{ .reg = .{
+                                .preg = preg,
+                                .ty = ret_ty,
+                                .extension = .none,
+                            } });
+                            int_reg_idx += 1;
                         } else {
                             return error.TooManyReturns;
                         }

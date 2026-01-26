@@ -1,9 +1,10 @@
 ---
 title: Add SVE register class
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-01-16T14:53:22.344299+02:00"
+created-at: "\"2026-01-16T14:53:22.344299+02:00\""
+closed-at: "2026-01-26T10:44:15.627513+01:00"
 ---
 
 In src/backends/aarch64, add Z registers (scalable). P predicate registers. Deps: Port SVE type system. Verify: zig build test

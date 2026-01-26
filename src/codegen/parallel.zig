@@ -55,26 +55,28 @@ pub const CompileResult = struct {
 /// Thread-safe work queue.
 pub const WorkQueue = struct {
     mutex: Thread.Mutex,
-    items: std.ArrayList(WorkItem),
+    allocator: Allocator,
+    items: std.ArrayListUnmanaged(WorkItem),
     done: bool,
 
     pub fn init(allocator: Allocator) WorkQueue {
         return .{
             .mutex = .{},
-            .items = std.ArrayList(WorkItem).init(allocator),
+            .allocator = allocator,
+            .items = .{},
             .done = false,
         };
     }
 
     pub fn deinit(self: *WorkQueue) void {
-        self.items.deinit();
+        self.items.deinit(self.allocator);
     }
 
     /// Add work item.
     pub fn push(self: *WorkQueue, item: WorkItem) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
-        try self.items.append(item);
+        try self.items.append(self.allocator, item);
     }
 
     /// Get next work item (returns null if empty or done).
@@ -104,34 +106,36 @@ pub const WorkQueue = struct {
 /// Thread-safe result collector.
 pub const ResultCollector = struct {
     mutex: Thread.Mutex,
-    results: std.ArrayList(CompileResult),
-    errors: std.ArrayList(CompileResult.CompileError),
+    allocator: Allocator,
+    results: std.ArrayListUnmanaged(CompileResult),
+    errors: std.ArrayListUnmanaged(CompileResult.CompileError),
 
     pub fn init(allocator: Allocator) ResultCollector {
         return .{
             .mutex = .{},
-            .results = std.ArrayList(CompileResult).init(allocator),
-            .errors = std.ArrayList(CompileResult.CompileError).init(allocator),
+            .allocator = allocator,
+            .results = .{},
+            .errors = .{},
         };
     }
 
     pub fn deinit(self: *ResultCollector) void {
-        self.results.deinit();
-        self.errors.deinit();
+        self.results.deinit(self.allocator);
+        self.errors.deinit(self.allocator);
     }
 
     /// Add a successful result.
     pub fn addResult(self: *ResultCollector, result: CompileResult) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
-        try self.results.append(result);
+        try self.results.append(self.allocator, result);
     }
 
     /// Add an error.
     pub fn addError(self: *ResultCollector, err: CompileResult.CompileError) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
-        try self.errors.append(err);
+        try self.errors.append(self.allocator, err);
     }
 
     /// Get total completed (success + errors).

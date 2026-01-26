@@ -6,7 +6,7 @@
 const std = @import("std");
 const testing = std.testing;
 const Thread = std.Thread;
-const Atomic = std.atomic;
+const Atomic = std.atomic.Value;
 
 const hoist = @import("hoist");
 const AtomicOrdering = hoist.atomics.AtomicOrdering;
@@ -240,7 +240,7 @@ test "atomic relaxed ordering stress" {
     try testing.expectEqual(expected, actual);
 }
 
-/// AtomicOrdering utility tests.
+// AtomicOrdering utility tests.
 test "AtomicOrdering mapping to std.builtin.AtomicOrder" {
     // Verify our ordering enum maps correctly
     try testing.expect(AtomicOrdering.unordered == .unordered);
@@ -251,7 +251,7 @@ test "AtomicOrdering mapping to std.builtin.AtomicOrder" {
     try testing.expect(AtomicOrdering.seq_cst == .seq_cst);
 }
 
-/// Verify AtomicRmwOp enum values.
+// Verify AtomicRmwOp enum values.
 test "AtomicRmwOp enumeration" {
     const ops = [_]AtomicRmwOp{
         .xchg, .add, .sub, .@"and", .nand, .@"or", .xor,

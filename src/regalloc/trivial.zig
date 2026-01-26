@@ -187,7 +187,7 @@ pub const TrivialAllocator = struct {
 
                 break :blk Allocation{ .spill = spill };
             },
-            .float, .vector => blk: {
+            .float, .vector, .scalable_vector => blk: {
                 // Find free float register (vector aliases with float)
                 for (&self.float_regs, 0..) |*slot, idx| {
                     if (slot.* == null) {
@@ -212,6 +212,20 @@ pub const TrivialAllocator = struct {
                 }
                 self.prev_spill_slot = spill;
 
+                break :blk Allocation{ .spill = spill };
+            },
+            .predicate => blk: {
+                // Predicate registers: use int regs for now
+                for (&self.int_regs, 0..) |*slot, idx| {
+                    if (slot.* == null) {
+                        slot.* = vreg;
+                        const preg = PReg.new(.int, @intCast(idx));
+                        break :blk Allocation{ .reg = preg };
+                    }
+                }
+                const spill = SpillSlot.new(self.next_spill_slot);
+                self.next_spill_slot += 1;
+                self.prev_spill_slot = spill;
                 break :blk Allocation{ .spill = spill };
             },
         };

@@ -442,7 +442,7 @@ pub const VaList = struct {
                     return addr;
                 }
             },
-            .float, .vector => {
+            .float, .vector, .scalable_vector => {
                 // Floating-point and vector arguments use FP/SIMD registers
                 // Each FP/SIMD register slot is 16 bytes
                 const reg_size: u32 = 16;
@@ -472,6 +472,21 @@ pub const VaList = struct {
                     self.stack = aligned_stack + ((size + alignment - 1) & ~@as(u32, alignment - 1));
 
                     return addr;
+                }
+            },
+            .predicate => {
+                // Predicate: treat as int
+                const reg_size: u32 = 8;
+                if (self.gr_offs < 0) {
+                    const addr = @as(u64, @intCast(@as(i64, @intCast(self.gr_top)) + @as(i64, self.gr_offs)));
+                    self.gr_offs += @as(i32, @intCast(reg_size));
+                    if (self.gr_offs > 0) self.gr_offs = 0;
+                    return addr;
+                } else {
+                    const alignment: u32 = 8;
+                    const aligned_stack = (self.stack + alignment - 1) & ~@as(u64, alignment - 1);
+                    self.stack = aligned_stack + alignment;
+                    return aligned_stack;
                 }
             },
         }
@@ -596,6 +611,28 @@ pub const StructClass = enum {
     /// Struct > 16 bytes: passed by reference (pointer in register).
     indirect,
 };
+
+/// Check if fields form an HFA using ir/types. Returns element type if HFA.
+fn isHfaIr(fields: []const types.StructField) ?Type {
+    if (fields.len == 0 or fields.len > 4) return null;
+    const first = fields[0].ty;
+    if (!first.isFloat()) return null;
+    for (fields[1..]) |f| {
+        if (!f.ty.eql(first)) return null;
+    }
+    return first;
+}
+
+/// Check if fields form an HVA using ir/types. Returns element type if HVA.
+fn isHvaIr(fields: []const types.StructField) ?Type {
+    if (fields.len == 0 or fields.len > 4) return null;
+    const first = fields[0].ty;
+    if (!first.isVector()) return null;
+    for (fields[1..]) |f| {
+        if (!f.ty.eql(first)) return null;
+    }
+    return first;
+}
 
 /// Check if a type is a homogeneous floating-point aggregate (HFA).
 /// An HFA is a struct with 1-4 members of the same floating-point type (f32 or f64).
@@ -837,9 +874,8 @@ pub const CallerSavedTracker = struct {
     /// Mark a register as caller-saved based on its class.
     pub fn markReg(self: *CallerSavedTracker, preg: PReg) void {
         switch (preg.class()) {
-            .int => self.markIntReg(preg),
-            .float => self.markFloatReg(preg),
-            .vector => self.markFloatReg(preg), // vectors use float regs
+            .int, .predicate => self.markIntReg(preg),
+            .float, .vector, .scalable_vector => self.markFloatReg(preg),
         }
     }
 
@@ -1450,7 +1486,7 @@ pub const Aarch64ABICallee = struct {
 
 /// Determine if a function signature requires struct return pointer (sret) in X8.
 /// Per AAPCS64: structs >16 bytes returned indirectly via caller-allocated memory.
-pub fn needsStructReturnPointer(returns: []const AbiParam) bool {
+pub fn needsStructReturnPointer(returns: []const AbiParam, struct_store: ?*const types.StructStore) bool {
     if (returns.len == 0) return false;
     if (returns.len > 1) {
         // Multiple returns not directly supported - would need sret
@@ -1459,7 +1495,7 @@ pub fn needsStructReturnPointer(returns: []const AbiParam) bool {
     }
 
     const ret_ty = returns[0].value_type;
-    const ret_loc = classifyReturn(ret_ty);
+    const ret_loc = classifyReturn(ret_ty, struct_store);
     return ret_loc == .indirect;
 }
 
@@ -1486,6 +1522,7 @@ pub fn computeArgLocs(
     allocator: std.mem.Allocator,
     params: []const AbiParam,
     needs_sret: bool,
+    struct_store: ?*const types.StructStore,
 ) ![]ArgLoc {
     var locs = std.ArrayList(ArgLoc).init(allocator);
     errdefer locs.deinit();
@@ -1568,9 +1605,75 @@ pub fn computeArgLocs(
                 try locs.append(.{ .stack = next_stack });
                 next_stack += ty.bytes();
             }
+        } else if (ty.isStruct()) {
+            // Struct handling with HFA/HVA detection
+            const fields = if (struct_store) |store| ty.getStructFields(store) else null;
+            const size = if (struct_store) |store| ty.structBytes(store) orelse 0 else 0;
+
+            if (fields) |flds| {
+                // Check HFA (Homogeneous Floating-Point Aggregate)
+                if (isHfaIr(flds)) |_| {
+                    const count: u8 = @intCast(flds.len);
+                    if (next_fpr + count <= 8) {
+                        try locs.append(.{ .hfa = .{ .base_reg = next_fpr, .count = count } });
+                        next_fpr += count;
+                    } else {
+                        // Stack: align to 8 bytes, push all fields
+                        next_stack = std.mem.alignForward(u32, next_stack, 8);
+                        try locs.append(.{ .stack = next_stack });
+                        next_stack += size;
+                    }
+                } else if (isHvaIr(flds)) |_| {
+                    // HVA: 1-4 same-type vectors
+                    const count: u8 = @intCast(flds.len);
+                    if (next_fpr + count <= 8) {
+                        try locs.append(.{ .hfa = .{ .base_reg = next_fpr, .count = count } });
+                        next_fpr += count;
+                    } else {
+                        next_stack = std.mem.alignForward(u32, next_stack, 16);
+                        try locs.append(.{ .stack = next_stack });
+                        next_stack += size;
+                    }
+                } else if (size <= 16) {
+                    // Non-HFA/HVA small struct: GPRs or stack
+                    const regs_needed: u8 = @intCast((size + 7) / 8);
+                    if (next_gpr + regs_needed <= 8) {
+                        if (regs_needed == 1) {
+                            try locs.append(.{ .reg = PReg.new(.int, next_gpr) });
+                        } else {
+                            try locs.append(.{ .reg_pair = .{
+                                .lo = PReg.new(.int, next_gpr),
+                                .hi = PReg.new(.int, next_gpr + 1),
+                            } });
+                        }
+                        next_gpr += regs_needed;
+                    } else {
+                        next_stack = std.mem.alignForward(u32, next_stack, 8);
+                        try locs.append(.{ .stack = next_stack });
+                        next_stack += size;
+                    }
+                } else {
+                    // Large struct: pass by reference
+                    if (next_gpr < 8) {
+                        try locs.append(.{ .indirect_reg = PReg.new(.int, next_gpr) });
+                        next_gpr += 1;
+                    } else {
+                        try locs.append(.{ .stack = next_stack });
+                        next_stack += 8; // Pointer size
+                    }
+                }
+            } else {
+                // No struct store: fallback to GPR
+                if (next_gpr < 8) {
+                    try locs.append(.{ .reg = PReg.new(.int, next_gpr) });
+                    next_gpr += 1;
+                } else {
+                    try locs.append(.{ .stack = next_stack });
+                    next_stack += 8;
+                }
+            }
         } else {
-            // TODO: Struct handling with proper HFA/HVA detection
-            // For now, treat as small struct in GPR or stack
+            // Unknown type: fallback to GPR
             if (next_gpr < 8) {
                 try locs.append(.{ .reg = PReg.new(.int, next_gpr) });
                 next_gpr += 1;
@@ -3704,7 +3807,7 @@ pub const ReturnLocation = union(enum) {
 
 /// Classify return value according to AAPCS64 rules.
 /// Returns how the value should be returned.
-pub fn classifyReturn(ty: Type) ReturnLocation {
+pub fn classifyReturn(ty: Type, struct_store: ?*const types.StructStore) ReturnLocation {
     // Integer types (i8, i16, i32, i64) -> X0
     if (ty.isInt()) {
         const bits = ty.bits();
@@ -3732,30 +3835,51 @@ pub fn classifyReturn(ty: Type) ReturnLocation {
     }
 
     // Struct types require full AAPCS64 classification
-    // TODO: Wire up struct type introspection when Type system supports it
-    // For now, assume small structs fit in X0
-    // When implemented:
-    // 1. Check size: >16 bytes -> indirect (via X8)
-    // 2. Check HFA: 1-4 same float types -> V0-V3
-    // 3. Check HVA: 1-4 same vector types -> V0-V3
-    // 4. Otherwise: general registers X0-X1 for <=16 bytes
+    if (ty.isStruct()) {
+        const fields = if (struct_store) |store| ty.getStructFields(store) else null;
+        const size = if (struct_store) |store| ty.structBytes(store) orelse 0 else 0;
+
+        if (fields) |flds| {
+            // HFA: 1-4 same float types -> V0-V3
+            if (isHfaIr(flds)) |_| {
+                return .{ .hfa = .{ .regs = &.{}, .count = @intCast(flds.len) } };
+            }
+            // HVA: 1-4 same vector types -> V0-V3
+            if (isHvaIr(flds)) |_| {
+                return .{ .hfa = .{ .regs = &.{}, .count = @intCast(flds.len) } };
+            }
+            // Size check
+            if (size > 16) {
+                return .{ .indirect = {} };
+            }
+            // Small struct: X0 or X0+X1
+            if (size > 8) {
+                return .{ .reg_pair = .{
+                    .lo = PReg.new(.int, 0),
+                    .hi = PReg.new(.int, 1),
+                } };
+            }
+        }
+    }
+
+    // Default: single GPR
     return .{ .single_reg = PReg.new(.int, 0) };
 }
 
 test "classifyReturn - integer types" {
 
     // i32 -> X0
-    const i32_ret = classifyReturn(Type.I32);
+    const i32_ret = classifyReturn(Type.I32, null);
     try testing.expect(i32_ret == .single_reg);
     try testing.expectEqual(PReg.new(.int, 0), i32_ret.single_reg);
 
     // i64 -> X0
-    const i64_ret = classifyReturn(Type.I64);
+    const i64_ret = classifyReturn(Type.I64, null);
     try testing.expect(i64_ret == .single_reg);
     try testing.expectEqual(PReg.new(.int, 0), i64_ret.single_reg);
 
     // i128 -> X0+X1
-    const i128_ret = classifyReturn(Type.I128);
+    const i128_ret = classifyReturn(Type.I128, null);
     try testing.expect(i128_ret == .reg_pair);
     try testing.expectEqual(PReg.new(.int, 0), i128_ret.reg_pair.lo);
     try testing.expectEqual(PReg.new(.int, 1), i128_ret.reg_pair.hi);
@@ -3764,12 +3888,12 @@ test "classifyReturn - integer types" {
 test "classifyReturn - float types" {
 
     // f32 -> V0
-    const f32_ret = classifyReturn(Type.F32);
+    const f32_ret = classifyReturn(Type.F32, null);
     try testing.expect(f32_ret == .single_reg);
     try testing.expectEqual(PReg.new(.float, 0), f32_ret.single_reg);
 
     // f64 -> V0
-    const f64_ret = classifyReturn(Type.F64);
+    const f64_ret = classifyReturn(Type.F64, null);
     try testing.expect(f64_ret == .single_reg);
     try testing.expectEqual(PReg.new(.float, 0), f64_ret.single_reg);
 }

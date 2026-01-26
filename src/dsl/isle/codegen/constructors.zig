@@ -101,30 +101,208 @@ pub const ConstructorGen = struct {
         ret_ty: sema.TypeId,
         is_partial: bool,
     ) !void {
+        // Build decision tree for pattern matching
+        const tree = trie.buildDecisionTree(ruleset, self.allocator) catch {
+            // Fallback if tree building fails
+            return self.emitFallback(is_partial);
+        };
+        defer tree.deinit(self.allocator);
+
+        // Emit code from decision tree
+        try self.emitDecisionTree(tree, ruleset, ret_ty, is_partial);
+    }
+
+    /// Emit fallback for empty or failed rulesets.
+    fn emitFallback(self: *Self, is_partial: bool) !void {
         const writer = self.output.writer();
-
-        // For now, emit a simple structure
-        // TODO: Implement full decision tree traversal
-        _ = ret_ty;
-
-        // Emit recordRule() calls for each rule in the ruleset
-        for (ruleset.rules.items, 0..) |rule, rule_idx| {
-            _ = rule;
-            try self.indent(self.indent_level);
-            try writer.print("recordRule(\"rule_{}\");\n", .{rule_idx});
-        }
-
-        // Temporary implementation
         try self.indent(self.indent_level);
         if (is_partial) {
-            try writer.writeAll("// TODO: Implement pattern matching\n");
-            try self.indent(self.indent_level);
             try writer.writeAll("return null;\n");
         } else {
-            try writer.writeAll("// TODO: Implement pattern matching\n");
-            try self.indent(self.indent_level);
-            try writer.writeAll("unreachable; // Pure constructor must match\n");
+            try writer.writeAll("unreachable;\n");
         }
+    }
+
+    /// Emit code from a decision tree node.
+    fn emitDecisionTree(
+        self: *Self,
+        tree: *const trie.DecisionTree,
+        ruleset: *const trie.RuleSet,
+        ret_ty: sema.TypeId,
+        is_partial: bool,
+    ) !void {
+        const writer = self.output.writer();
+
+        switch (tree.*) {
+            .fail => {
+                try self.indent(self.indent_level);
+                if (is_partial) {
+                    try writer.writeAll("return null;\n");
+                } else {
+                    try writer.writeAll("unreachable; // No rule matched\n");
+                }
+            },
+            .leaf => |leaf| {
+                const rule = &ruleset.rules.items[leaf.rule_index];
+                try self.emitRuleBody(rule, ruleset);
+            },
+            .switch_constraint => |sw| {
+                try self.indent(self.indent_level);
+                try writer.print("switch (v{d}) {{\n", .{sw.binding.index()});
+                self.indent_level += 1;
+
+                var it = sw.cases.iterator();
+                while (it.next()) |entry| {
+                    const constraint = entry.key_ptr.*;
+                    const subtree = entry.value_ptr.*;
+
+                    try self.indent(self.indent_level);
+                    try self.emitConstraintPattern(constraint);
+                    try writer.writeAll(" => {\n");
+                    self.indent_level += 1;
+                    try self.emitDecisionTree(subtree, ruleset, ret_ty, is_partial);
+                    self.indent_level -= 1;
+                    try self.indent(self.indent_level);
+                    try writer.writeAll("},\n");
+                }
+
+                // Default case
+                if (sw.default) |def| {
+                    try self.indent(self.indent_level);
+                    try writer.writeAll("else => {\n");
+                    self.indent_level += 1;
+                    try self.emitDecisionTree(def, ruleset, ret_ty, is_partial);
+                    self.indent_level -= 1;
+                    try self.indent(self.indent_level);
+                    try writer.writeAll("},\n");
+                } else {
+                    try self.indent(self.indent_level);
+                    try writer.writeAll("else => ");
+                    if (is_partial) {
+                        try writer.writeAll("return null,\n");
+                    } else {
+                        try writer.writeAll("unreachable,\n");
+                    }
+                }
+
+                self.indent_level -= 1;
+                try self.indent(self.indent_level);
+                try writer.writeAll("}\n");
+            },
+            .test_equal => |eq| {
+                try self.indent(self.indent_level);
+                try writer.print("if (v{d} == v{d}) {{\n", .{ eq.a.index(), eq.b.index() });
+                self.indent_level += 1;
+                try self.emitDecisionTree(eq.on_equal, ruleset, ret_ty, is_partial);
+                self.indent_level -= 1;
+                try self.indent(self.indent_level);
+                try writer.writeAll("} else {\n");
+                self.indent_level += 1;
+                try self.emitDecisionTree(eq.on_not_equal, ruleset, ret_ty, is_partial);
+                self.indent_level -= 1;
+                try self.indent(self.indent_level);
+                try writer.writeAll("}\n");
+            },
+        }
+    }
+
+    /// Emit constraint pattern for switch arm.
+    fn emitConstraintPattern(self: *Self, constraint: trie.Constraint) !void {
+        const writer = self.output.writer();
+        switch (constraint) {
+            .const_bool => |b| try writer.print("{}", .{b.val}),
+            .const_int => |i| try writer.print("{d}", .{i.val}),
+            .const_prim => |p| try writer.print(".{s}", .{self.typeenv.symName(p.val)}),
+            .variant => |v| {
+                const ty = self.typeenv.types.items[v.ty.index()];
+                switch (ty) {
+                    .enum_type => |e| {
+                        const variant = e.variants[v.variant.index()];
+                        try writer.print(".{s}", .{self.typeenv.symName(variant.name)});
+                    },
+                    else => try writer.writeAll("_"),
+                }
+            },
+            .some => try writer.writeAll(".some"),
+        }
+    }
+
+    /// Emit body of a matched rule.
+    fn emitRuleBody(self: *Self, rule: *const trie.Rule, ruleset: *const trie.RuleSet) !void {
+        const writer = self.output.writer();
+
+        // Emit impure bindings (side effects)
+        for (rule.impure.items) |bind_id| {
+            if (bind_id.index() < ruleset.bindings.items.len) {
+                const binding = &ruleset.bindings.items[bind_id.index()];
+                try self.emitBinding(bind_id, binding);
+            }
+        }
+
+        // Emit result binding if needed
+        if (rule.result.index() < ruleset.bindings.items.len) {
+            const result_binding = &ruleset.bindings.items[rule.result.index()];
+            try self.emitBinding(rule.result, result_binding);
+        }
+
+        // Emit return expression
+        try self.indent(self.indent_level);
+        try writer.print("return v{d};\n", .{rule.result.index()});
+    }
+
+    /// Emit a single binding.
+    fn emitBinding(self: *Self, id: trie.BindingId, binding: *const trie.Binding) !void {
+        const writer = self.output.writer();
+        try self.indent(self.indent_level);
+        try writer.print("const v{d} = ", .{id.index()});
+
+        switch (binding.*) {
+            .const_bool => |b| try writer.print("{}", .{b.val}),
+            .const_int => |i| try writer.print("{d}", .{i.val}),
+            .const_prim => |p| try writer.print(".{s}", .{self.typeenv.symName(p.val)}),
+            .argument => |a| try writer.print("arg{d}", .{a.index.value()}),
+            .extractor => |e| {
+                const term = self.termenv.getTerm(e.term);
+                const name = self.typeenv.symName(term.name);
+                try writer.print("ctx.extractor_{s}(v{d}) orelse return null", .{ name, e.parameter.index() });
+            },
+            .constructor => |c| {
+                const term = self.termenv.getTerm(c.term);
+                const name = self.typeenv.symName(term.name);
+                try writer.print("ctx.constructor_{s}(", .{name});
+                for (c.parameters, 0..) |param, i| {
+                    if (i > 0) try writer.writeAll(", ");
+                    try writer.print("v{d}", .{param.index()});
+                }
+                try writer.writeAll(")");
+            },
+            .iterator => |it| try writer.print("v{d}.next()", .{it.source.index()}),
+            .make_variant => |v| {
+                const ty = self.typeenv.types.items[v.ty.index()];
+                switch (ty) {
+                    .enum_type => |e| {
+                        const variant = e.variants[v.variant.index()];
+                        try writer.print(".{{ .{s} = .{{ ", .{self.typeenv.symName(variant.name)});
+                        for (v.fields, 0..) |f, i| {
+                            if (i > 0) try writer.writeAll(", ");
+                            try writer.print("v{d}", .{f.index()});
+                        }
+                        try writer.writeAll(" } }");
+                    },
+                    else => try writer.writeAll("undefined"),
+                }
+            },
+            .match_variant => |m| try writer.print("v{d}.{s}[{d}]", .{
+                m.source.index(),
+                "fields", // TODO: Get actual field name
+                m.field.value(),
+            }),
+            .make_some => |s| try writer.print(".{{ .some = v{d} }}", .{s.inner.index()}),
+            .match_some => |m| try writer.print("v{d}.some", .{m.source.index()}),
+            .match_tuple => |t| try writer.print("v{d}[{d}]", .{ t.source.index(), t.field.value() }),
+        }
+
+        try writer.writeAll(";\n");
     }
 
     /// Generate constructor signature as a trait function declaration.
