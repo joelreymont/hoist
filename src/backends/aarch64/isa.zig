@@ -1319,7 +1319,9 @@ pub const Aarch64ISA = struct {
             },
             .lea => |*lea| {
                 lea.dst = replaceWritableReg(lea.dst, result);
-                // TODO: Handle registers in Amode
+                // Replace registers in address mode
+                if (lea.addr.getBaseMut()) |base| base.* = replaceReg(base.*, result);
+                if (lea.addr.getIndexMut()) |idx| idx.* = replaceReg(idx.*, result);
             },
             .mrs => |*mrs| {
                 mrs.dst = replaceWritableReg(mrs.dst, result);

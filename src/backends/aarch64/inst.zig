@@ -3572,9 +3572,9 @@ pub const Inst = union(enum) {
                 try collector.regDef(i.dst);
             },
             .lea => |*i| {
-                // Address mode may contain base/index registers
-                // For now, conservatively mark dst as def only
-                // TODO: Extract registers from Amode
+                // Extract registers from address mode
+                if (i.addr.getBase()) |base| try collector.regUse(base);
+                if (i.addr.getIndex()) |idx| try collector.regUse(idx);
                 try collector.regDef(i.dst);
             },
             .mrs => |*i| {
@@ -4469,6 +4469,52 @@ pub const Amode = union(enum) {
             .post_index => |a| try writer.print("[{f}], #{d}", .{ a.base, a.offset }),
             .label => |l| try writer.print("label{d}", .{l}),
         }
+    }
+
+    /// Get the base register if present.
+    pub fn getBase(self: Amode) ?Reg {
+        return switch (self) {
+            .reg_offset => |a| a.base,
+            .reg_reg => |a| a.base,
+            .reg_extended => |a| a.base,
+            .reg_scaled => |a| a.base,
+            .pre_index => |a| a.base,
+            .post_index => |a| a.base,
+            .label => null,
+        };
+    }
+
+    /// Get the index register if present.
+    pub fn getIndex(self: Amode) ?Reg {
+        return switch (self) {
+            .reg_reg => |a| a.index,
+            .reg_extended => |a| a.index,
+            .reg_scaled => |a| a.index,
+            .reg_offset, .pre_index, .post_index, .label => null,
+        };
+    }
+
+    /// Get mutable pointer to base register if present.
+    pub fn getBaseMut(self: *Amode) ?*Reg {
+        return switch (self.*) {
+            .reg_offset => |*a| &a.base,
+            .reg_reg => |*a| &a.base,
+            .reg_extended => |*a| &a.base,
+            .reg_scaled => |*a| &a.base,
+            .pre_index => |*a| &a.base,
+            .post_index => |*a| &a.base,
+            .label => null,
+        };
+    }
+
+    /// Get mutable pointer to index register if present.
+    pub fn getIndexMut(self: *Amode) ?*Reg {
+        return switch (self.*) {
+            .reg_reg => |*a| &a.index,
+            .reg_extended => |*a| &a.index,
+            .reg_scaled => |*a| &a.index,
+            .reg_offset, .pre_index, .post_index, .label => null,
+        };
     }
 };
 
