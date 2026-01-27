@@ -1534,8 +1534,16 @@ fn emitAArch64WithAllocation(
             block_insts.appendAssumeCapacity(rewritten_inst);
         }
 
-        // Run peephole optimizations on block
-        try peephole.optimize(&block_insts);
+        // Run AArch64-specific peephole optimizations on block
+        var changed = true;
+        var iteration: u32 = 0;
+        while (changed and iteration < 3) {
+            changed = false;
+            iteration += 1;
+            if (try peephole_mod.combineLoadPairs(&peephole, &block_insts)) changed = true;
+            if (try peephole_mod.combineStorePairs(&peephole, &block_insts)) changed = true;
+            if (try peephole_mod.eliminateDeadMoves(&peephole, &block_insts)) changed = true;
+        }
 
         // Emit optimized instructions
         for (block_insts.items) |inst| {

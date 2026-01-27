@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const root = @import("root");
+const abi_mod = @import("abi.zig");
 
 const Inst = root.aarch64_inst.Inst;
 const Reg = root.aarch64_inst.Reg;
@@ -3052,13 +3053,21 @@ pub fn aarch64_get_pinned_reg(
     ctx: *IsleContext,
 ) !Inst {
     const dst = try ctx.allocOutputReg(.int);
-    // TODO: Platform detection - for now use X28
-    const pinned = Reg.gpr(28);
+    const pinned = Reg.gpr(pinnedRegNum());
 
     return Inst{ .mov = .{
         .dst = dst,
         .src = pinned,
     } };
+}
+
+/// Get pinned register number based on platform.
+/// Darwin reserves X18, so we use it there. Other platforms use X28.
+fn pinnedRegNum() u6 {
+    return switch (abi_mod.Platform.detect()) {
+        .darwin => 18,
+        .linux, .other => 28,
+    };
 }
 
 /// Constructor: aarch64_set_pinned_reg - Set platform pinned register.
@@ -3067,8 +3076,7 @@ pub fn aarch64_set_pinned_reg(
     val: Value,
 ) !Inst {
     const val_reg = ctx.getValueReg(val);
-    // TODO: Platform detection - for now use X28
-    const pinned = Reg.gpr(28);
+    const pinned = Reg.gpr(pinnedRegNum());
 
     return Inst{ .mov = .{
         .dst = WritableReg.fromReg(pinned),

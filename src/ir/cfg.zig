@@ -330,9 +330,13 @@ pub const ControlFlowGraph = struct {
                 try self.validateEdge(block, last_inst, else_dest);
             },
             .br_table => {
-                // TODO: Validate br_table destinations
-                // Jump table destinations are stored in a separate JumpTable entity,
-                // requires looking up inst_data.branch_table.destination in function's jump table pool
+                // Validate all jump table targets
+                if (func.jump_tables.get(inst_data.branch_table.destination)) |jt| {
+                    for (jt.allBranches()) |bc| {
+                        const target = bc.block(&func.dfg.value_lists);
+                        try self.validateEdge(block, last_inst, target);
+                    }
+                }
             },
             else => {}, // Non-branching terminator
         }

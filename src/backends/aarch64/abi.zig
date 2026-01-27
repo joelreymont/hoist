@@ -1489,9 +1489,8 @@ pub const Aarch64ABICallee = struct {
 pub fn needsStructReturnPointer(returns: []const AbiParam, struct_store: ?*const types.StructStore) bool {
     if (returns.len == 0) return false;
     if (returns.len > 1) {
-        // Multiple returns not directly supported - would need sret
-        // TODO: Handle this case properly
-        return false;
+        // Multiple returns not directly supported in AAPCS64 - require sret
+        return true;
     }
 
     const ret_ty = returns[0].value_type;

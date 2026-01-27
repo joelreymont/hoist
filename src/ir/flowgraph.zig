@@ -43,10 +43,15 @@ fn analyzeBlock(cfg: *CFG, func: *const Function, block: Block) !void {
                 try cfg.addEdge(block, br.then_dst);
                 try cfg.addEdge(block, br.else_dst);
             },
-            .br_table => |brt| {
-                // Add edge to default target
-                try cfg.addEdge(block, brt.default_dst);
-                // TODO: Add edges to jump table targets
+            .branch_table => |brt| {
+                // Get jump table data
+                if (func.jump_tables.get(brt.destination)) |jt| {
+                    // Add edges to all branch targets (including default at index 0)
+                    for (jt.allBranches()) |bc| {
+                        const target = bc.block(&func.dfg.value_lists);
+                        try cfg.addEdge(block, target);
+                    }
+                }
             },
             .@"return", .trap => {
                 // No successors
@@ -134,4 +139,52 @@ test "buildCFG branch" {
     // b0 -> b1, b2
     const b0_succs = cfg.successors(b0);
     try testing.expectEqual(@as(usize, 2), b0_succs.len);
+}
+
+test "buildCFG branch_table" {
+    const sig = try @import("signature.zig").Signature.init(testing.allocator, .fast);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    const b0 = Block.new(0);
+    const b1 = Block.new(1);
+    const b2 = Block.new(2);
+    const b3 = Block.new(3);
+    try func.layout.appendBlock(b0);
+    try func.layout.appendBlock(b1);
+    try func.layout.appendBlock(b2);
+    try func.layout.appendBlock(b3);
+
+    // Create jump table with default b1 and entries [b2, b3]
+    const block_call = @import("block_call.zig");
+    const jt_data = @import("jump_table_data.zig");
+
+    const default_bc = try block_call.BlockCall.new(b1, &.{}, &func.dfg.value_lists);
+    const entries = [_]block_call.BlockCall{
+        try block_call.BlockCall.new(b2, &.{}, &func.dfg.value_lists),
+        try block_call.BlockCall.new(b3, &.{}, &func.dfg.value_lists),
+    };
+    const jt = try jt_data.JumpTableData.new(testing.allocator, default_bc, &entries);
+    const jt_ref = try func.jump_tables.push(jt);
+
+    // Create index value
+    const idx_val = root.entities.Value.new(0);
+
+    // b0: br_table idx, jt
+    const brt_data = InstructionData{
+        .branch_table = .{
+            .opcode = .br_table,
+            .arg = idx_val,
+            .destination = jt_ref,
+        },
+    };
+    const brt_inst = try func.dfg.makeInst(brt_data);
+    try func.layout.appendInst(brt_inst, b0);
+
+    var cfg = try buildCFG(testing.allocator, &func);
+    defer cfg.deinit();
+
+    // b0 -> b1 (default), b2, b3 (3 targets)
+    const b0_succs = cfg.successors(b0);
+    try testing.expectEqual(@as(usize, 3), b0_succs.len);
 }
