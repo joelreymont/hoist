@@ -4,7 +4,7 @@
 
 **Status**: Production-ready for basic to intermediate workloads
 **Test Coverage**: 325+ tests across 28 test files
-**Remaining Work**: 7 advanced optimization dots
+**Remaining Work**: 2 advanced optimization dots
 
 ## Completed Features (P0 - Critical)
 
@@ -21,6 +21,7 @@
 - Reload insertion at use points
 - Spill slot reuse and mapping
 - Frame size calculation with alignment
+- Machine-level copy coalescing (mov_rr hint propagation)
 
 ### AArch64 Backend ✅
 - ISLE instruction selection (645 rules)
@@ -81,35 +82,29 @@
 - TLS tests
 - FP special values tests
 
-## Remaining Work (5 dots)
+## Remaining Work (2 dots)
 
-All remaining dots are advanced optimization or infrastructure work:
+All remaining dots are advanced optimization work:
 
-### Register Allocation Optimizations (3 dots)
+### Register Allocation Optimizations (2 dots)
 1. **Reload hoisting**: Move reloads to dominating blocks, avoid loops (requires advanced allocator)
-2. **Register coalescing**: Eliminate redundant moves, merge live ranges (requires interference graph)
-3. **Rematerialization**: Recompute cheap values instead of spilling (requires cost model)
+2. **Rematerialization**: Recompute cheap values instead of spilling (requires IR-to-VReg mapping through pipeline)
 
 Note: Spill/reload emission and linear scan are integrated. Peephole optimizer handles STP combining for adjacent spills.
-
-### Exception Handling (2 dots)
-5. **Landing pad infrastructure**: Add landing pad block tracking, exception edge wiring in CFG
-6. **Exception edge wiring**: Connect try_call to landing pads, generate unwind info
-
-### Testing Infrastructure (1 dot)
-7. **ISLE rule coverage testing**: Test all 645 ISLE rules, detect pattern conflicts, verify priorities
 
 ## Implementation Effort Estimates
 
 ### Completed
 - Peephole optimizer (LDP/STP combining, dead move elimination - wired into compilation)
 - Basic spill coalescing (adjacent stores combined to STP via peephole)
+- Machine-level copy coalescing (mov_rr hint propagation in linear scan)
+- Exception handling (try_call CFG edges, LSDA emission, landing pad support)
+- Unwind info emission (DWARF eh_frame with CIE/FDE, macOS compact unwind)
 
 ### High Complexity (1-2 weeks each)
-- Register coalescing
-- Rematerialization
-- Multi-return values
-- Exception handling
+- Full rematerialization (requires preserving IR-to-VReg mapping)
+- Reload hoisting (requires dominator analysis at machine level)
+- Multi-return values (for some language interop)
 
 ## Comparison with Cranelift
 
@@ -156,7 +151,7 @@ If feature completeness is needed:
 
 ## Conclusion
 
-Hoist has successfully implemented a production-ready JIT compiler core. All P0 (critical) features are complete with comprehensive test coverage (325+ tests). The remaining 7 dots represent advanced optimizations and infrastructure that enhance performance but are not required for correctness.
+Hoist has successfully implemented a production-ready JIT compiler core. All P0 (critical) features are complete with comprehensive test coverage (325+ tests). The remaining 2 dots represent advanced optimizations (rematerialization, reload hoisting) that enhance performance but are not required for correctness.
 
 The compiler can currently:
 - Compile complex functions with arbitrary control flow
@@ -164,6 +159,8 @@ The compiler can currently:
 - Generate correct AArch64 code following AAPCS64
 - Support TLS with all three models
 - Emit linkable ELF objects
+- Generate exception handling info (LSDA, eh_frame)
+- Coalesce mov_rr instructions via hint propagation
 - Varargs ABI helpers available; IR/callsite integration pending
 - Perform shifted bitwise operations (AND/OR/XOR with LSL/LSR/ASR)
 - Feature flags and parsing; runtime detection stubbed

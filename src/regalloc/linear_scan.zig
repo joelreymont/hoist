@@ -907,3 +907,53 @@ test "LinearScanAllocator register hints" {
     try std.testing.expectEqual(@as(u32, 5), v1_preg.?.index());
     try std.testing.expectEqual(machinst.RegClass.int, v1_preg.?.class());
 }
+
+test "LinearScanAllocator coalesce pairs" {
+    const allocator = std.testing.allocator;
+
+    var lsa = try LinearScanAllocator.init(allocator, 31, 32, 32);
+    defer lsa.deinit();
+
+    var info = liveness.LivenessInfo.init(allocator);
+    defer info.deinit();
+
+    // Two vregs that could be coalesced (non-overlapping ranges)
+    const v0 = machinst.VReg.new(200, .int); // Use high indices to avoid pinned regs
+    const v1 = machinst.VReg.new(201, .int);
+
+    // v0 lives from 0-10, v1 lives from 5-20 (they overlap, so can't coalesce)
+    // Actually for coalescing to work, they should NOT overlap
+    // v0: 0-10, v1: 15-25 (non-overlapping)
+    try info.addRange(.{
+        .vreg = v0,
+        .start_inst = 0,
+        .end_inst = 10,
+        .reg_class = .int,
+    });
+
+    try info.addRange(.{
+        .vreg = v1,
+        .start_inst = 15,
+        .end_inst = 25,
+        .reg_class = .int,
+    });
+
+    // Mark v0 and v1 as coalesce mates
+    try lsa.addCoalescePair(v0, v1);
+
+    // Allocate
+    var result = try lsa.allocate(&info);
+    defer result.deinit();
+
+    // v0 should be allocated first (starts at 0)
+    const v0_preg = result.getPhysReg(v0);
+    try std.testing.expect(v0_preg != null);
+
+    // v1 should get the same preg due to coalescing (since ranges don't overlap)
+    const v1_preg = result.getPhysReg(v1);
+    try std.testing.expect(v1_preg != null);
+
+    // Both should have the same register
+    try std.testing.expectEqual(v0_preg.?.index(), v1_preg.?.index());
+    try std.testing.expectEqual(v0_preg.?.class(), v1_preg.?.class());
+}
