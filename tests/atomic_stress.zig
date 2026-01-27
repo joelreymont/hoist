@@ -24,31 +24,31 @@ const SharedCounter = struct {
         return .{ .value = Atomic(i64).init(0) };
     }
 
-    fn add(self: *SharedCounter, delta: i64, order: std.builtin.AtomicOrder) i64 {
-        return self.value.fetchAdd(delta, order);
+    fn add(self: *SharedCounter, delta: i64) i64 {
+        return self.value.fetchAdd(delta, .seq_cst);
     }
 
-    fn sub(self: *SharedCounter, delta: i64, order: std.builtin.AtomicOrder) i64 {
-        return self.value.fetchSub(delta, order);
+    fn sub(self: *SharedCounter, delta: i64) i64 {
+        return self.value.fetchSub(delta, .seq_cst);
     }
 
-    fn load(self: *SharedCounter, order: std.builtin.AtomicOrder) i64 {
-        return self.value.load(order);
+    fn load(self: *SharedCounter) i64 {
+        return self.value.load(.seq_cst);
     }
 };
 
 /// Thread worker for add stress test.
 fn addWorker(counter: *SharedCounter) void {
     for (0..ITERATIONS) |_| {
-        _ = counter.add(1, .seq_cst);
+        _ = counter.add(1);
     }
 }
 
 /// Thread worker for add/sub stress test.
 fn addSubWorker(counter: *SharedCounter) void {
     for (0..ITERATIONS) |_| {
-        _ = counter.add(1, .seq_cst);
-        _ = counter.sub(1, .seq_cst);
+        _ = counter.add(1);
+        _ = counter.sub(1);
     }
 }
 
@@ -68,7 +68,7 @@ test "atomic add stress - sequential consistency" {
 
     // Verify final count
     const expected: i64 = NUM_THREADS * ITERATIONS;
-    const actual = counter.load(.seq_cst);
+    const actual = counter.load();
     try testing.expectEqual(expected, actual);
 }
 
@@ -85,7 +85,7 @@ test "atomic add/sub stress - value remains zero" {
     }
 
     // After equal adds and subs, should be zero
-    const actual = counter.load(.seq_cst);
+    const actual = counter.load();
     try testing.expectEqual(@as(i64, 0), actual);
 }
 
@@ -122,8 +122,15 @@ test "atomic CAS stress" {
     try testing.expectEqual(expected, actual);
 }
 
+/// Exchange worker args.
+const XchgArgs = struct {
+    counter: *Atomic(i64),
+    id: usize,
+    results: []i64,
+};
+
 /// Exchange stress test - verify all values are exchanged exactly once.
-fn xchgWorker(args: struct { counter: *Atomic(i64), id: usize, results: []i64 }) void {
+fn xchgWorker(args: XchgArgs) void {
     var sum: i64 = 0;
     for (0..ITERATIONS) |_| {
         const old = args.counter.swap(@intCast(args.id), .seq_cst);
@@ -139,7 +146,7 @@ test "atomic exchange stress" {
     @memset(&results, 0);
 
     for (&threads, 0..) |*t, i| {
-        t.* = try Thread.spawn(.{}, xchgWorker, .{.{
+        t.* = try Thread.spawn(.{}, xchgWorker, .{XchgArgs{
             .counter = &counter,
             .id = i,
             .results = &results,
@@ -157,8 +164,8 @@ test "atomic exchange stress" {
     for (results) |r| {
         total += r;
     }
-    // Total depends on exchange pattern, just verify no crash
-    _ = total;
+    // Verify the sum is non-negative (basic sanity check)
+    try testing.expect(total >= 0);
 }
 
 /// Memory ordering test - acquire/release synchronization.
