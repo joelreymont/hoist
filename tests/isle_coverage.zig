@@ -407,6 +407,156 @@ test "ISLE coverage: sshr i64 register >> register (signed)" {
     try testing.expect(coverage.uniqueRulesInvoked() > 0);
 }
 
+test "ISLE coverage: band i64 bitwise AND" {
+    const allocator = testing.allocator;
+
+    var coverage = isle_coverage.IsleRuleCoverage.init(allocator);
+    defer coverage.deinit();
+    isle_helpers.setIsleCoverageTracker(&coverage);
+    defer isle_helpers.setIsleCoverageTracker(null);
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.returns.append(allocator, AbiParam.new(Type.I64));
+
+    var func = try Function.init(allocator, "test_band_i64", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const v0 = try func.dfg.appendBlockParam(block0, Type.I64);
+    const v1 = try func.dfg.appendBlockParam(block0, Type.I64);
+
+    // v2 = band v0, v1
+    const band_data = InstructionData{ .binary = .{
+        .opcode = .band,
+        .args = .{ v0, v1 },
+    } };
+    const v2_inst = try func.dfg.makeInst(band_data);
+    try func.layout.appendInst(v2_inst, block0);
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I64);
+
+    const return_data = InstructionData{ .unary = .{
+        .opcode = .@"return",
+        .arg = v2,
+    } };
+    const ret_inst = try func.dfg.makeInst(return_data);
+    try func.layout.appendInst(ret_inst, block0);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+
+    var vcode = try lower_mod.lowerFunction(Inst, allocator, &func, backend);
+    defer vcode.deinit();
+
+    try testing.expect(vcode.insns.items.len > 0);
+    try testing.expect(coverage.uniqueRulesInvoked() > 0);
+}
+
+test "ISLE coverage: bor i64 bitwise OR" {
+    const allocator = testing.allocator;
+
+    var coverage = isle_coverage.IsleRuleCoverage.init(allocator);
+    defer coverage.deinit();
+    isle_helpers.setIsleCoverageTracker(&coverage);
+    defer isle_helpers.setIsleCoverageTracker(null);
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.returns.append(allocator, AbiParam.new(Type.I64));
+
+    var func = try Function.init(allocator, "test_bor_i64", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const v0 = try func.dfg.appendBlockParam(block0, Type.I64);
+    const v1 = try func.dfg.appendBlockParam(block0, Type.I64);
+
+    // v2 = bor v0, v1
+    const bor_data = InstructionData{ .binary = .{
+        .opcode = .bor,
+        .args = .{ v0, v1 },
+    } };
+    const v2_inst = try func.dfg.makeInst(bor_data);
+    try func.layout.appendInst(v2_inst, block0);
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I64);
+
+    const return_data = InstructionData{ .unary = .{
+        .opcode = .@"return",
+        .arg = v2,
+    } };
+    const ret_inst = try func.dfg.makeInst(return_data);
+    try func.layout.appendInst(ret_inst, block0);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+
+    var vcode = try lower_mod.lowerFunction(Inst, allocator, &func, backend);
+    defer vcode.deinit();
+
+    try testing.expect(vcode.insns.items.len > 0);
+    try testing.expect(coverage.uniqueRulesInvoked() > 0);
+}
+
+test "ISLE coverage: bxor i64 bitwise XOR" {
+    const allocator = testing.allocator;
+
+    var coverage = isle_coverage.IsleRuleCoverage.init(allocator);
+    defer coverage.deinit();
+    isle_helpers.setIsleCoverageTracker(&coverage);
+    defer isle_helpers.setIsleCoverageTracker(null);
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.returns.append(allocator, AbiParam.new(Type.I64));
+
+    var func = try Function.init(allocator, "test_bxor_i64", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const v0 = try func.dfg.appendBlockParam(block0, Type.I64);
+    const v1 = try func.dfg.appendBlockParam(block0, Type.I64);
+
+    // v2 = bxor v0, v1
+    const bxor_data = InstructionData{ .binary = .{
+        .opcode = .bxor,
+        .args = .{ v0, v1 },
+    } };
+    const v2_inst = try func.dfg.makeInst(bxor_data);
+    try func.layout.appendInst(v2_inst, block0);
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I64);
+
+    const return_data = InstructionData{ .unary = .{
+        .opcode = .@"return",
+        .arg = v2,
+    } };
+    const ret_inst = try func.dfg.makeInst(return_data);
+    try func.layout.appendInst(ret_inst, block0);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+
+    var vcode = try lower_mod.lowerFunction(Inst, allocator, &func, backend);
+    defer vcode.deinit();
+
+    try testing.expect(vcode.insns.items.len > 0);
+    try testing.expect(coverage.uniqueRulesInvoked() > 0);
+}
+
 // Stub lowering functions (required by lowerFunction)
 fn lowerInst(
     ctx: *lower_mod.LowerCtx(Inst),
