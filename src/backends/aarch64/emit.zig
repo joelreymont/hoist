@@ -3909,23 +3909,73 @@ fn emitFmovToGpr(dst: Reg, src: Reg, size: FpuOperandSize, buffer: *buffer_mod.M
     try buffer.put4(insn);
 }
 
+/// Encode f32 as FMOV imm8 (VFPExpandImm).
+/// Returns null if value cannot be encoded.
+/// VFPExpandImm decode: exp = NOT(b):Replicate(b,5):c:d, frac = efgh:zeros(19)
+/// So encode: b = NOT(exp[7]), cd = exp[1:0], efgh = frac[22:19]
+fn encodeF32Imm8(value: f32) ?u8 {
+    const bits: u32 = @bitCast(value);
+    const sign: u8 = @intCast((bits >> 31) & 1);
+    const exp: u32 = (bits >> 23) & 0xFF;
+    const frac: u32 = bits & 0x7FFFFF;
+
+    // Low 19 mantissa bits must be zero
+    if (frac & 0x7FFFF != 0) return null;
+
+    // Exponent in range 124-131
+    if (exp < 124 or exp > 131) return null;
+
+    // Validate exp[7:6] is 01 or 10 (ensures proper NOT:Replicate pattern)
+    const exp_hi = (exp >> 6) & 0x3;
+    if (exp_hi != 0b01 and exp_hi != 0b10) return null;
+
+    // Extract encoding bits
+    const b: u8 = @intCast(((exp >> 7) & 1) ^ 1); // NOT(exp[7])
+    const cd: u8 = @intCast(exp & 0x3); // exp[1:0]
+    const efgh: u8 = @intCast((frac >> 19) & 0xF); // frac[22:19]
+
+    return (sign << 7) | (b << 6) | (cd << 4) | efgh;
+}
+
+/// Encode f64 as FMOV imm8 (VFPExpandImm).
+/// Returns null if value cannot be encoded.
+/// VFPExpandImm decode: exp = NOT(b):Replicate(b,8):c:d, frac = efgh:zeros(48)
+fn encodeF64Imm8(value: f64) ?u8 {
+    const bits: u64 = @bitCast(value);
+    const sign: u8 = @intCast((bits >> 63) & 1);
+    const exp: u64 = (bits >> 52) & 0x7FF;
+    const frac: u64 = bits & 0xFFFFFFFFFFFFF;
+
+    // Low 48 mantissa bits must be zero
+    if (frac & 0xFFFFFFFFFFFF != 0) return null;
+
+    // Exponent in range 1020-1027
+    if (exp < 1020 or exp > 1027) return null;
+
+    // Validate exp[10:9] is 01 or 10
+    const exp_hi = (exp >> 9) & 0x3;
+    if (exp_hi != 0b01 and exp_hi != 0b10) return null;
+
+    // Extract encoding bits
+    const b: u8 = @intCast(((exp >> 10) & 1) ^ 1); // NOT(exp[10])
+    const cd: u8 = @intCast(exp & 0x3); // exp[1:0]
+    const efgh: u8 = @intCast((frac >> 48) & 0xF); // frac[51:48]
+
+    return (sign << 7) | (b << 6) | (cd << 4) | efgh;
+}
+
 /// FMOV Sd, #imm (scalar single-precision immediate)
-/// For now, only support zero (0.0f)
+/// Valid values: ±n/16 × 2^r for n=16..31, r=-3..4 (NOT 0.0)
 /// Encoding: 0|0|0|11110|00|1|imm8|10000000|Rd
 fn emitFmovImmS(dst: Reg, imm: f32, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
+    const imm8 = encodeF32Imm8(imm) orelse return error.UnsupportedFPImmediate;
 
-    // For now, only support zero
-    if (imm != 0.0) {
-        return error.UnsupportedFPImmediate;
-    }
-
-    // FMOV with zero uses imm8=0 which encodes +0.0
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
         (0b00 << 22) |
         (0b1 << 21) |
-        (0b00000000 << 13) | // imm8=0 for +0.0
+        (@as(u32, imm8) << 13) |
         (0b100 << 10) |
         @as(u32, rd);
 
@@ -3933,21 +3983,17 @@ fn emitFmovImmS(dst: Reg, imm: f32, buffer: *buffer_mod.MachBuffer) !void {
 }
 
 /// FMOV Dd, #imm (scalar double-precision immediate)
-/// For now, only support zero (0.0)
+/// Valid values: ±n/16 × 2^r for n=16..31, r=-3..4 (NOT 0.0)
 /// Encoding: 0|0|0|11110|01|1|imm8|10000000|Rd
 fn emitFmovImmD(dst: Reg, imm: f64, buffer: *buffer_mod.MachBuffer) !void {
     const rd = hwEnc(dst);
-
-    // For now, only support zero
-    if (imm != 0.0) {
-        return error.UnsupportedFPImmediate;
-    }
+    const imm8 = encodeF64Imm8(imm) orelse return error.UnsupportedFPImmediate;
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
         (0b01 << 22) |
         (0b1 << 21) |
-        (0b00000000 << 13) | // imm8=0 for +0.0
+        (@as(u32, imm8) << 13) |
         (0b100 << 10) |
         @as(u32, rd);
 
@@ -10817,15 +10863,25 @@ test "emit fmov register and immediate" {
     const fmov_rr_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x1E204020), fmov_rr_insn);
 
-    // FMOV S0, #0.0
+    // FMOV S0, #2.0 (imm8=0x00 encodes 2.0)
     buffer.data.clearRetainingCapacity();
     try emit(.{ .fmov_imm = .{
         .dst = wr0,
-        .imm = 0.0,
+        .imm = 2.0,
         .size = .size32,
     } }, &buffer);
     const fmov_imm_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x1E201000), fmov_imm_insn);
+
+    // FMOV S0, #1.0 (imm8=0x70 encodes 1.0)
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .fmov_imm = .{
+        .dst = wr0,
+        .imm = 1.0,
+        .size = .size32,
+    } }, &buffer);
+    const fmov_imm_1_insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0x1E2E1000), fmov_imm_1_insn);
 }
 
 test "emit fmov gpr transfers" {

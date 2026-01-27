@@ -7130,18 +7130,42 @@ pub fn aarch64_ld1r(ty: types.Type, addr: lower_mod.Value, ctx: *lower_mod.Lower
 }
 
 /// Floating-point constant constructors
-/// Check if f32 can be encoded as FMOV immediate.
-/// For now, only support exact 0.0 (most common case).
-/// TODO: Support full VFPExpandImm encoding (±n/16 × 2^r).
+/// Check if f32 can be encoded as FMOV immediate (VFPExpandImm).
+/// Valid values: ±n/16 × 2^r for n=16..31, r=-3..4
+/// NOTE: 0.0 cannot be encoded; use constant pool or MOVI.
 fn canEncodeFMovImmF32(value: f32) bool {
-    return value == 0.0;
+    const bits: u32 = @bitCast(value);
+    const exp = (bits >> 23) & 0xFF;
+    const frac = bits & 0x7FFFFF;
+
+    // Low 19 mantissa bits must be zero
+    if (frac & 0x7FFFF != 0) return false;
+
+    // Exponent in range 124-131
+    if (exp < 124 or exp > 131) return false;
+
+    // exp[7:6] must be 01 or 10
+    const exp_hi = (exp >> 6) & 0x3;
+    return exp_hi == 0b01 or exp_hi == 0b10;
 }
 
-/// Check if f64 can be encoded as FMOV immediate.
-/// For now, only support exact 0.0 (most common case).
-/// TODO: Support full VFPExpandImm encoding (±n/16 × 2^r).
+/// Check if f64 can be encoded as FMOV immediate (VFPExpandImm).
+/// Valid values: ±n/16 × 2^r for n=16..31, r=-3..4
+/// NOTE: 0.0 cannot be encoded; use constant pool or MOVI.
 fn canEncodeFMovImmF64(value: f64) bool {
-    return value == 0.0;
+    const bits: u64 = @bitCast(value);
+    const exp = (bits >> 52) & 0x7FF;
+    const frac = bits & 0xFFFFFFFFFFFFF;
+
+    // Low 48 mantissa bits must be zero
+    if (frac & 0xFFFFFFFFFFFF != 0) return false;
+
+    // Exponent in range 1020-1027
+    if (exp < 1020 or exp > 1027) return false;
+
+    // exp[10:9] must be 01 or 10
+    const exp_hi = (exp >> 9) & 0x3;
+    return exp_hi == 0b01 or exp_hi == 0b10;
 }
 
 /// Constructor: aarch64_f32const - Load 32-bit float constant
