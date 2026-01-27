@@ -136,6 +136,10 @@ pub const LinearScanAllocator = struct {
     /// Used to improve allocation quality by preferring certain registers when available
     hints: std.AutoHashMap(u32, machinst.PReg),
 
+    /// Coalesce pairs: vregs that should be allocated to same preg if possible
+    /// Maps vreg index to list of vreg indices it can coalesce with
+    coalesce_mates: std.AutoHashMap(u32, std.ArrayList(u32)),
+
     allocator: std.mem.Allocator,
 
     /// Initialize the allocator with the number of physical registers available
@@ -228,6 +232,7 @@ pub const LinearScanAllocator = struct {
             .free_spill_slots_8 = std.ArrayList(u32){},
             .free_spill_slots_16 = std.ArrayList(u32){},
             .hints = std.AutoHashMap(u32, machinst.PReg).init(allocator),
+            .coalesce_mates = std.AutoHashMap(u32, std.ArrayList(u32)).init(allocator),
             .allocator = allocator,
         };
     }
@@ -244,6 +249,11 @@ pub const LinearScanAllocator = struct {
         self.free_spill_slots_8.deinit(self.allocator);
         self.free_spill_slots_16.deinit(self.allocator);
         self.hints.deinit();
+        var it = self.coalesce_mates.valueIterator();
+        while (it.next()) |list| {
+            list.deinit(self.allocator);
+        }
+        self.coalesce_mates.deinit();
     }
 
     fn regIndex(self: *LinearScanAllocator, preg: machinst.PReg) ?u32 {
@@ -385,7 +395,22 @@ pub const LinearScanAllocator = struct {
     ) !?machinst.PReg {
         const free_regs = self.getFreeRegs(range.reg_class);
 
-        // Check hint first if one exists
+        // Check coalesce hint first (from already-allocated coalesce mates)
+        if (self.getCoalesceHint(range.vreg, result)) |coalesce_hint| {
+            if (coalesce_hint.class() == range.reg_class) {
+                if (self.regIndex(coalesce_hint)) |reg_idx| {
+                    if (free_regs.isSet(reg_idx)) {
+                        // Coalesce hint is available! Use it
+                        try result.assign(range.vreg, coalesce_hint);
+                        free_regs.unset(reg_idx);
+                        try self.active.append(self.allocator, range);
+                        return coalesce_hint;
+                    }
+                }
+            }
+        }
+
+        // Check explicit hint
         if (self.hints.get(range.vreg.index())) |hint| {
             if (hint.class() == range.reg_class) {
                 if (self.regIndex(hint)) |reg_idx| {
@@ -532,6 +557,37 @@ pub const LinearScanAllocator = struct {
     /// Get the hint for a virtual register, if one exists.
     pub fn getHint(self: *LinearScanAllocator, vreg: machinst.VReg) ?machinst.PReg {
         return self.hints.get(vreg.index());
+    }
+
+    /// Add a coalesce pair: two vregs that should be allocated to same preg.
+    /// Called for mov_rr instructions where src and dst don't interfere.
+    pub fn addCoalescePair(self: *LinearScanAllocator, v1: machinst.VReg, v2: machinst.VReg) !void {
+        // Add v2 to v1's mates
+        const entry1 = try self.coalesce_mates.getOrPut(v1.index());
+        if (!entry1.found_existing) {
+            entry1.value_ptr.* = std.ArrayList(u32){};
+        }
+        try entry1.value_ptr.append(self.allocator, v2.index());
+
+        // Add v1 to v2's mates (bidirectional)
+        const entry2 = try self.coalesce_mates.getOrPut(v2.index());
+        if (!entry2.found_existing) {
+            entry2.value_ptr.* = std.ArrayList(u32){};
+        }
+        try entry2.value_ptr.append(self.allocator, v1.index());
+    }
+
+    /// Get coalesce hint: if vreg has a coalesce mate that's already allocated,
+    /// return that mate's physical register as a hint.
+    fn getCoalesceHint(self: *LinearScanAllocator, vreg: machinst.VReg, result: *RegAllocResult) ?machinst.PReg {
+        const mates = self.coalesce_mates.get(vreg.index()) orelse return null;
+        for (mates.items) |mate_idx| {
+            const mate = machinst.VReg.new(mate_idx, vreg.class());
+            if (result.getPhysReg(mate)) |preg| {
+                return preg;
+            }
+        }
+        return null;
     }
 };
 

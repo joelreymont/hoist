@@ -129,6 +129,12 @@ pub const ControlFlowGraph = struct {
                     // Wire exception successor as exception edge
                     try self.addExceptionEdge(block, inst_data.try_call.exception_successor);
                 },
+                .try_call_indirect => {
+                    // Wire normal successor as regular control flow edge
+                    try self.addEdge(block, inst, inst_data.try_call_indirect.normal_successor);
+                    // Wire exception successor as exception edge
+                    try self.addExceptionEdge(block, inst_data.try_call_indirect.exception_successor);
+                },
                 .br_table => {
                     const jt = func.jump_tables.get(inst_data.branch_table.destination) orelse continue;
                     const default_bc = jt.defaultBlock() orelse continue;
@@ -337,6 +343,16 @@ pub const ControlFlowGraph = struct {
                         try self.validateEdge(block, last_inst, target);
                     }
                 }
+            },
+            .try_call => {
+                // Validate normal and exception edges
+                try self.validateEdge(block, last_inst, inst_data.try_call.normal_successor);
+                try self.validateEdge(block, last_inst, inst_data.try_call.exception_successor);
+            },
+            .try_call_indirect => {
+                // Validate normal and exception edges
+                try self.validateEdge(block, last_inst, inst_data.try_call_indirect.normal_successor);
+                try self.validateEdge(block, last_inst, inst_data.try_call_indirect.exception_successor);
             },
             else => {}, // Non-branching terminator
         }

@@ -3015,9 +3015,10 @@ pub fn aarch64_get_frame_pointer(
     const dst = try ctx.allocOutputReg(.int);
     const fp = Reg.gpr(29); // X29 is the frame pointer
 
-    return Inst{ .mov = .{
+    return Inst{ .mov_rr = .{
         .dst = dst,
         .src = fp,
+        .size = .size64,
     } };
 }
 
@@ -3028,9 +3029,10 @@ pub fn aarch64_get_stack_pointer(
     const dst = try ctx.allocOutputReg(.int);
     const sp = Reg.gpr(31); // X31/SP is the stack pointer
 
-    return Inst{ .mov = .{
+    return Inst{ .mov_rr = .{
         .dst = dst,
         .src = sp,
+        .size = .size64,
     } };
 }
 
@@ -3041,9 +3043,10 @@ pub fn aarch64_get_return_address(
     const dst = try ctx.allocOutputReg(.int);
     const lr = Reg.gpr(30); // X30 is the link register
 
-    return Inst{ .mov = .{
+    return Inst{ .mov_rr = .{
         .dst = dst,
         .src = lr,
+        .size = .size64,
     } };
 }
 
@@ -3055,9 +3058,10 @@ pub fn aarch64_get_pinned_reg(
     const dst = try ctx.allocOutputReg(.int);
     const pinned = Reg.gpr(pinnedRegNum());
 
-    return Inst{ .mov = .{
+    return Inst{ .mov_rr = .{
         .dst = dst,
         .src = pinned,
+        .size = .size64,
     } };
 }
 
@@ -3078,9 +3082,10 @@ pub fn aarch64_set_pinned_reg(
     const val_reg = ctx.getValueReg(val);
     const pinned = Reg.gpr(pinnedRegNum());
 
-    return Inst{ .mov = .{
+    return Inst{ .mov_rr = .{
         .dst = WritableReg.fromReg(pinned),
         .src = val_reg,
+        .size = .size64,
     } };
 }
 
@@ -3090,9 +3095,10 @@ pub fn aarch64_landingpad(
 ) !Inst {
     const dst = try ctx.allocOutputReg(.int);
     // Exception pointer in X0 per AAPCS64 ABI
-    return Inst{ .mov = .{
+    return Inst{ .mov_rr = .{
         .dst = dst,
         .src = Reg.gpr(0),
+        .size = .size64,
     } };
 }
 

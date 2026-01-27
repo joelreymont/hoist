@@ -81,17 +81,16 @@
 - TLS tests
 - FP special values tests
 
-## Remaining Work (7 dots)
+## Remaining Work (5 dots)
 
 All remaining dots are advanced optimization or infrastructure work:
 
-### Register Allocation Optimizations (4 dots)
-1. **Spill coalescing**: Use STP instead of 2×STR for adjacent spills (requires spill analysis)
-2. **Reload hoisting**: Move reloads to dominating blocks, avoid loops (requires advanced allocator)
-3. **Register coalescing**: Eliminate redundant moves, merge live ranges (requires interference graph)
-4. **Rematerialization**: Recompute cheap values instead of spilling (requires cost model)
+### Register Allocation Optimizations (3 dots)
+1. **Reload hoisting**: Move reloads to dominating blocks, avoid loops (requires advanced allocator)
+2. **Register coalescing**: Eliminate redundant moves, merge live ranges (requires interference graph)
+3. **Rematerialization**: Recompute cheap values instead of spilling (requires cost model)
 
-Note: Spill/reload emission and linear scan are integrated; remaining work is optimization/allocator quality.
+Note: Spill/reload emission and linear scan are integrated. Peephole optimizer handles STP combining for adjacent spills.
 
 ### Exception Handling (2 dots)
 5. **Landing pad infrastructure**: Add landing pad block tracking, exception edge wiring in CFG
@@ -102,9 +101,9 @@ Note: Spill/reload emission and linear scan are integrated; remaining work is op
 
 ## Implementation Effort Estimates
 
-### Medium Complexity (3-4 hours each)
-- Peephole optimizer
-- Spill coalescing
+### Completed
+- Peephole optimizer (LDP/STP combining, dead move elimination - wired into compilation)
+- Basic spill coalescing (adjacent stores combined to STP via peephole)
 
 ### High Complexity (1-2 weeks each)
 - Register coalescing
@@ -124,7 +123,7 @@ Note: Spill/reload emission and linear scan are integrated; remaining work is op
 
 ### Areas Where Cranelift is Ahead
 - Register allocation: regalloc2 with backtracking
-- Optimization passes: multiple levels, mature peephole
+- Optimization passes: multiple levels (Hoist has basic peephole)
 - Exception handling: full support
 - Multi-backend: x86-64, AArch64, RISC-V, s390x
 - Testing: extensive fuzzing, differential testing

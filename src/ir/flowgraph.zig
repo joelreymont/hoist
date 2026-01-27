@@ -53,6 +53,16 @@ fn analyzeBlock(cfg: *CFG, func: *const Function, block: Block) !void {
                     }
                 }
             },
+            .try_call => |tc| {
+                // Normal and exception successors
+                try cfg.addEdge(block, tc.normal_successor);
+                try cfg.addEdge(block, tc.exception_successor);
+            },
+            .try_call_indirect => |tc| {
+                // Normal and exception successors
+                try cfg.addEdge(block, tc.normal_successor);
+                try cfg.addEdge(block, tc.exception_successor);
+            },
             .@"return", .trap => {
                 // No successors
             },
@@ -187,4 +197,39 @@ test "buildCFG branch_table" {
     // b0 -> b1 (default), b2, b3 (3 targets)
     const b0_succs = cfg.successors(b0);
     try testing.expectEqual(@as(usize, 3), b0_succs.len);
+}
+
+test "buildCFG try_call" {
+    const value_list = @import("value_list.zig");
+
+    const sig = try @import("signature.zig").Signature.init(testing.allocator, .fast);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    const b0 = Block.new(0);
+    const b1 = Block.new(1); // normal successor
+    const b2 = Block.new(2); // exception successor (landing pad)
+    try func.layout.appendBlock(b0);
+    try func.layout.appendBlock(b1);
+    try func.layout.appendBlock(b2);
+
+    // b0: try_call -> normal: b1, exception: b2
+    const tc_data = InstructionData{
+        .try_call = .{
+            .opcode = .try_call,
+            .func_ref = root.entities.FuncRef.new(0),
+            .args = value_list.ValueList.default(),
+            .normal_successor = b1,
+            .exception_successor = b2,
+        },
+    };
+    const tc_inst = try func.dfg.makeInst(tc_data);
+    try func.layout.appendInst(tc_inst, b0);
+
+    var cfg = try buildCFG(testing.allocator, &func);
+    defer cfg.deinit();
+
+    // b0 -> b1 (normal), b2 (exception)
+    const b0_succs = cfg.successors(b0);
+    try testing.expectEqual(@as(usize, 2), b0_succs.len);
 }

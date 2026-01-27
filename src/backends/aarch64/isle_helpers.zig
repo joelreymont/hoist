@@ -2300,7 +2300,7 @@ pub fn aarch64_bitcast_noop(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) 
     recordRule("aarch64_bitcast_noop");
     // No-op: just return the value unchanged (type punning in same register file)
     const reg = try ctx.getValueReg(x, .int);
-    return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(reg), .src = reg } };
+    return Inst{ .mov_rr = .{ .dst = lower_mod.WritableReg.fromReg(reg), .src = reg, .size = .size64 } };
 }
 
 pub fn aarch64_fmov_from_gpr(x: lower_mod.Value, in_ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
@@ -2323,33 +2323,33 @@ pub fn aarch64_fmov_to_gpr(x: lower_mod.Value, out_ty: types.Type, ctx: *lower_m
 pub fn stack_reg(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     _ = ctx;
     // Return SP register (x31 when used as stack pointer)
-    return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(31)), .src = Reg.gpr(31) } };
+    return Inst{ .mov_rr = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(31)), .src = Reg.gpr(31), .size = .size64 } };
 }
 
 pub fn fp_reg(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     _ = ctx;
     // Return FP register (x29 - frame pointer)
-    return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(29)), .src = Reg.gpr(29) } };
+    return Inst{ .mov_rr = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(29)), .src = Reg.gpr(29), .size = .size64 } };
 }
 
 pub fn link_reg(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     _ = ctx;
     // Return LR register (x30 - link register)
-    return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(30)), .src = Reg.gpr(30) } };
+    return Inst{ .mov_rr = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(30)), .src = Reg.gpr(30), .size = .size64 } };
 }
 
 pub fn aarch64_get_pinned_reg(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_get_pinned_reg");
     _ = ctx;
     // Return pinned register (x28 - typically used for VM context)
-    return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(28)), .src = Reg.gpr(28) } };
+    return Inst{ .mov_rr = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(28)), .src = Reg.gpr(28), .size = .size64 } };
 }
 
 pub fn aarch64_set_pinned_reg(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_set_pinned_reg");
     const src = try ctx.getValueReg(val, .int);
     // Move value to pinned register (x28)
-    return Inst{ .mov = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(28)), .src = src } };
+    return Inst{ .mov_rr = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(28)), .src = src, .size = .size64 } };
 }
 
 /// Exception handling: landingpad reads exception value from X0
@@ -2358,7 +2358,7 @@ pub fn aarch64_landingpad(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Allocate vreg for exception value
     const dst = try ctx.allocOutputReg(.int);
     // Move exception pointer from X0 (AAPCS64 exception value register)
-    return Inst{ .mov = .{ .dst = dst, .src = Reg.gpr(0) } };
+    return Inst{ .mov_rr = .{ .dst = dst, .src = Reg.gpr(0), .size = .size64 } };
 }
 
 /// Stack switching for fiber/coroutine support (ISLE constructors)

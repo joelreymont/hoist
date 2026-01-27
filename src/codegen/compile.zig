@@ -22,6 +22,7 @@ const sig_mod = @import("../ir/signature.zig");
 const a64_inst = @import("../backends/aarch64/inst.zig");
 const a64_abi = @import("../backends/aarch64/abi.zig");
 const linear_scan_mod = @import("../regalloc/linear_scan.zig");
+const liveness_mod = @import("../regalloc/liveness.zig");
 const ir_print = @import("../ir/print.zig");
 const egraph_mod = @import("../ir/egraph.zig");
 const ir = struct {
@@ -1374,8 +1375,6 @@ fn lowerAArch64(ctx: *Context, _: *const Target) CodegenError!void {
     var vcode = try builder.finish();
     defer vcode.deinit();
 
-    const liveness_mod = @import("../regalloc/liveness.zig");
-
     var block_insns = std.AutoHashMap(u32, []const Inst).init(ctx.allocator);
     defer block_insns.deinit();
 
@@ -1407,6 +1406,9 @@ fn lowerAArch64(ctx: *Context, _: *const Target) CodegenError!void {
     );
     defer linear_scan.deinit();
 
+    // Collect coalesce pairs from mov_rr instructions
+    try collectCoalescePairs(Inst, &vcode, &liveness_info, &linear_scan);
+
     var result = try linear_scan.allocate(&liveness_info);
     defer result.deinit();
 
@@ -1416,6 +1418,32 @@ fn lowerAArch64(ctx: *Context, _: *const Target) CodegenError!void {
 
     const spill_bytes: u32 = linear_scan.next_spill_offset;
     try emitAArch64WithAllocation(ctx, &vcode, &result, spill_bytes, &ir_to_vcode_blocks);
+}
+
+/// Collect coalesce pairs from mov_rr instructions.
+/// Two vregs can coalesce if connected by a move and don't interfere.
+fn collectCoalescePairs(
+    comptime Inst: type,
+    vcode: *@import("../machinst/vcode.zig").VCode(Inst),
+    liveness_info: *liveness_mod.LivenessInfo,
+    linear_scan: *linear_scan_mod.LinearScanAllocator,
+) !void {
+    for (vcode.insns.items) |inst| {
+        // Check for mov_rr instruction
+        if (inst == .mov_rr) {
+            const mov = inst.mov_rr;
+
+            // Get src and dst as vregs (if they are vregs)
+            const src_vreg = mov.src.toVReg() orelse continue;
+            const dst_vreg = mov.dst.reg.toVReg() orelse continue;
+
+            // Check if they interfere
+            if (!liveness_info.interfere(src_vreg, dst_vreg)) {
+                // They can coalesce
+                try linear_scan.addCoalescePair(src_vreg, dst_vreg);
+            }
+        }
+    }
 }
 
 /// Convert IR type to ABI type.
