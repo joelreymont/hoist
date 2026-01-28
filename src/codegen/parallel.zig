@@ -234,7 +234,7 @@ pub const ParallelCompiler = struct {
     /// Wait for all work to complete.
     pub fn wait(self: *ParallelCompiler) void {
         while (!self.work_queue.isDone() and self.running.load(.acquire)) {
-            Thread.yield();
+            Thread.yield() catch {};
         }
     }
 
@@ -242,7 +242,7 @@ pub const ParallelCompiler = struct {
     fn workerLoop(self: *ParallelCompiler) void {
         while (self.running.load(.acquire)) {
             const item = self.work_queue.pop() orelse {
-                Thread.yield();
+                Thread.yield() catch {};
                 continue;
             };
 

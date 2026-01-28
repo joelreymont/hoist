@@ -188,7 +188,7 @@ fn producer(sync: *SyncData) void {
 
         // Wait for consumer to acknowledge
         while (sync.ready.load(.acquire)) {
-            Thread.yield();
+            Thread.yield() catch {};
         }
     }
 }
@@ -198,7 +198,7 @@ fn consumer(sync: *SyncData, sum: *i64) void {
     for (0..ITERATIONS) |_| {
         // Wait for producer
         while (!sync.ready.load(.acquire)) {
-            Thread.yield();
+            Thread.yield() catch {};
         }
 
         local_sum += sync.data;
