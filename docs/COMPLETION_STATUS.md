@@ -3,7 +3,7 @@
 ## Executive Summary
 
 **Status**: Production-ready for basic to intermediate workloads
-**Test Coverage**: 2100+ tests (487 integration, 1618 unit)
+**Test Coverage**: 2050+ tests (435 integration, 1618 unit)
 **Remaining Work**: 2 advanced optimization dots
 
 ## Completed Features (P0 - Critical)
@@ -73,7 +73,7 @@
 - IR/callsite integration not wired (no variadic signature flag)
 
 ### Testing ✅
-- 28+ test files, 2100+ test cases
+- 28+ test files, 2050+ test cases
 - End-to-end JIT tests
 - Spilling integration tests (40+ live values)
 - ABI compliance tests
@@ -151,7 +151,7 @@ If feature completeness is needed:
 
 ## Conclusion
 
-Hoist has successfully implemented a production-ready JIT compiler core. All P0 (critical) features are complete with comprehensive test coverage (2100+ tests). The remaining 2 dots represent advanced optimizations (rematerialization, reload hoisting) that enhance performance but are not required for correctness.
+Hoist has successfully implemented a production-ready JIT compiler core. All P0 (critical) features are complete with comprehensive test coverage (2050+ tests). The remaining 2 dots represent advanced optimizations (rematerialization, reload hoisting) that enhance performance but are not required for correctness.
 
 The compiler can currently:
 - Compile complex functions with arbitrary control flow
