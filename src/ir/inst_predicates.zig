@@ -30,12 +30,7 @@ pub inline fn isLoadWithDefinedTrapping(opcode: Opcode, data: *const Instruction
     if (!opcode.can_load()) return false;
 
     return switch (data.*) {
-        // Stack loads never trap
-        .load => |load_data| blk: {
-            // TODO: Check flags.notrap() when MemFlags are implemented
-            _ = load_data;
-            break :blk true;
-        },
+        .load => |load_data| !load_data.flags.notrap,
         else => true,
     };
 }
@@ -60,10 +55,8 @@ pub fn isPureForEgraph(func: *const Function, inst: Inst) bool {
     const is_pure_load = switch (inst_data.*) {
         .load => |load_data| blk: {
             if (load_data.opcode != .load) break :blk false;
-            // TODO: Check flags.readonly() && flags.notrap() && flags.can_move()
-            // when MemFlags are implemented
-            _ = load_data;
-            break :blk false;
+            const f = load_data.flags;
+            break :blk f.readonly and f.notrap and f.can_move;
         },
         else => false,
     };

@@ -42,6 +42,16 @@ pub const MemFlags = struct {
     /// Can enable faster code generation on some architectures.
     aligned: bool = false,
 
+    /// Access is guaranteed not to trap (e.g., stack memory).
+    notrap: bool = false,
+
+    /// Memory is read-only (won't be written during execution).
+    readonly: bool = false,
+
+    /// Load result doesn't depend on any effects since function entry.
+    /// Combined with readonly and notrap, allows hoisting loads.
+    can_move: bool = false,
+
     /// Create default memory flags (unknown region, non-volatile, unaligned).
     pub fn default() MemFlags {
         return .{
@@ -57,6 +67,7 @@ pub const MemFlags = struct {
             .alias_region = .stack,
             .is_volatile = false,
             .aligned = true, // Stack is typically aligned
+            .notrap = true, // Stack accesses never trap
         };
     }
 
@@ -110,6 +121,7 @@ test "MemFlags.stack" {
     const flags = MemFlags.stack();
     try testing.expectEqual(AliasRegion.stack, flags.alias_region);
     try testing.expectEqual(true, flags.aligned);
+    try testing.expectEqual(true, flags.notrap);
 }
 
 test "MemFlags.mayAlias - different regions" {
