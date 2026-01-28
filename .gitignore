@@ -2,3 +2,11 @@
 SESSION.md
 .zig-cache/
 zig-out/
+
+# Backup files
+*.bak
+*.bak2
+*.backup
+*.backup2
+*.orig
+*~
