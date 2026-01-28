@@ -251,8 +251,8 @@ pub fn EntitySet(comptime K: type) type {
 
         bitset: std.DynamicBitSet,
 
-        pub fn init(allocator: Allocator) Self {
-            return .{ .bitset = std.DynamicBitSet.initEmpty(allocator, 0) catch unreachable };
+        pub fn init(allocator: Allocator) !Self {
+            return .{ .bitset = try std.DynamicBitSet.initEmpty(allocator, 0) };
         }
 
         pub fn initWithCapacity(allocator: Allocator, capacity: usize) !Self {
@@ -468,7 +468,7 @@ test "SecondaryMap basic" {
 
 test "EntitySet basic" {
     const Block = EntityRef(u32, "block");
-    var set = EntitySet(Block).init(std.testing.allocator);
+    var set = try EntitySet(Block).init(std.testing.allocator);
     defer set.deinit(std.testing.allocator);
 
     const r0 = Block.new(0);
@@ -489,7 +489,7 @@ test "EntitySet basic" {
 
 test "EntitySet pop" {
     const Block = EntityRef(u32, "block");
-    var set = EntitySet(Block).init(std.testing.allocator);
+    var set = try EntitySet(Block).init(std.testing.allocator);
     defer set.deinit(std.testing.allocator);
 
     _ = try set.insert(Block.new(0));
@@ -505,7 +505,7 @@ test "EntitySet pop" {
 
 test "EntitySet iter" {
     const Block = EntityRef(u32, "block");
-    var set = EntitySet(Block).init(std.testing.allocator);
+    var set = try EntitySet(Block).init(std.testing.allocator);
     defer set.deinit(std.testing.allocator);
 
     _ = try set.insert(Block.new(2));
