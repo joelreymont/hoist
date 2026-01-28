@@ -49,10 +49,10 @@ pub const DataValue = union(enum) {
             .f32 => Type.F32,
             .f64 => Type.F64,
             .f128 => Type.F128,
-            .v128 => Type.I8X16, // Default vector type
-            .v64 => Type.I8X16, // TODO: Add proper I8X8 type
-            .v32 => Type.I8X16, // TODO: Add proper I8X4 type
-            .v16 => Type.I8X16, // TODO: Add proper I8X2 type
+            .v128 => Type.I8X16,
+            .v64 => Type.I8X8,
+            .v32 => Type.I8X4,
+            .v16 => Type.I8X2,
         };
     }
 
