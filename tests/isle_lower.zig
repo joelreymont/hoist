@@ -135,15 +135,23 @@ test "LowerCtx: block creation and instruction emission" {
     try testing.expectEqual(@as(usize, 1), block_insts.len);
 }
 
-// Test ISLE pattern: lower_const_int (constant materialization)
+// Test ISLE pattern: constant materialization via Imm12
 test "ISLE lowering: constant materialization" {
-    // Test the constant lowering helper directly
-    const imm12_val: u32 = 42;
-    const result = aarch64_lower.lowerConstInt(imm12_val);
+    // Test Imm12 encoding used for immediate constants
+    const Imm12 = root.aarch64_inst.Imm12;
 
-    // Result should be a mov immediate instruction
-    // This is a placeholder - actual verification depends on Inst format
-    _ = result;
+    // Small value fits in 12 bits
+    const imm12 = Imm12.maybeFromU64(42);
+    try testing.expect(imm12 != null);
+    try testing.expectEqual(@as(u12, 42), imm12.?.value());
+
+    // Value with shift
+    const shifted = Imm12.maybeFromU64(4096); // 1 << 12, needs shift
+    try testing.expect(shifted != null);
+
+    // Value too large for Imm12
+    const too_large = Imm12.maybeFromU64(0xFFFFFF);
+    try testing.expect(too_large == null);
 }
 
 // Test ISLE extractor: type extraction
@@ -340,17 +348,38 @@ test "ISLE lowering: iconcat creates register pair" {
     }
 }
 
-// Test isplit lowering would go here when implemented
-test "ISLE lowering: isplit splits I128 into two I64 (TODO)" {
-    // isplit is the inverse of iconcat
-    // It takes an I128 and returns (lo: I64, hi: I64)
+// Test isplit lowering: split I128 into two I64
+test "ISLE lowering: isplit splits I128 into two I64" {
+    var func = lower_mod.Function.init(testing.allocator);
+    defer func.deinit();
 
-    // This test is a placeholder - isplit lowering is not yet implemented
-    // When implemented, it should:
-    // 1. Take a ValueRegs.two (lo, hi)
-    // 2. Return the lo and hi components as separate single-register ValueRegs
+    var vcode = vcode_mod.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
 
-    try testing.expect(true); // Placeholder
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    // Create an I128 value represented as two I64 registers
+    const i128_val = lower_mod.Value.new(1);
+
+    // Allocate VRegs for lo and hi parts
+    const lo_vreg = ctx.allocVReg(.int);
+    const hi_vreg = ctx.allocVReg(.int);
+
+    // Map the I128 value to a register pair
+    try ctx.setValueReg(i128_val, lower_mod.ValueRegs(VReg).two(lo_vreg, hi_vreg));
+
+    // Call isplit to split the I128 into two I64 values
+    const result = try isle_helpers.aarch64_isplit(i128_val, &ctx);
+
+    // Verify it returns the same two-register pair
+    switch (result) {
+        .one => return error.ExpectedTwoRegs,
+        .two => |regs| {
+            try testing.expectEqual(lo_vreg, regs[0]);
+            try testing.expectEqual(hi_vreg, regs[1]);
+        },
+    }
 }
 
 test "LowerCtx: getStackSlotOffset" {
