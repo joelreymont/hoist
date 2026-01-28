@@ -4880,7 +4880,6 @@ fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
     // TODO: Register allocation not yet implemented
     _ = ctx;
     _ = target;
-    _ = target;
 }
 
 /// Insert function prologue and epilogue.
@@ -4888,14 +4887,12 @@ fn insertPrologueEpilogue(ctx: *Context, target: *const Target) CodegenError!voi
     // TODO: Prologue/epilogue insertion not yet implemented
     _ = ctx;
     _ = target;
-    _ = target;
 }
 
 /// Emit machine code.
 fn emit(ctx: *Context, target: *const Target) CodegenError!void {
     // TODO: Machine code emission not yet implemented
     _ = ctx;
-    _ = target;
     _ = target;
 }
 
