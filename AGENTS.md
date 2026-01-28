@@ -4,7 +4,7 @@
 - Status: `docs/COMPLETION_STATUS.md`
 
 ### Tests
-28 files, 325+ cases. Key: `tests/e2e_jit.zig`, `tests/aarch64_tls.zig`, `tests/fp_special_values.zig`
+2100+ tests (487 integration, 1618 unit). Key: `tests/e2e_jit.zig`, `tests/aarch64_tls.zig`, `tests/fp_special_values.zig`
 
 ### Entry Points
 | Feature | File | Lines |
