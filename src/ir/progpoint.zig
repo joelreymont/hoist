@@ -19,10 +19,10 @@ pub const ProgramPoint = union(enum) {
     block: Block,
 
     /// Get the instruction we know is inside.
-    pub fn unwrapInst(self: ProgramPoint) Inst {
+    pub fn unwrapInst(self: ProgramPoint) !Inst {
         return switch (self) {
             .inst => |x| x,
-            .block => |x| @panic("expected inst, got block"),
+            .block => error.ExpectedInst,
         };
     }
 
