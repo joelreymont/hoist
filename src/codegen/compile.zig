@@ -7,8 +7,9 @@
 //! 4. CFG/dominator tree computation
 //! 5. Lowering (IR -> VCode via ISLE)
 //! 6. Register allocation
-//! 7. Prologue/epilogue insertion
-//! 8. Code emission
+//! 7. Rewrite vregs to pregs
+//! 8. Prologue/epilogue insertion
+//! 9. Code emission
 
 const std = @import("std");
 pub const Context = @import("context.zig").Context;
@@ -752,6 +753,8 @@ fn insertSpillScratch(
 /// - Optimization
 /// - Lowering to machine code
 /// - Register allocation
+/// - Rewrite vregs to pregs
+/// - Prologue/epilogue insertion
 /// - Code emission
 ///
 /// Returns compiled machine code with relocations.
@@ -786,10 +789,13 @@ pub fn compile(
     // 4. Register allocation
     try allocateRegisters(ctx, target);
 
-    // 5. Prologue/epilogue insertion
+    // 5. Rewrite vregs to pregs
+    try rewriteRegisters(ctx, target);
+
+    // 6. Prologue/epilogue insertion
     try insertPrologueEpilogue(ctx, target);
 
-    // 6. Emit machine code
+    // 7. Emit machine code
     try emit(ctx, target);
 
     return ctx.getCompiledCode() orelse return error.EmissionFailed;
@@ -1608,7 +1614,7 @@ fn emitAArch64WithAllocation(
             try buffer.registerBlockLabel(ir_block, label);
         }
 
-        // Collect and rewrite block instructions
+        // Collect block instructions for peephole passes
         const insn_start = vcode_block.insn_start;
         const insn_end = vcode_block.insn_end;
         var block_insts = std.ArrayList(a64_inst.Inst){};
@@ -1616,15 +1622,10 @@ fn emitAArch64WithAllocation(
         try block_insts.ensureTotalCapacity(ctx.allocator, insn_end - insn_start);
 
         for (vcode.insns.items[insn_start..insn_end]) |inst| {
-            var rewritten_inst = inst;
-
-            // Rewrite virtual registers to physical registers
-            try rewriteInstRegs(&rewritten_inst, RegMapper{ .result = result, .scratch = null });
-
             // Skip redundant moves (mov reg, reg)
-            if (rewritten_inst == .mov_rr) {
-                const dst_reg = rewritten_inst.mov_rr.dst.toReg();
-                const src_reg = rewritten_inst.mov_rr.src;
+            if (inst == .mov_rr) {
+                const dst_reg = inst.mov_rr.dst.toReg();
+                const src_reg = inst.mov_rr.src;
                 if (dst_reg.toRealReg()) |dst_real| {
                     if (src_reg.toRealReg()) |src_real| {
                         if (dst_real.hwEnc() == src_real.hwEnc()) {
@@ -1634,7 +1635,7 @@ fn emitAArch64WithAllocation(
                 }
             }
 
-            block_insts.appendAssumeCapacity(rewritten_inst);
+            block_insts.appendAssumeCapacity(inst);
         }
 
         // Run AArch64-specific peephole optimizations on block
@@ -5030,6 +5031,22 @@ fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
     }
 }
 
+/// Rewrite virtual registers to physical registers after allocation.
+fn rewriteRegisters(ctx: *Context, target: *const Target) CodegenError!void {
+    switch (target.arch) {
+        .aarch64 => {
+            if (ctx.aarch64_lowered) |*lowered| {
+                if (ctx.aarch64_regalloc) |*regalloc| {
+                    for (lowered.vcode.insns.items) |*inst| {
+                        try rewriteInstRegs(inst, RegMapper{ .result = &regalloc.result, .scratch = null });
+                    }
+                } else return error.RegisterAllocationFailed;
+            } else return error.LoweringFailed;
+        },
+        else => return error.UnsupportedTarget,
+    }
+}
+
 /// Insert function prologue and epilogue.
 fn insertPrologueEpilogue(ctx: *Context, target: *const Target) CodegenError!void {
     _ = ctx;
@@ -5493,6 +5510,54 @@ test "convertRelocKind: all variants" {
 
     const aarch64_add_kind = convertRelocKind(.aarch64_add_abs_lo12_nc);
     try testing.expectEqual(RelocKind.aarch64_add_abs_lo12_nc, aarch64_add_kind);
+}
+
+test "rewriteRegisters: no vregs after regalloc" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    var func = try Function.init(testing.allocator, "rewrite_regs", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const v0 = try builder.iconst(ir.I64, 1);
+    const v1 = try builder.iconst(ir.I64, 2);
+    const v2 = try builder.iadd(ir.I64, v0, v1);
+    const ret_data = ir.InstructionData{ .unary = .{ .opcode = .@"return", .arg = v2 } };
+    const ret_inst = try func.dfg.makeInst(ret_data);
+    try func.layout.appendInst(ret_inst, block);
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+    try allocateRegisters(&ctx, &target);
+    try rewriteRegisters(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    const OperandCollector = a64_inst.OperandCollector;
+
+    for (lowered.vcode.insns.items) |inst| {
+        var collector = OperandCollector.init(testing.allocator);
+        defer collector.deinit();
+        try inst.getOperands(&collector);
+
+        for (collector.uses.items) |use_reg| {
+            try testing.expect(use_reg.toVReg() == null);
+        }
+        for (collector.defs.items) |def_reg| {
+            try testing.expect(def_reg.toReg().toVReg() == null);
+        }
+    }
 }
 
 // Comprehensive IRBuilder tests
