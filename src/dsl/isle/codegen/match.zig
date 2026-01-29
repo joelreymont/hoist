@@ -19,6 +19,8 @@ pub const MatchCompiler = struct {
     termenv: *const sema.TermEnv,
     /// Allocator for temporary data structures.
     allocator: Allocator,
+    /// Unique instance counter for impure constructors.
+    next_impure_instance: u32,
 
     const Self = @This();
 
@@ -31,6 +33,7 @@ pub const MatchCompiler = struct {
             .typeenv = typeenv,
             .termenv = termenv,
             .allocator = allocator,
+            .next_impure_instance = 1,
         };
     }
 
@@ -59,6 +62,7 @@ pub const MatchCompiler = struct {
         var rule = trie.Rule.init(self.allocator, sem_rule.pos);
         errdefer rule.deinit();
 
+        self.next_impure_instance = 1;
         rule.prio = sem_rule.prio;
 
         // Create a temporary ruleset for interning bindings
@@ -403,11 +407,16 @@ pub const MatchCompiler = struct {
                     else => false,
                 };
 
+                const params = try arg_bindings.toOwnedSlice(self.allocator);
                 const binding = trie.Binding{
                     .constructor = .{
                         .term = t.term_id,
-                        .parameters = try arg_bindings.toOwnedSlice(self.allocator),
-                        .instance = if (is_pure) 0 else 1,
+                        .parameters = params,
+                        .instance = if (is_pure) 0 else blk: {
+                            const instance = self.next_impure_instance;
+                            self.next_impure_instance += 1;
+                            break :blk instance;
+                        },
                     },
                 };
                 return try ruleset.internBinding(binding);
@@ -919,4 +928,53 @@ test "MatchCompiler: wildcard pattern" {
 
     // Wildcard should have no constraints
     try testing.expectEqual(@as(usize, 0), rule.totalConstraints());
+}
+
+test "MatchCompiler: impure constructor instances are unique" {
+    var typeenv = sema.TypeEnv.init(testing.allocator);
+    defer typeenv.deinit();
+
+    var termenv = sema.TermEnv.init(testing.allocator);
+    defer termenv.deinit();
+
+    const i32_sym = try typeenv.internSym("i32");
+    const i32_ty = try typeenv.addType(.{ .primitive = .{
+        .id = sema.TypeId.new(0),
+        .name = i32_sym,
+        .pos = sema.Pos.new(0, 0),
+    } });
+
+    const term_sym = try typeenv.internSym("impure_term");
+    const arg_tys = try testing.allocator.alloc(sema.TypeId, 0);
+    defer testing.allocator.free(arg_tys);
+
+    const term = sema.Term{
+        .name = term_sym,
+        .id = sema.TermId.new(0),
+        .kind = .{ .decl = .{
+            .arg_tys = arg_tys,
+            .ret_ty = i32_ty,
+            .pure = false,
+            .partial = false,
+        } },
+        .pos = sema.Pos.new(0, 0),
+    };
+    _ = try termenv.addTerm(term);
+
+    var compiler = MatchCompiler.init(testing.allocator, &typeenv, &termenv);
+    compiler.next_impure_instance = 1;
+
+    var ruleset = trie.RuleSet.init(testing.allocator);
+    defer ruleset.deinit();
+
+    const expr = sema.Expr{ .term = .{
+        .term_id = sema.TermId.new(0),
+        .args = &.{},
+        .ty = i32_ty,
+        .pos = sema.Pos.new(0, 0),
+    } };
+
+    const id1 = try compiler.compileExpr(&ruleset, expr);
+    const id2 = try compiler.compileExpr(&ruleset, expr);
+    try testing.expect(!std.meta.eql(id1, id2));
 }
