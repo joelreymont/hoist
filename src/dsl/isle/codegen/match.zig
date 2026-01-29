@@ -112,14 +112,6 @@ pub const MatchCompiler = struct {
                         // 2. Add constraint that it matches this constructor
                         // 3. Recursively compile argument patterns
 
-                        var arg_bindings = std.ArrayList(trie.BindingId){};
-                        defer arg_bindings.deinit(self.allocator);
-
-                        for (t.args) |arg_pat| {
-                            const arg_binding = try self.compilePattern(ruleset, rule, arg_pat);
-                            try arg_bindings.append(self.allocator, arg_binding);
-                        }
-
                         // The source binding is the value being matched
                         const source = trie.Binding{
                             .argument = .{ .index = trie.TupleIndex.new(0) },
@@ -141,6 +133,19 @@ pub const MatchCompiler = struct {
                                     },
                                 };
                                 try rule.setConstraint(source_id, constraint);
+                                if (t.args.len != field_count) return error.ConflictingConstraints;
+
+                                for (t.args, 0..) |arg_pat, i| {
+                                    const field_binding = trie.Binding{
+                                        .match_variant = .{
+                                            .source = source_id,
+                                            .variant = vid,
+                                            .field = trie.TupleIndex.new(@intCast(i)),
+                                        },
+                                    };
+                                    const field_id = try ruleset.internBinding(field_binding);
+                                    _ = try self.compilePatternWithSource(ruleset, rule, arg_pat, field_id);
+                                }
                             }
                         }
 
@@ -305,9 +310,21 @@ pub const MatchCompiler = struct {
                                     },
                                 };
                                 try rule.setConstraint(source_id, constraint);
+                                if (t.args.len != field_count) return error.ConflictingConstraints;
+
+                                for (t.args, 0..) |arg_pat, i| {
+                                    const field_binding = trie.Binding{
+                                        .match_variant = .{
+                                            .source = source_id,
+                                            .variant = vid,
+                                            .field = trie.TupleIndex.new(@intCast(i)),
+                                        },
+                                    };
+                                    const field_id = try ruleset.internBinding(field_binding);
+                                    _ = try self.compilePatternWithSource(ruleset, rule, arg_pat, field_id);
+                                }
                             }
                         }
-                        // TODO: Compile field patterns recursively
                         return source_id;
                     },
                     .extractor => {
@@ -593,6 +610,130 @@ test "MatchCompiler: simple constant pattern" {
 
     // Verify the rule has a constraint
     try testing.expect(rule.totalConstraints() > 0);
+}
+
+test "MatchCompiler: variant field patterns" {
+    var typeenv = sema.TypeEnv.init(testing.allocator);
+    defer typeenv.deinit();
+
+    var termenv = sema.TermEnv.init(testing.allocator);
+    defer termenv.deinit();
+
+    var compiler = MatchCompiler.init(testing.allocator, &typeenv, &termenv);
+
+    const i32_sym = try typeenv.internSym("i32");
+    const i32_ty = try typeenv.addType(.{ .primitive = .{
+        .id = sema.TypeId.new(0),
+        .name = i32_sym,
+        .pos = sema.Pos.new(0, 0),
+    } });
+
+    const pair_sym = try typeenv.internSym("Pair");
+    const field_a = try typeenv.internSym("a");
+    const field_b = try typeenv.internSym("b");
+
+    const fields = try testing.allocator.dupe(sema.Field, &[_]sema.Field{
+        .{ .name = field_a, .ty = i32_ty },
+        .{ .name = field_b, .ty = i32_ty },
+    });
+    defer testing.allocator.free(fields);
+
+    const variants = try testing.allocator.dupe(sema.Variant, &[_]sema.Variant{
+        .{ .name = pair_sym, .fields = fields },
+    });
+    defer testing.allocator.free(variants);
+
+    const enum_ty = try typeenv.addType(.{ .enum_type = .{
+        .name = pair_sym,
+        .id = sema.TypeId.new(1),
+        .is_extern = false,
+        .variants = variants,
+        .pos = sema.Pos.new(0, 0),
+    } });
+
+    const term = sema.Term{
+        .name = pair_sym,
+        .id = sema.TermId.new(0),
+        .kind = .{ .decl = .{
+            .arg_tys = @constCast(&[_]sema.TypeId{ i32_ty, i32_ty }),
+            .ret_ty = enum_ty,
+            .pure = true,
+        } },
+        .pos = sema.Pos.new(0, 0),
+    };
+    const term_id = try termenv.addTerm(term);
+
+    const pattern = sema.Pattern{
+        .term = .{
+            .term_id = term_id,
+            .args = @constCast(&[_]sema.Pattern{
+                .{ .const_int = .{ .val = 1, .ty = i32_ty, .pos = sema.Pos.new(0, 0) } },
+                .{ .const_int = .{ .val = 2, .ty = i32_ty, .pos = sema.Pos.new(0, 0) } },
+            }),
+            .ty = enum_ty,
+            .pos = sema.Pos.new(0, 0),
+        },
+    };
+
+    var ruleset = trie.RuleSet.init(testing.allocator);
+    defer ruleset.deinit();
+
+    var rule = trie.Rule.init(testing.allocator, sema.Pos.new(0, 0));
+    defer rule.deinit();
+
+    const source_id = try compiler.compilePattern(&ruleset, &rule, pattern);
+    const variant_id = sema.VariantId.new(enum_ty, 0);
+
+    if (rule.getConstraint(source_id)) |source_constraint| {
+        switch (source_constraint) {
+            .variant => |v| {
+                try testing.expectEqual(variant_id.variant_index, v.variant.variant_index);
+                try testing.expectEqual(@intFromEnum(enum_ty), @intFromEnum(v.variant.type_id));
+                try testing.expectEqual(@as(usize, 2), v.field_count.value());
+            },
+            else => try testing.expect(false),
+        }
+    } else {
+        try testing.expect(false);
+    }
+
+    const field0_id = ruleset.findBinding(&.{
+        .match_variant = .{
+            .source = source_id,
+            .variant = variant_id,
+            .field = trie.TupleIndex.new(0),
+        },
+    }) orelse {
+        try testing.expect(false);
+        return;
+    };
+    const field1_id = ruleset.findBinding(&.{
+        .match_variant = .{
+            .source = source_id,
+            .variant = variant_id,
+            .field = trie.TupleIndex.new(1),
+        },
+    }) orelse {
+        try testing.expect(false);
+        return;
+    };
+
+    if (rule.getConstraint(field0_id)) |field0_constraint| {
+        switch (field0_constraint) {
+            .const_int => |c| try testing.expectEqual(@as(i128, 1), c.val),
+            else => try testing.expect(false),
+        }
+    } else {
+        try testing.expect(false);
+    }
+    if (rule.getConstraint(field1_id)) |field1_constraint| {
+        switch (field1_constraint) {
+            .const_int => |c| try testing.expectEqual(@as(i128, 2), c.val),
+            else => try testing.expect(false),
+        }
+    } else {
+        try testing.expect(false);
+    }
 }
 
 test "MatchCompiler: build decision tree" {
