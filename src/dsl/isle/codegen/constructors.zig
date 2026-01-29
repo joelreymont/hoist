@@ -292,11 +292,27 @@ pub const ConstructorGen = struct {
                     else => try writer.writeAll("undefined"),
                 }
             },
-            .match_variant => |m| try writer.print("v{d}.{s}[{d}]", .{
-                m.source.index(),
-                "fields", // TODO: Get actual field name
-                m.field.value(),
-            }),
+            .match_variant => |m| {
+                const ty = self.typeenv.getType(m.variant.type_id);
+                if (ty == .enum_type) {
+                    const variant = ty.enum_type.variants[m.variant.variant_index];
+                    if (m.field.value() < variant.fields.len) {
+                        const field = variant.fields[m.field.value()];
+                        try writer.print(
+                            "v{d}.{s}.{s}",
+                            .{
+                                m.source.index(),
+                                self.typeenv.symName(variant.name),
+                                self.typeenv.symName(field.name),
+                            },
+                        );
+                    } else {
+                        try writer.writeAll("undefined");
+                    }
+                } else {
+                    try writer.writeAll("undefined");
+                }
+            },
             .make_some => |s| try writer.print(".{{ .some = v{d} }}", .{s.inner.index()}),
             .match_some => |m| try writer.print("v{d}.some", .{m.source.index()}),
             .match_tuple => |t| try writer.print("v{d}[{d}]", .{ t.source.index(), t.field.value() }),
@@ -649,4 +665,57 @@ test "ConstructorGen: constructor body generation" {
     try testing.expect(std.mem.indexOf(u8, code, "ctx: *Context") != null);
     try testing.expect(std.mem.indexOf(u8, code, "arg0: i32") != null);
     try testing.expect(std.mem.indexOf(u8, code, "?i32") != null);
+}
+
+test "ConstructorGen: match_variant field access" {
+    var typeenv = sema.TypeEnv.init(testing.allocator);
+    defer typeenv.deinit();
+
+    var termenv = sema.TermEnv.init(testing.allocator);
+    defer termenv.deinit();
+
+    const i32_sym = try typeenv.internSym("i32");
+    const i32_ty = try typeenv.addType(.{ .primitive = .{
+        .id = sema.TypeId.new(0),
+        .name = i32_sym,
+        .pos = sema.Pos.new(0, 0),
+    } });
+
+    const variant_sym = try typeenv.internSym("Pair");
+    const field_a = try typeenv.internSym("a");
+    const field_b = try typeenv.internSym("b");
+
+    const fields = try testing.allocator.dupe(sema.Field, &[_]sema.Field{
+        .{ .name = field_a, .ty = i32_ty },
+        .{ .name = field_b, .ty = i32_ty },
+    });
+    defer testing.allocator.free(fields);
+
+    const variants = try testing.allocator.dupe(sema.Variant, &[_]sema.Variant{
+        .{ .name = variant_sym, .fields = fields },
+    });
+    defer testing.allocator.free(variants);
+
+    const enum_ty = try typeenv.addType(.{ .enum_type = .{
+        .name = variant_sym,
+        .id = sema.TypeId.new(1),
+        .is_extern = false,
+        .variants = variants,
+        .pos = sema.Pos.new(0, 0),
+    } });
+
+    var gen = try ConstructorGen.init(testing.allocator, &typeenv, &termenv);
+    defer gen.deinit();
+
+    const binding = trie.Binding{
+        .match_variant = .{
+            .source = trie.BindingId.new(0),
+            .variant = sema.VariantId.new(enum_ty, 0),
+            .field = trie.TupleIndex.new(1),
+        },
+    };
+
+    try gen.emitBinding(trie.BindingId.new(1), &binding);
+
+    try testing.expect(std.mem.indexOf(u8, gen.output.items, "v0.Pair.b") != null);
 }
