@@ -1,5 +1,9 @@
 pub const context = @import("context.zig");
 pub const interpreter = @import("interpreter/interpreter.zig");
+pub const jit = struct {
+    pub const memory = @import("jit/memory.zig");
+    pub const module = @import("jit/module.zig");
+};
 
 pub const target = struct {
     pub const Target = @import("target/target.zig").Target;
