@@ -639,7 +639,7 @@ fn insertSpillScratch(
     vreg_origins: *const std.AutoHashMap(reg_mod.VReg, VRegOrigin),
     domtree: *const ir.DominatorTree,
 ) CodegenError!void {
-    _ = domtree; // Will be used for reload hoisting
+    _ = domtree; // TODO: use for cross-block reload hoisting
     const OperandCollector = a64_inst.OperandCollector;
 
     // First pass: collect spilled vreg uses per block
@@ -648,6 +648,15 @@ fn insertSpillScratch(
         var it = block_spill_uses.valueIterator();
         while (it.next()) |v| v.deinit();
         block_spill_uses.deinit();
+    }
+
+    // Also track which blocks use each spilled vreg (for hoisting analysis)
+    const BlockList = std.ArrayListUnmanaged(u32);
+    var vreg_use_blocks = std.AutoHashMap(reg_mod.VReg, BlockList).init(allocator);
+    defer {
+        var it = vreg_use_blocks.valueIterator();
+        while (it.next()) |v| v.deinit(allocator);
+        vreg_use_blocks.deinit();
     }
 
     for (vcode.blocks.items, 0..) |old_block, block_idx| {
@@ -663,6 +672,13 @@ fn insertSpillScratch(
                 const vreg = use_reg.toVReg() orelse continue;
                 if (result.getSpillSlot(vreg) != null) {
                     try block_uses.put(vreg, {});
+
+                    // Track block -> vreg mapping for hoisting
+                    const gop = try vreg_use_blocks.getOrPut(vreg);
+                    if (!gop.found_existing) {
+                        gop.value_ptr.* = .{};
+                    }
+                    try gop.value_ptr.append(allocator, @intCast(block_idx));
                 }
             }
         }
@@ -673,6 +689,11 @@ fn insertSpillScratch(
             block_uses.deinit();
         }
     }
+
+    // vreg_use_blocks now contains per-vreg block usage info
+    // This can be used for hoisting analysis: vregs used only in one block
+    // are candidates for block-entry reload hoisting.
+    // TODO: Emit hoisted reloads (requires persisting pregs across instructions)
 
     // Second pass: rewrite with spill/reload
     var new_insns = std.ArrayList(a64_inst.Inst){};

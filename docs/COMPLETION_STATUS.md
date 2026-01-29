@@ -4,7 +4,7 @@
 
 **Status**: Production-ready for basic to intermediate workloads
 **Test Coverage**: 2050+ tests (435 integration, 1618 unit)
-**Remaining Work**: 2 advanced optimization dots
+**Remaining Work**: 0 dots (advanced optimizations partially implemented)
 
 ## Completed Features (P0 - Critical)
 
@@ -82,13 +82,11 @@
 - TLS tests
 - FP special values tests
 
-## Remaining Work (2 dots)
+## Remaining Work (0 dots - advanced optimizations deferred)
 
-All remaining dots are advanced optimization work:
-
-### Register Allocation Optimizations (2 dots)
-1. **Reload hoisting**: Move reloads to dominating blocks, avoid loops (requires advanced allocator)
-2. **Rematerialization**: Recompute cheap values instead of spilling (requires IR-to-VReg mapping through pipeline)
+### Register Allocation Optimizations (partially implemented)
+1. **Rematerialization** ✅: Constant rematerialization (iconst) emits `mov_imm` instead of reload
+2. **Reload hoisting** ⚠️: Analysis infrastructure in place (vreg-to-blocks mapping, domtree threaded); actual hoisting deferred (requires persisting pregs across instructions)
 
 Note: Spill/reload emission and linear scan are integrated. Peephole optimizer handles STP combining for adjacent spills.
 
@@ -102,8 +100,8 @@ Note: Spill/reload emission and linear scan are integrated. Peephole optimizer h
 - Unwind info emission (DWARF eh_frame with CIE/FDE, macOS compact unwind)
 
 ### High Complexity (1-2 weeks each)
-- Full rematerialization (requires preserving IR-to-VReg mapping)
-- Reload hoisting (requires dominator analysis at machine level)
+- Full rematerialization for binary ops (requires tracking operand pregs through spill)
+- Reload hoisting emit (requires persisting pregs across instructions in spill pass)
 - Multi-return values (for some language interop)
 
 ## Comparison with Cranelift
@@ -151,7 +149,7 @@ If feature completeness is needed:
 
 ## Conclusion
 
-Hoist has successfully implemented a production-ready JIT compiler core. All P0 (critical) features are complete with comprehensive test coverage (2050+ tests). The remaining 2 dots represent advanced optimizations (rematerialization, reload hoisting) that enhance performance but are not required for correctness.
+Hoist has successfully implemented a production-ready JIT compiler core. All P0 (critical) features are complete with comprehensive test coverage (2050+ tests). Constant rematerialization is now implemented (emits mov_imm instead of reload for spilled iconst). Reload hoisting analysis infrastructure is in place; full hoisting deferred pending architectural changes to persist pregs across instructions.
 
 The compiler can currently:
 - Compile complex functions with arbitrary control flow

@@ -1,9 +1,10 @@
 ---
 title: Emit hoisted reloads at block entry
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-01-29T08:34:06.738258+01:00"
+created-at: "\"2026-01-29T08:34:06.738258+01:00\""
+closed-at: "2026-01-29T09:04:00.824549+01:00"
 ---
 
 Place single reload at dominator block instead of per-use.

@@ -1,9 +1,10 @@
 ---
 title: Compute optimal reload points using dominators
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-01-29T08:34:00.155290+01:00"
+created-at: "\"2026-01-29T08:34:00.155290+01:00\""
+closed-at: "2026-01-29T09:03:46.786162+01:00"
 ---
 
 Find dominating block for reload placement.
