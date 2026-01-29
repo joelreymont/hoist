@@ -920,9 +920,9 @@ test "EGraph merge and congruence" {
     defer eg.deinit();
 
     // Build: x, y, x+1, y+1
-    const x = try eg.add(.iconst, &.{});
-    const y = try eg.add(.iconst, &.{});
-    const one = try eg.add(.iconst, &.{});
+    const x = try eg.addConst(.iconst, Imm64.new(10));
+    const y = try eg.addConst(.iconst, Imm64.new(20));
+    const one = try eg.addConst(.iconst, Imm64.new(1));
     const x_plus_1 = try eg.add(.iadd, &.{ x, one });
     const y_plus_1 = try eg.add(.iadd, &.{ y, one });
 
@@ -941,10 +941,10 @@ test "Extractor basic cost" {
     defer eg.deinit();
 
     // Add instructions with different costs
-    const x = try eg.add(.iconst, &.{}); // cost 1
-    const two = try eg.add(.iconst, &.{}); // cost 1
+    const x = try eg.addConst(.iconst, Imm64.new(7)); // cost 1
+    const two = try eg.addConst(.iconst, Imm64.new(2)); // cost 1
     const x_times_2 = try eg.add(.imul, &.{ x, two }); // cost 1+1+2=4
-    const one = try eg.add(.iconst, &.{}); // cost 1
+    const one = try eg.addConst(.iconst, Imm64.new(1)); // cost 1
     const x_shift_1 = try eg.add(.ishl, &.{ x, one }); // cost 1+1+1=3
 
     // Merge x*2 with x<<1 (shift is cheaper)
@@ -963,8 +963,8 @@ test "Extractor memoization" {
     var eg = EGraph.init(testing.allocator);
     defer eg.deinit();
 
-    const x = try eg.add(.iconst, &.{});
-    const y = try eg.add(.iconst, &.{});
+    const x = try eg.addConst(.iconst, Imm64.new(3));
+    const y = try eg.addConst(.iconst, Imm64.new(4));
     const x_plus_y = try eg.add(.iadd, &.{ x, y });
 
     var extractor = Extractor.init(testing.allocator, &eg);
