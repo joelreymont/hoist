@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 
 const abi_mod = @import("abi.zig");
 const reg_mod = @import("reg.zig");
+const parallel_copy = @import("parallel_copy.zig");
 
 pub const Type = abi_mod.Type;
 pub const CallConv = abi_mod.CallConv;
@@ -133,16 +134,18 @@ pub const ArgForwardingPlan = struct {
     moves: std.ArrayList(ArgMove),
     /// Maximum stack offset used during forwarding.
     max_stack_used: u32,
+    alloc: Allocator,
 
     pub fn init(allocator: Allocator) ArgForwardingPlan {
         return .{
             .moves = std.ArrayList(ArgMove){},
             .max_stack_used = 0,
+            .alloc = allocator,
         };
     }
 
     pub fn deinit(self: *ArgForwardingPlan) void {
-        self.moves.deinit();
+        self.moves.deinit(self.alloc);
     }
 
     /// Argument move operation.
@@ -166,9 +169,10 @@ pub const ArgForwardingPlan = struct {
 /// - Reuses caller's incoming argument space
 pub fn planArgForwarding(
     allocator: Allocator,
-    _: []const ABIArg, // caller_args - reserved for future dependency analysis
+    caller_args: []const ABIArg,
     callee_args: []const ABIArg,
     arg_values: []const Reg,
+    scratch: ?ArgForwardingPlan.ArgLocation,
 ) !ArgForwardingPlan {
     var plan = ArgForwardingPlan.init(allocator);
     errdefer plan.deinit();
@@ -192,22 +196,26 @@ pub fn planArgForwarding(
 
             const ty = getType(slot);
 
-            try plan.moves.append(.{
+            try plan.moves.append(allocator, .{
                 .src = src_loc,
                 .dst = dst_loc,
                 .ty = ty,
             });
 
             // Track stack usage
-            if (dst_loc == .stack) {
-                const stack_end = @as(u32, @intCast(@abs(dst_loc.stack) + @as(i64, ty.bytes())));
-                plan.max_stack_used = @max(plan.max_stack_used, stack_end);
+            switch (dst_loc) {
+                .stack => |offset| {
+                    const stack_end = @as(u32, @intCast(@abs(offset) + @as(i64, ty.bytes())));
+                    plan.max_stack_used = @max(plan.max_stack_used, stack_end);
+                },
+                else => {},
             }
         }
     }
 
-    // TODO: Optimize move ordering to avoid clobbering
-    // This would require dependency analysis and possibly temp registers
+    if (plan.moves.items.len > 0) {
+        try orderArgMoves(allocator, caller_args, callee_args, scratch, &plan);
+    }
 
     return plan;
 }
@@ -216,6 +224,119 @@ fn getType(slot: ABIArgSlot) Type {
     return switch (slot) {
         .reg => |r| r.ty,
         .stack => |s| s.ty,
+    };
+}
+
+fn orderArgMoves(
+    allocator: Allocator,
+    caller_args: []const ABIArg,
+    callee_args: []const ABIArg,
+    scratch: ?ArgForwardingPlan.ArgLocation,
+    plan: *ArgForwardingPlan,
+) !void {
+    const temp_loc = scratch orelse pickStackScratch(caller_args, callee_args, plan.moves.items);
+
+    var pc_moves: std.ArrayList(parallel_copy.Move) = .{};
+    defer pc_moves.deinit(allocator);
+    try pc_moves.ensureTotalCapacity(allocator, plan.moves.items.len);
+
+    for (plan.moves.items, 0..) |move, idx| {
+        pc_moves.appendAssumeCapacity(.{
+            .src = argToLoc(move.src),
+            .dst = argToLoc(move.dst),
+            .origin = idx,
+        });
+    }
+
+    const pc_temp = if (temp_loc) |t| argToLoc(t) else null;
+    var resolved = try parallel_copy.resolve(allocator, pc_moves.items, pc_temp);
+    defer resolved.deinit(allocator);
+
+    var ordered: std.ArrayList(ArgForwardingPlan.ArgMove) = .{};
+    errdefer ordered.deinit(allocator);
+    try ordered.ensureTotalCapacity(allocator, resolved.items.len);
+
+    for (resolved.items) |move| {
+        const base = plan.moves.items[move.origin];
+        ordered.appendAssumeCapacity(.{
+            .src = locToArg(move.src),
+            .dst = locToArg(move.dst),
+            .ty = base.ty,
+        });
+    }
+
+    plan.moves.deinit(allocator);
+    plan.moves = ordered;
+
+    if (temp_loc) |tmp| switch (tmp) {
+        .stack => |offset| {
+            const max_size = maxMoveSize(plan.moves.items);
+            const end = @as(u64, @intCast(offset)) + max_size;
+            if (end > plan.max_stack_used) {
+                plan.max_stack_used = @intCast(end);
+            }
+        },
+        else => {},
+    };
+}
+
+fn maxMoveSize(moves: []const ArgForwardingPlan.ArgMove) u64 {
+    var max_size: u64 = 0;
+    for (moves) |move| {
+        max_size = @max(max_size, @as(u64, @intCast(move.ty.bytes())));
+    }
+    return max_size;
+}
+
+fn pickStackScratch(
+    caller_args: []const ABIArg,
+    callee_args: []const ABIArg,
+    moves: []const ArgForwardingPlan.ArgMove,
+) ?ArgForwardingPlan.ArgLocation {
+    const max_size = maxMoveSize(moves);
+    if (max_size == 0) return null;
+
+    const caller_max = stackExtent(caller_args);
+    const callee_max = stackExtent(callee_args);
+
+    if (caller_max <= callee_max) return null;
+    if (caller_max < 0 or callee_max < 0) return null;
+
+    const aligned = std.mem.alignForward(u64, @intCast(callee_max), 8);
+    const end = aligned + max_size;
+    if (end > @as(u64, @intCast(caller_max))) return null;
+
+    return .{ .stack = @intCast(aligned) };
+}
+
+fn stackExtent(args: []const ABIArg) i64 {
+    var max_end: i64 = 0;
+    for (args) |arg| {
+        for (arg.slots) |slot| {
+            switch (slot) {
+                .stack => |s| {
+                    const size: i64 = @intCast(s.ty.bytes());
+                    const end = s.offset + size;
+                    if (end > max_end) max_end = end;
+                },
+                else => {},
+            }
+        }
+    }
+    return max_end;
+}
+
+fn argToLoc(loc: ArgForwardingPlan.ArgLocation) parallel_copy.Location {
+    return switch (loc) {
+        .reg => |r| .{ .reg = r.index() },
+        .stack => |s| .{ .stack = s },
+    };
+}
+
+fn locToArg(loc: parallel_copy.Location) ArgForwardingPlan.ArgLocation {
+    return switch (loc) {
+        .reg => |r| .{ .reg = PReg{ .bits = r } },
+        .stack => |s| .{ .stack = s },
     };
 }
 
@@ -342,7 +463,7 @@ test "ArgForwardingPlan basic" {
         .ty = .i64,
     };
 
-    try plan.moves.append(move);
+    try plan.moves.append(plan.alloc, move);
     try testing.expectEqual(@as(usize, 1), plan.moves.items.len);
     try testing.expectEqual(move.src.reg, plan.moves.items[0].src.reg);
 }
@@ -368,6 +489,7 @@ test "planArgForwarding simple" {
         &[_]ABIArg{}, // caller args (not used in simple case)
         &callee_args,
         &src_regs,
+        null,
     );
     defer {
         var mut_plan = plan;
@@ -376,4 +498,46 @@ test "planArgForwarding simple" {
 
     try testing.expectEqual(@as(usize, 1), plan.moves.items.len);
     try testing.expectEqual(PReg.new(.int, 0), plan.moves.items[0].dst.reg);
+}
+
+test "planArgForwarding cycle uses scratch" {
+    const allocator = testing.allocator;
+
+    var callee_slots0 = [_]ABIArgSlot{.{
+        .reg = .{
+            .preg = PReg.new(.int, 0),
+            .ty = .i64,
+            .extension = .none,
+        },
+    }};
+    var callee_slots1 = [_]ABIArgSlot{.{
+        .reg = .{
+            .preg = PReg.new(.int, 1),
+            .ty = .i64,
+            .extension = .none,
+        },
+    }};
+    var callee_args = [_]ABIArg{ .{ .slots = &callee_slots0 }, .{ .slots = &callee_slots1 } };
+
+    var src_regs = [_]Reg{
+        Reg.fromPReg(PReg.new(.int, 1)),
+        Reg.fromPReg(PReg.new(.int, 0)),
+    };
+
+    const plan = try planArgForwarding(
+        allocator,
+        &[_]ABIArg{},
+        &callee_args,
+        &src_regs,
+        .{ .reg = PReg.new(.int, 2) },
+    );
+    defer {
+        var mut_plan = plan;
+        mut_plan.deinit();
+    }
+
+    try testing.expectEqual(@as(usize, 3), plan.moves.items.len);
+    try testing.expectEqual(PReg.new(.int, 2), plan.moves.items[0].dst.reg);
+    try testing.expectEqual(PReg.new(.int, 0), plan.moves.items[1].dst.reg);
+    try testing.expectEqual(PReg.new(.int, 1), plan.moves.items[2].dst.reg);
 }

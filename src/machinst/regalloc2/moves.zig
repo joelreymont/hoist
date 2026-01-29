@@ -4,6 +4,7 @@ const Allocation = types.Allocation;
 const PhysReg = types.PhysReg;
 const VReg = types.VReg;
 const SpillSlot = types.SpillSlot;
+const parallel_copy = @import("../parallel_copy.zig");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
@@ -68,68 +69,56 @@ pub const MoveInserter = struct {
     }
 
     /// Resolve parallel copy by ordering moves to avoid conflicts.
-    pub fn resolveParallelCopy(allocator: Allocator, moves: []const Move) !std.ArrayList(Move) {
+    pub fn resolveParallelCopy(
+        allocator: Allocator,
+        moves: []const Move,
+        temp: ?Allocation,
+    ) parallel_copy.ResolveError!std.ArrayList(Move) {
+        var pc_moves: std.ArrayList(parallel_copy.Move) = .{};
+        defer pc_moves.deinit(allocator);
+        try pc_moves.ensureTotalCapacity(allocator, moves.len);
+
+        for (moves, 0..) |move, idx| {
+            const src = allocToLoc(move.src);
+            const dst = allocToLoc(move.dst);
+            pc_moves.appendAssumeCapacity(.{ .src = src, .dst = dst, .origin = idx });
+        }
+
+        const pc_temp = if (temp) |t| allocToLoc(t) else null;
+        var resolved = try parallel_copy.resolve(allocator, pc_moves.items, pc_temp);
+        defer resolved.deinit(allocator);
+
         var result: std.ArrayList(Move) = .{};
         errdefer result.deinit(allocator);
+        try result.ensureTotalCapacity(allocator, resolved.items.len);
 
-        if (moves.len == 0) return result;
-
-        var ready: std.ArrayList(Move) = .{};
-        defer ready.deinit(allocator);
-
-        var pending: std.ArrayList(Move) = .{};
-        defer pending.deinit(allocator);
-
-        var blocked = std.AutoHashMap(u32, void).init(allocator);
-        defer blocked.deinit();
-
-        // Build blocked set (destinations that are sources).
-        for (moves) |move| {
-            if (move.src.isReg()) {
-                try blocked.put(move.src.reg.index, {});
-            }
-        }
-
-        // Partition into ready and pending.
-        for (moves) |move| {
-            const dst_index = if (move.dst.isReg()) move.dst.reg.index else continue;
-            if (blocked.contains(dst_index)) {
-                try pending.append(allocator, move);
-            } else {
-                try ready.append(allocator, move);
-            }
-        }
-
-        // Emit ready moves.
-        while (ready.pop()) |move| {
-            try result.append(allocator, move);
-
-            // Unblock any pending moves.
-            var i: usize = 0;
-            while (i < pending.items.len) {
-                const pend = pending.items[i];
-                const dst_index = if (pend.dst.isReg()) pend.dst.reg.index else {
-                    i += 1;
-                    continue;
-                };
-                if (move.src.isReg() and move.src.reg.index == dst_index) {
-                    const unblocked = pending.swapRemove(i);
-                    try ready.append(allocator, unblocked);
-                } else {
-                    i += 1;
-                }
-            }
-        }
-
-        // Handle cycles by breaking with a temp register.
-        while (pending.items.len > 0) {
-            const move = pending.swapRemove(0);
-            try result.append(allocator, move);
+        for (resolved.items) |move| {
+            const base = moves[move.origin];
+            result.appendAssumeCapacity(.{
+                .src = locToAlloc(move.src),
+                .dst = locToAlloc(move.dst),
+                .vreg = base.vreg,
+            });
         }
 
         return result;
     }
 };
+
+fn allocToLoc(alloc: Allocation) parallel_copy.Location {
+    return switch (alloc) {
+        .reg => |r| .{ .reg = r.index },
+        .stack => |s| .{ .stack = @intCast(s.index) },
+        .none => unreachable,
+    };
+}
+
+fn locToAlloc(loc: parallel_copy.Location) Allocation {
+    return switch (loc) {
+        .reg => |r| .{ .reg = PhysReg.new(r) },
+        .stack => |s| .{ .stack = SpillSlot.new(@intCast(s)) },
+    };
+}
 
 test "MoveInserter addRegMove" {
     const allocator = testing.allocator;
@@ -200,7 +189,7 @@ test "resolveParallelCopy simple" {
         ),
     };
 
-    var result = try MoveInserter.resolveParallelCopy(allocator, &moves);
+    var result = try MoveInserter.resolveParallelCopy(allocator, &moves, null);
     defer result.deinit(allocator);
 
     try testing.expectEqual(@as(usize, 2), result.items.len);
@@ -223,11 +212,35 @@ test "resolveParallelCopy with dependency" {
         ),
     };
 
-    var result = try MoveInserter.resolveParallelCopy(allocator, &moves);
+    var result = try MoveInserter.resolveParallelCopy(allocator, &moves, null);
     defer result.deinit(allocator);
 
     try testing.expectEqual(@as(usize, 2), result.items.len);
     // r2 -> r3 should come first.
     try testing.expectEqual(@as(u8, 2), result.items[0].src.reg.index);
+    try testing.expectEqual(@as(u8, 3), result.items[0].dst.reg.index);
+}
+
+test "resolveParallelCopy cycle with temp" {
+    const allocator = testing.allocator;
+
+    const moves = [_]Move{
+        Move.init(
+            Allocation{ .reg = PhysReg.new(1) },
+            Allocation{ .reg = PhysReg.new(2) },
+            VReg.new(10),
+        ),
+        Move.init(
+            Allocation{ .reg = PhysReg.new(2) },
+            Allocation{ .reg = PhysReg.new(1) },
+            VReg.new(11),
+        ),
+    };
+
+    var result = try MoveInserter.resolveParallelCopy(allocator, &moves, Allocation{ .reg = PhysReg.new(3) });
+    defer result.deinit(allocator);
+
+    try testing.expectEqual(@as(usize, 3), result.items.len);
+    try testing.expectEqual(@as(u8, 1), result.items[0].src.reg.index);
     try testing.expectEqual(@as(u8, 3), result.items[0].dst.reg.index);
 }
