@@ -1106,8 +1106,8 @@ test "JIT module: function allocations are disjoint" {
     try jit.defineFunction(id2, &bytes2, &.{});
     try jit.finalize();
 
-    const p1 = jit.getFn(id1, [*]const u8);
-    const p2 = jit.getFn(id2, [*]const u8);
+    const p1 = try jit.getFn(id1, [*]const u8);
+    const p2 = try jit.getFn(id2, [*]const u8);
 
     const s1 = @intFromPtr(p1);
     const e1 = s1 + bytes1.len;
@@ -1154,8 +1154,8 @@ test "JIT module: data allocations are disjoint" {
     try jit.defineData(id2, &desc2);
     try jit.finalize();
 
-    const p1 = jit.getData(id1, [*]const u8);
-    const p2 = jit.getData(id2, [*]const u8);
+    const p1 = try jit.getData(id1, [*]const u8);
+    const p2 = try jit.getData(id2, [*]const u8);
 
     const s1 = @intFromPtr(p1);
     const e1 = s1 + bytes1.len;
@@ -1165,4 +1165,27 @@ test "JIT module: data allocations are disjoint" {
     try testing.expect(e1 <= s2 or e2 <= s1);
     try testing.expectEqualSlices(u8, &bytes1, p1[0..bytes1.len]);
     try testing.expectEqualSlices(u8, &bytes2, p2[0..bytes2.len]);
+}
+
+test "JIT module: uninitialized data rejected" {
+    if (builtin.os.tag != .linux and builtin.os.tag != .macos) {
+        return error.SkipZigTest;
+    }
+
+    const alloc = testing.allocator;
+    const jit_mod = @import("hoist").jit.module;
+    const module_mod = @import("hoist").module;
+    const DataDesc = module_mod.DataDesc;
+
+    var jit = jit_mod.JitModule.init(alloc) catch |err| {
+        if (err == error.UnsupportedPlatform) return error.SkipZigTest;
+        return err;
+    };
+    defer jit.deinit();
+
+    const id = try jit.declareData("jit_uninit", .@"export", true, false);
+    var desc = DataDesc.new(alloc);
+    defer desc.deinit(alloc);
+
+    try testing.expectError(error.UninitializedData, jit.defineData(id, &desc));
 }

@@ -32,10 +32,10 @@ const CompiledBlob = struct {
         self.relocs.deinit(alloc);
     }
 
-    fn performRelocs(self: *const CompiledBlob, ctx: anytype) void {
+    fn performRelocs(self: *const CompiledBlob, ctx: anytype) !void {
         for (self.relocs.items) |reloc| {
             const at = self.ptr + reloc.offset;
-            const base = ctx.getAddr(reloc.target);
+            const base = try ctx.getAddr(reloc.target);
             const what = base + @as(usize, @intCast(reloc.addend));
 
             switch (reloc.kind) {
@@ -221,7 +221,7 @@ pub const JitModule = struct {
         var blob = CompiledBlob.init();
         const alignment = desc.@"align" orelse 8;
         switch (desc.init) {
-            .uninit => @panic("uninit data"),
+            .uninit => return error.UninitializedData,
             .zeros => |sz| {
                 blob.size = sz;
                 const dest = try self.data_mem.alloc(sz, alignment);
@@ -266,17 +266,19 @@ pub const JitModule = struct {
         const RelocCtx = struct {
             s: *JitModule,
 
-            fn getAddr(ctx: @This(), target: RelocTarget) usize {
+            fn getAddr(ctx: @This(), target: RelocTarget) !usize {
                 return switch (target) {
                     .func => |fid| blk: {
-                        const b = ctx.s.funcs.items[fid.idx] orelse unreachable;
+                        if (fid.idx >= ctx.s.funcs.items.len) return error.MissingFunction;
+                        const b = ctx.s.funcs.items[fid.idx] orelse return error.MissingFunction;
                         break :blk @intFromPtr(b.ptr);
                     },
                     .data => |did| blk: {
-                        const b = ctx.s.data.items[did.idx] orelse unreachable;
+                        if (did.idx >= ctx.s.data.items.len) return error.MissingData;
+                        const b = ctx.s.data.items[did.idx] orelse return error.MissingData;
                         break :blk @intFromPtr(b.ptr);
                     },
-                    .symbol => |sym| ctx.s.syms.get(sym) orelse unreachable,
+                    .symbol => |sym| ctx.s.syms.get(sym) orelse return error.MissingSymbol,
                 };
             }
         };
@@ -284,7 +286,7 @@ pub const JitModule = struct {
 
         for (self.to_finalize.items) |id| {
             if (self.funcs.items[id.idx]) |*blob| {
-                blob.performRelocs(ctx);
+                try blob.performRelocs(ctx);
                 self.code_mem.flushCacheRange(blob.ptr, blob.size);
             }
         }
@@ -292,7 +294,7 @@ pub const JitModule = struct {
 
         for (self.data_to_finalize.items) |id| {
             if (self.data.items[id.idx]) |*blob| {
-                blob.performRelocs(ctx);
+                try blob.performRelocs(ctx);
             }
         }
         self.data_to_finalize.clearRetainingCapacity();
@@ -301,13 +303,15 @@ pub const JitModule = struct {
         self.finalized = true;
     }
 
-    pub fn getFn(self: *const JitModule, id: FuncId, comptime T: type) T {
-        const blob = self.funcs.items[id.idx] orelse unreachable;
+    pub fn getFn(self: *const JitModule, id: FuncId, comptime T: type) !T {
+        if (id.idx >= self.funcs.items.len) return error.MissingFunction;
+        const blob = self.funcs.items[id.idx] orelse return error.MissingFunction;
         return @ptrCast(@alignCast(blob.ptr));
     }
 
-    pub fn getData(self: *const JitModule, id: DataId, comptime T: type) T {
-        const blob = self.data.items[id.idx] orelse unreachable;
+    pub fn getData(self: *const JitModule, id: DataId, comptime T: type) !T {
+        if (id.idx >= self.data.items.len) return error.MissingData;
+        const blob = self.data.items[id.idx] orelse return error.MissingData;
         return @ptrCast(@alignCast(blob.ptr));
     }
 
