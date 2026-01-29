@@ -4837,6 +4837,12 @@ pub fn u128_from_immediate(actual: u128) ?u128 {
     return actual;
 }
 
+test "u128_from_immediate returns value" {
+    const testing = std.testing;
+    const value: u128 = 0x1e1c_1a18_1614_1210_0e0c_0a08_0604_0200;
+    try testing.expectEqual(value, u128_from_immediate(value).?);
+}
+
 /// Helper: Check if bytes form a valid lane index
 fn shuffleImmAsLeLaneIdx(size: u8, bytes: []const u8) ?u8 {
     if (bytes.len != size) return null;
