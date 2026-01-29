@@ -40,6 +40,7 @@ const ir = struct {
     pub const Imm64 = @import("../ir/immediates.zig").Imm64;
 };
 const MachBuffer = @import("../machinst/buffer.zig").MachBuffer;
+const Opcode = @import("../ir/opcodes.zig").Opcode;
 const Reloc = @import("../machinst/buffer.zig").Reloc;
 const machinst_abi = @import("../machinst/abi.zig");
 const unwind = @import("../backends/aarch64/unwind.zig");
@@ -125,6 +126,34 @@ pub const CodegenError = error{
 
 /// Compilation result type.
 pub const CompileResult = CodegenError!*const CompiledCode;
+
+/// Origin info for a vreg - used for rematerialization.
+/// Tracks what IR instruction produced this vreg so we can
+/// recompute cheap values instead of reloading from stack.
+pub const VRegOrigin = struct {
+    opcode: Opcode,
+    /// Immediate value for constants (iconst, f32const, f64const).
+    imm: ?i64,
+    /// Source vregs for binary ops (iadd, isub, band, bor, bxor).
+    operands: [2]?reg_mod.VReg,
+
+    pub fn forConst(op: Opcode, value: i64) VRegOrigin {
+        return .{ .opcode = op, .imm = value, .operands = .{ null, null } };
+    }
+
+    pub fn forBinop(op: Opcode, lhs: reg_mod.VReg, rhs: reg_mod.VReg) VRegOrigin {
+        return .{ .opcode = op, .imm = null, .operands = .{ lhs, rhs } };
+    }
+
+    pub fn isCheap(self: VRegOrigin) bool {
+        return switch (self.opcode) {
+            .iconst, .f32const, .f64const => true,
+            .iadd, .isub, .band, .bor, .bxor => true,
+            .ishl, .ushr, .sshr => true,
+            else => false,
+        };
+    }
+};
 
 const scratch_int_regs = [_]reg_mod.PReg{
     reg_mod.PReg.new(.int, 9),
@@ -585,6 +614,7 @@ fn insertSpillScratch(
     vcode: *@import("../machinst/vcode.zig").VCode(a64_inst.Inst),
     result: *linear_scan_mod.RegAllocResult,
     scratch_regs: ScratchRegs,
+    vreg_origins: *const std.AutoHashMap(reg_mod.VReg, VRegOrigin),
 ) CodegenError!void {
     const OperandCollector = a64_inst.OperandCollector;
 
@@ -612,6 +642,21 @@ fn insertSpillScratch(
                 const slot = result.getSpillSlot(vreg) orelse continue;
                 if (scratch_map.get(vreg) == null) {
                     const preg = try mapScratch(&scratch_map, &scratch_state, vreg);
+
+                    // Try rematerialization for cheap constants
+                    if (vreg_origins.get(vreg)) |origin| {
+                        if (origin.opcode == .iconst) {
+                            const dst = reg_mod.WritableReg.fromReg(reg_mod.Reg.fromPReg(preg));
+                            const imm: u64 = @bitCast(origin.imm.?);
+                            try new_insns.append(allocator, .{ .mov_imm = .{
+                                .dst = dst,
+                                .imm = imm,
+                                .size = if (vreg.class() == .int) .size64 else .size32,
+                            } });
+                            continue;
+                        }
+                    }
+
                     try appendSpillLoad(&new_insns, allocator, &scratch_state, vreg.class(), preg, slot.offset);
                 }
             }
@@ -1253,6 +1298,10 @@ fn lowerAArch64(ctx: *Context, _: *const Target) CodegenError!void {
     var builder = VCodeBuilder(Inst).init(ctx.allocator, .forward);
     defer builder.deinit();
 
+    // Track vreg origins for rematerialization
+    var vreg_origins = std.AutoHashMap(reg_mod.VReg, VRegOrigin).init(ctx.allocator);
+    defer vreg_origins.deinit();
+
     // Precompute IR block -> VCode block indices (layout order)
     var block_index_map = std.AutoHashMap(Block, BlockIndex).init(ctx.allocator);
     defer block_index_map.deinit();
@@ -1326,7 +1375,7 @@ fn lowerAArch64(ctx: *Context, _: *const Target) CodegenError!void {
         // Lower each instruction in block
         var inst_iter = ctx.func.layout.blockInsts(block);
         while (inst_iter.next()) |inst| {
-            try lowerInstructionAArch64(ctx, &builder, inst, &block_index_map);
+            try lowerInstructionAArch64(ctx, &builder, inst, &block_index_map, &vreg_origins);
 
             // Check if this was a try_call and emit exception handling branch
             const inst_data_ptr = ctx.func.dfg.insts.get(inst);
@@ -1413,7 +1462,7 @@ fn lowerAArch64(ctx: *Context, _: *const Target) CodegenError!void {
     defer result.deinit();
 
     if (result.vreg_to_spill.count() > 0) {
-        try insertSpillScratch(ctx.allocator, &vcode, &result, pools.scratch);
+        try insertSpillScratch(ctx.allocator, &vcode, &result, pools.scratch, &vreg_origins);
     }
 
     const spill_bytes: u32 = linear_scan.next_spill_offset;
@@ -1694,7 +1743,7 @@ fn emitMovWideImmediate(
 }
 
 /// Lower a single AArch64 instruction.
-fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block_map: anytype) CodegenError!void {
+fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block_map: anytype, vreg_origins: *std.AutoHashMap(reg_mod.VReg, VRegOrigin)) CodegenError!void {
     const Inst = @import("../backends/aarch64/inst.zig").Inst;
     const OperandSize = @import("../backends/aarch64/inst.zig").OperandSize;
 
@@ -1727,6 +1776,9 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
                 const imm_value = data.imm.bits();
                 const value: u64 = @bitCast(imm_value);
                 try emitMovWideImmediate(builder, writable, value, size);
+
+                // Track origin for rematerialization
+                try vreg_origins.put(vreg, VRegOrigin.forConst(.iconst, imm_value));
             } else if (data.opcode == .f32const or data.opcode == .f64const) {
                 // Floating-point constant
                 const vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.float);
@@ -1741,6 +1793,9 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
                     @bitCast(imm_bits)
                 else
                     @floatCast(@as(f32, @bitCast(@as(u32, @intCast(imm_bits & 0xFFFFFFFF)))));
+
+                // Track origin for rematerialization
+                try vreg_origins.put(vreg, VRegOrigin.forConst(data.opcode, imm_bits));
 
                 // Try to encode as FMOV immediate
                 // For now, always use FMOV immediate and let the encoder handle it
@@ -1847,6 +1902,9 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
                         .size = size,
                     },
                 });
+
+                // Track origin for rematerialization
+                try vreg_origins.put(result_vreg, VRegOrigin.forBinop(.iadd, arg0_vreg, arg1_vreg));
             } else if (data.opcode == .isub) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
@@ -1877,6 +1935,9 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
                         .size = size,
                     },
                 });
+
+                // Track origin for rematerialization
+                try vreg_origins.put(result_vreg, VRegOrigin.forBinop(.isub, arg0_vreg, arg1_vreg));
             } else if (data.opcode == .imul) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
@@ -2206,6 +2267,9 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
                         },
                     });
                 }
+
+                // Track origin for rematerialization
+                try vreg_origins.put(result_vreg, VRegOrigin.forBinop(data.opcode, arg0_vreg, arg1_vreg));
             } else if (data.opcode == .band_not or data.opcode == .bor_not or data.opcode == .bxor_not) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
