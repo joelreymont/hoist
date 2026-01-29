@@ -1128,10 +1128,10 @@ fn rebuildInstFromENode(
     builder: *@import("../ir/egraph.zig").EGraphBuilder,
 ) !void {
     // Get operand values by extracting e-classes
-    var operands = try ctx.allocator.alloc(ir.Value, enode.children.len);
+    var operands = try ctx.allocator.alloc(ir.Value, @intCast(enode.child_len));
     defer ctx.allocator.free(operands);
 
-    for (enode.children, 0..) |child_eclass, i| {
+    for (enode.childSlice(), 0..) |child_eclass, i| {
         // Find IR value for this e-class
         const canon_child = builder.eg.uf.find(child_eclass);
         var value_iter = builder.value_map.iterator();
@@ -1148,7 +1148,7 @@ fn rebuildInstFromENode(
     }
 
     // Build new instruction data
-    const new_data: ir.InstructionData = switch (enode.children.len) {
+    const new_data: ir.InstructionData = switch (enode.child_len) {
         0 => .{ .nullary = .{ .opcode = enode.op } },
         1 => .{ .unary = .{ .opcode = enode.op, .arg = operands[0] } },
         2 => .{ .binary = .{ .opcode = enode.op, .args = .{ operands[0], operands[1] } } },

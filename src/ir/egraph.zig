@@ -29,20 +29,41 @@ pub const EClassId = enum(u32) {
 /// E-node: operator applied to e-class IDs.
 /// Unlike AST nodes, children are e-classes not other e-nodes.
 pub const ENode = struct {
+    pub const max_children = 3;
+
     /// Opcode of this operation.
     op: Opcode,
 
     /// E-class IDs of operands (children are e-classes, not e-nodes).
     /// Max 3 operands for ternary ops (select, fma).
-    children: []const EClassId,
+    children: [max_children]EClassId,
+    child_len: u8,
 
     /// Immediate payload for constant nodes (iconst/f32const/f64const).
     imm: ?Imm64,
 
+    pub fn init(op: Opcode, children: []const EClassId, imm: ?Imm64) ENode {
+        std.debug.assert(children.len <= max_children);
+        var node = ENode{
+            .op = op,
+            .children = undefined,
+            .child_len = @intCast(children.len),
+            .imm = imm,
+        };
+        for (children, 0..) |child, i| {
+            node.children[i] = child;
+        }
+        return node;
+    }
+
+    pub fn childSlice(self: *const ENode) []const EClassId {
+        return self.children[0..@intCast(self.child_len)];
+    }
+
     pub fn hash(self: ENode) u64 {
         var hasher = std.hash.Wyhash.init(0);
         hasher.update(std.mem.asBytes(&self.op));
-        hasher.update(std.mem.sliceAsBytes(self.children));
+        hasher.update(std.mem.sliceAsBytes(self.childSlice()));
         const has_imm: u8 = if (self.imm != null) 1 else 0;
         hasher.update(&[_]u8{has_imm});
         if (self.imm) |imm| {
@@ -59,8 +80,8 @@ pub const ENode = struct {
         } else if (b.imm != null) {
             return false;
         }
-        if (a.children.len != b.children.len) return false;
-        for (a.children, b.children) |a_child, b_child| {
+        if (a.child_len != b.child_len) return false;
+        for (a.childSlice(), b.childSlice()) |a_child, b_child| {
             if (a_child != b_child) return false;
         }
         return true;
@@ -97,14 +118,7 @@ pub const EClass = struct {
     }
 
     pub fn deinit(self: *EClass, allocator: Allocator) void {
-        for (self.nodes.items) |node| {
-            allocator.free(node.children);
-        }
         self.nodes.deinit(allocator);
-
-        for (self.parents.items) |parent| {
-            allocator.free(parent.node.children);
-        }
         self.parents.deinit(allocator);
     }
 };
@@ -220,23 +234,12 @@ pub const EGraph = struct {
     }
 
     pub fn deinit(self: *EGraph) void {
-        // Free children slices only from hashcons (canonical storage)
-        var hashcons_iter = self.hashcons.keyIterator();
-        while (hashcons_iter.next()) |node| {
-            self.allocator.free(node.children);
-        }
-        self.hashcons.deinit(self.allocator);
-
-        // Free e-classes without freeing children (already freed above)
         var class_iter = self.classes.valueIterator();
         while (class_iter.next()) |eclass| {
-            eclass.nodes.deinit(self.allocator);
-            for (eclass.parents.items) |parent| {
-                self.allocator.free(parent.node.children);
-            }
-            eclass.parents.deinit(self.allocator);
+            eclass.deinit(self.allocator);
         }
         self.classes.deinit();
+        self.hashcons.deinit(self.allocator);
 
         self.uf.deinit();
         self.worklist.deinit(self.allocator);
@@ -254,20 +257,15 @@ pub const EGraph = struct {
 
     fn addNode(self: *EGraph, op: Opcode, children: []const EClassId, imm: ?Imm64) !EClassId {
         // Canonicalize children using union-find
-        const canonical_children = try self.allocator.alloc(EClassId, children.len);
+        std.debug.assert(children.len <= ENode.max_children);
+        var canonical_children: [ENode.max_children]EClassId = undefined;
         for (children, 0..) |child, i| {
             canonical_children[i] = self.uf.find(child);
         }
-
-        const node = ENode{
-            .op = op,
-            .children = canonical_children,
-            .imm = imm,
-        };
+        const node = ENode.init(op, canonical_children[0..children.len], imm);
 
         // Check if e-node already exists (hash-consing)
         if (self.hashcons.get(node)) |existing_id| {
-            self.allocator.free(canonical_children);
             return self.uf.find(existing_id);
         }
 
@@ -284,13 +282,9 @@ pub const EGraph = struct {
         try self.hashcons.put(self.allocator, node, id);
 
         // Add as parent to children
-        for (canonical_children) |child_id| {
+        const parent_node = node;
+        for (node.childSlice()) |child_id| {
             if (self.classes.getPtr(child_id)) |child_class| {
-                const parent_node = ENode{
-                    .op = op,
-                    .children = try self.allocator.dupe(EClassId, canonical_children),
-                    .imm = null,
-                };
                 try child_class.parents.append(self.allocator, .{
                     .id = id,
                     .node = parent_node,
@@ -350,39 +344,35 @@ pub const EGraph = struct {
                 eclass.parents.items[i].id = parent_id;
 
                 // Canonicalize parent's children
-                const canonical_children = try self.allocator.alloc(EClassId, parent.node.children.len);
-
-                for (parent.node.children, 0..) |child, j| {
+                const parent_children = parent.node.childSlice();
+                var canonical_children: [ENode.max_children]EClassId = undefined;
+                for (parent_children, 0..) |child, j| {
                     canonical_children[j] = self.uf.find(child);
                 }
 
-                const canonical_parent = ENode{
-                    .op = parent.node.op,
-                    .children = canonical_children,
-                    .imm = parent.node.imm,
-                };
+                const canonical_parent = ENode.init(
+                    parent.node.op,
+                    canonical_children[0..parent_children.len],
+                    parent.node.imm,
+                );
                 const is_canonical = ENode.eql(parent.node, canonical_parent);
 
+                if (!is_canonical) {
+                    _ = self.hashcons.fetchRemove(parent.node);
+                    eclass.parents.items[i].node = canonical_parent;
+                }
+
+                const lookup_parent = if (is_canonical) parent.node else canonical_parent;
+
                 // Check if canonical parent already exists
-                if (self.hashcons.get(canonical_parent)) |existing_id| {
-                    if (!is_canonical) {
-                        if (self.hashcons.fetchRemove(parent.node)) |entry| {
-                            self.allocator.free(entry.key.children);
-                        }
-                    }
-                    self.allocator.free(canonical_children);
+                if (self.hashcons.get(lookup_parent)) |existing_id| {
                     const existing_canon = self.uf.find(existing_id);
                     if (existing_canon != parent_id) {
                         // Congruence: merge parent e-classes
                         _ = try self.merge(existing_id, parent_id);
                     }
                 } else {
-                    if (!is_canonical) {
-                        if (self.hashcons.fetchRemove(parent.node)) |entry| {
-                            self.allocator.free(entry.key.children);
-                        }
-                    }
-                    try self.hashcons.put(self.allocator, canonical_parent, parent_id);
+                    try self.hashcons.put(self.allocator, lookup_parent, parent_id);
                 }
             }
         }
@@ -623,12 +613,12 @@ pub const EqualitySaturation = struct {
 
         // Identity: x + 0 → x
         if (std.mem.eql(u8, rule_name, "iadd_zero_right")) {
-            if (node.op == .iadd and node.children.len == 2) {
+            if (node.op == .iadd and node.child_len == 2) {
                 // Check if right operand is zero
-                const right_id = self.eg.uf.find(node.children[1]);
+                const right_id = self.eg.uf.find(node.childSlice()[1]);
                 if (try self.isConstantZero(right_id)) {
                     // Merge with left operand
-                    const left_id = self.eg.uf.find(node.children[0]);
+                    const left_id = self.eg.uf.find(node.childSlice()[0]);
                     _ = try self.eg.merge(eclass_id, left_id);
                     return true;
                 }
@@ -637,10 +627,10 @@ pub const EqualitySaturation = struct {
 
         // Identity: 0 + x → x
         if (std.mem.eql(u8, rule_name, "iadd_zero_left")) {
-            if (node.op == .iadd and node.children.len == 2) {
-                const left_id = self.eg.uf.find(node.children[0]);
+            if (node.op == .iadd and node.child_len == 2) {
+                const left_id = self.eg.uf.find(node.childSlice()[0]);
                 if (try self.isConstantZero(left_id)) {
-                    const right_id = self.eg.uf.find(node.children[1]);
+                    const right_id = self.eg.uf.find(node.childSlice()[1]);
                     _ = try self.eg.merge(eclass_id, right_id);
                     return true;
                 }
@@ -649,10 +639,10 @@ pub const EqualitySaturation = struct {
 
         // Identity: x * 1 → x
         if (std.mem.eql(u8, rule_name, "imul_one_right")) {
-            if (node.op == .imul and node.children.len == 2) {
-                const right_id = self.eg.uf.find(node.children[1]);
+            if (node.op == .imul and node.child_len == 2) {
+                const right_id = self.eg.uf.find(node.childSlice()[1]);
                 if (try self.isConstantOne(right_id)) {
-                    const left_id = self.eg.uf.find(node.children[0]);
+                    const left_id = self.eg.uf.find(node.childSlice()[0]);
                     _ = try self.eg.merge(eclass_id, left_id);
                     return true;
                 }
@@ -661,10 +651,10 @@ pub const EqualitySaturation = struct {
 
         // Identity: 1 * x → x
         if (std.mem.eql(u8, rule_name, "imul_one_left")) {
-            if (node.op == .imul and node.children.len == 2) {
-                const left_id = self.eg.uf.find(node.children[0]);
+            if (node.op == .imul and node.child_len == 2) {
+                const left_id = self.eg.uf.find(node.childSlice()[0]);
                 if (try self.isConstantOne(left_id)) {
-                    const right_id = self.eg.uf.find(node.children[1]);
+                    const right_id = self.eg.uf.find(node.childSlice()[1]);
                     _ = try self.eg.merge(eclass_id, right_id);
                     return true;
                 }
@@ -673,9 +663,9 @@ pub const EqualitySaturation = struct {
 
         // Idempotence: x - x → 0
         if (std.mem.eql(u8, rule_name, "isub_self")) {
-            if (node.op == .isub and node.children.len == 2) {
-                const left_id = self.eg.uf.find(node.children[0]);
-                const right_id = self.eg.uf.find(node.children[1]);
+            if (node.op == .isub and node.child_len == 2) {
+                const left_id = self.eg.uf.find(node.childSlice()[0]);
+                const right_id = self.eg.uf.find(node.childSlice()[1]);
                 if (left_id == right_id) {
                     // Create constant zero and merge
                     const zero_id = try self.eg.addConst(.iconst, Imm64.new(0));
@@ -687,9 +677,9 @@ pub const EqualitySaturation = struct {
 
         // Idempotence: x ^ x → 0
         if (std.mem.eql(u8, rule_name, "bxor_self")) {
-            if (node.op == .bxor and node.children.len == 2) {
-                const left_id = self.eg.uf.find(node.children[0]);
-                const right_id = self.eg.uf.find(node.children[1]);
+            if (node.op == .bxor and node.child_len == 2) {
+                const left_id = self.eg.uf.find(node.childSlice()[0]);
+                const right_id = self.eg.uf.find(node.childSlice()[1]);
                 if (left_id == right_id) {
                     const zero_id = try self.eg.addConst(.iconst, Imm64.new(0));
                     _ = try self.eg.merge(eclass_id, zero_id);
@@ -700,9 +690,9 @@ pub const EqualitySaturation = struct {
 
         // Idempotence: x & x → x
         if (std.mem.eql(u8, rule_name, "band_self")) {
-            if (node.op == .band and node.children.len == 2) {
-                const left_id = self.eg.uf.find(node.children[0]);
-                const right_id = self.eg.uf.find(node.children[1]);
+            if (node.op == .band and node.child_len == 2) {
+                const left_id = self.eg.uf.find(node.childSlice()[0]);
+                const right_id = self.eg.uf.find(node.childSlice()[1]);
                 if (left_id == right_id) {
                     _ = try self.eg.merge(eclass_id, left_id);
                     return true;
@@ -712,9 +702,9 @@ pub const EqualitySaturation = struct {
 
         // Idempotence: x | x → x
         if (std.mem.eql(u8, rule_name, "bor_self")) {
-            if (node.op == .bor and node.children.len == 2) {
-                const left_id = self.eg.uf.find(node.children[0]);
-                const right_id = self.eg.uf.find(node.children[1]);
+            if (node.op == .bor and node.child_len == 2) {
+                const left_id = self.eg.uf.find(node.childSlice()[0]);
+                const right_id = self.eg.uf.find(node.childSlice()[1]);
                 if (left_id == right_id) {
                     _ = try self.eg.merge(eclass_id, left_id);
                     return true;
@@ -724,9 +714,9 @@ pub const EqualitySaturation = struct {
 
         // Commutativity: x + y → y + x (assert equivalence)
         if (std.mem.eql(u8, rule_name, "iadd_comm")) {
-            if (node.op == .iadd and node.children.len == 2) {
-                const left_id = self.eg.uf.find(node.children[0]);
-                const right_id = self.eg.uf.find(node.children[1]);
+            if (node.op == .iadd and node.child_len == 2) {
+                const left_id = self.eg.uf.find(node.childSlice()[0]);
+                const right_id = self.eg.uf.find(node.childSlice()[1]);
                 // Add commuted version to same e-class
                 const comm_id = try self.eg.add(.iadd, &.{ right_id, left_id });
                 _ = try self.eg.merge(eclass_id, comm_id);
@@ -741,7 +731,7 @@ pub const EqualitySaturation = struct {
     fn isConstantZero(self: *EqualitySaturation, id: EClassId) !bool {
         const eclass = self.eg.getClass(id) orelse return false;
         for (eclass.nodes.items) |node| {
-            if (node.op == .iconst and node.children.len == 0) {
+            if (node.op == .iconst and node.child_len == 0) {
                 if (node.imm) |imm| {
                     if (imm.value == 0) return true;
                 }
@@ -754,7 +744,7 @@ pub const EqualitySaturation = struct {
     fn isConstantOne(self: *EqualitySaturation, id: EClassId) !bool {
         const eclass = self.eg.getClass(id) orelse return false;
         for (eclass.nodes.items) |node| {
-            if (node.op == .iconst and node.children.len == 0) {
+            if (node.op == .iconst and node.child_len == 0) {
                 if (node.imm) |imm| {
                     if (imm.value == 1) return true;
                 }
@@ -769,11 +759,13 @@ pub const Extractor = struct {
     eg: *EGraph,
     allocator: Allocator,
     costs: AutoHashMap(EClassId, CostNode),
+    visiting: AutoHashMap(EClassId, void),
 
     const ExtractError = Allocator.Error || error{
         EClassNotFound,
         EmptyEClass,
         CostNotFound,
+        CycleDetected,
     };
 
     const CostNode = struct {
@@ -786,11 +778,13 @@ pub const Extractor = struct {
             .eg = eg,
             .allocator = allocator,
             .costs = AutoHashMap(EClassId, CostNode).init(allocator),
+            .visiting = AutoHashMap(EClassId, void).init(allocator),
         };
     }
 
     pub fn deinit(self: *Extractor) void {
         self.costs.deinit();
+        self.visiting.deinit();
     }
 
     /// Extract the cheapest e-node from an e-class.
@@ -802,6 +796,12 @@ pub const Extractor = struct {
             return cached.node;
         }
 
+        if (self.visiting.contains(canon_id)) {
+            return error.CycleDetected;
+        }
+        try self.visiting.put(canon_id, {});
+        defer _ = self.visiting.remove(canon_id);
+
         // Find minimum-cost e-node in this e-class
         const eclass = self.eg.getClass(canon_id) orelse {
             return error.EClassNotFound;
@@ -811,14 +811,17 @@ pub const Extractor = struct {
         var best_node: ?ENode = null;
 
         for (eclass.nodes.items) |node| {
-            const cost = try self.computeCost(node);
+            const cost = self.computeCost(node) catch |err| switch (err) {
+                error.CycleDetected => continue,
+                else => return err,
+            };
             if (cost < min_cost) {
                 min_cost = cost;
                 best_node = node;
             }
         }
 
-        const result = best_node orelse return error.EmptyEClass;
+        const result = best_node orelse return error.CycleDetected;
 
         // Memoize
         try self.costs.put(canon_id, .{ .cost = min_cost, .node = result });
@@ -832,7 +835,7 @@ pub const Extractor = struct {
         var cost = opcodeCost(node.op);
 
         // Add costs of children
-        for (node.children) |child_id| {
+        for (node.childSlice()) |child_id| {
             const canon_child = self.eg.uf.find(child_id);
             if (self.costs.get(canon_child)) |cached| {
                 cost += cached.cost;
@@ -1000,5 +1003,5 @@ test "Extractor memoization" {
     const second = try extractor.extractBest(x_plus_y);
 
     try testing.expectEqual(first.op, second.op);
-    try testing.expectEqual(first.children.len, second.children.len);
+    try testing.expectEqual(first.child_len, second.child_len);
 }
