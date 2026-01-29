@@ -416,6 +416,7 @@ pub const EGraphBuilder = struct {
         // Collect operand e-class IDs
         var operands = std.ArrayList(EClassId){};
         defer operands.deinit(self.allocator);
+        var imm: ?Imm64 = null;
 
         // Convert IR values to e-class IDs
         switch (inst_data.*) {
@@ -451,6 +452,7 @@ pub const EGraphBuilder = struct {
             },
             .unary_imm => {
                 // Constant: create leaf e-node (iconst, f32const, f64const)
+                imm = inst_data.unary_imm.imm;
             },
             .nullary => {
                 // No operands (nop, etc.)
@@ -462,7 +464,10 @@ pub const EGraphBuilder = struct {
         }
 
         // Add e-node to e-graph
-        const eclass_id = try self.eg.add(op, operands.items);
+        const eclass_id = if (imm) |imm_val|
+            try self.eg.addConst(op, imm_val)
+        else
+            try self.eg.add(op, operands.items);
 
         // Map instruction result to e-class
         const results = func.dfg.instResults(inst);
@@ -649,7 +654,7 @@ pub const EqualitySaturation = struct {
                 const right_id = self.eg.uf.find(node.children[1]);
                 if (left_id == right_id) {
                     // Create constant zero and merge
-                    const zero_id = try self.eg.add(.iconst, &.{});
+                    const zero_id = try self.eg.addConst(.iconst, Imm64.new(0));
                     _ = try self.eg.merge(eclass_id, zero_id);
                     return true;
                 }
@@ -662,7 +667,7 @@ pub const EqualitySaturation = struct {
                 const left_id = self.eg.uf.find(node.children[0]);
                 const right_id = self.eg.uf.find(node.children[1]);
                 if (left_id == right_id) {
-                    const zero_id = try self.eg.add(.iconst, &.{});
+                    const zero_id = try self.eg.addConst(.iconst, Imm64.new(0));
                     _ = try self.eg.merge(eclass_id, zero_id);
                     return true;
                 }
@@ -713,9 +718,9 @@ pub const EqualitySaturation = struct {
         const eclass = self.eg.getClass(id) orelse return false;
         for (eclass.nodes.items) |node| {
             if (node.op == .iconst and node.children.len == 0) {
-                // Assume iconst with no children is zero
-                // TODO: Store constant value in e-node
-                return true;
+                if (node.imm) |imm| {
+                    if (imm.value == 0) return true;
+                }
             }
         }
         return false;
@@ -726,8 +731,9 @@ pub const EqualitySaturation = struct {
         const eclass = self.eg.getClass(id) orelse return false;
         for (eclass.nodes.items) |node| {
             if (node.op == .iconst and node.children.len == 0) {
-                // TODO: Distinguish constants - need value storage
-                return false; // Placeholder
+                if (node.imm) |imm| {
+                    if (imm.value == 1) return true;
+                }
             }
         }
         return false;
