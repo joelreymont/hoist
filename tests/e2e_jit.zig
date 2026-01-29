@@ -1139,13 +1139,13 @@ test "JIT module: data allocations are disjoint" {
     const id2 = try jit.declareData("jit_d2", .@"export", true, false);
 
     var desc1 = DataDesc.new(alloc);
-    defer desc1.deinit();
+    defer desc1.deinit(alloc);
     const bytes1 = [_]u8{ 0x10, 0x20, 0x30 };
     desc1.init = .{ .bytes = &bytes1 };
     desc1.@"align" = 8;
 
     var desc2 = DataDesc.new(alloc);
-    defer desc2.deinit();
+    defer desc2.deinit(alloc);
     const bytes2 = [_]u8{ 0xFE, 0xED, 0xFA, 0xCE };
     desc2.init = .{ .bytes = &bytes2 };
     desc2.@"align" = 16;

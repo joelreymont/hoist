@@ -42,16 +42,17 @@ pub const DataDesc = struct {
     @"align": ?u64,
 
     pub fn new(alloc: Allocator) DataDesc {
+        _ = alloc;
         return .{
             .init = .uninit,
-            .func_relocs = std.ArrayList(@TypeOf(.{ .offset = 0, .func = FuncId.from(0) })).init(alloc),
-            .data_relocs = std.ArrayList(DataReloc).init(alloc),
+            .func_relocs = .{},
+            .data_relocs = .{},
             .@"align" = null,
         };
     }
 
-    pub fn deinit(self: *DataDesc) void {
-        self.func_relocs.deinit();
-        self.data_relocs.deinit();
+    pub fn deinit(self: *DataDesc, alloc: Allocator) void {
+        self.func_relocs.deinit(alloc);
+        self.data_relocs.deinit(alloc);
     }
 };

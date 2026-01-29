@@ -21,7 +21,7 @@ pub const Mem = struct {
                 const mmap = std.c.mmap(
                     null,
                     aligned_size,
-                    std.c.PROT.READ | std.c.PROT.WRITE | std.c.PROT.EXEC,
+                    std.c.PROT.READ | std.c.PROT.WRITE,
                     std.c.MAP{ .TYPE = .PRIVATE, .ANONYMOUS = true },
                     -1,
                     0,
@@ -33,7 +33,7 @@ pub const Mem = struct {
                 const mmap = std.os.linux.mmap(
                     null,
                     aligned_size,
-                    std.os.linux.PROT.READ | std.os.linux.PROT.WRITE | std.os.linux.PROT.EXEC,
+                    std.os.linux.PROT.READ | std.os.linux.PROT.WRITE,
                     .{ .TYPE = .PRIVATE, .ANONYMOUS = true },
                     -1,
                     0,
@@ -109,7 +109,7 @@ pub const Mem = struct {
     }
 
     /// Flush instruction cache for ARM architectures.
-    fn flushCacheRange(self: *Mem, base: [*]u8, len: usize) void {
+    pub fn flushCacheRange(self: *Mem, base: [*]u8, len: usize) void {
         _ = self;
         if (builtin.os.tag == .macos or builtin.os.tag == .ios) {
             const sys_icache_invalidate = struct {
@@ -122,6 +122,17 @@ pub const Mem = struct {
             }.__clear_cache;
             clear_cache(base, base + len);
         }
+    }
+
+    pub fn setExec(self: *Mem, enabled: bool) !void {
+        const page_size = std.heap.page_size_min;
+        const len = std.mem.alignForward(usize, self.used, page_size);
+        if (len == 0) return;
+        const prot = if (enabled)
+            std.posix.PROT.READ | std.posix.PROT.EXEC
+        else
+            std.posix.PROT.READ | std.posix.PROT.WRITE;
+        try std.posix.mprotect(self.ptr[0..len], @as(u32, @intCast(prot)));
     }
 
     /// Get function pointer with any signature.
