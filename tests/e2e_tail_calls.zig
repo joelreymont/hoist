@@ -354,7 +354,133 @@ test "tail call: with floating point arguments" {
     // TODO: Verify frame deallocated before jump
 }
 
-// Test 5: Non-tail call followed by tail call
+// Test 5: Tail call with stack arguments
+// Validates: Tail calls marshal stack arguments correctly
+test "tail call: with stack arguments" {
+    const allocator = testing.allocator;
+
+    var caller_sig = Signature.init(allocator, .system_v);
+    // Note: signature ownership transfers to func
+
+    const i64_type = Type.I64;
+    for (0..10) |_| {
+        try caller_sig.params.append(allocator, AbiParam.new(i64_type));
+    }
+    try caller_sig.returns.append(allocator, AbiParam.new(i64_type));
+
+    var callee_sig = Signature.init(allocator, .system_v);
+    defer callee_sig.deinit();
+    for (0..10) |_| {
+        try callee_sig.params.append(allocator, AbiParam.new(i64_type));
+    }
+    try callee_sig.returns.append(allocator, AbiParam.new(i64_type));
+
+    var func = try Function.init(allocator, "stack_arg_caller", caller_sig);
+    defer func.deinit();
+
+    const entry = try func.dfg.makeBlock();
+    try func.layout.appendBlock(entry);
+
+    const params = func.dfg.blockParams(entry);
+    var arg_vals: [10]hoist.value.Value = undefined;
+    for (params[0..10], 0..) |param, i| {
+        arg_vals[i] = param;
+    }
+
+    const callee_ref = FuncRef.new(1);
+    const tail_call = try func.dfg.makeInst(.{
+        .call = .{
+            .opcode = .return_call,
+            .func_ref = callee_ref,
+            .args_storage = try func.dfg.allocateValueList(&arg_vals),
+        },
+    });
+
+    try func.dfg.appendInst(entry, tail_call);
+
+    var ctx_builder = ContextBuilder.init(allocator);
+    defer ctx_builder.deinit();
+
+    _ = try ctx_builder.registerFunction("stack_arg_caller", caller_sig);
+    _ = try ctx_builder.registerFunction("stack_arg_callee", callee_sig);
+
+    var ctx = try ctx_builder.build();
+    defer ctx.deinit();
+
+    const result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
+    defer result.code.deinit();
+    defer result.relocs.deinit();
+
+    try testing.expect(result.code.items.len > 0);
+}
+
+// Test 6: Indirect tail call with stack arguments
+// Validates: Indirect tail calls handle stack args
+test "tail call: indirect with stack arguments" {
+    const allocator = testing.allocator;
+
+    var sig = Signature.init(allocator, .system_v);
+    // Note: signature ownership transfers to func
+
+    const i64_type = Type.I64;
+    const ptr_type = Type{ .ptr = .{ .pointee = 0 } };
+
+    try sig.params.append(allocator, AbiParam.new(ptr_type));
+    for (0..10) |_| {
+        try sig.params.append(allocator, AbiParam.new(i64_type));
+    }
+    try sig.returns.append(allocator, AbiParam.new(i64_type));
+
+    var func = try Function.init(allocator, "indirect_stack_arg_caller", sig);
+    defer func.deinit();
+
+    const entry = try func.dfg.makeBlock();
+    try func.layout.appendBlock(entry);
+
+    const params = func.dfg.blockParams(entry);
+    const fn_ptr = params[0];
+
+    var target_sig = Signature.init(allocator, .system_v);
+    defer target_sig.deinit();
+    for (0..10) |_| {
+        try target_sig.params.append(allocator, AbiParam.new(i64_type));
+    }
+    try target_sig.returns.append(allocator, AbiParam.new(i64_type));
+
+    const sig_ref = try func.dfg.importSignature(target_sig);
+
+    var arg_vals: [10]hoist.value.Value = undefined;
+    for (params[1..11], 0..) |param, i| {
+        arg_vals[i] = param;
+    }
+
+    const tail_call = try func.dfg.makeInst(.{
+        .call_indirect = .{
+            .opcode = .return_call_indirect,
+            .sig_ref = sig_ref,
+            .callee = fn_ptr,
+            .args_storage = try func.dfg.allocateValueList(&arg_vals),
+        },
+    });
+
+    try func.dfg.appendInst(entry, tail_call);
+
+    var ctx_builder = ContextBuilder.init(allocator);
+    defer ctx_builder.deinit();
+
+    _ = try ctx_builder.registerFunction("indirect_stack_arg_caller", sig);
+
+    var ctx = try ctx_builder.build();
+    defer ctx.deinit();
+
+    const result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
+    defer result.code.deinit();
+    defer result.relocs.deinit();
+
+    try testing.expect(result.code.items.len > 0);
+}
+
+// Test 7: Non-tail call followed by tail call
 // Validates: Mix of regular and tail calls in same function
 test "tail call: mixed with regular calls" {
     const allocator = testing.allocator;

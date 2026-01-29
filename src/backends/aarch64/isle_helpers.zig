@@ -2986,6 +2986,84 @@ pub fn aarch64_ssub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
     return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
 }
 
+fn tcAddr(base: Reg, offset: u32, ctx: *lower_mod.LowerCtx(Inst)) !Reg {
+    if (offset == 0) return base;
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    if (offset <= 4095) {
+        try ctx.emit(Inst{ .add_imm = .{
+            .dst = dst,
+            .rn = base,
+            .imm = @intCast(offset),
+            .is_64 = true,
+        } });
+    } else {
+        const off = lower_mod.WritableReg.allocReg(.int, ctx);
+        try ctx.emit(Inst{ .mov_imm = .{
+            .dst = off,
+            .imm = offset,
+            .is_64 = true,
+        } });
+        try ctx.emit(Inst{ .add_rr = .{
+            .dst = dst,
+            .rn = base,
+            .rm = off.toReg(),
+            .is_64 = true,
+        } });
+    }
+    return dst.toReg();
+}
+
+fn tcOutSp(frame_size: u32, ctx: *lower_mod.LowerCtx(Inst)) !Reg {
+    return tcAddr(Reg.gpr(31), frame_size, ctx);
+}
+
+fn tcStoreArg(base: Reg, offset: u32, src: Reg, ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !void {
+    const is_fp = ty.isFloat() or ty.isVector();
+    if (is_fp) {
+        const size = typeToFpuOperandSize(ty);
+        const scale: u32 = switch (size) {
+            .size32 => 2,
+            .size64 => 3,
+            .size128 => 4,
+        };
+        const max_off: u32 = 0xfff << @intCast(scale);
+        const align_mask: u32 = (@as(u32, 1) << @intCast(scale)) - 1;
+        if (offset <= max_off and (offset & align_mask) == 0) {
+            try ctx.emit(Inst{ .str_fp = .{
+                .src = src,
+                .base = base,
+                .offset = @intCast(offset),
+                .size = size,
+            } });
+        } else {
+            const addr = try tcAddr(base, offset, ctx);
+            try ctx.emit(Inst{ .str_fp = .{
+                .src = src,
+                .base = addr,
+                .offset = 0,
+                .size = size,
+            } });
+        }
+    } else {
+        if (offset <= 255) {
+            try ctx.emit(Inst{ .str = .{
+                .src = src,
+                .base = base,
+                .offset = @intCast(offset),
+                .size = .size64,
+            } });
+        } else {
+            const addr = try tcAddr(base, offset, ctx);
+            try ctx.emit(Inst{ .str = .{
+                .src = src,
+                .base = addr,
+                .offset = 0,
+                .size = .size64,
+            } });
+        }
+    }
+}
+
 /// Tail call operations (ISLE constructors)
 pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_return_call");
@@ -3277,76 +3355,42 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
         }
     }
 
+    const abi_callee = ctx.getABICallee();
+    const frame_size = abi_callee.frame_size;
+
     // Second pass: Handle stack arguments
-    // Stack args must be copied BEFORE frame deallocation to avoid corruption.
-    // Strategy: copy all stack args to temporaries first, then copy to final positions.
     if (stack_offset > 0) {
-        var stack_args = std.ArrayList(struct { val: lower_mod.Value, ty: types.Type }).init(ctx.getAllocator());
+        const StackArg = struct { val: lower_mod.Value, ty: types.Type, offset: u32 };
+        var stack_args = std.ArrayList(StackArg).init(ctx.allocator);
         defer stack_args.deinit();
 
-        // Collect stack arguments
         int_count = 0;
         fp_count = 0;
+        var stack_cursor: u32 = 0;
         for (args) |arg_value| {
             const arg_type = ctx.func.dfg.valueType(arg_value);
-            if (arg_type.isFloat() or arg_type.isVector()) {
+            const is_fp = arg_type.isFloat() or arg_type.isVector();
+            if (is_fp) {
                 if (fp_count >= abi_spec.float_arg_regs.len) {
-                    try stack_args.append(.{ .val = arg_value, .ty = arg_type });
+                    try stack_args.append(.{ .val = arg_value, .ty = arg_type, .offset = stack_cursor });
+                    stack_cursor += 8;
                 }
                 fp_count += 1;
             } else {
                 if (int_count >= abi_spec.int_arg_regs.len) {
-                    try stack_args.append(.{ .val = arg_value, .ty = arg_type });
+                    try stack_args.append(.{ .val = arg_value, .ty = arg_type, .offset = stack_cursor });
+                    stack_cursor += 8;
                 }
                 int_count += 1;
             }
         }
 
-        // Copy stack args to temp registers first
-        var temps = std.ArrayList(Reg).init(ctx.getAllocator());
-        defer temps.deinit();
-
-        for (stack_args.items) |arg| {
-            const arg_reg = try ctx.getValueReg(arg.val, if (arg.ty.isFloat() or arg.ty.isVector()) .float else .int);
-            const temp = lower_mod.WritableReg.allocReg(if (arg.ty.isFloat() or arg.ty.isVector()) .float else .int, ctx);
-
-            if (arg.ty.isFloat() or arg.ty.isVector()) {
-                try ctx.emit(Inst{ .fmov_rr = .{
-                    .dst = temp,
-                    .src = arg_reg.toReg(),
-                    .size = typeToFpuOperandSize(arg.ty),
-                } });
-            } else {
-                try ctx.emit(Inst{ .mov_rr = .{
-                    .dst = temp,
-                    .src = arg_reg.toReg(),
-                    .size = .size64,
-                } });
-            }
-            try temps.append(temp.toReg());
-        }
-
-        // After frame deallocation, copy from temps to stack
-        // This happens after SP adjustment, so we emit a placeholder
-        // that will be filled in after frame restoration
-        for (temps.items, 0..) |temp, i| {
-            const arg = stack_args.items[i];
-            const offset: i32 = @intCast(i * 8);
-
-            if (arg.ty.isFloat() or arg.ty.isVector()) {
-                try ctx.emit(Inst{ .str_fp = .{
-                    .src = temp,
-                    .base = Reg.gpr(31), // SP
-                    .offset = offset,
-                    .size = typeToFpuOperandSize(arg.ty),
-                } });
-            } else {
-                try ctx.emit(Inst{ .str = .{
-                    .src = temp,
-                    .base = Reg.gpr(31), // SP
-                    .offset = offset,
-                    .size = .size64,
-                } });
+        if (stack_args.items.len > 0) {
+            const out_sp = try tcOutSp(frame_size, ctx);
+            for (stack_args.items) |arg| {
+                const is_fp = arg.ty.isFloat() or arg.ty.isVector();
+                const arg_reg = try ctx.getValueReg(arg.val, if (is_fp) .float else .int);
+                try tcStoreArg(out_sp, arg.offset, arg_reg.toReg(), arg.ty, ctx);
             }
         }
     }
@@ -3366,7 +3410,6 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
     try ctx.emit(Inst{ .load_ext_name_got = .{ .dst = tmp, .symbol = symbol_name } });
 
     // Restore callee-saved registers and frame
-    const abi_callee = ctx.getABICallee();
     const sp = Reg.gpr(31);
     const fp = Reg.gpr(29);
     const lr = Reg.gpr(30);
@@ -3399,7 +3442,6 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
     }
 
     // 2. Restore FP/LR and deallocate frame
-    const frame_size = abi_callee.frame_size;
     const max_stp_offset: u32 = 504;
 
     if (frame_size <= max_stp_offset) {
@@ -3474,6 +3516,9 @@ pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args:
         } });
     }
 
+    const call_conv = sig.call_conv;
+    const abi_spec = abi_mod.abiSpecForCallConv(call_conv);
+
     // Marshal arguments (identical to direct tail call)
     var int_count: u32 = 0;
     var fp_count: u32 = 0;
@@ -3484,9 +3529,10 @@ pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args:
         const is_fp = arg_type.isFloat() or arg_type.isVector();
 
         if (is_fp) {
-            if (fp_count < 8) {
+            if (fp_count < abi_spec.float_arg_regs.len) {
                 const arg_reg = try ctx.getValueReg(arg_value, .float);
-                const abi_reg = Reg.fpr(@intCast(fp_count));
+                const abi_preg = abi_spec.float_arg_regs[fp_count];
+                const abi_reg = Reg.fpr(abi_preg.hw_enc);
                 if (!arg_reg.toReg().eq(abi_reg)) {
                     try ctx.emit(Inst{ .fmov_rr = .{
                         .dst = lower_mod.WritableReg.fromReg(abi_reg),
@@ -3499,9 +3545,10 @@ pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args:
                 stack_offset += 8;
             }
         } else {
-            if (int_count < 8) {
+            if (int_count < abi_spec.int_arg_regs.len) {
                 const arg_reg = try ctx.getValueReg(arg_value, .int);
-                const abi_reg = Reg.gpr(@intCast(int_count));
+                const abi_preg = abi_spec.int_arg_regs[int_count];
+                const abi_reg = Reg.gpr(abi_preg.hw_enc);
                 if (!arg_reg.toReg().eq(abi_reg)) {
                     try ctx.emit(Inst{ .mov_rr = .{
                         .dst = lower_mod.WritableReg.fromReg(abi_reg),
@@ -3516,14 +3563,46 @@ pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args:
         }
     }
 
-    // TODO: Handle stack arguments
+    const abi_callee = ctx.getABICallee();
+    const frame_size = abi_callee.frame_size;
+
     if (stack_offset > 0) {
-        std.log.err("Tail calls with stack arguments not yet implemented", .{});
-        return error.TailCallStackArgsNotSupported;
+        const StackArg = struct { val: lower_mod.Value, ty: types.Type, offset: u32 };
+        var stack_args = std.ArrayList(StackArg).init(ctx.allocator);
+        defer stack_args.deinit();
+
+        int_count = 0;
+        fp_count = 0;
+        var stack_cursor: u32 = 0;
+        for (args) |arg_value| {
+            const arg_type = ctx.func.dfg.valueType(arg_value);
+            const is_fp = arg_type.isFloat() or arg_type.isVector();
+            if (is_fp) {
+                if (fp_count >= abi_spec.float_arg_regs.len) {
+                    try stack_args.append(.{ .val = arg_value, .ty = arg_type, .offset = stack_cursor });
+                    stack_cursor += 8;
+                }
+                fp_count += 1;
+            } else {
+                if (int_count >= abi_spec.int_arg_regs.len) {
+                    try stack_args.append(.{ .val = arg_value, .ty = arg_type, .offset = stack_cursor });
+                    stack_cursor += 8;
+                }
+                int_count += 1;
+            }
+        }
+
+        if (stack_args.items.len > 0) {
+            const out_sp = try tcOutSp(frame_size, ctx);
+            for (stack_args.items) |arg| {
+                const is_fp = arg.ty.isFloat() or arg.ty.isVector();
+                const arg_reg = try ctx.getValueReg(arg.val, if (is_fp) .float else .int);
+                try tcStoreArg(out_sp, arg.offset, arg_reg.toReg(), arg.ty, ctx);
+            }
+        }
     }
 
     // Restore callee-saved registers and frame
-    const abi_callee = ctx.getABICallee();
     const sp = Reg.gpr(31);
     const fp = Reg.gpr(29);
     const lr = Reg.gpr(30);
@@ -3556,7 +3635,6 @@ pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args:
     }
 
     // 2. Restore FP/LR and deallocate frame
-    const frame_size = abi_callee.frame_size;
     const max_stp_offset: u32 = 504;
 
     if (frame_size <= max_stp_offset) {
