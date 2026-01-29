@@ -38,6 +38,7 @@ const ir = struct {
     pub const FunctionBuilder = @import("../ir/builder.zig").FunctionBuilder;
     pub const Function = @import("../ir/function.zig").Function;
     pub const Imm64 = @import("../ir/immediates.zig").Imm64;
+    pub const DominatorTree = @import("../ir/domtree.zig").DominatorTree;
 };
 const MachBuffer = @import("../machinst/buffer.zig").MachBuffer;
 const Opcode = @import("../ir/opcodes.zig").Opcode;
@@ -636,7 +637,9 @@ fn insertSpillScratch(
     result: *linear_scan_mod.RegAllocResult,
     scratch_regs: ScratchRegs,
     vreg_origins: *const std.AutoHashMap(reg_mod.VReg, VRegOrigin),
+    domtree: *const ir.DominatorTree,
 ) CodegenError!void {
+    _ = domtree; // Will be used for reload hoisting
     const OperandCollector = a64_inst.OperandCollector;
 
     var new_insns = std.ArrayList(a64_inst.Inst){};
@@ -1483,7 +1486,7 @@ fn lowerAArch64(ctx: *Context, _: *const Target) CodegenError!void {
     defer result.deinit();
 
     if (result.vreg_to_spill.count() > 0) {
-        try insertSpillScratch(ctx.allocator, &vcode, &result, pools.scratch, &vreg_origins);
+        try insertSpillScratch(ctx.allocator, &vcode, &result, pools.scratch, &vreg_origins, &ctx.domtree);
     }
 
     const spill_bytes: u32 = linear_scan.next_spill_offset;

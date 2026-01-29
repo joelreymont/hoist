@@ -1,9 +1,10 @@
 ---
 title: Pass domtree to insertSpillScratch
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-01-29T08:33:46.659691+01:00"
+created-at: "\"2026-01-29T08:33:46.659691+01:00\""
+closed-at: "2026-01-29T09:00:28.401178+01:00"
 ---
 
 Thread dominator info for reload hoisting decisions.
