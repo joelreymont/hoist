@@ -203,22 +203,22 @@ pub const JitModule = struct {
         desc: *const DataDesc,
     ) !void {
         var blob = CompiledBlob.init(self.alloc);
-        const bytes = switch (desc.init) {
+        const alignment = desc.align orelse 8;
+        switch (desc.init) {
             .uninit => @panic("uninit data"),
-            .zeros => |sz| blk: {
+            .zeros => |sz| {
                 blob.size = sz;
-                blob.ptr = self.mem.ptr + self.mem.len;
-                @memset(blob.ptr[0..sz], 0);
-                break :blk blob.ptr[0..sz];
+                const dest = try self.mem.alloc(sz, alignment);
+                @memset(dest, 0);
+                blob.ptr = dest.ptr;
             },
-            .bytes => |b| blk: {
+            .bytes => |b| {
                 blob.size = b.len;
-                blob.ptr = self.mem.ptr + self.mem.len;
-                @memcpy(blob.ptr[0..b.len], b);
-                break :blk blob.ptr[0..b.len];
+                const dest = try self.mem.alloc(b.len, alignment);
+                try self.mem.writeAt(dest, b);
+                blob.ptr = dest.ptr;
             },
-        };
-        _ = bytes;
+        }
 
         for (desc.func_relocs.items) |fr| {
             try blob.relocs.append(.{
