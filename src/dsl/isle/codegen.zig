@@ -3,6 +3,10 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
 const sema = @import("sema.zig");
+const trie = @import("trie.zig");
+const match_compiler = @import("codegen/match.zig");
+const constructors = @import("codegen/constructors.zig");
+const extractors = @import("codegen/extractors.zig");
 
 /// Code generation options.
 pub const CodegenOptions = struct {
@@ -48,8 +52,13 @@ pub const Codegen = struct {
 
     /// Generate Zig code from the compiled rules.
     pub fn generate(self: *Self, options: CodegenOptions) ![]const u8 {
+        _ = options;
+        self.output.clearRetainingCapacity();
         try self.emitPreamble();
-        try self.emitRuleFunctions(options);
+        try self.emitContextStubs();
+        try self.emitExternWrappers();
+        try self.emitExtractors();
+        try self.emitConstructors();
         return self.output.items;
     }
 
@@ -61,6 +70,171 @@ pub const Codegen = struct {
             \\
             \\
         );
+        try self.emitTupleTypes();
+    }
+
+    fn emitTupleTypes(self: *Self) !void {
+        const writer = self.output.writer(self.allocator);
+        for (self.typeenv.types.items) |ty| {
+            if (ty != .tuple) continue;
+            const tuple = ty.tuple;
+            try writer.print("pub const {s} = struct {{\n", .{self.typeenv.symName(tuple.name)});
+            for (tuple.fields, 0..) |field_ty, i| {
+                const field_name = try self.getTypeName(field_ty);
+                try writer.print("    field{d}: {s},\n", .{ i, field_name });
+            }
+            try writer.writeAll("};\n\n");
+        }
+    }
+
+    fn emitContextStubs(self: *Self) !void {
+        if (self.termenv.externs.count() == 0) return;
+        const writer = self.output.writer(self.allocator);
+        try writer.writeAll("pub const Context = struct {\n");
+        var it = self.termenv.externs.iterator();
+        while (it.next()) |entry| {
+            const term_id = entry.key_ptr.*;
+            const ext = entry.value_ptr.*;
+            const term = self.termenv.getTerm(term_id);
+            const func_name = self.typeenv.symName(ext.func);
+            const sig = self.getTermSignature(term);
+
+            try writer.print("    pub fn {s}(\n", .{func_name});
+            try writer.writeAll("        self: *Context,\n");
+            for (sig.params, 0..) |arg_ty, i| {
+                const ty_name = try self.getTypeName(arg_ty);
+                try writer.print("        arg{d}: {s},\n", .{ i, ty_name });
+            }
+            const ret_ty_name = try self.getTypeName(sig.ret_ty);
+            const is_partial = term.kind == .decl and term.kind.decl.partial;
+            const needs_optional = ext.kind == .extractor or is_partial;
+            const ret_prefix = if (needs_optional) "!?" else "!";
+            try writer.print("    ) {s}{s} {{\n", .{ ret_prefix, ret_ty_name });
+            try writer.writeAll("        _ = self;\n");
+            try writer.writeAll("        return error.Unimplemented;\n");
+            try writer.writeAll("    }\n\n");
+        }
+        try writer.writeAll("};\n\n");
+    }
+
+    fn emitExternWrappers(self: *Self) !void {
+        const writer = self.output.writer(self.allocator);
+        var it = self.termenv.externs.iterator();
+        while (it.next()) |entry| {
+            const term_id = entry.key_ptr.*;
+            const ext = entry.value_ptr.*;
+            const term = self.termenv.getTerm(term_id);
+            const term_name = self.typeenv.symName(term.name);
+            const func_name = self.typeenv.symName(ext.func);
+            const sig = self.getTermSignature(term);
+
+            switch (ext.kind) {
+                .constructor => {
+                    const ret_ty_name = try self.getTypeName(sig.ret_ty);
+                    const ret_prefix = if (term.kind == .decl and term.kind.decl.partial) "!?" else "!";
+                    try writer.print("\npub fn constructor_{s}(\n", .{term_name});
+                    try writer.writeAll("    ctx: *Context,\n");
+                    for (sig.params, 0..) |arg_ty, i| {
+                        const ty_name = try self.getTypeName(arg_ty);
+                        try writer.print("    arg{d}: {s},\n", .{ i, ty_name });
+                    }
+                    try writer.print(") {s}{s} {{\n", .{ ret_prefix, ret_ty_name });
+                    try writer.print("    return ctx.{s}(", .{func_name});
+                    for (sig.params, 0..) |_, i| {
+                        if (i > 0) try writer.writeAll(", ");
+                        try writer.print("arg{d}", .{i});
+                    }
+                    try writer.writeAll(");\n}\n");
+                },
+                .extractor => {
+                    const ret_ty_name = try self.getTypeName(sig.ret_ty);
+                    try writer.print("\npub fn extractor_{s}(\n", .{term_name});
+                    try writer.writeAll("    ctx: *Context,\n");
+                    for (sig.params, 0..) |arg_ty, i| {
+                        const ty_name = try self.getTypeName(arg_ty);
+                        try writer.print("    arg{d}: {s},\n", .{ i, ty_name });
+                    }
+                    try writer.print(") !?{s} {{\n", .{ret_ty_name});
+                    try writer.print("    return ctx.{s}(", .{func_name});
+                    for (sig.params, 0..) |_, i| {
+                        if (i > 0) try writer.writeAll(", ");
+                        try writer.print("arg{d}", .{i});
+                    }
+                    try writer.writeAll(");\n}\n");
+                },
+            }
+        }
+    }
+
+    fn emitExtractors(self: *Self) !void {
+        var gen = extractors.ExtractorCodegen.init(self.allocator, self.typeenv, self.termenv);
+        defer gen.deinit();
+
+        for (self.termenv.terms.items) |term| {
+            if (term.kind != .extractor) continue;
+            const code = try gen.generateExtractor(term.id);
+            try self.output.appendSlice(code);
+        }
+    }
+
+    fn emitConstructors(self: *Self) !void {
+        var term_rules = std.AutoHashMap(sema.TermId, std.ArrayList(usize)).init(self.allocator);
+        defer {
+            var it = term_rules.valueIterator();
+            while (it.next()) |list| {
+                list.deinit(self.allocator);
+            }
+            term_rules.deinit();
+        }
+
+        for (self.rules, 0..) |rule, i| {
+            const term_id = switch (rule.pattern) {
+                .term => |t| t.term_id,
+                else => continue,
+            };
+            const entry = try term_rules.getOrPut(term_id);
+            if (!entry.found_existing) {
+                entry.value_ptr.* = std.ArrayList(usize){};
+            }
+            try entry.value_ptr.append(self.allocator, i);
+        }
+
+        var mc = match_compiler.MatchCompiler.init(self.allocator, self.typeenv, self.termenv);
+        var ctor_gen = try constructors.ConstructorGen.init(self.allocator, self.typeenv, self.termenv);
+        defer ctor_gen.deinit();
+
+        var it = term_rules.iterator();
+        while (it.next()) |entry| {
+            const term_id = entry.key_ptr.*;
+            const indices = entry.value_ptr.items;
+            const term = self.termenv.getTerm(term_id);
+
+            if (term.kind != .decl) continue;
+            if (self.termenv.getExtern(term_id)) |ext| {
+                if (ext.kind == .constructor) continue;
+            }
+
+            std.mem.sort(usize, indices, self.rules, ruleIndexLess);
+
+            var rules = std.ArrayList(sema.Rule){};
+            defer rules.deinit(self.allocator);
+            for (indices) |idx| {
+                try rules.append(self.allocator, self.rules[idx]);
+            }
+
+            var ruleset = try mc.buildRuleSet(rules.items);
+            defer ruleset.deinit();
+
+            const code = try ctor_gen.genConstructor(term_id, &ruleset);
+            try self.output.appendSlice(code);
+        }
+    }
+
+    fn ruleIndexLess(rules: []const sema.Rule, a: usize, b: usize) bool {
+        const pa = rules[a].prio;
+        const pb = rules[b].prio;
+        if (pa == pb) return a < b;
+        return pa > pb;
     }
 
     fn emitRuleFunctions(self: *Self, options: CodegenOptions) !void {
@@ -115,6 +289,7 @@ pub const Codegen = struct {
                 const ty = self.typeenv.types.items[arg_ty.index()];
                 const ty_name = switch (ty) {
                     .primitive => |p| self.typeenv.symName(p.name),
+                    .tuple => |t| self.typeenv.symName(t.name),
                     .enum_type => |e| self.typeenv.symName(e.name),
                     else => "Value",
                 };
@@ -132,6 +307,7 @@ pub const Codegen = struct {
             const ret_ty_obj = self.typeenv.types.items[ret_ty.index()];
             const ret_ty_name = switch (ret_ty_obj) {
                 .primitive => |p| self.typeenv.symName(p.name),
+                .tuple => |t| self.typeenv.symName(t.name),
                 .enum_type => |e| self.typeenv.symName(e.name),
                 else => "Value",
             };
@@ -327,7 +503,11 @@ pub const Codegen = struct {
 
         // Return type
         const ret_ty_name = try self.getTypeName(decl.ret_ty);
-        try writer.print(") !{s} {{\n", .{ret_ty_name});
+        if (decl.partial) {
+            try writer.print(") !?{s} {{\n", .{ret_ty_name});
+        } else {
+            try writer.print(") !{s} {{\n", .{ret_ty_name});
+        }
 
         // Emit rule matching logic
         if (rule_indices.len > 0) {
@@ -338,8 +518,8 @@ pub const Codegen = struct {
         }
 
         // Default: error for no match
-        if (decl.pure) {
-            try writer.writeAll("    unreachable; // Pure constructor, all patterns should match\n");
+        if (decl.partial) {
+            try writer.writeAll("    return null;\n");
         } else {
             try writer.writeAll("    return error.NoMatch;\n");
         }
@@ -448,6 +628,7 @@ pub const Codegen = struct {
         const ty = self.typeenv.types.items[type_id.index()];
         return switch (ty) {
             .primitive => |p| self.typeenv.symName(p.name),
+            .tuple => |t| self.typeenv.symName(t.name),
             .enum_type => |e| self.typeenv.symName(e.name),
             else => "Value",
         };
@@ -478,6 +659,7 @@ test "Codegen basic structure" {
             .arg_tys = @constCast(&[_]sema.TypeId{ i32_ty, i32_ty }),
             .ret_ty = i32_ty,
             .pure = true,
+            .partial = false,
         } },
         .pos = sema.Pos.new(0, 0),
     };
@@ -546,4 +728,38 @@ test "Codegen basic structure" {
     try testing.expect(std.mem.indexOf(u8, code, "pub fn iadd") != null);
     try testing.expect(std.mem.indexOf(u8, code, "arg0: i32") != null);
     try testing.expect(std.mem.indexOf(u8, code, "arg1: i32") != null);
+}
+
+test "Codegen emits tuple types" {
+    var typeenv = sema.TypeEnv.init(testing.allocator);
+    defer typeenv.deinit();
+
+    var termenv = sema.TermEnv.init(testing.allocator);
+    defer termenv.deinit();
+
+    const i32_sym = try typeenv.internSym("i32");
+    const i32_ty = try typeenv.addType(.{ .primitive = .{
+        .id = sema.TypeId.new(0),
+        .name = i32_sym,
+        .pos = sema.Pos.new(0, 0),
+    } });
+
+    const tuple_id = sema.TypeId.new(@intCast(typeenv.types.items.len));
+    const tuple_sym = try typeenv.internSym("tuple_test");
+    const fields = try testing.allocator.dupe(sema.TypeId, &[_]sema.TypeId{ i32_ty, i32_ty });
+    defer testing.allocator.free(fields);
+    _ = try typeenv.addType(.{ .tuple = .{
+        .id = tuple_id,
+        .name = tuple_sym,
+        .fields = fields,
+        .pos = sema.Pos.new(0, 0),
+    } });
+
+    var gen = Codegen.init(testing.allocator, &typeenv, &termenv, &[_]sema.Rule{});
+    defer gen.deinit();
+
+    const code = try gen.generate(.{});
+    try testing.expect(std.mem.indexOf(u8, code, "pub const tuple_test") != null);
+    try testing.expect(std.mem.indexOf(u8, code, "field0: i32") != null);
+    try testing.expect(std.mem.indexOf(u8, code, "field1: i32") != null);
 }

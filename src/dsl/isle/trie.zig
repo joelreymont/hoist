@@ -54,7 +54,7 @@ pub const Binding = union(enum) {
     /// Result of calling an external extractor.
     extractor: struct {
         term: sema.TermId,
-        parameter: BindingId,
+        parameters: []const BindingId,
     },
     /// Result of calling a constructor.
     constructor: struct {
@@ -310,7 +310,21 @@ fn bindingsEqual(a: *const Binding, b: *const Binding) bool {
         .const_int => |ai| std.meta.eql(ai, b.const_int),
         .const_prim => |ap| std.meta.eql(ap, b.const_prim),
         .argument => |aa| std.meta.eql(aa, b.argument),
-        .extractor => |ae| std.meta.eql(ae, b.extractor),
+        .extractor => |ae| blk: {
+            const be = b.extractor;
+            if (!std.meta.eql(ae.term, be.term)) {
+                break :blk false;
+            }
+            if (ae.parameters.len != be.parameters.len) {
+                break :blk false;
+            }
+            for (ae.parameters, be.parameters) |ap, bp| {
+                if (!std.meta.eql(ap, bp)) {
+                    break :blk false;
+                }
+            }
+            break :blk true;
+        },
         .constructor => |ac| blk: {
             const bc = b.constructor;
             if (!std.meta.eql(ac.term, bc.term) or !std.meta.eql(ac.instance, bc.instance)) {
@@ -375,6 +389,7 @@ pub const RuleSet = struct {
         // Free binding slices
         for (self.bindings.items) |binding| {
             switch (binding) {
+                .extractor => |e| self.allocator.free(e.parameters),
                 .constructor => |c| self.allocator.free(c.parameters),
                 .make_variant => |v| self.allocator.free(v.fields),
                 else => {},
@@ -687,6 +702,19 @@ fn findBestSplit(
 
     if (candidates.items.len == 0) {
         return null;
+    }
+
+    var some_candidates = std.ArrayList(SplitScore){};
+    defer some_candidates.deinit(allocator);
+    for (candidates.items) |candidate| {
+        if (candidate.constraint == .some) {
+            try some_candidates.append(allocator, candidate);
+        }
+    }
+
+    if (some_candidates.items.len > 0) {
+        std.mem.sort(SplitScore, some_candidates.items, {}, SplitScore.lessThan);
+        return some_candidates.items[0];
     }
 
     // Sort and pick best

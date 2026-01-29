@@ -94,7 +94,7 @@ pub const MatchCompiler = struct {
         ruleset: *trie.RuleSet,
         rule: *trie.Rule,
         pattern: sema.Pattern,
-    ) error{ OutOfMemory, ConflictingConstraints }!trie.BindingId {
+    ) error{ OutOfMemory, ConflictingConstraints, UnsupportedExtractorPattern }!trie.BindingId {
         return switch (pattern) {
             .var_pat => |v| {
                 // Variable pattern - no constraint, just bind
@@ -106,73 +106,11 @@ pub const MatchCompiler = struct {
                 return try ruleset.internBinding(binding);
             },
             .term => |t| {
-                // Term pattern - extract constructor/extractor and recursively compile args
-                const term = self.termenv.getTerm(t.term_id);
-
-                switch (term.kind) {
-                    .decl => |decl| {
-                        // For constructor patterns, we need to:
-                        // 1. Create a binding for the matched value
-                        // 2. Add constraint that it matches this constructor
-                        // 3. Recursively compile argument patterns
-
-                        // The source binding is the value being matched
-                        const source = trie.Binding{
-                            .argument = .{ .index = trie.TupleIndex.new(0) },
-                        };
-                        const source_id = try ruleset.internBinding(source);
-
-                        // For enum variants, add a variant constraint
-                        const ret_ty = self.typeenv.getType(decl.ret_ty);
-                        if (ret_ty == .enum_type) {
-                            // Find which variant this constructor corresponds to
-                            const variant_id = self.findVariantForTerm(decl.ret_ty, t.term_id);
-                            if (variant_id) |vid| {
-                                const field_count = self.getVariantFieldCount(vid);
-                                const constraint = trie.Constraint{
-                                    .variant = .{
-                                        .ty = decl.ret_ty,
-                                        .variant = vid,
-                                        .field_count = trie.TupleIndex.new(@intCast(field_count)),
-                                    },
-                                };
-                                try rule.setConstraint(source_id, constraint);
-                                if (t.args.len != field_count) return error.ConflictingConstraints;
-
-                                for (t.args, 0..) |arg_pat, i| {
-                                    const field_binding = trie.Binding{
-                                        .match_variant = .{
-                                            .source = source_id,
-                                            .variant = vid,
-                                            .field = trie.TupleIndex.new(@intCast(i)),
-                                        },
-                                    };
-                                    const field_id = try ruleset.internBinding(field_binding);
-                                    _ = try self.compilePatternWithSource(ruleset, rule, arg_pat, field_id);
-                                }
-                            }
-                        }
-
-                        return source_id;
-                    },
-                    .extractor => |ext| {
-                        const source = trie.Binding{
-                            .argument = .{ .index = trie.TupleIndex.new(0) },
-                        };
-                        const source_id = try ruleset.internBinding(source);
-                        _ = try self.compilePatternWithSourceArgs(
-                            ruleset,
-                            rule,
-                            ext.template,
-                            source_id,
-                            t.args,
-                        );
-                        return source_id;
-                    },
-                    .extern_func => {
-                        return error.OutOfMemory; // External functions can't be patterns
-                    },
-                }
+                const source = trie.Binding{
+                    .argument = .{ .index = trie.TupleIndex.new(0) },
+                };
+                const source_id = try ruleset.internBinding(source);
+                return try self.compileTermPatternWithSource(ruleset, rule, t, source_id);
             },
             .const_bool => |c| {
                 const binding = trie.Binding{
@@ -253,6 +191,38 @@ pub const MatchCompiler = struct {
         rule: *trie.Rule,
         iflet: sema.IfLet,
     ) !trie.BindingId {
+        if (iflet.expr == .term) {
+            const term_expr = iflet.expr.term;
+            if (self.termenv.getExtern(term_expr.term_id)) |ext| {
+                if (ext.kind == .extractor) {
+                    var arg_bindings = std.ArrayList(trie.BindingId){};
+                    defer arg_bindings.deinit(self.allocator);
+
+                    for (term_expr.args) |arg| {
+                        const binding = try self.compileExpr(ruleset, arg);
+                        try arg_bindings.append(self.allocator, binding);
+                    }
+
+                    const params = try arg_bindings.toOwnedSlice(self.allocator);
+                    const binding = trie.Binding{
+                        .extractor = .{
+                            .term = term_expr.term_id,
+                            .parameters = params,
+                        },
+                    };
+                    const pre_len = ruleset.bindings.items.len;
+                    const extract_id = try ruleset.internBinding(binding);
+                    if (ruleset.bindings.items.len == pre_len) {
+                        self.allocator.free(params);
+                    }
+                    try rule.setConstraint(extract_id, .some);
+                    const some_binding = trie.Binding{ .match_some = .{ .source = extract_id } };
+                    const some_id = try ruleset.internBinding(some_binding);
+                    return try self.compilePatternWithSource(ruleset, rule, iflet.pattern, some_id);
+                }
+            }
+        }
+
         // Evaluate the RHS expression to get a binding
         const expr_binding = try self.compileExpr(ruleset, iflet.expr);
 
@@ -268,7 +238,7 @@ pub const MatchCompiler = struct {
         rule: *trie.Rule,
         pattern: sema.Pattern,
         source_id: trie.BindingId,
-    ) error{ OutOfMemory, ConflictingConstraints }!trie.BindingId {
+    ) error{ OutOfMemory, ConflictingConstraints, UnsupportedExtractorPattern }!trie.BindingId {
         return self.compilePatternWithSourceArgs(ruleset, rule, pattern, source_id, null);
     }
 
@@ -279,7 +249,7 @@ pub const MatchCompiler = struct {
         pattern: sema.Pattern,
         source_id: trie.BindingId,
         args: ?[]const sema.Pattern,
-    ) error{ OutOfMemory, ConflictingConstraints }!trie.BindingId {
+    ) error{ OutOfMemory, ConflictingConstraints, UnsupportedExtractorPattern }!trie.BindingId {
         return switch (pattern) {
             .var_pat => |v| {
                 if (args) |arg_patterns| {
@@ -328,53 +298,134 @@ pub const MatchCompiler = struct {
                 return last;
             },
             .term => |t| {
-                const term = self.termenv.getTerm(t.term_id);
-                switch (term.kind) {
-                    .decl => |decl| {
-                        // Constructor pattern - add variant constraint
-                        const ret_ty = self.typeenv.getType(decl.ret_ty);
-                        if (ret_ty == .enum_type) {
-                            const variant_id = self.findVariantForTerm(decl.ret_ty, t.term_id);
-                            if (variant_id) |vid| {
-                                const field_count = self.getVariantFieldCount(vid);
-                                const constraint = trie.Constraint{
-                                    .variant = .{
-                                        .ty = decl.ret_ty,
-                                        .variant = vid,
-                                        .field_count = trie.TupleIndex.new(@intCast(field_count)),
-                                    },
-                                };
-                                try rule.setConstraint(source_id, constraint);
-                                if (t.args.len != field_count) return error.ConflictingConstraints;
-
-                                for (t.args, 0..) |arg_pat, i| {
-                                    const field_binding = trie.Binding{
-                                        .match_variant = .{
-                                            .source = source_id,
-                                            .variant = vid,
-                                            .field = trie.TupleIndex.new(@intCast(i)),
-                                        },
-                                    };
-                                    const field_id = try ruleset.internBinding(field_binding);
-                                    _ = try self.compilePatternWithSourceArgs(ruleset, rule, arg_pat, field_id, args);
-                                }
-                            }
-                        }
-                        return source_id;
-                    },
-                    .extractor => |ext| {
-                        return try self.compilePatternWithSourceArgs(
-                            ruleset,
-                            rule,
-                            ext.template,
-                            source_id,
-                            t.args,
-                        );
-                    },
-                    .extern_func => return error.OutOfMemory,
-                }
+                return try self.compileTermPatternWithSource(ruleset, rule, t, source_id);
             },
         };
+    }
+
+    fn compileTermPatternWithSource(
+        self: *Self,
+        ruleset: *trie.RuleSet,
+        rule: *trie.Rule,
+        term_pat: sema.Pattern.term,
+        source_id: trie.BindingId,
+    ) error{ OutOfMemory, ConflictingConstraints, UnsupportedExtractorPattern }!trie.BindingId {
+        const term = self.termenv.getTerm(term_pat.term_id);
+        if (self.termenv.getExtern(term_pat.term_id)) |ext| {
+            if (ext.kind == .extractor) {
+                return try self.compileExternExtractorPattern(ruleset, rule, term_pat, source_id);
+            }
+        }
+
+        switch (term.kind) {
+            .decl => |decl| {
+                const ret_ty = self.typeenv.getType(decl.ret_ty);
+                if (ret_ty == .enum_type) {
+                    const variant_id = self.findVariantForTerm(decl.ret_ty, term_pat.term_id);
+                    if (variant_id) |vid| {
+                        const field_count = self.getVariantFieldCount(vid);
+                        const constraint = trie.Constraint{
+                            .variant = .{
+                                .ty = decl.ret_ty,
+                                .variant = vid,
+                                .field_count = trie.TupleIndex.new(@intCast(field_count)),
+                            },
+                        };
+                        try rule.setConstraint(source_id, constraint);
+                        if (term_pat.args.len != field_count) return error.ConflictingConstraints;
+
+                        for (term_pat.args, 0..) |arg_pat, i| {
+                            const field_binding = trie.Binding{
+                                .match_variant = .{
+                                    .source = source_id,
+                                    .variant = vid,
+                                    .field = trie.TupleIndex.new(@intCast(i)),
+                                },
+                            };
+                            const field_id = try ruleset.internBinding(field_binding);
+                            _ = try self.compilePatternWithSource(ruleset, rule, arg_pat, field_id);
+                        }
+                    }
+                }
+                return source_id;
+            },
+            .extractor => |ext| {
+                _ = try self.compilePatternWithSourceArgs(
+                    ruleset,
+                    rule,
+                    ext.template,
+                    source_id,
+                    term_pat.args,
+                );
+                return source_id;
+            },
+            .extern_func => return error.UnsupportedExtractorPattern,
+        }
+    }
+
+    fn compileExternExtractorPattern(
+        self: *Self,
+        ruleset: *trie.RuleSet,
+        rule: *trie.Rule,
+        term_pat: sema.Pattern.term,
+        source_id: trie.BindingId,
+    ) error{ OutOfMemory, ConflictingConstraints, UnsupportedExtractorPattern }!trie.BindingId {
+        const term = self.termenv.getTerm(term_pat.term_id);
+        const decl = switch (term.kind) {
+            .decl => |d| d,
+            else => return error.UnsupportedExtractorPattern,
+        };
+
+        if (decl.arg_tys.len != 1) {
+            return error.UnsupportedExtractorPattern;
+        }
+
+        const params = try self.allocator.alloc(trie.BindingId, 1);
+        params[0] = source_id;
+        const binding = trie.Binding{
+            .extractor = .{
+                .term = term_pat.term_id,
+                .parameters = params,
+            },
+        };
+        const pre_len = ruleset.bindings.items.len;
+        const extract_id = try ruleset.internBinding(binding);
+        if (ruleset.bindings.items.len == pre_len) {
+            self.allocator.free(params);
+        }
+
+        try rule.setConstraint(extract_id, .some);
+        const some_binding = trie.Binding{
+            .match_some = .{ .source = extract_id },
+        };
+        const some_id = try ruleset.internBinding(some_binding);
+
+        if (term_pat.args.len == 0) {
+            return some_id;
+        }
+
+        const ret_ty = self.typeenv.getType(decl.ret_ty);
+        switch (ret_ty) {
+            .tuple => |t| {
+                if (term_pat.args.len != t.fields.len) return error.ConflictingConstraints;
+                for (term_pat.args, 0..) |arg_pat, i| {
+                    const field_binding = trie.Binding{
+                        .match_tuple = .{
+                            .source = some_id,
+                            .field = trie.TupleIndex.new(@intCast(i)),
+                        },
+                    };
+                    const field_id = try ruleset.internBinding(field_binding);
+                    _ = try self.compilePatternWithSource(ruleset, rule, arg_pat, field_id);
+                }
+            },
+            else => {
+                if (term_pat.args.len != 1) return error.ConflictingConstraints;
+                _ = try self.compilePatternWithSource(ruleset, rule, term_pat.args[0], some_id);
+            },
+        }
+
+        return some_id;
     }
 
     /// Compile an expression into a binding.
@@ -401,6 +452,24 @@ pub const MatchCompiler = struct {
                     try arg_bindings.append(self.allocator, binding);
                 }
 
+                if (self.termenv.getExtern(t.term_id)) |ext| {
+                    if (ext.kind == .extractor) {
+                        const params = try arg_bindings.toOwnedSlice(self.allocator);
+                        const binding = trie.Binding{
+                            .extractor = .{
+                                .term = t.term_id,
+                                .parameters = params,
+                            },
+                        };
+                        const pre_len = ruleset.bindings.items.len;
+                        const binding_id = try ruleset.internBinding(binding);
+                        if (ruleset.bindings.items.len == pre_len) {
+                            self.allocator.free(params);
+                        }
+                        return binding_id;
+                    }
+                }
+
                 const term = self.termenv.getTerm(t.term_id);
                 const is_pure = switch (term.kind) {
                     .decl => |d| d.pure,
@@ -419,7 +488,12 @@ pub const MatchCompiler = struct {
                         },
                     },
                 };
-                return try ruleset.internBinding(binding);
+                const pre_len = ruleset.bindings.items.len;
+                const binding_id = try ruleset.internBinding(binding);
+                if (ruleset.bindings.items.len == pre_len) {
+                    self.allocator.free(params);
+                }
+                return binding_id;
             },
             .const_bool => |c| {
                 const binding = trie.Binding{
@@ -703,6 +777,7 @@ test "MatchCompiler: variant field patterns" {
             .arg_tys = @constCast(&[_]sema.TypeId{ i32_ty, i32_ty }),
             .ret_ty = enum_ty,
             .pure = true,
+            .partial = false,
         } },
         .pos = sema.Pos.new(0, 0),
     };

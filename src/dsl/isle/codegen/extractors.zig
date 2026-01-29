@@ -123,7 +123,7 @@ pub const ExtractorCodegen = struct {
 
                         try self.emitIndent(indent);
                         try writer.print(
-                            "const {s} = extractor_{s}(ctx, {s}) orelse return null;\n",
+                            "const {s} = (try extractor_{s}(ctx, {s})) orelse return null;\n",
                             .{ result_var, term_name, source_expr },
                         );
 
@@ -233,6 +233,7 @@ pub const ExtractorCodegen = struct {
         const ty = self.typeenv.types.items[type_id.index()];
         return switch (ty) {
             .primitive => |p| self.typeenv.symName(p.name),
+            .tuple => |t| self.typeenv.symName(t.name),
             .enum_type => |e| self.typeenv.symName(e.name),
             .builtin => |b| switch (b) {
                 .bool => "bool",
@@ -296,7 +297,7 @@ pub const ExtractorCodegen = struct {
             \\pub fn extractor_{s}(
             \\    ctx: *Context,
             \\    input: {s},
-            \\) ?
+            \\) !?
         , .{
             term_name,
             term_name,
@@ -496,7 +497,7 @@ test "ExtractorCodegen: simple boolean extractor" {
     // Verify the generated code contains key parts
     try testing.expect(std.mem.indexOf(u8, code, "pub fn extractor_is_true") != null);
     try testing.expect(std.mem.indexOf(u8, code, "input: bool") != null);
-    try testing.expect(std.mem.indexOf(u8, code, "?bool") != null);
+    try testing.expect(std.mem.indexOf(u8, code, "!?bool") != null);
     try testing.expect(std.mem.indexOf(u8, code, "if (input != true) return null;") != null);
     try testing.expect(std.mem.indexOf(u8, code, "return input;") != null);
 }

@@ -75,6 +75,13 @@ pub const Type = union(enum) {
         name: Sym,
         pos: Pos,
     },
+    /// Tuple type.
+    tuple: struct {
+        id: TypeId,
+        name: Sym,
+        fields: []TypeId,
+        pos: Pos,
+    },
     /// Sum type (enum with variants).
     enum_type: struct {
         name: Sym,
@@ -325,6 +332,7 @@ pub const TypeEnv = struct {
         const name_sym = switch (ty) {
             .builtin => return type_id,
             .primitive => |p| p.name,
+            .tuple => |t| t.name,
             .enum_type => |e| e.name,
         };
 
@@ -589,10 +597,11 @@ pub const Compiler = struct {
             const ret_ty = self.type_env.lookupType(ret_sym) orelse return error.UndefinedType;
             try ret_tys.append(self.allocator, ret_ty);
         }
-        if (ret_tys.items.len != 1) {
-            return error.MultiReturnNotSupported;
-        }
-        const ret_ty = ret_tys.items[0];
+        if (ret_tys.items.len == 0) return error.MissingReturnType;
+        const ret_ty = if (ret_tys.items.len == 1)
+            ret_tys.items[0]
+        else
+            try self.createTupleType(try ret_tys.toOwnedSlice(self.allocator), decl.pos);
 
         const term_id = TermId.new(@intCast(self.term_env.terms.items.len));
         const term = Term{
@@ -1008,6 +1017,21 @@ pub const Compiler = struct {
         return error.UndefinedConst;
     }
 
+    fn createTupleType(self: *Self, fields: []TypeId, pos: Pos) !TypeId {
+        const type_id = TypeId.new(@intCast(self.type_env.types.items.len));
+        const name = try std.fmt.allocPrint(self.allocator, "tuple_{d}", .{@intFromEnum(type_id)});
+        defer self.allocator.free(name);
+        const name_sym = try self.type_env.internSym(name);
+        const ty = Type{ .tuple = .{
+            .id = type_id,
+            .name = name_sym,
+            .fields = fields,
+            .pos = pos,
+        } };
+        _ = try self.type_env.addType(ty);
+        return type_id;
+    }
+
     fn exprType(self: *Self, expr: Expr) TypeId {
         _ = self;
         return switch (expr) {
@@ -1210,4 +1234,53 @@ test "Compiler basic type registration" {
     const i32_sym = try compiler.type_env.internSym("i32");
     const ty = compiler.type_env.lookupType(i32_sym);
     try testing.expect(ty != null);
+}
+
+test "Compiler decl multi-return builds tuple type" {
+    var compiler = Compiler.init(testing.allocator);
+    defer compiler.deinit();
+
+    const defs = [_]ast.Def{
+        .{ .type_def = ast.TypeDef{
+            .name = ast.Ident.init("i32", Pos.new(0, 0)),
+            .is_extern = false,
+            .ty = .{ .primitive = ast.Ident.init("i32", Pos.new(0, 0)) },
+            .pos = Pos.new(0, 0),
+        } },
+        .{ .type_def = ast.TypeDef{
+            .name = ast.Ident.init("i64", Pos.new(0, 0)),
+            .is_extern = false,
+            .ty = .{ .primitive = ast.Ident.init("i64", Pos.new(0, 0)) },
+            .pos = Pos.new(0, 0),
+        } },
+        .{ .decl = ast.Decl{
+            .term = ast.Ident.init("pair", Pos.new(0, 0)),
+            .arg_tys = &[_]ast.Ident{},
+            .ret_tys = &[_]ast.Ident{
+                ast.Ident.init("i32", Pos.new(0, 0)),
+                ast.Ident.init("i64", Pos.new(0, 0)),
+            },
+            .pure = true,
+            .partial = false,
+            .pos = Pos.new(0, 0),
+        } },
+    };
+
+    try compiler.compile(&defs);
+
+    const term_sym = try compiler.type_env.internSym("pair");
+    const term_id = compiler.term_env.lookupTerm(term_sym) orelse return error.UndefinedTerm;
+    const term = compiler.term_env.getTerm(term_id);
+    const decl = term.kind.decl;
+
+    const ret_ty = compiler.type_env.getType(decl.ret_ty);
+    try testing.expect(ret_ty == .tuple);
+    try testing.expectEqual(@as(usize, 2), ret_ty.tuple.fields.len);
+
+    const i32_sym = try compiler.type_env.internSym("i32");
+    const i64_sym = try compiler.type_env.internSym("i64");
+    const i32_ty = compiler.type_env.lookupType(i32_sym).?;
+    const i64_ty = compiler.type_env.lookupType(i64_sym).?;
+    try testing.expectEqual(i32_ty, ret_ty.tuple.fields[0]);
+    try testing.expectEqual(i64_ty, ret_ty.tuple.fields[1]);
 }

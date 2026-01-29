@@ -18,6 +18,7 @@ pub const ConstructorGen = struct {
     indent_level: usize,
     arg_tys: ?[]const sema.TypeId,
     prebound: std.AutoHashMap(usize, void),
+    emitted: std.AutoHashMap(usize, void),
 
     const Self = @This();
 
@@ -34,12 +35,14 @@ pub const ConstructorGen = struct {
             .indent_level = 0,
             .arg_tys = null,
             .prebound = std.AutoHashMap(usize, void).init(allocator),
+            .emitted = std.AutoHashMap(usize, void).init(allocator),
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.output.deinit();
         self.prebound.deinit();
+        self.emitted.deinit();
     }
 
     /// Generate a constructor function for a term with its associated rules.
@@ -78,19 +81,20 @@ pub const ConstructorGen = struct {
 
         // Return type
         const ret_ty_name = self.getTypeName(decl.ret_ty);
-        const is_partial = !decl.pure;
+        const is_partial = decl.partial;
 
         try writer.print(") ", .{});
         if (is_partial) {
-            try writer.print("?{s} {{\n", .{ret_ty_name});
+            try writer.print("!?{s} {{\n", .{ret_ty_name});
         } else {
-            try writer.print("{s} {{\n", .{ret_ty_name});
+            try writer.print("!{s} {{\n", .{ret_ty_name});
         }
 
         // Function body
         self.indent_level = 1;
         self.arg_tys = decl.arg_tys;
         self.prebound.clearRetainingCapacity();
+        self.emitted.clearRetainingCapacity();
         defer self.arg_tys = null;
 
         // Generate pattern matching logic from ruleset
@@ -140,6 +144,13 @@ pub const ConstructorGen = struct {
         ret_ty: sema.TypeId,
         is_partial: bool,
     ) !void {
+        var scope_emitted = std.ArrayList(usize){};
+        defer {
+            for (scope_emitted.items) |id| {
+                _ = self.emitted.remove(id);
+            }
+            scope_emitted.deinit(self.allocator);
+        }
         const writer = self.output.writer();
 
         switch (tree.*) {
@@ -156,6 +167,39 @@ pub const ConstructorGen = struct {
                 try self.emitRuleBody(rule, ruleset);
             },
             .switch_constraint => |sw| {
+                if (sw.binding.index() < ruleset.bindings.items.len) {
+                    const binding = &ruleset.bindings.items[sw.binding.index()];
+                    try self.emitBindingRecursive(ruleset, sw.binding, binding, &scope_emitted);
+                }
+                if (sw.cases.count() == 1) {
+                    var case_it = sw.cases.iterator();
+                    if (case_it.next()) |entry| {
+                        if (entry.key_ptr.* == .some) {
+                            const subtree = entry.value_ptr.*;
+                            try self.indent(self.indent_level);
+                            try writer.print("if (v{d} != null) {{\n", .{sw.binding.index()});
+                            self.indent_level += 1;
+                            try self.emitDecisionTree(subtree, ruleset, ret_ty, is_partial);
+                            self.indent_level -= 1;
+                            try self.indent(self.indent_level);
+                            try writer.writeAll("} else {\n");
+                            self.indent_level += 1;
+                            if (sw.default) |def| {
+                                try self.emitDecisionTree(def, ruleset, ret_ty, is_partial);
+                            } else if (is_partial) {
+                                try self.indent(self.indent_level);
+                                try writer.writeAll("return null;\n");
+                            } else {
+                                try self.indent(self.indent_level);
+                                try writer.writeAll("unreachable;\n");
+                            }
+                            self.indent_level -= 1;
+                            try self.indent(self.indent_level);
+                            try writer.writeAll("}\n");
+                            return;
+                        }
+                    }
+                }
                 try self.indent(self.indent_level);
                 try writer.print("switch (v{d}) {{\n", .{sw.binding.index()});
                 self.indent_level += 1;
@@ -199,6 +243,14 @@ pub const ConstructorGen = struct {
                 try writer.writeAll("}\n");
             },
             .test_equal => |eq| {
+                if (eq.a.index() < ruleset.bindings.items.len) {
+                    const binding = &ruleset.bindings.items[eq.a.index()];
+                    try self.emitBindingRecursive(ruleset, eq.a, binding, &scope_emitted);
+                }
+                if (eq.b.index() < ruleset.bindings.items.len) {
+                    const binding = &ruleset.bindings.items[eq.b.index()];
+                    try self.emitBindingRecursive(ruleset, eq.b, binding, &scope_emitted);
+                }
                 try self.indent(self.indent_level);
                 try writer.print("if (v{d} == v{d}) {{\n", .{ eq.a.index(), eq.b.index() });
                 self.indent_level += 1;
@@ -239,19 +291,26 @@ pub const ConstructorGen = struct {
     /// Emit body of a matched rule.
     fn emitRuleBody(self: *Self, rule: *const trie.Rule, ruleset: *const trie.RuleSet) !void {
         const writer = self.output.writer();
+        var scope_emitted = std.ArrayList(usize){};
+        defer {
+            for (scope_emitted.items) |id| {
+                _ = self.emitted.remove(id);
+            }
+            scope_emitted.deinit(self.allocator);
+        }
 
         // Emit impure bindings (side effects)
         for (rule.impure.items) |bind_id| {
             if (bind_id.index() < ruleset.bindings.items.len) {
                 const binding = &ruleset.bindings.items[bind_id.index()];
-                try self.emitBinding(bind_id, binding);
+                try self.emitBindingRecursive(ruleset, bind_id, binding, &scope_emitted);
             }
         }
 
         // Emit result binding if needed
         if (rule.result.index() < ruleset.bindings.items.len) {
             const result_binding = &ruleset.bindings.items[rule.result.index()];
-            try self.emitBinding(rule.result, result_binding);
+            try self.emitBindingRecursive(ruleset, rule.result, result_binding, &scope_emitted);
         }
 
         // Emit return expression
@@ -282,17 +341,31 @@ pub const ConstructorGen = struct {
             .extractor => |e| {
                 const term = self.termenv.getTerm(e.term);
                 const name = self.typeenv.symName(term.name);
-                try writer.print("ctx.extractor_{s}(v{d}) orelse return null", .{ name, e.parameter.index() });
+                try writer.print("try extractor_{s}(ctx", .{name});
+                for (e.parameters) |param| {
+                    try writer.writeAll(", ");
+                    try writer.print("v{d}", .{param.index()});
+                }
+                try writer.writeAll(")");
             },
             .constructor => |c| {
                 const term = self.termenv.getTerm(c.term);
                 const name = self.typeenv.symName(term.name);
-                try writer.print("ctx.constructor_{s}(", .{name});
-                for (c.parameters, 0..) |param, i| {
-                    if (i > 0) try writer.writeAll(", ");
+                const is_partial = term.kind == .decl and term.kind.decl.partial;
+                if (is_partial) {
+                    try writer.print("(try constructor_{s}(ctx", .{name});
+                } else {
+                    try writer.print("try constructor_{s}(ctx", .{name});
+                }
+                for (c.parameters) |param| {
+                    try writer.writeAll(", ");
                     try writer.print("v{d}", .{param.index()});
                 }
-                try writer.writeAll(")");
+                if (is_partial) {
+                    try writer.writeAll(")) orelse return null");
+                } else {
+                    try writer.writeAll(")");
+                }
             },
             .iterator => |it| try writer.print("v{d}.next()", .{it.source.index()}),
             .make_variant => |v| {
@@ -331,12 +404,73 @@ pub const ConstructorGen = struct {
                     try writer.writeAll("undefined");
                 }
             },
-            .make_some => |s| try writer.print(".{{ .some = v{d} }}", .{s.inner.index()}),
-            .match_some => |m| try writer.print("v{d}.some", .{m.source.index()}),
-            .match_tuple => |t| try writer.print("v{d}[{d}]", .{ t.source.index(), t.field.value() }),
+            .make_some => |s| try writer.print("v{d}", .{s.inner.index()}),
+            .match_some => |m| try writer.print("v{d}.?", .{m.source.index()}),
+            .match_tuple => |t| try writer.print("v{d}.field{d}", .{ t.source.index(), t.field.value() }),
         }
 
         try writer.writeAll(";\n");
+    }
+
+    fn emitBindingRecursive(
+        self: *Self,
+        ruleset: *const trie.RuleSet,
+        id: trie.BindingId,
+        binding: *const trie.Binding,
+        scope_emitted: *std.ArrayList(usize),
+    ) !void {
+        if (self.emitted.contains(id.index())) return;
+        if (binding.* == .argument and self.prebound.contains(id.index())) {
+            try self.emitted.put(id.index(), {});
+            try scope_emitted.append(self.allocator, id.index());
+            return;
+        }
+
+        switch (binding.*) {
+            .constructor => |c| {
+                for (c.parameters) |param| {
+                    const param_binding = &ruleset.bindings.items[param.index()];
+                    try self.emitBindingRecursive(ruleset, param, param_binding, scope_emitted);
+                }
+            },
+            .extractor => |e| {
+                for (e.parameters) |param| {
+                    const param_binding = &ruleset.bindings.items[param.index()];
+                    try self.emitBindingRecursive(ruleset, param, param_binding, scope_emitted);
+                }
+            },
+            .iterator => |it| {
+                const source_binding = &ruleset.bindings.items[it.source.index()];
+                try self.emitBindingRecursive(ruleset, it.source, source_binding, scope_emitted);
+            },
+            .make_variant => |v| {
+                for (v.fields) |field| {
+                    const field_binding = &ruleset.bindings.items[field.index()];
+                    try self.emitBindingRecursive(ruleset, field, field_binding, scope_emitted);
+                }
+            },
+            .match_variant => |m| {
+                const source_binding = &ruleset.bindings.items[m.source.index()];
+                try self.emitBindingRecursive(ruleset, m.source, source_binding, scope_emitted);
+            },
+            .make_some => |s| {
+                const inner_binding = &ruleset.bindings.items[s.inner.index()];
+                try self.emitBindingRecursive(ruleset, s.inner, inner_binding, scope_emitted);
+            },
+            .match_some => |m| {
+                const source_binding = &ruleset.bindings.items[m.source.index()];
+                try self.emitBindingRecursive(ruleset, m.source, source_binding, scope_emitted);
+            },
+            .match_tuple => |t| {
+                const source_binding = &ruleset.bindings.items[t.source.index()];
+                try self.emitBindingRecursive(ruleset, t.source, source_binding, scope_emitted);
+            },
+            else => {},
+        }
+
+        try self.emitBinding(id, binding);
+        try self.emitted.put(id.index(), {});
+        try scope_emitted.append(self.allocator, id.index());
     }
 
     fn emitArgExpr(self: *Self, writer: anytype, index: usize, arg_ty: sema.TypeId) !void {
@@ -386,10 +520,10 @@ pub const ConstructorGen = struct {
 
         // Return type
         const ret_ty_name = self.getTypeName(decl.ret_ty);
-        if (!decl.pure) {
-            try writer.print("    ) ?{s};\n", .{ret_ty_name});
+        if (decl.partial) {
+            try writer.print("    ) !?{s};\n", .{ret_ty_name});
         } else {
-            try writer.print("    ) {s};\n", .{ret_ty_name});
+            try writer.print("    ) !{s};\n", .{ret_ty_name});
         }
 
         return self.output.items;
@@ -434,6 +568,7 @@ pub const ConstructorGen = struct {
         const ty = self.typeenv.types.items[type_id.index()];
         return switch (ty) {
             .primitive => |p| self.typeenv.symName(p.name),
+            .tuple => |t| self.typeenv.symName(t.name),
             .enum_type => |e| self.typeenv.symName(e.name),
             .builtin => |b| switch (b) {
                 .bool => "bool",
@@ -447,6 +582,7 @@ pub const ConstructorGen = struct {
         const ty = self.typeenv.types.items[type_id.index()];
         return switch (ty) {
             .primitive => false,
+            .tuple => false,
             .enum_type => true,
             .builtin => false,
         };
@@ -555,6 +691,7 @@ test "ConstructorGen: simple constructor signature" {
             .arg_tys = arg_tys,
             .ret_ty = i32_ty,
             .pure = true,
+            .partial = false,
         } },
         .pos = sema.Pos.new(0, 0),
     };
@@ -569,7 +706,7 @@ test "ConstructorGen: simple constructor signature" {
     try testing.expect(std.mem.indexOf(u8, sig, "fn constructor_iadd") != null);
     try testing.expect(std.mem.indexOf(u8, sig, "arg0: i32") != null);
     try testing.expect(std.mem.indexOf(u8, sig, "arg1: i32") != null);
-    try testing.expect(std.mem.indexOf(u8, sig, ") i32;") != null);
+    try testing.expect(std.mem.indexOf(u8, sig, ") !i32;") != null);
 }
 
 test "ConstructorGen: partial constructor" {
@@ -598,7 +735,8 @@ test "ConstructorGen: partial constructor" {
             .decl = .{
                 .arg_tys = arg_tys,
                 .ret_ty = i32_ty,
-                .pure = false, // Partial constructor
+                .pure = false,
+                .partial = true,
             },
         },
         .pos = sema.Pos.new(0, 0),
@@ -611,7 +749,7 @@ test "ConstructorGen: partial constructor" {
     const sig = try gen.genConstructorSig(sema.TermId.new(0));
 
     // Partial constructors return optional
-    try testing.expect(std.mem.indexOf(u8, sig, ") ?i32;") != null);
+    try testing.expect(std.mem.indexOf(u8, sig, ") !?i32;") != null);
 }
 
 test "ConstructorGen: reference type handling" {
@@ -647,6 +785,7 @@ test "ConstructorGen: reference type handling" {
             .arg_tys = arg_tys,
             .ret_ty = enum_ty,
             .pure = true,
+            .partial = false,
         } },
         .pos = sema.Pos.new(0, 0),
     };
@@ -687,6 +826,7 @@ test "ConstructorGen: constructor body generation" {
             .arg_tys = arg_tys,
             .ret_ty = i32_ty,
             .pure = false,
+            .partial = true,
         } },
         .pos = sema.Pos.new(0, 0),
     };
@@ -705,7 +845,7 @@ test "ConstructorGen: constructor body generation" {
     try testing.expect(std.mem.indexOf(u8, code, "pub fn constructor_test_term") != null);
     try testing.expect(std.mem.indexOf(u8, code, "ctx: *Context") != null);
     try testing.expect(std.mem.indexOf(u8, code, "arg0: i32") != null);
-    try testing.expect(std.mem.indexOf(u8, code, "?i32") != null);
+    try testing.expect(std.mem.indexOf(u8, code, "!?i32") != null);
 }
 
 test "ConstructorGen: match_variant field access" {
@@ -761,6 +901,29 @@ test "ConstructorGen: match_variant field access" {
     try testing.expect(std.mem.indexOf(u8, gen.output.items, "v0.Pair.b") != null);
 }
 
+test "ConstructorGen: match_tuple field access" {
+    var typeenv = sema.TypeEnv.init(testing.allocator);
+    defer typeenv.deinit();
+
+    var termenv = sema.TermEnv.init(testing.allocator);
+    defer termenv.deinit();
+
+    var gen = try ConstructorGen.init(testing.allocator, &typeenv, &termenv);
+    defer gen.deinit();
+    gen.output.clearRetainingCapacity();
+
+    const binding = trie.Binding{
+        .match_tuple = .{
+            .source = trie.BindingId.new(0),
+            .field = trie.TupleIndex.new(1),
+        },
+    };
+
+    try gen.emitBinding(trie.BindingId.new(1), &binding);
+
+    try testing.expect(std.mem.indexOf(u8, gen.output.items, ".field1") != null);
+}
+
 test "ConstructorGen: argument validation for ref types" {
     var typeenv = sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
@@ -793,6 +956,7 @@ test "ConstructorGen: argument validation for ref types" {
             .arg_tys = arg_tys,
             .ret_ty = enum_ty,
             .pure = false,
+            .partial = false,
         } },
         .pos = sema.Pos.new(0, 0),
     };
