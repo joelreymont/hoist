@@ -48,14 +48,15 @@ pub fn PackedOption(comptime T: type) type {
             return self.value;
         }
 
-        /// Unwrap a packed Some value or panic.
-        pub fn unwrap(self: Self) T {
-            return self.expand() orelse @panic("unwrap on None");
+        /// Unwrap a packed Some value or return an error.
+        pub fn unwrap(self: Self) !T {
+            return self.expand() orelse error.UnwrapNone;
         }
 
-        /// Unwrap a packed Some value or panic with message.
-        pub fn expect(self: Self, msg: []const u8) T {
-            return self.expand() orelse @panic(msg);
+        /// Unwrap a packed Some value or return an error.
+        pub fn expect(self: Self, msg: []const u8) !T {
+            _ = msg;
+            return self.expand() orelse error.UnwrapNone;
         }
 
         /// Takes the value out of the packed option, leaving None in its place.
@@ -72,7 +73,7 @@ pub fn PackedOption(comptime T: type) type {
 
         /// Create a Some value.
         pub fn some(value: T) Self {
-            std.debug.assert(!T.isReservedValue(value), "Can't make a PackedOption from the reserved value");
+            std.debug.assert(!T.isReservedValue(value));
             return .{ .value = value };
         }
 
@@ -92,7 +93,7 @@ const TestEntity = struct {
     const RESERVED: u32 = std.math.maxInt(u32);
 
     pub fn fromIndex(i: u32) TestEntity {
-        std.debug.assert(i != RESERVED, "Can't use reserved index");
+        std.debug.assert(i != RESERVED);
         return .{ .index = i };
     }
 
@@ -129,10 +130,11 @@ test "PackedOption from optional" {
 
     const from_null = Opt.fromOptional(null);
     try testing.expect(from_null.isNone());
+    try testing.expectError(error.UnwrapNone, from_null.unwrap());
 
     const from_some = Opt.fromOptional(TestEntity.fromIndex(10));
     try testing.expect(from_some.isSome());
-    try testing.expect(from_some.unwrap().eql(TestEntity.fromIndex(10)));
+    try testing.expect((try from_some.unwrap()).eql(TestEntity.fromIndex(10)));
 }
 
 test "PackedOption take" {
