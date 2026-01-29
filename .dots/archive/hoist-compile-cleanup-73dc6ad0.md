@@ -1,9 +1,11 @@
 ---
 title: Compile cleanup
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-01-29T20:16:15.812402+01:00"
+created-at: "\"2026-01-29T20:16:15.812402+01:00\""
+closed-at: "2026-01-29T20:41:14.437469+01:00"
+close-reason: completed
 ---
 
 Full context: src/dsl/isle/compile.zig:135 cleanup skips extractor/let/pattern nodes. Cause: incomplete AST teardown. Fix: deep free extractor/extern/let/bind/wildcard/etc. Why: avoid leaks.
