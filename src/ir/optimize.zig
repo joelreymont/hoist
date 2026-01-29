@@ -11,6 +11,7 @@ const UnaryImmData = root.instruction_data.UnaryImmData;
 const BinaryImm64Data = root.instruction_data.BinaryImm64Data;
 const Opcode = root.opcodes.Opcode;
 const Imm64 = root.immediates.Imm64;
+const Type = root.types.Type;
 
 /// ISLE-based optimization pass.
 /// Applies pattern-matching optimizations defined in opts.isle.
@@ -300,4 +301,99 @@ test "OptimizationPass basic" {
 
     // Empty function - no changes
     try testing.expectEqual(false, changed);
+}
+
+test "OptimizationPass folds constant add" {
+    var sig = root.signature.Signature.init(testing.allocator, .fast);
+    defer sig.deinit();
+
+    var func = try Function.init(testing.allocator, "fold_add", sig);
+    defer func.deinit();
+
+    const entry = try func.dfg.makeBlock();
+    try func.layout.appendBlock(entry);
+
+    const c1_inst = try func.dfg.makeInst(InstructionData{
+        .unary_imm = UnaryImmData.init(.iconst, Imm64.new(2)),
+    });
+    const c1 = try func.dfg.appendInstResult(c1_inst, Type.I32);
+    try func.layout.appendInst(c1_inst, entry);
+
+    const c2_inst = try func.dfg.makeInst(InstructionData{
+        .unary_imm = UnaryImmData.init(.iconst, Imm64.new(3)),
+    });
+    const c2 = try func.dfg.appendInstResult(c2_inst, Type.I32);
+    try func.layout.appendInst(c2_inst, entry);
+
+    const add_inst = try func.dfg.makeInst(InstructionData{
+        .binary = .{ .opcode = .iadd, .args = .{ c1, c2 } },
+    });
+    const add_val = try func.dfg.appendInstResult(add_inst, Type.I32);
+    try func.layout.appendInst(add_inst, entry);
+
+    const ret_inst = try func.dfg.makeInst(InstructionData{
+        .unary = .{ .opcode = .@"return", .arg = add_val },
+    });
+    try func.layout.appendInst(ret_inst, entry);
+
+    var pass = OptimizationPass.init(testing.allocator, &func);
+    const changed = try pass.run();
+    try testing.expect(changed);
+
+    const ret_data = func.dfg.insts.get(ret_inst) orelse return error.MissingInst;
+    const ret_arg = ret_data.unary.arg;
+    const def = func.dfg.valueDef(ret_arg) orelse return error.MissingValueDef;
+    const def_inst = def.inst() orelse return error.MissingValueInst;
+    const def_data = func.dfg.insts.get(def_inst) orelse return error.MissingInst;
+
+    try testing.expect(def_data.* == .unary_imm);
+    try testing.expectEqual(@as(i64, 5), def_data.unary_imm.imm.value);
+}
+
+test "OptimizationPass replaces mul by power-of-two" {
+    var sig = root.signature.Signature.init(testing.allocator, .fast);
+    defer sig.deinit();
+
+    var func = try Function.init(testing.allocator, "fold_mul_shift", sig);
+    defer func.deinit();
+
+    const entry = try func.dfg.makeBlock();
+    try func.layout.appendBlock(entry);
+
+    const c1_inst = try func.dfg.makeInst(InstructionData{
+        .unary_imm = UnaryImmData.init(.iconst, Imm64.new(7)),
+    });
+    const c1 = try func.dfg.appendInstResult(c1_inst, Type.I32);
+    try func.layout.appendInst(c1_inst, entry);
+
+    const c2_inst = try func.dfg.makeInst(InstructionData{
+        .unary_imm = UnaryImmData.init(.iconst, Imm64.new(8)),
+    });
+    const c2 = try func.dfg.appendInstResult(c2_inst, Type.I32);
+    try func.layout.appendInst(c2_inst, entry);
+
+    const mul_inst = try func.dfg.makeInst(InstructionData{
+        .binary = .{ .opcode = .imul, .args = .{ c1, c2 } },
+    });
+    const mul_val = try func.dfg.appendInstResult(mul_inst, Type.I32);
+    try func.layout.appendInst(mul_inst, entry);
+
+    const ret_inst = try func.dfg.makeInst(InstructionData{
+        .unary = .{ .opcode = .@"return", .arg = mul_val },
+    });
+    try func.layout.appendInst(ret_inst, entry);
+
+    var pass = OptimizationPass.init(testing.allocator, &func);
+    const changed = try pass.run();
+    try testing.expect(changed);
+
+    const ret_data = func.dfg.insts.get(ret_inst) orelse return error.MissingInst;
+    const ret_arg = ret_data.unary.arg;
+    const def = func.dfg.valueDef(ret_arg) orelse return error.MissingValueDef;
+    const def_inst = def.inst() orelse return error.MissingValueInst;
+    const def_data = func.dfg.insts.get(def_inst) orelse return error.MissingInst;
+
+    try testing.expect(def_data.* == .binary_imm64);
+    try testing.expectEqual(Opcode.ishl_imm, def_data.binary_imm64.opcode);
+    try testing.expectEqual(@as(i64, 3), def_data.binary_imm64.imm.value);
 }
