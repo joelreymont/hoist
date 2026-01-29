@@ -8,8 +8,7 @@
 //! 5. Lowering (IR -> VCode via ISLE)
 //! 6. Register allocation
 //! 7. Rewrite vregs to pregs
-//! 8. Prologue/epilogue insertion
-//! 9. Code emission
+//! 8. Code emission
 
 const std = @import("std");
 pub const Context = @import("context.zig").Context;
@@ -754,7 +753,6 @@ fn insertSpillScratch(
 /// - Lowering to machine code
 /// - Register allocation
 /// - Rewrite vregs to pregs
-/// - Prologue/epilogue insertion
 /// - Code emission
 ///
 /// Returns compiled machine code with relocations.
@@ -792,10 +790,7 @@ pub fn compile(
     // 5. Rewrite vregs to pregs
     try rewriteRegisters(ctx, target);
 
-    // 6. Prologue/epilogue insertion
-    try insertPrologueEpilogue(ctx, target);
-
-    // 7. Emit machine code
+    // 6. Emit machine code
     try emit(ctx, target);
 
     return ctx.getCompiledCode() orelse return error.EmissionFailed;
@@ -5047,12 +5042,6 @@ fn rewriteRegisters(ctx: *Context, target: *const Target) CodegenError!void {
     }
 }
 
-/// Insert function prologue and epilogue.
-fn insertPrologueEpilogue(ctx: *Context, target: *const Target) CodegenError!void {
-    _ = ctx;
-    _ = target;
-}
-
 /// Emit machine code.
 fn emit(ctx: *Context, target: *const Target) CodegenError!void {
     switch (target.arch) {
@@ -5558,6 +5547,35 @@ test "rewriteRegisters: no vregs after regalloc" {
             try testing.expect(def_reg.toReg().toVReg() == null);
         }
     }
+}
+
+test "compile: emits prologue and epilogue" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    var func = try Function.init(testing.allocator, "prologue_epilogue", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+    const v0 = try builder.iconst(ir.I64, 0);
+    const ret_data = ir.InstructionData{ .unary = .{ .opcode = .@"return", .arg = v0 } };
+    const ret_inst = try func.dfg.makeInst(ret_data);
+    try func.layout.appendInst(ret_inst, block);
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+
+    const result = try compile(&ctx, &func, &target);
+    try testing.expect(result.code.items.len >= 16);
+
+    try testing.expectEqualSlices(u8, &[_]u8{ 0xfd, 0x7b, 0xbf, 0xa9 }, result.code.items[0..4]);
+    try testing.expectEqualSlices(u8, &[_]u8{ 0xfd, 0x7b, 0xc1, 0xa8 }, result.code.items[result.code.items.len - 8 .. result.code.items.len - 4]);
+    try testing.expectEqualSlices(u8, &[_]u8{ 0xc0, 0x03, 0x5f, 0xd6 }, result.code.items[result.code.items.len - 4 .. result.code.items.len]);
 }
 
 // Comprehensive IRBuilder tests
