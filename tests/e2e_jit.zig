@@ -1077,3 +1077,92 @@ test "try_call with external function reference" {
 //     try testing.expectEqual(@as(u8, 0x44), ptr[2]);
 //     try testing.expectEqual(@as(u8, 0x45), ptr[3]);
 // }
+
+test "JIT module: function allocations are disjoint" {
+    if (builtin.os.tag != .linux and builtin.os.tag != .macos) {
+        return error.SkipZigTest;
+    }
+
+    const alloc = testing.allocator;
+    const jit_mod = @import("hoist").jit.module;
+    const sig_mod = @import("hoist").ir.signature;
+
+    var jit = jit_mod.JitModule.init(alloc) catch |err| {
+        if (err == error.UnsupportedPlatform) return error.SkipZigTest;
+        return err;
+    };
+    defer jit.deinit();
+
+    var sig = sig_mod.Signature.init(alloc, .fast);
+    defer sig.deinit();
+
+    const id1 = try jit.declareFunction("jit_f1", .@"export", sig);
+    const id2 = try jit.declareFunction("jit_f2", .@"export", sig);
+
+    const bytes1 = [_]u8{ 0xAA, 0xBB, 0xCC, 0xDD };
+    const bytes2 = [_]u8{ 0x11, 0x22, 0x33, 0x44, 0x55 };
+
+    try jit.defineFunction(id1, &bytes1, &.{});
+    try jit.defineFunction(id2, &bytes2, &.{});
+    try jit.finalize();
+
+    const p1 = jit.getFn(id1, [*]const u8);
+    const p2 = jit.getFn(id2, [*]const u8);
+
+    const s1 = @intFromPtr(p1);
+    const e1 = s1 + bytes1.len;
+    const s2 = @intFromPtr(p2);
+    const e2 = s2 + bytes2.len;
+
+    try testing.expect(e1 <= s2 or e2 <= s1);
+    try testing.expectEqualSlices(u8, &bytes1, p1[0..bytes1.len]);
+    try testing.expectEqualSlices(u8, &bytes2, p2[0..bytes2.len]);
+}
+
+test "JIT module: data allocations are disjoint" {
+    if (builtin.os.tag != .linux and builtin.os.tag != .macos) {
+        return error.SkipZigTest;
+    }
+
+    const alloc = testing.allocator;
+    const jit_mod = @import("hoist").jit.module;
+    const module_mod = @import("hoist").module.module;
+    const DataDesc = module_mod.DataDesc;
+
+    var jit = jit_mod.JitModule.init(alloc) catch |err| {
+        if (err == error.UnsupportedPlatform) return error.SkipZigTest;
+        return err;
+    };
+    defer jit.deinit();
+
+    const id1 = try jit.declareData("jit_d1", .@"export", true, false);
+    const id2 = try jit.declareData("jit_d2", .@"export", true, false);
+
+    var desc1 = DataDesc.new(alloc);
+    defer desc1.deinit();
+    const bytes1 = [_]u8{ 0x10, 0x20, 0x30 };
+    desc1.init = .{ .bytes = &bytes1 };
+    desc1.@"align" = 8;
+
+    var desc2 = DataDesc.new(alloc);
+    defer desc2.deinit();
+    const bytes2 = [_]u8{ 0xFE, 0xED, 0xFA, 0xCE };
+    desc2.init = .{ .bytes = &bytes2 };
+    desc2.@"align" = 16;
+
+    try jit.defineData(id1, &desc1);
+    try jit.defineData(id2, &desc2);
+    try jit.finalize();
+
+    const p1 = jit.getData(id1, [*]const u8);
+    const p2 = jit.getData(id2, [*]const u8);
+
+    const s1 = @intFromPtr(p1);
+    const e1 = s1 + bytes1.len;
+    const s2 = @intFromPtr(p2);
+    const e2 = s2 + bytes2.len;
+
+    try testing.expect(e1 <= s2 or e2 <= s1);
+    try testing.expectEqualSlices(u8, &bytes1, p1[0..bytes1.len]);
+    try testing.expectEqualSlices(u8, &bytes2, p2[0..bytes2.len]);
+}
