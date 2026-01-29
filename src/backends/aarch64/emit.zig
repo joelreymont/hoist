@@ -198,8 +198,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .ldumax => |i| try emitLdumax(i.dst.toReg(), i.src, i.base, i.size, buffer),
         .ldumin => |i| try emitLdumin(i.dst.toReg(), i.src, i.base, i.size, buffer),
         .swp => |i| try emitSwp(i.dst.toReg(), i.src, i.base, i.size, buffer),
-        .b => |i| try emitB(i.target.label, buffer),
-        .b_cond => |i| try emitBCond(@intFromEnum(i.cond), i.target.label, buffer),
+        .b => |i| try emitB(i.target, buffer),
+        .b_cond => |i| try emitBCond(@intFromEnum(i.cond), i.target, buffer),
         .cbz => |i| try emitCbz(i.reg, i.target.label, i.size, buffer),
         .cbnz => |i| try emitCbnz(i.reg, i.target.label, i.size, buffer),
         .tbz => |i| try emitTbz(i.reg, i.bit, i.target.label, buffer),
@@ -3337,31 +3337,57 @@ fn emitIsb(buffer: *buffer_mod.MachBuffer) !void {
 }
 
 /// B label (unconditional branch)
-fn emitB(label: u32, buffer: *buffer_mod.MachBuffer) !void {
+fn emitB(target: inst_mod.BranchTarget, buffer: *buffer_mod.MachBuffer) !void {
     // B: 0|00101|imm26
-    const insn: u32 = (0b00101 << 26);
-
-    try buffer.put4(insn);
-
-    // Add label use for fixup
-    try buffer.useLabel(
-        MachLabel.new(label),
-        buffer_mod.LabelUseKind.branch26,
-    );
+    switch (target) {
+        .label => |label| {
+            const insn: u32 = (0b00101 << 26);
+            try buffer.put4(insn);
+            try buffer.useLabel(
+                MachLabel.new(label),
+                buffer_mod.LabelUseKind.branch26,
+            );
+        },
+        .offset => |offset| {
+            const imm26 = try branchImm26(offset);
+            const insn: u32 = (0b00101 << 26) | imm26;
+            try buffer.put4(insn);
+        },
+    }
 }
 
 /// B.cond label (conditional branch)
-fn emitBCond(cond: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void {
+fn emitBCond(cond: u8, target: inst_mod.BranchTarget, buffer: *buffer_mod.MachBuffer) !void {
     // B.cond: 01010100|imm19|0|cond
-    const insn: u32 = (0b01010100 << 24) | @as(u32, cond);
+    switch (target) {
+        .label => |label| {
+            const insn: u32 = (0b01010100 << 24) | @as(u32, cond);
+            try buffer.put4(insn);
+            try buffer.useLabel(
+                MachLabel.new(label),
+                buffer_mod.LabelUseKind.branch19,
+            );
+        },
+        .offset => |offset| {
+            const imm19 = try branchImm19(offset);
+            const insn: u32 = (0b01010100 << 24) | (imm19 << 5) | @as(u32, cond);
+            try buffer.put4(insn);
+        },
+    }
+}
 
-    try buffer.put4(insn);
+fn branchImm26(offset: i32) !u32 {
+    if (@mod(offset, 4) != 0) return error.OffsetNotAligned;
+    const imm = @divTrunc(offset, 4);
+    if (imm < -0x2000000 or imm > 0x1ffffff) return error.BranchOutOfRange;
+    return @as(u32, @bitCast(imm)) & 0x03ffffff;
+}
 
-    // Add label use for fixup
-    try buffer.useLabel(
-        MachLabel.new(label),
-        buffer_mod.LabelUseKind.branch19,
-    );
+fn branchImm19(offset: i32) !u32 {
+    if (@mod(offset, 4) != 0) return error.OffsetNotAligned;
+    const imm = @divTrunc(offset, 4);
+    if (imm < -0x20000 or imm > 0x1ffff) return error.BranchOutOfRange;
+    return @as(u32, @bitCast(imm)) & 0x7ffff;
 }
 
 /// CBZ (compare and branch if zero)

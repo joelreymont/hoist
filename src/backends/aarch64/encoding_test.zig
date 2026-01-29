@@ -221,6 +221,22 @@ test "encode: branches - conditional branch" {
     try testing.expectEqual(@as(usize, 4), bytes.len);
 }
 
+test "encode: branches - conditional branch offset" {
+    const inst = Inst{ .b_cond = .{
+        .cond = .eq,
+        .target = .{ .offset = 4 },
+    } };
+
+    const bytes = try encodeInst(inst);
+    defer testing.allocator.free(bytes);
+
+    try testing.expectEqual(@as(usize, 4), bytes.len);
+    try testing.expectEqual(@as(u8, 0x20), bytes[0]);
+    try testing.expectEqual(@as(u8, 0x00), bytes[1]);
+    try testing.expectEqual(@as(u8, 0x00), bytes[2]);
+    try testing.expectEqual(@as(u8, 0x54), bytes[3]);
+}
+
 test "encode: branches - branch register" {
     const x0 = PReg.new(.int, 0);
 

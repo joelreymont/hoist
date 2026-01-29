@@ -1009,6 +1009,46 @@ test "aarch64_cmp_imm: creates compare immediate instruction" {
     try testing.expectEqual(@as(u16, 42), inst.cmp_imm.imm);
 }
 
+test "aarch64_fcvtzs_32_trap emits traps" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test",
+        signature_mod.Signature.init(testing.allocator, &.{}, &.{}, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const inst = try aarch64_fcvtzs_32_trap(lower_mod.Value.new(0), &ctx);
+    try testing.expectEqual(Inst.fcvtzs, @as(std.meta.Tag(Inst), inst));
+
+    var udf_count: usize = 0;
+    var fcmp_count: usize = 0;
+    var bcond_count: usize = 0;
+    for (vcode.insns.items) |insn| {
+        switch (insn) {
+            .udf => udf_count += 1,
+            .fcmp => fcmp_count += 1,
+            .b_cond => bcond_count += 1,
+            else => {},
+        }
+    }
+
+    try testing.expectEqual(@as(usize, 3), udf_count);
+    try testing.expectEqual(@as(usize, 3), fcmp_count);
+    try testing.expectEqual(@as(usize, 3), bcond_count);
+}
+
 test "aarch64_cmn_rr: creates compare negative instruction" {
     const testing = std.testing;
 
@@ -2086,14 +2126,11 @@ pub fn aarch64_trapz(val: lower_mod.Value, trap_code: TrapCode, ctx: *lower_mod.
     try ctx.emit(Inst{ .cmp_imm = .{ .rn = val_reg, .imm = 0, .is_64 = true } });
 
     // Branch if non-zero (skip trap)
-    const skip_label = ctx.allocLabel();
-    try ctx.emit(Inst{ .b_cond = .{ .cond = .ne, .label = skip_label } });
+    try ctx.emit(Inst{ .b_cond = .{ .cond = .ne, .target = .{ .offset = 4 } } });
 
     // Trap if zero
     try ctx.emit(Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } });
 
-    // Skip label
-    try ctx.bindLabel(skip_label);
     return Inst{ .invalid = {} };
 }
 
@@ -2104,14 +2141,11 @@ pub fn aarch64_trapnz(val: lower_mod.Value, trap_code: TrapCode, ctx: *lower_mod
     try ctx.emit(Inst{ .cmp_imm = .{ .rn = val_reg, .imm = 0, .is_64 = true } });
 
     // Branch if zero (skip trap)
-    const skip_label = ctx.allocLabel();
-    try ctx.emit(Inst{ .b_cond = .{ .cond = .eq, .label = skip_label } });
+    try ctx.emit(Inst{ .b_cond = .{ .cond = .eq, .target = .{ .offset = 4 } } });
 
     // Trap if non-zero
     try ctx.emit(Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } });
 
-    // Skip label
-    try ctx.bindLabel(skip_label);
     return Inst{ .invalid = {} };
 }
 
@@ -2199,16 +2233,45 @@ pub fn max_fp_value(signed: bool, in_bits: u8, out_bits: u8, ctx: *lower_mod.Low
 /// For now, this serves as a placeholder that compiles and provides the function signature.
 pub fn aarch64_fcvtzs_32_trap(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_fcvtzs_32_trap");
-    const x_reg = try getValueReg(ctx, x);
+    const x_reg = try getValueRegFloat(ctx, x);
 
-    // TODO: Implement full bounds checking with traps
-    // This requires:
-    // 1. NaN check: FCMP x, x; if VS then trap
-    // 2. Underflow check: FCMP x, min_fp_value; if LE then trap
-    // 3. Overflow check: FCMP x, max_fp_value; if GE then trap
-    // 4. Then FCVTZS
-    //
-    // For now, use saturating FCVTZS (native ARM64 behavior)
+    // NaN check: FCMP x, x; if VS then trap
+    try ctx.emit(Inst{ .fcmp = .{
+        .src1 = x_reg,
+        .src2 = x_reg,
+        .size = .size32,
+    } });
+    try ctx.emit(Inst{ .b_cond = .{
+        .cond = .vc,
+        .target = .{ .offset = 4 },
+    } });
+    try ctx.emit(Inst{ .udf = .{ .imm = @intFromEnum(TrapCode.bad_conversion_to_integer) } });
+
+    // Underflow check: FCMP x, min_fp_value; if GT then ok, else trap
+    const min_reg = try min_fp_value(true, 32, 32, ctx);
+    try ctx.emit(Inst{ .fcmp = .{
+        .src1 = x_reg,
+        .src2 = min_reg,
+        .size = .size32,
+    } });
+    try ctx.emit(Inst{ .b_cond = .{
+        .cond = .gt,
+        .target = .{ .offset = 4 },
+    } });
+    try ctx.emit(Inst{ .udf = .{ .imm = @intFromEnum(TrapCode.bad_conversion_to_integer) } });
+
+    // Overflow check: FCMP x, max_fp_value; if LT then ok, else trap
+    const max_reg = try max_fp_value(true, 32, 32, ctx);
+    try ctx.emit(Inst{ .fcmp = .{
+        .src1 = x_reg,
+        .src2 = max_reg,
+        .size = .size32,
+    } });
+    try ctx.emit(Inst{ .b_cond = .{
+        .cond = .lt,
+        .target = .{ .offset = 4 },
+    } });
+    try ctx.emit(Inst{ .udf = .{ .imm = @intFromEnum(TrapCode.bad_conversion_to_integer) } });
 
     return Inst{ .fcvtzs = .{
         .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
