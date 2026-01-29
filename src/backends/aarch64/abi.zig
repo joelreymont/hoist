@@ -3844,6 +3844,20 @@ pub const ReturnLocation = union(enum) {
     indirect: void,
 };
 
+const hfa_ret_regs = [_]PReg{
+    PReg.new(.float, 0),
+    PReg.new(.float, 1),
+    PReg.new(.float, 2),
+    PReg.new(.float, 3),
+};
+
+const hva_ret_regs = [_]PReg{
+    PReg.new(.vector, 0),
+    PReg.new(.vector, 1),
+    PReg.new(.vector, 2),
+    PReg.new(.vector, 3),
+};
+
 /// Classify return value according to AAPCS64 rules.
 /// Returns how the value should be returned.
 pub fn classifyReturn(ty: Type, struct_store: ?*const types.StructStore) ReturnLocation {
@@ -3881,11 +3895,11 @@ pub fn classifyReturn(ty: Type, struct_store: ?*const types.StructStore) ReturnL
         if (fields) |flds| {
             // HFA: 1-4 same float types -> V0-V3
             if (isHfaIr(flds)) |_| {
-                return .{ .hfa = .{ .regs = &.{}, .count = @intCast(flds.len) } };
+                return .{ .hfa = .{ .regs = hfa_ret_regs[0..flds.len], .count = @intCast(flds.len) } };
             }
             // HVA: 1-4 same vector types -> V0-V3
             if (isHvaIr(flds)) |_| {
-                return .{ .hfa = .{ .regs = &.{}, .count = @intCast(flds.len) } };
+                return .{ .hfa = .{ .regs = hva_ret_regs[0..flds.len], .count = @intCast(flds.len) } };
             }
             // Size check
             if (size > 16) {
@@ -3935,6 +3949,68 @@ test "classifyReturn - float types" {
     const f64_ret = classifyReturn(Type.F64, null);
     try testing.expect(f64_ret == .single_reg);
     try testing.expectEqual(PReg.new(.float, 0), f64_ret.single_reg);
+}
+
+test "classifyReturn - struct HFA/HVA" {
+    var store = types.StructStore.init(testing.allocator);
+    defer store.deinit();
+
+    const hfa_fields = [_]types.StructField{
+        .{ .ty = Type.F64, .offset = 0 },
+        .{ .ty = Type.F64, .offset = 8 },
+    };
+    const hfa_id = try store.intern(&hfa_fields, 16);
+    const hfa_ty = Type.fromStructId(hfa_id);
+    const hfa_ret = classifyReturn(hfa_ty, &store);
+    try testing.expect(hfa_ret == .hfa);
+    try testing.expectEqual(@as(u8, 2), hfa_ret.hfa.count);
+    try testing.expectEqual(@as(usize, 2), hfa_ret.hfa.regs.len);
+    try testing.expectEqual(@as(u8, PReg.new(.float, 0).bits), hfa_ret.hfa.regs[0].bits);
+    try testing.expectEqual(@as(u8, PReg.new(.float, 1).bits), hfa_ret.hfa.regs[1].bits);
+
+    const hva_fields = [_]types.StructField{
+        .{ .ty = Type.I8X16, .offset = 0 },
+        .{ .ty = Type.I8X16, .offset = 16 },
+    };
+    const hva_id = try store.intern(&hva_fields, 32);
+    const hva_ty = Type.fromStructId(hva_id);
+    const hva_ret = classifyReturn(hva_ty, &store);
+    try testing.expect(hva_ret == .hfa);
+    try testing.expectEqual(@as(u8, 2), hva_ret.hfa.count);
+    try testing.expectEqual(@as(usize, 2), hva_ret.hfa.regs.len);
+    try testing.expectEqual(@as(u8, PReg.new(.vector, 0).bits), hva_ret.hfa.regs[0].bits);
+    try testing.expectEqual(@as(u8, PReg.new(.vector, 1).bits), hva_ret.hfa.regs[1].bits);
+}
+
+test "classifyReturn - struct reg_pair" {
+    var store = types.StructStore.init(testing.allocator);
+    defer store.deinit();
+
+    const fields = [_]types.StructField{
+        .{ .ty = Type.I64, .offset = 0 },
+        .{ .ty = Type.I64, .offset = 8 },
+    };
+    const id = try store.intern(&fields, 16);
+    const ty = Type.fromStructId(id);
+    const ret = classifyReturn(ty, &store);
+    try testing.expect(ret == .reg_pair);
+    try testing.expectEqual(@as(u8, PReg.new(.int, 0).bits), ret.reg_pair.lo.bits);
+    try testing.expectEqual(@as(u8, PReg.new(.int, 1).bits), ret.reg_pair.hi.bits);
+}
+
+test "classifyReturn - struct indirect" {
+    var store = types.StructStore.init(testing.allocator);
+    defer store.deinit();
+
+    const fields = [_]types.StructField{
+        .{ .ty = Type.I64, .offset = 0 },
+        .{ .ty = Type.I64, .offset = 8 },
+        .{ .ty = Type.I64, .offset = 16 },
+    };
+    const id = try store.intern(&fields, 24);
+    const ty = Type.fromStructId(id);
+    const ret = classifyReturn(ty, &store);
+    try testing.expect(ret == .indirect);
 }
 
 test "frame pointer enforced for large frames" {
