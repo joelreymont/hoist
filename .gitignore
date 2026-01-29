@@ -10,3 +10,4 @@ zig-out/
 *.backup2
 *.orig
 *~
+test_pop
