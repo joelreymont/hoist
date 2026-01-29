@@ -241,11 +241,22 @@ pub const Parser = struct {
 
     fn parseDecl(self: *Self, start_pos: Pos) !ast.Decl {
         var pure = false;
+        var partial = false;
         var term = try self.expectSymbol();
-        if (std.mem.eql(u8, term.name, "pure")) {
-            self.allocator.free(term.name);
-            pure = true;
-            term = try self.expectSymbol();
+        while (true) {
+            if (std.mem.eql(u8, term.name, "pure")) {
+                self.allocator.free(term.name);
+                pure = true;
+                term = try self.expectSymbol();
+                continue;
+            }
+            if (std.mem.eql(u8, term.name, "partial")) {
+                self.allocator.free(term.name);
+                partial = true;
+                term = try self.expectSymbol();
+                continue;
+            }
+            break;
         }
 
         const arg_tys = try self.parseIdentList();
@@ -255,12 +266,21 @@ pub const Parser = struct {
         errdefer self.allocator.free(ret_tys);
         if (ret_tys.len == 0) return error.MissingReturnType;
 
-        if (self.peek()) |tok| {
-            if (tok == .symbol and std.mem.eql(u8, tok.symbol, "pure")) {
+        while (self.peek()) |tok| {
+            if (tok != .symbol) break;
+            if (std.mem.eql(u8, tok.symbol, "pure")) {
                 const kw = try self.expectSymbol();
                 self.allocator.free(kw.name);
                 pure = true;
+                continue;
             }
+            if (std.mem.eql(u8, tok.symbol, "partial")) {
+                const kw = try self.expectSymbol();
+                self.allocator.free(kw.name);
+                partial = true;
+                continue;
+            }
+            break;
         }
 
         _ = try self.expect(.rparen);
@@ -270,6 +290,7 @@ pub const Parser = struct {
             .arg_tys = arg_tys,
             .ret_tys = ret_tys,
             .pure = pure,
+            .partial = partial,
             .pos = start_pos,
         };
     }
@@ -628,7 +649,7 @@ test "Parser type definition" {
 }
 
 test "Parser decl" {
-    const src = "(decl iadd (i32 i32) i32 pure)";
+    const src = "(decl pure iadd (i32 i32) i32 partial)";
     var lexer = Lexer.init(testing.allocator, 0, src);
     var parser = try Parser.init(testing.allocator, &lexer);
 
@@ -647,6 +668,7 @@ test "Parser decl" {
     try testing.expectEqual(@as(usize, 1), decl.ret_tys.len);
     try testing.expectEqualStrings("i32", decl.ret_tys[0].name);
     try testing.expect(decl.pure);
+    try testing.expect(decl.partial);
 }
 
 test "Parser simple rule" {

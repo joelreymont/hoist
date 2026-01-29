@@ -104,6 +104,7 @@ pub const TermKind = union(enum) {
         arg_tys: []TypeId,
         ret_ty: TypeId,
         pure: bool,
+        partial: bool,
     },
     /// Extractor - macro that expands to a pattern.
     extractor: struct {
@@ -440,6 +441,7 @@ test "TermEnv term registration" {
             .arg_tys = &.{},
             .ret_ty = TypeId.new(0),
             .pure = true,
+            .partial = false,
         } },
         .pos = Pos.new(0, 0),
     };
@@ -600,6 +602,7 @@ pub const Compiler = struct {
                 .arg_tys = try arg_tys.toOwnedSlice(self.allocator),
                 .ret_ty = ret_ty,
                 .pure = decl.pure,
+                .partial = decl.partial,
             } },
             .pos = decl.pos,
         };

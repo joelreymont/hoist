@@ -236,6 +236,7 @@ test "emit_zig: basic code generation" {
             .arg_tys = @constCast(&[_]sema_mod.TypeId{ i32_ty, i32_ty }),
             .ret_ty = i32_ty,
             .pure = true,
+            .partial = false,
         } },
         .pos = sema_mod.Pos.new(0, 0),
     };

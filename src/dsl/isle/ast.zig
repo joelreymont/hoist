@@ -69,6 +69,7 @@ pub const Decl = struct {
     arg_tys: []Ident,
     ret_tys: []Ident,
     pure: bool,
+    partial: bool,
     pos: Pos,
 };
 

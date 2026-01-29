@@ -113,7 +113,12 @@ pub const ZigEmitter = struct {
 
         // Return type
         const ret_ty = try self.getTypeName(sig.ret_ty);
-        try writer.print(") !{s} ", .{ret_ty});
+        const is_partial = term.kind == .decl and term.kind.decl.partial;
+        if (is_partial) {
+            try writer.print(") !?{s} ", .{ret_ty});
+        } else {
+            try writer.print(") !{s} ", .{ret_ty});
+        }
 
         // Function body
         self.indent = 0;
@@ -157,6 +162,7 @@ pub const ZigEmitter = struct {
         const ty = self.typeenv.getType(type_id);
         return switch (ty) {
             .primitive => |p| self.typeenv.symName(p.name),
+            .tuple => |t| self.typeenv.symName(t.name),
             .enum_type => |e| self.typeenv.symName(e.name),
             .builtin => |b| switch (b) {
                 .bool => "bool",
@@ -315,6 +321,7 @@ test "ZigEmitter basic structure" {
             .arg_tys = @constCast(&[_]sema.TypeId{ i32_ty, i32_ty }),
             .ret_ty = i32_ty,
             .pure = true,
+            .partial = false,
         } },
         .pos = sema.Pos.new(0, 0),
     };
