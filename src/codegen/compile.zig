@@ -642,6 +642,39 @@ fn insertSpillScratch(
     _ = domtree; // Will be used for reload hoisting
     const OperandCollector = a64_inst.OperandCollector;
 
+    // First pass: collect spilled vreg uses per block
+    var block_spill_uses = std.AutoHashMap(u32, std.AutoHashMap(reg_mod.VReg, void)).init(allocator);
+    defer {
+        var it = block_spill_uses.valueIterator();
+        while (it.next()) |v| v.deinit();
+        block_spill_uses.deinit();
+    }
+
+    for (vcode.blocks.items, 0..) |old_block, block_idx| {
+        const old_insns = vcode.insns.items[old_block.insn_start..old_block.insn_end];
+        var block_uses = std.AutoHashMap(reg_mod.VReg, void).init(allocator);
+
+        for (old_insns) |inst| {
+            var collector = OperandCollector.init(allocator);
+            defer collector.deinit();
+            try inst.getOperands(&collector);
+
+            for (collector.uses.items) |use_reg| {
+                const vreg = use_reg.toVReg() orelse continue;
+                if (result.getSpillSlot(vreg) != null) {
+                    try block_uses.put(vreg, {});
+                }
+            }
+        }
+
+        if (block_uses.count() > 0) {
+            try block_spill_uses.put(@intCast(block_idx), block_uses);
+        } else {
+            block_uses.deinit();
+        }
+    }
+
+    // Second pass: rewrite with spill/reload
     var new_insns = std.ArrayList(a64_inst.Inst){};
     errdefer new_insns.deinit(allocator);
 
