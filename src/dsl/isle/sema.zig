@@ -126,6 +126,11 @@ pub const Term = struct {
     pos: Pos,
 };
 
+pub const ExternInfo = struct {
+    kind: ast.ExternKind,
+    func: Sym,
+};
+
 /// Bound variable in a pattern.
 pub const BoundVar = struct {
     name: Sym,
@@ -343,6 +348,8 @@ pub const TermEnv = struct {
     terms: std.ArrayList(Term),
     /// Map term name to TermId.
     term_map: std.AutoHashMap(Sym, TermId),
+    /// External bindings for terms.
+    externs: std.AutoHashMap(TermId, ExternInfo),
     /// Allocator.
     allocator: Allocator,
 
@@ -352,6 +359,7 @@ pub const TermEnv = struct {
         return .{
             .terms = std.ArrayList(Term){},
             .term_map = std.AutoHashMap(Sym, TermId).init(allocator),
+            .externs = std.AutoHashMap(TermId, ExternInfo).init(allocator),
             .allocator = allocator,
         };
     }
@@ -359,6 +367,7 @@ pub const TermEnv = struct {
     pub fn deinit(self: *Self) void {
         self.terms.deinit(self.allocator);
         self.term_map.deinit();
+        self.externs.deinit();
     }
 
     /// Add a term definition.
@@ -377,6 +386,14 @@ pub const TermEnv = struct {
     /// Get term definition.
     pub fn getTerm(self: *const Self, id: TermId) Term {
         return self.terms.items[id.index()];
+    }
+
+    pub fn setExtern(self: *Self, term_id: TermId, info: ExternInfo) !void {
+        try self.externs.put(term_id, info);
+    }
+
+    pub fn getExtern(self: *const Self, term_id: TermId) ?ExternInfo {
+        return self.externs.get(term_id);
     }
 };
 
@@ -489,10 +506,11 @@ pub const Compiler = struct {
     fn registerType(self: *Self, type_def: ast.TypeDef) !void {
         const name_sym = try self.type_env.internSym(type_def.name.name);
 
+        var type_id = TypeId.new(0);
         const ty = switch (type_def.ty) {
             .primitive => |prim| blk: {
                 const prim_sym = try self.type_env.internSym(prim.name);
-                const type_id = TypeId.new(@intCast(self.type_env.types.items.len));
+                type_id = TypeId.new(@intCast(self.type_env.types.items.len));
                 break :blk Type{ .primitive = .{
                     .id = type_id,
                     .name = prim_sym,
@@ -525,7 +543,7 @@ pub const Compiler = struct {
                     });
                 }
 
-                const type_id = TypeId.new(@intCast(self.type_env.types.items.len));
+                type_id = TypeId.new(@intCast(self.type_env.types.items.len));
                 break :blk Type{ .enum_type = .{
                     .name = name_sym,
                     .id = type_id,
@@ -537,6 +555,17 @@ pub const Compiler = struct {
         };
 
         _ = try self.type_env.addType(ty);
+
+        if (ty == .enum_type) {
+            const type_name = self.type_env.symName(name_sym);
+            for (ty.enum_type.variants) |variant| {
+                const variant_name = self.type_env.symName(variant.name);
+                const qualified = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ type_name, variant_name });
+                defer self.allocator.free(qualified);
+                const qualified_sym = try self.type_env.internSym(qualified);
+                try self.type_env.const_types.put(qualified_sym, type_id);
+            }
+        }
     }
 
     fn registerDecl(self: *Self, decl: ast.Decl) !void {
@@ -551,8 +580,17 @@ pub const Compiler = struct {
             try arg_tys.append(self.allocator, arg_ty);
         }
 
-        const ret_sym = try self.type_env.internSym(decl.ret_ty.name);
-        const ret_ty = self.type_env.lookupType(ret_sym) orelse return error.UndefinedType;
+        var ret_tys = std.ArrayList(TypeId){};
+        defer ret_tys.deinit(self.allocator);
+        for (decl.ret_tys) |ret_ident| {
+            const ret_sym = try self.type_env.internSym(ret_ident.name);
+            const ret_ty = self.type_env.lookupType(ret_sym) orelse return error.UndefinedType;
+            try ret_tys.append(self.allocator, ret_ty);
+        }
+        if (ret_tys.items.len != 1) {
+            return error.MultiReturnNotSupported;
+        }
+        const ret_ty = ret_tys.items[0];
 
         const term_id = TermId.new(@intCast(self.term_env.terms.items.len));
         const term = Term{
@@ -570,23 +608,13 @@ pub const Compiler = struct {
     }
 
     fn registerExtern(self: *Self, extern_def: ast.ExternDef) !void {
-        const name_sym = try self.type_env.internSym(extern_def.term.name);
-        const term_id = TermId.new(@intCast(self.term_env.terms.items.len));
-
-        // For now, assume unit type for extern functions
-        const unit_ty = TypeId.new(0);
-
-        const term = Term{
-            .name = name_sym,
-            .id = term_id,
-            .kind = .{ .extern_func = .{
-                .arg_tys = &.{},
-                .ret_ty = unit_ty,
-            } },
-            .pos = extern_def.pos,
-        };
-
-        _ = try self.term_env.addTerm(term);
+        const term_sym = try self.type_env.internSym(extern_def.term.name);
+        const term_id = self.term_env.lookupTerm(term_sym) orelse return error.UndefinedTerm;
+        const func_sym = try self.type_env.internSym(extern_def.func.name);
+        try self.term_env.setExtern(term_id, .{
+            .kind = extern_def.kind,
+            .func = func_sym,
+        });
     }
 
     fn registerExtractor(self: *Self, extractor: ast.Extractor) !void {
@@ -655,11 +683,25 @@ pub const Compiler = struct {
         defer bound_vars.deinit(self.allocator);
 
         const pattern = try self.checkPattern(rule.pattern, &bound_vars);
+        var iflets = std.ArrayList(IfLet){};
+        defer iflets.deinit(self.allocator);
+
+        for (rule.iflets) |iflet_ast| {
+            const iflet_expr = try self.checkExpr(iflet_ast.expr, &bound_vars);
+            const iflet_ty = self.exprType(iflet_expr);
+            const iflet_pattern = try self.checkPatternWithType(iflet_ast.pattern, &bound_vars, iflet_ty);
+            try iflets.append(self.allocator, .{
+                .pattern = iflet_pattern,
+                .expr = iflet_expr,
+                .pos = iflet_ast.pos,
+            });
+        }
+
         const expr = try self.checkExpr(rule.expr, &bound_vars);
 
         return Rule{
             .pattern = pattern,
-            .iflets = &.{},
+            .iflets = try iflets.toOwnedSlice(self.allocator),
             .expr = expr,
             .prio = rule.prio orelse 0,
             .pos = rule.pos,
@@ -678,43 +720,59 @@ pub const Compiler = struct {
     ) !Pattern {
         switch (pat) {
             .var_pat => |v| {
-                // Variable binding - check if already bound, otherwise infer type
                 const name_sym = try self.type_env.internSym(v.var_name.name);
-
-                // Check if variable is already bound in this pattern
-                for (bound_vars.items, 0..) |bv, i| {
-                    if (bv.name.index() == name_sym.index()) {
-                        // Variable re-use - must have same type
-                        // If we have an expected type, verify it matches
-                        if (expected_ty) |exp_ty| {
-                            if (bv.ty.index() != exp_ty.index()) {
-                                return error.TypeMismatch;
-                            }
-                        }
-                        return Pattern{ .var_pat = .{
-                            .var_id = i,
-                            .name = name_sym,
-                            .ty = bv.ty,
-                            .pos = v.pos,
-                        } };
-                    }
-                }
-
-                // New variable binding - use expected type if available
-                const var_id = bound_vars.items.len;
-                const ty = expected_ty orelse TypeId.new(0); // Placeholder if no type hint
-
-                try bound_vars.append(self.allocator, BoundVar{
-                    .name = name_sym,
-                    .ty = ty,
-                    .pos = v.pos,
-                });
-
+                const binding = try self.bindVar(bound_vars, name_sym, expected_ty, v.pos);
                 return Pattern{ .var_pat = .{
-                    .var_id = var_id,
+                    .var_id = binding.id,
                     .name = name_sym,
-                    .ty = ty,
+                    .ty = binding.ty,
                     .pos = v.pos,
+                } };
+            },
+            .wildcard => |w| {
+                const ty = expected_ty orelse TypeId.new(0);
+                return Pattern{ .wildcard = .{
+                    .ty = ty,
+                    .pos = w.pos,
+                } };
+            },
+            .bind_pattern => |b| {
+                const subpat = try self.checkPatternWithType(b.subpat.*, bound_vars, expected_ty);
+                const name_sym = try self.type_env.internSym(b.var_name.name);
+                const binding = try self.bindVar(bound_vars, name_sym, subpat.ty, b.pos);
+                const subpat_ptr = try self.allocator.create(Pattern);
+                subpat_ptr.* = subpat;
+                return Pattern{ .bind_pattern = .{
+                    .var_id = binding.id,
+                    .name = name_sym,
+                    .subpat = subpat_ptr,
+                    .ty = binding.ty,
+                    .pos = b.pos,
+                } };
+            },
+            .const_bool => |c| {
+                const ty = expected_ty orelse TypeId.new(0);
+                _ = ty;
+                return Pattern{ .const_bool = .{
+                    .val = c.val,
+                    .pos = c.pos,
+                } };
+            },
+            .const_int => |c| {
+                const ty = expected_ty orelse TypeId.new(0);
+                return Pattern{ .const_int = .{
+                    .val = c.val,
+                    .ty = ty,
+                    .pos = c.pos,
+                } };
+            },
+            .const_prim => |c| {
+                const name_sym = try self.type_env.internSym(c.val.name);
+                const ty = try self.resolveConstType(name_sym, expected_ty);
+                return Pattern{ .const_prim = .{
+                    .val = name_sym,
+                    .ty = ty,
+                    .pos = c.pos,
                 } };
             },
             .term => |t| {
@@ -765,11 +823,39 @@ pub const Compiler = struct {
                     .pos = t.pos,
                 } };
             },
-            else => return error.UnsupportedPattern,
+            .and_pat => |a| {
+                var subpats = std.ArrayList(Pattern){};
+                defer subpats.deinit(self.allocator);
+                var ty = expected_ty;
+                for (a.subpats) |sub| {
+                    const checked = try self.checkPatternWithType(sub, bound_vars, ty);
+                    if (ty) |exp_ty| {
+                        if (checked.ty.index() != exp_ty.index()) return error.TypeMismatch;
+                    } else {
+                        ty = checked.ty;
+                    }
+                    try subpats.append(self.allocator, checked);
+                }
+                const final_ty = ty orelse TypeId.new(0);
+                return Pattern{ .and_pat = .{
+                    .subpats = try subpats.toOwnedSlice(self.allocator),
+                    .ty = final_ty,
+                    .pos = a.pos,
+                } };
+            },
         }
     }
 
     fn checkExpr(self: *Self, expr: ast.Expr, bound_vars: *std.ArrayList(BoundVar)) !Expr {
+        return self.checkExprWithType(expr, bound_vars, null);
+    }
+
+    fn checkExprWithType(
+        self: *Self,
+        expr: ast.Expr,
+        bound_vars: *std.ArrayList(BoundVar),
+        expected_ty: ?TypeId,
+    ) !Expr {
         switch (expr) {
             .var_expr => |v| {
                 const name_sym = try self.type_env.internSym(v.name.name);
@@ -777,6 +863,9 @@ pub const Compiler = struct {
                 // Find variable in bound vars
                 for (bound_vars.items, 0..) |bv, i| {
                     if (bv.name.index() == name_sym.index()) {
+                        if (expected_ty) |exp_ty| {
+                            if (bv.ty.index() != exp_ty.index()) return error.TypeMismatch;
+                        }
                         return Expr{ .var_expr = .{
                             .var_id = i,
                             .name = name_sym,
@@ -793,11 +882,18 @@ pub const Compiler = struct {
                 const term_id = self.term_env.lookupTerm(term_sym) orelse return error.UndefinedTerm;
                 const term = self.term_env.getTerm(term_id);
 
+                const arg_tys = switch (term.kind) {
+                    .decl => |d| d.arg_tys,
+                    .extractor => |e| e.arg_tys,
+                    .extern_func => |e| e.arg_tys,
+                };
+                if (t.args.len != arg_tys.len) return error.ArityMismatch;
+
                 var args = std.ArrayList(Expr){};
                 defer args.deinit(self.allocator);
 
-                for (t.args) |arg| {
-                    try args.append(self.allocator, try self.checkExpr(arg, bound_vars));
+                for (t.args, 0..) |arg, i| {
+                    try args.append(self.allocator, try self.checkExprWithType(arg, bound_vars, arg_tys[i]));
                 }
 
                 const ret_ty = switch (term.kind) {
@@ -806,6 +902,10 @@ pub const Compiler = struct {
                     .extern_func => |e| e.ret_ty,
                 };
 
+                if (expected_ty) |exp_ty| {
+                    if (ret_ty.index() != exp_ty.index()) return error.TypeMismatch;
+                }
+
                 return Expr{ .term = .{
                     .term_id = term_id,
                     .args = try args.toOwnedSlice(self.allocator),
@@ -813,8 +913,108 @@ pub const Compiler = struct {
                     .pos = t.pos,
                 } };
             },
-            else => return error.UnsupportedExpr,
+            .const_bool => |c| {
+                return Expr{ .const_bool = .{ .val = c.val, .pos = c.pos } };
+            },
+            .const_int => |c| {
+                const ty = expected_ty orelse TypeId.new(0);
+                return Expr{ .const_int = .{
+                    .val = c.val,
+                    .ty = ty,
+                    .pos = c.pos,
+                } };
+            },
+            .const_prim => |c| {
+                const name_sym = try self.type_env.internSym(c.val.name);
+                const ty = try self.resolveConstType(name_sym, expected_ty);
+                return Expr{ .const_prim = .{
+                    .val = name_sym,
+                    .ty = ty,
+                    .pos = c.pos,
+                } };
+            },
+            .let_expr => |l| {
+                const saved_len = bound_vars.items.len;
+                var bindings = std.ArrayList(LetBinding){};
+                defer bindings.deinit(self.allocator);
+
+                for (l.defs) |def| {
+                    const name_sym = try self.type_env.internSym(def.var_name.name);
+                    const ty_sym = try self.type_env.internSym(def.ty.name);
+                    const ty = self.type_env.lookupType(ty_sym) orelse return error.UndefinedType;
+                    const val = try self.checkExprWithType(def.val, bound_vars, ty);
+                    const var_id = bound_vars.items.len;
+                    try bound_vars.append(self.allocator, .{
+                        .name = name_sym,
+                        .ty = ty,
+                        .pos = def.pos,
+                    });
+                    try bindings.append(self.allocator, .{
+                        .var_id = var_id,
+                        .name = name_sym,
+                        .ty = ty,
+                        .val = val,
+                        .pos = def.pos,
+                    });
+                }
+
+                const body = try self.checkExprWithType(l.body.*, bound_vars, expected_ty);
+                bound_vars.items.len = saved_len;
+
+                const body_ptr = try self.allocator.create(Expr);
+                body_ptr.* = body;
+                return Expr{ .let_expr = .{
+                    .bindings = try bindings.toOwnedSlice(self.allocator),
+                    .body = body_ptr,
+                    .ty = self.exprType(body),
+                    .pos = l.pos,
+                } };
+            },
         }
+    }
+
+    fn bindVar(
+        self: *Self,
+        bound_vars: *std.ArrayList(BoundVar),
+        name_sym: Sym,
+        expected_ty: ?TypeId,
+        pos: Pos,
+    ) !struct { id: usize, ty: TypeId } {
+        for (bound_vars.items, 0..) |bv, i| {
+            if (bv.name.index() == name_sym.index()) {
+                if (expected_ty) |exp_ty| {
+                    if (bv.ty.index() != exp_ty.index()) return error.TypeMismatch;
+                }
+                return .{ .id = i, .ty = bv.ty };
+            }
+        }
+
+        const ty = expected_ty orelse TypeId.new(0);
+        const var_id = bound_vars.items.len;
+        try bound_vars.append(self.allocator, .{
+            .name = name_sym,
+            .ty = ty,
+            .pos = pos,
+        });
+        return .{ .id = var_id, .ty = ty };
+    }
+
+    fn resolveConstType(self: *Self, name_sym: Sym, expected_ty: ?TypeId) !TypeId {
+        if (self.type_env.const_types.get(name_sym)) |ty| return ty;
+        if (expected_ty) |ty| return ty;
+        return error.UndefinedConst;
+    }
+
+    fn exprType(self: *Self, expr: Expr) TypeId {
+        _ = self;
+        return switch (expr) {
+            .term => |t| t.ty,
+            .var_expr => |v| v.ty,
+            .const_bool => TypeId.new(0),
+            .const_int => |c| c.ty,
+            .const_prim => |c| c.ty,
+            .let_expr => |l| l.ty,
+        };
     }
 
     /// Group rules by their root term and sort by descending priority.
