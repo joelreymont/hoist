@@ -119,16 +119,16 @@ pub fn CodegenResult(comptime T: type) type {
             return self == .err;
         }
 
-        pub fn unwrap(self: @This()) T {
+        pub fn unwrap(self: @This()) !T {
             return switch (self) {
                 .ok => |v| v,
-                .err => @panic("unwrap on error value"),
+                .err => error.UnwrapErr,
             };
         }
 
-        pub fn unwrapErr(self: @This()) CodegenError {
+        pub fn unwrapErr(self: @This()) !CodegenError {
             return switch (self) {
-                .ok => @panic("unwrapErr on ok value"),
+                .ok => error.UnwrapOk,
                 .err => |e| e,
             };
         }
@@ -207,11 +207,13 @@ test "CodegenResult basic operations" {
     const ok_result = CodegenResult(u32){ .ok = 42 };
     try std.testing.expect(ok_result.isOk());
     try std.testing.expect(!ok_result.isErr());
-    try std.testing.expectEqual(@as(u32, 42), ok_result.unwrap());
+    try std.testing.expectEqual(@as(u32, 42), try ok_result.unwrap());
+    try std.testing.expectError(error.UnwrapOk, ok_result.unwrapErr());
 
     const err_result = CodegenResult(u32){ .err = .{ .unsupported = "test" } };
     try std.testing.expect(!err_result.isOk());
     try std.testing.expect(err_result.isErr());
+    try std.testing.expectError(error.UnwrapErr, err_result.unwrap());
 }
 
 /// Severity level for diagnostics
