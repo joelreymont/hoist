@@ -90,24 +90,37 @@ pub const Mem = struct {
     /// Copy machine code into executable memory.
     pub fn write(self: *Mem, code: []const u8) !void {
         if (code.len > self.len) return error.CodeTooLarge;
-        @memcpy(self.ptr[0..code.len], code);
+        try self.writeExec(self.ptr[0..code.len], code);
+    }
+
+    /// Copy data into the given memory region.
+    pub fn writeAt(self: *Mem, dest: []u8, bytes: []const u8) !void {
+        _ = self;
+        if (bytes.len > dest.len) return error.CodeTooLarge;
+        @memcpy(dest[0..bytes.len], bytes);
+    }
+
+    /// Copy executable code into the given region and flush I-cache if needed.
+    pub fn writeExec(self: *Mem, dest: []u8, code: []const u8) !void {
+        try self.writeAt(dest, code);
         if (builtin.cpu.arch == .aarch64 or builtin.cpu.arch == .arm) {
-            self.flushCache(code.len);
+            self.flushCacheRange(dest.ptr, code.len);
         }
     }
 
     /// Flush instruction cache for ARM architectures.
-    fn flushCache(self: *Mem, len: usize) void {
+    fn flushCacheRange(self: *Mem, base: [*]u8, len: usize) void {
+        _ = self;
         if (builtin.os.tag == .macos or builtin.os.tag == .ios) {
             const sys_icache_invalidate = struct {
                 extern "c" fn sys_icache_invalidate(addr: *anyopaque, size: usize) void;
             }.sys_icache_invalidate;
-            sys_icache_invalidate(self.ptr, len);
+            sys_icache_invalidate(base, len);
         } else if (builtin.os.tag == .linux) {
             const clear_cache = struct {
                 extern "c" fn __clear_cache(begin: *anyopaque, end: *anyopaque) void;
             }.__clear_cache;
-            clear_cache(self.ptr, self.ptr + len);
+            clear_cache(base, base + len);
         }
     }
 

@@ -189,8 +189,9 @@ pub const JitModule = struct {
         try blob.relocs.appendSlice(relocs);
 
         // Allocate and copy
-        blob.ptr = self.mem.ptr + self.mem.len; // TODO: track allocation
-        @memcpy(blob.ptr[0..bytes.len], bytes);
+        const dest = try self.mem.alloc(bytes.len, 16);
+        try self.mem.writeExec(dest, bytes);
+        blob.ptr = dest.ptr;
 
         self.funcs.items[id.idx] = blob;
         try self.to_finalize.append(id);
