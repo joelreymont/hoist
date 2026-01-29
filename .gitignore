@@ -1,5 +1,5 @@
 /target
-SESSION.md
+SESSION*.md
 .zig-cache/
 zig-out/
 
