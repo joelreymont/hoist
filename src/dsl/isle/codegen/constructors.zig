@@ -16,6 +16,8 @@ pub const ConstructorGen = struct {
     allocator: Allocator,
     output: std.ArrayList(u8),
     indent_level: usize,
+    arg_tys: ?[]const sema.TypeId,
+    prebound: std.AutoHashMap(usize, void),
 
     const Self = @This();
 
@@ -30,11 +32,14 @@ pub const ConstructorGen = struct {
             .allocator = allocator,
             .output = std.ArrayList(u8){},
             .indent_level = 0,
+            .arg_tys = null,
+            .prebound = std.AutoHashMap(usize, void).init(allocator),
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.output.deinit();
+        self.prebound.deinit();
     }
 
     /// Generate a constructor function for a term with its associated rules.
@@ -84,8 +89,12 @@ pub const ConstructorGen = struct {
 
         // Function body
         self.indent_level = 1;
+        self.arg_tys = decl.arg_tys;
+        self.prebound.clearRetainingCapacity();
+        defer self.arg_tys = null;
 
         // Generate pattern matching logic from ruleset
+        try self.emitArgValidation(ruleset, decl.arg_tys);
         try self.emitRulesetBody(ruleset, decl.ret_ty, is_partial);
 
         // Closing brace
@@ -253,6 +262,9 @@ pub const ConstructorGen = struct {
     /// Emit a single binding.
     fn emitBinding(self: *Self, id: trie.BindingId, binding: *const trie.Binding) !void {
         const writer = self.output.writer();
+        if (binding.* == .argument and self.prebound.contains(id.index())) {
+            return;
+        }
         try self.indent(self.indent_level);
         try writer.print("const v{d} = ", .{id.index()});
 
@@ -260,7 +272,13 @@ pub const ConstructorGen = struct {
             .const_bool => |b| try writer.print("{}", .{b.val}),
             .const_int => |i| try writer.print("{d}", .{i.val}),
             .const_prim => |p| try writer.print(".{s}", .{self.typeenv.symName(p.val)}),
-            .argument => |a| try writer.print("arg{d}", .{a.index.value()}),
+            .argument => |a| {
+                if (self.argType(a.index.value())) |arg_ty| {
+                    try self.emitArgExpr(writer, a.index.value(), arg_ty);
+                } else {
+                    try writer.print("arg{d}", .{a.index.value()});
+                }
+            },
             .extractor => |e| {
                 const term = self.termenv.getTerm(e.term);
                 const name = self.typeenv.symName(term.name);
@@ -321,6 +339,21 @@ pub const ConstructorGen = struct {
         try writer.writeAll(";\n");
     }
 
+    fn emitArgExpr(self: *Self, writer: anytype, index: usize, arg_ty: sema.TypeId) !void {
+        if (self.isRefType(arg_ty)) {
+            try writer.print("arg{d}.*", .{index});
+        } else {
+            try writer.print("arg{d}", .{index});
+        }
+    }
+
+    fn argType(self: *const Self, index: usize) ?sema.TypeId {
+        if (self.arg_tys) |arg_tys| {
+            if (index < arg_tys.len) return arg_tys[index];
+        }
+        return null;
+    }
+
     /// Generate constructor signature as a trait function declaration.
     pub fn genConstructorSig(
         self: *Self,
@@ -365,14 +398,22 @@ pub const ConstructorGen = struct {
     /// Generate argument validation logic.
     fn emitArgValidation(
         self: *Self,
+        ruleset: *const trie.RuleSet,
         arg_tys: []const sema.TypeId,
     ) !void {
         const writer = self.output.writer();
-        _ = arg_tys;
+        for (arg_tys, 0..) |arg_ty, i| {
+            const binding = trie.Binding{
+                .argument = .{ .index = trie.TupleIndex.new(@intCast(i)) },
+            };
+            const binding_id = ruleset.findBinding(&binding) orelse continue;
 
-        // TODO: Add type checking and validation
-        try self.indent(self.indent_level);
-        try writer.writeAll("// Argument validation\n");
+            try self.indent(self.indent_level);
+            try writer.print("const v{d} = ", .{binding_id.index()});
+            try self.emitArgExpr(writer, i, arg_ty);
+            try writer.writeAll(";\n");
+            try self.prebound.put(binding_id.index(), {});
+        }
     }
 
     /// Generate return value construction.
@@ -718,4 +759,62 @@ test "ConstructorGen: match_variant field access" {
     try gen.emitBinding(trie.BindingId.new(1), &binding);
 
     try testing.expect(std.mem.indexOf(u8, gen.output.items, "v0.Pair.b") != null);
+}
+
+test "ConstructorGen: argument validation for ref types" {
+    var typeenv = sema.TypeEnv.init(testing.allocator);
+    defer typeenv.deinit();
+
+    var termenv = sema.TermEnv.init(testing.allocator);
+    defer termenv.deinit();
+
+    const enum_sym = try typeenv.internSym("MyEnum");
+    const variants = try testing.allocator.alloc(sema.Variant, 1);
+    defer testing.allocator.free(variants);
+    variants[0] = .{ .name = try typeenv.internSym("A"), .fields = &.{} };
+
+    const enum_ty = try typeenv.addType(.{ .enum_type = .{
+        .name = enum_sym,
+        .id = sema.TypeId.new(0),
+        .is_extern = false,
+        .variants = variants,
+        .pos = sema.Pos.new(0, 0),
+    } });
+
+    const term_sym = try typeenv.internSym("id_enum");
+    const arg_tys = try testing.allocator.alloc(sema.TypeId, 1);
+    defer testing.allocator.free(arg_tys);
+    arg_tys[0] = enum_ty;
+
+    const term = sema.Term{
+        .name = term_sym,
+        .id = sema.TermId.new(0),
+        .kind = .{ .decl = .{
+            .arg_tys = arg_tys,
+            .ret_ty = enum_ty,
+            .pure = false,
+        } },
+        .pos = sema.Pos.new(0, 0),
+    };
+    _ = try termenv.addTerm(term);
+
+    var ruleset = trie.RuleSet.init(testing.allocator);
+    defer ruleset.deinit();
+
+    const arg_binding = trie.Binding{
+        .argument = .{ .index = trie.TupleIndex.new(0) },
+    };
+    const arg_id = try ruleset.internBinding(arg_binding);
+
+    var rule = trie.Rule.init(testing.allocator, sema.Pos.new(0, 0));
+    defer rule.deinit();
+    rule.result = arg_id;
+    try ruleset.addRule(rule);
+
+    var gen = try ConstructorGen.init(testing.allocator, &typeenv, &termenv);
+    defer gen.deinit();
+
+    const code = try gen.genConstructor(sema.TermId.new(0), &ruleset);
+
+    try testing.expect(std.mem.indexOf(u8, code, "const v0 = arg0.*;") != null);
 }
