@@ -203,7 +203,7 @@ pub const JitModule = struct {
         desc: *const DataDesc,
     ) !void {
         var blob = CompiledBlob.init(self.alloc);
-        const alignment = desc.align orelse 8;
+        const alignment = desc.@"align" orelse 8;
         switch (desc.init) {
             .uninit => @panic("uninit data"),
             .zeros => |sz| {
