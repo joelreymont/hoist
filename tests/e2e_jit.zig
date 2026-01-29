@@ -1085,7 +1085,7 @@ test "JIT module: function allocations are disjoint" {
 
     const alloc = testing.allocator;
     const jit_mod = @import("hoist").jit.module;
-    const sig_mod = @import("hoist").ir.signature;
+    const sig_mod = @import("hoist").signature;
 
     var jit = jit_mod.JitModule.init(alloc) catch |err| {
         if (err == error.UnsupportedPlatform) return error.SkipZigTest;
@@ -1126,7 +1126,7 @@ test "JIT module: data allocations are disjoint" {
 
     const alloc = testing.allocator;
     const jit_mod = @import("hoist").jit.module;
-    const module_mod = @import("hoist").module.module;
+    const module_mod = @import("hoist").module;
     const DataDesc = module_mod.DataDesc;
 
     var jit = jit_mod.JitModule.init(alloc) catch |err| {
