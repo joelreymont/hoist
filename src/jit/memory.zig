@@ -141,17 +141,17 @@ pub const Mem = struct {
     }
 
     /// Get function pointer for () -> i32 signature.
-    pub fn getFnVoidToI32(self: *Mem) *const fn () callconv(.C) i32 {
+    pub fn getFnVoidToI32(self: *Mem) *const fn () callconv(.c) i32 {
         return @ptrCast(@alignCast(self.ptr));
     }
 
     /// Get function pointer for (i32, i32) -> i32 signature.
-    pub fn getFnI32I32ToI32(self: *Mem) *const fn (i32, i32) callconv(.C) i32 {
+    pub fn getFnI32I32ToI32(self: *Mem) *const fn (i32, i32) callconv(.c) i32 {
         return @ptrCast(@alignCast(self.ptr));
     }
 
     /// Get function pointer for (i64, i64) -> i64 signature.
-    pub fn getFnI64I64ToI64(self: *Mem) *const fn (i64, i64) callconv(.C) i64 {
+    pub fn getFnI64I64ToI64(self: *Mem) *const fn (i64, i64) callconv(.c) i64 {
         return @ptrCast(@alignCast(self.ptr));
     }
 };
