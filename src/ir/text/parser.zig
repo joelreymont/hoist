@@ -125,6 +125,11 @@ pub const Parser = struct {
 
         _ = try self.expect(.lparen);
         while (self.current.type != .rparen) {
+            if (self.current.type == .ellipsis) {
+                sig.is_varargs = true;
+                self.advance();
+                break;
+            }
             const param_ty = try self.parseType();
             try sig.params.append(self.alloc, AbiParam.new(param_ty));
             if (self.current.type == .comma) self.advance();
@@ -412,6 +417,30 @@ test "parse add function" {
 
     try testing.expectEqualStrings("add", func.name);
     try testing.expectEqual(@as(usize, 2), func.sig.params.items.len);
+    try testing.expectEqual(@as(usize, 1), func.sig.returns.items.len);
+}
+
+test "parse varargs function" {
+    const src =
+        \\function "vprintf" (i32, ...) -> i32 {
+        \\  block0(v0: i32):
+        \\    return v0
+        \\}
+    ;
+
+    var parser = try Parser.init(testing.allocator, src);
+    defer parser.deinit();
+
+    const func = try parser.parseFunction();
+    defer {
+        var f = func;
+        f.deinit();
+        testing.allocator.destroy(func);
+    }
+
+    try testing.expectEqualStrings("vprintf", func.name);
+    try testing.expectEqual(@as(usize, 1), func.sig.params.items.len);
+    try testing.expect(func.sig.is_varargs);
     try testing.expectEqual(@as(usize, 1), func.sig.returns.items.len);
 }
 

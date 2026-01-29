@@ -73,6 +73,14 @@ pub const Printer = struct {
             try self.printType(param.value_type);
         }
 
+        if (sig.is_varargs) {
+            if (sig.params.items.len > 0) {
+                try self.writer().writeAll(", ...");
+            } else {
+                try self.writer().writeAll("...");
+            }
+        }
+
         try self.writer().writeAll(")");
 
         if (sig.returns.items.len > 0) {

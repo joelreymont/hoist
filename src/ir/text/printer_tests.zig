@@ -41,6 +41,33 @@ test "printer - simple add" {
     try testing.expect(std.mem.indexOf(u8, txt, "iadd") != null);
 }
 
+test "printer - varargs" {
+    const alloc = testing.allocator;
+
+    var sig = Signature.init(alloc, .fast);
+    try sig.params.append(alloc, AbiParam.new(Type.I32));
+    sig.is_varargs = true;
+    try sig.returns.append(alloc, AbiParam.new(Type.I32));
+
+    var func = try Function.init(alloc, "vprintf", sig);
+    defer func.deinit();
+
+    var fb = try FunctionBuilder.init(testing.allocator, &func);
+    const blk = try fb.createBlock();
+    fb.switchToBlock(blk);
+    const v0 = try fb.appendBlockParam(blk, Type.I32);
+    try fb.jumpArgs(blk, &.{v0});
+
+    var pr = Printer.init(alloc, &func);
+    defer pr.deinit();
+
+    try pr.print();
+    const txt = pr.finish();
+
+    try testing.expect(std.mem.indexOf(u8, txt, "function \"vprintf\"") != null);
+    try testing.expect(std.mem.indexOf(u8, txt, "(i32, ...)") != null);
+}
+
 test "printer - branch" {
     const alloc = testing.allocator;
 

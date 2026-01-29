@@ -11,6 +11,7 @@ pub const TokenType = enum {
     colon,
     equal,
     arrow,
+    ellipsis,
     identifier,
     integer,
     string,
@@ -185,6 +186,16 @@ pub const Lexer = struct {
                     return Token{ .type = .identifier, .lexeme = "-", .line = line_num };
                 }
             },
+            '.' => {
+                if (self.peekNext() == '.' and self.pos + 2 < self.src.len and self.src[self.pos + 2] == '.') {
+                    _ = self.advance();
+                    _ = self.advance();
+                    _ = self.advance();
+                    return Token{ .type = .ellipsis, .lexeme = "...", .line = line_num };
+                }
+                _ = self.advance();
+                return Token{ .type = .identifier, .lexeme = ".", .line = line_num };
+            },
             '/' => {
                 if (self.peekNext() == '/') {
                     return self.readComment();
@@ -207,7 +218,7 @@ pub const Lexer = struct {
 const testing = std.testing;
 
 test "basic tokens" {
-    var lexer = Lexer.init("( ) { } , : = ->");
+    var lexer = Lexer.init("( ) { } , : = -> ...");
     try testing.expectEqual(TokenType.lparen, lexer.nextToken().type);
     try testing.expectEqual(TokenType.rparen, lexer.nextToken().type);
     try testing.expectEqual(TokenType.lbrace, lexer.nextToken().type);
@@ -216,6 +227,7 @@ test "basic tokens" {
     try testing.expectEqual(TokenType.colon, lexer.nextToken().type);
     try testing.expectEqual(TokenType.equal, lexer.nextToken().type);
     try testing.expectEqual(TokenType.arrow, lexer.nextToken().type);
+    try testing.expectEqual(TokenType.ellipsis, lexer.nextToken().type);
     try testing.expectEqual(TokenType.eof, lexer.nextToken().type);
 }
 
