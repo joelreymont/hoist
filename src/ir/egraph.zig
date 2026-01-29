@@ -13,6 +13,8 @@ const Value = entities.Value;
 const Inst = entities.Inst;
 const opcodes = @import("opcodes.zig");
 const Opcode = opcodes.Opcode;
+const immediates = @import("immediates.zig");
+const Imm64 = immediates.Imm64;
 
 /// E-class ID: opaque identifier for equivalence class.
 /// Two e-nodes are equivalent iff they have the same e-class ID.
@@ -34,15 +36,29 @@ pub const ENode = struct {
     /// Max 3 operands for ternary ops (select, fma).
     children: []const EClassId,
 
+    /// Immediate payload for constant nodes (iconst/f32const/f64const).
+    imm: ?Imm64,
+
     pub fn hash(self: ENode) u64 {
         var hasher = std.hash.Wyhash.init(0);
         hasher.update(std.mem.asBytes(&self.op));
         hasher.update(std.mem.sliceAsBytes(self.children));
+        const has_imm: u8 = if (self.imm != null) 1 else 0;
+        hasher.update(&[_]u8{has_imm});
+        if (self.imm) |imm| {
+            hasher.update(std.mem.asBytes(&imm));
+        }
         return hasher.final();
     }
 
     pub fn eql(a: ENode, b: ENode) bool {
         if (a.op != b.op) return false;
+        if (a.imm) |a_imm| {
+            const b_imm = b.imm orelse return false;
+            if (a_imm.value != b_imm.value) return false;
+        } else if (b.imm != null) {
+            return false;
+        }
         if (a.children.len != b.children.len) return false;
         for (a.children, b.children) |a_child, b_child| {
             if (a_child != b_child) return false;
@@ -223,6 +239,14 @@ pub const EGraph = struct {
     /// Add e-node to e-graph, returning e-class ID.
     /// Deduplicates via hash-consing: if e-node already exists, returns existing e-class.
     pub fn add(self: *EGraph, op: Opcode, children: []const EClassId) !EClassId {
+        return self.addNode(op, children, null);
+    }
+
+    pub fn addConst(self: *EGraph, op: Opcode, imm: Imm64) !EClassId {
+        return self.addNode(op, &.{}, imm);
+    }
+
+    fn addNode(self: *EGraph, op: Opcode, children: []const EClassId, imm: ?Imm64) !EClassId {
         // Canonicalize children using union-find
         const canonical_children = try self.allocator.alloc(EClassId, children.len);
         for (children, 0..) |child, i| {
@@ -232,6 +256,7 @@ pub const EGraph = struct {
         const node = ENode{
             .op = op,
             .children = canonical_children,
+            .imm = imm,
         };
 
         // Check if e-node already exists (hash-consing)
@@ -258,6 +283,7 @@ pub const EGraph = struct {
                 const parent_node = ENode{
                     .op = op,
                     .children = try self.allocator.dupe(EClassId, canonical_children),
+                    .imm = null,
                 };
                 try child_class.parents.append(self.allocator, parent_node);
             }
@@ -323,6 +349,7 @@ pub const EGraph = struct {
                 const canonical_parent = ENode{
                     .op = parent.op,
                     .children = canonical_children,
+                    .imm = parent.imm,
                 };
 
                 // Check if canonical parent already exists
