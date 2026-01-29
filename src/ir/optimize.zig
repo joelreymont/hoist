@@ -7,7 +7,9 @@ const Function = root.function.Function;
 const Value = root.entities.Value;
 const Inst = root.entities.Inst;
 const InstructionData = root.instruction_data.InstructionData;
+const UnaryImmData = root.instruction_data.UnaryImmData;
 const Opcode = root.opcodes.Opcode;
+const Imm64 = root.immediates.Imm64;
 
 /// ISLE-based optimization pass.
 /// Applies pattern-matching optimizations defined in opts.isle.
@@ -238,8 +240,6 @@ pub const OptimizationPass = struct {
 
     /// Replace instruction result with a constant.
     fn replaceWithConst(self: *OptimizationPass, inst: Inst, val: i64) !void {
-        _ = val; // TODO: Store immediate value when immediate pool is implemented
-
         const results = self.func.dfg.instResults(inst);
         if (results.len == 0) return;
 
@@ -247,7 +247,9 @@ pub const OptimizationPass = struct {
         const ty = self.func.dfg.valueType(old_value);
 
         // Create iconst instruction
-        const iconst_data = InstructionData{ .nullary = .{ .opcode = .iconst } };
+        const iconst_data = InstructionData{
+            .unary_imm = UnaryImmData.init(.iconst, Imm64.new(val)),
+        };
         const iconst_inst = try self.func.dfg.makeInst(iconst_data);
         const const_value = try self.func.dfg.appendInstResult(iconst_inst, ty);
 
