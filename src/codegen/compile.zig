@@ -155,6 +155,27 @@ pub const VRegOrigin = struct {
     }
 };
 
+/// Block-level spill tracking for reload hoisting.
+/// Tracks which vregs need to be reloaded at block entry.
+const BlockSpillInfo = struct {
+    /// Set of vregs that are spilled and used in this block.
+    spilled_uses: std.AutoHashMap(reg_mod.VReg, void),
+    /// Vregs already reloaded (preg assigned) - avoid duplicate reloads.
+    reloaded: std.AutoHashMap(reg_mod.VReg, reg_mod.PReg),
+
+    fn init(allocator: std.mem.Allocator) BlockSpillInfo {
+        return .{
+            .spilled_uses = std.AutoHashMap(reg_mod.VReg, void).init(allocator),
+            .reloaded = std.AutoHashMap(reg_mod.VReg, reg_mod.PReg).init(allocator),
+        };
+    }
+
+    fn deinit(self: *BlockSpillInfo) void {
+        self.spilled_uses.deinit();
+        self.reloaded.deinit();
+    }
+};
+
 const scratch_int_regs = [_]reg_mod.PReg{
     reg_mod.PReg.new(.int, 9),
     reg_mod.PReg.new(.int, 10),
