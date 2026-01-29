@@ -142,6 +142,18 @@ pub fn build(b: *std.Build) void {
     const run_e2e_jit = b.addRunArtifact(e2e_jit);
     test_step.dependOn(&run_e2e_jit.step);
 
+    const compile_simple = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/compile_simple.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    compile_simple.root_module.addImport("hoist", lib.root_module);
+    applyFlags(compile_simple, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_compile_simple = b.addRunArtifact(compile_simple);
+    test_step.dependOn(&run_compile_simple.step);
+
     const egraph_opt = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/egraph_opt.zig"),
