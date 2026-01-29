@@ -2,7 +2,7 @@
 - Cranelift: `~/Work/wasmtime/cranelift/`
 - Parity plan: `~/.claude/plans/fuzzy-sniffing-shamir.md` (261 dots)
 - Status: `docs/COMPLETION_STATUS.md`
-- Zig docs: `~/.agents/docs/zig.md`
+- Zig docs (global): `~/.agents/docs/zig.md`
 - Dot tasks: use `dot` CLI/skill for `.dots/*.md` (no manual edits)
 
 ### Tests
