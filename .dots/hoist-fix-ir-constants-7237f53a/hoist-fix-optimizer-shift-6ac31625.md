@@ -1,9 +1,11 @@
 ---
 title: Fix Optimizer Shift Strength Reduction
-status: active
+status: closed
 priority: 2
 issue-type: task
-created-at: "\"2026-01-29T10:05:45.354314+01:00\""
+created-at: "\"\\\"2026-01-29T10:05:45.354314+01:00\\\"\""
+closed-at: "2026-01-29T10:18:24.265790+01:00"
+close-reason: done
 ---
 
 Context: src/ir/optimize.zig:265; cause: shift uses value twice; fix: use binary_imm64 or add shift-imm instruction and wire builder; deps: hoist-fix-optimizer-iconst-b266aeac; verification: optimize test for mul by power-of-two

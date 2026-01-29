@@ -8,6 +8,7 @@ const Value = root.entities.Value;
 const Inst = root.entities.Inst;
 const InstructionData = root.instruction_data.InstructionData;
 const UnaryImmData = root.instruction_data.UnaryImmData;
+const BinaryImm64Data = root.instruction_data.BinaryImm64Data;
 const Opcode = root.opcodes.Opcode;
 const Imm64 = root.immediates.Imm64;
 
@@ -265,21 +266,15 @@ pub const OptimizationPass = struct {
 
     /// Replace multiplication with left shift.
     fn replaceWithShift(self: *OptimizationPass, inst: Inst, value: Value, shift: u6) !void {
-        _ = shift; // TODO: Store shift amount when immediate pool is implemented
-
         const results = self.func.dfg.instResults(inst);
         if (results.len == 0) return;
 
         const old_value = results[0];
         const ty = self.func.dfg.valueType(old_value);
 
-        // Create shift instruction - for now use ishl with placeholder shift value
-        // In full implementation, would encode shift amount as immediate
+        // Create shift instruction with immediate shift amount.
         const shift_data = InstructionData{
-            .binary = .{
-                .opcode = .ishl,
-                .args = [2]Value{ value, value }, // TODO: Second arg should be shift immediate
-            },
+            .binary_imm64 = BinaryImm64Data.init(.ishl_imm, value, Imm64.new(@intCast(shift))),
         };
         const shift_inst = try self.func.dfg.makeInst(shift_data);
         const shift_value = try self.func.dfg.appendInstResult(shift_inst, ty);
