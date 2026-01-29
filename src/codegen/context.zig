@@ -11,6 +11,7 @@ const Signature = ir.Signature;
 const ControlFlowGraph = ir.ControlFlowGraph;
 const DominatorTree = ir.DominatorTree;
 const LoopInfo = ir.LoopInfo;
+const pipeline_state = @import("pipeline_state.zig");
 
 pub const DebugOptions = struct {
     dump_ir: bool,
@@ -76,6 +77,11 @@ pub const Context = struct {
     /// Compiled machine code result (after lowering and emission).
     compiled_code: ?CompiledCode,
 
+    /// AArch64 lowering state for current compilation.
+    aarch64_lowered: ?pipeline_state.AArch64Lowered,
+    /// AArch64 register allocation state for current compilation.
+    aarch64_regalloc: ?pipeline_state.AArch64RegAlloc,
+
     /// Request disassembly output.
     want_disasm: bool,
     /// Debug output options.
@@ -92,6 +98,8 @@ pub const Context = struct {
             .domtree = DominatorTree.init(allocator),
             .loop_analysis = LoopInfo.init(allocator),
             .compiled_code = null,
+            .aarch64_lowered = null,
+            .aarch64_regalloc = null,
             .want_disasm = false,
             .debug = DebugOptions.init(),
             .target = null,
@@ -106,6 +114,8 @@ pub const Context = struct {
             .domtree = DominatorTree.init(allocator),
             .loop_analysis = LoopInfo.init(allocator),
             .compiled_code = null,
+            .aarch64_lowered = null,
+            .aarch64_regalloc = null,
             .want_disasm = false,
             .debug = DebugOptions.init(),
             .target = null,
@@ -120,7 +130,24 @@ pub const Context = struct {
         if (self.compiled_code) |*code| {
             code.deinit();
         }
+        if (self.aarch64_regalloc) |*state| {
+            state.deinit();
+        }
+        if (self.aarch64_lowered) |*state| {
+            state.deinit();
+        }
         self.debug.deinit(self.allocator);
+    }
+
+    pub fn clearAArch64State(self: *Context) void {
+        if (self.aarch64_regalloc) |*state| {
+            state.deinit();
+            self.aarch64_regalloc = null;
+        }
+        if (self.aarch64_lowered) |*state| {
+            state.deinit();
+            self.aarch64_lowered = null;
+        }
     }
 
     /// Clear all data structures for reuse.

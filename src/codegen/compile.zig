@@ -45,6 +45,7 @@ const Opcode = @import("../ir/opcodes.zig").Opcode;
 const Reloc = @import("../machinst/buffer.zig").Reloc;
 const machinst_abi = @import("../machinst/abi.zig");
 const unwind = @import("../backends/aarch64/unwind.zig");
+const pipeline_state = @import("pipeline_state.zig");
 
 /// Compilation error with context.
 pub const CompileError = struct {
@@ -134,33 +135,7 @@ pub const CodegenError = error{
 /// Compilation result type.
 pub const CompileResult = CodegenError!*const CompiledCode;
 
-/// Origin info for a vreg - used for rematerialization.
-/// Tracks what IR instruction produced this vreg so we can
-/// recompute cheap values instead of reloading from stack.
-pub const VRegOrigin = struct {
-    opcode: Opcode,
-    /// Immediate value for constants (iconst, f32const, f64const).
-    imm: ?i64,
-    /// Source vregs for binary ops (iadd, isub, band, bor, bxor).
-    operands: [2]?reg_mod.VReg,
-
-    pub fn forConst(op: Opcode, value: i64) VRegOrigin {
-        return .{ .opcode = op, .imm = value, .operands = .{ null, null } };
-    }
-
-    pub fn forBinop(op: Opcode, lhs: reg_mod.VReg, rhs: reg_mod.VReg) VRegOrigin {
-        return .{ .opcode = op, .imm = null, .operands = .{ lhs, rhs } };
-    }
-
-    pub fn isCheap(self: VRegOrigin) bool {
-        return switch (self.opcode) {
-            .iconst, .f32const, .f64const => true,
-            .iadd, .isub, .band, .bor, .bxor => true,
-            .ishl, .ushr, .sshr => true,
-            else => false,
-        };
-    }
-};
+pub const VRegOrigin = pipeline_state.VRegOrigin;
 
 const scratch_int_regs = [_]reg_mod.PReg{
     reg_mod.PReg.new(.int, 9),
@@ -794,6 +769,7 @@ pub fn compile(
     // Set the function pointer in context
     ctx.func = func;
     ctx.target = target;
+    ctx.clearAArch64State();
 
     // 1. Verify IR (if enabled)
     try verifyIf(ctx, func, target);
@@ -1380,7 +1356,7 @@ fn lowerAArch64(ctx: *Context, _: *const Target) CodegenError!void {
 
     // Track vreg origins for rematerialization
     var vreg_origins = std.AutoHashMap(reg_mod.VReg, VRegOrigin).init(ctx.allocator);
-    defer vreg_origins.deinit();
+    errdefer vreg_origins.deinit();
 
     // Precompute IR block -> VCode block indices (layout order)
     var block_index_map = std.AutoHashMap(Block, BlockIndex).init(ctx.allocator);
@@ -1394,7 +1370,7 @@ fn lowerAArch64(ctx: *Context, _: *const Target) CodegenError!void {
 
     // Track IR block → VCode block mapping for exception handling
     var ir_to_vcode_blocks = std.AutoHashMap(Block, BlockIndex).init(ctx.allocator);
-    defer ir_to_vcode_blocks.deinit();
+    errdefer ir_to_vcode_blocks.deinit();
 
     // Lower each block
     var block_iter = ctx.func.layout.blockIter();
@@ -1502,51 +1478,21 @@ fn lowerAArch64(ctx: *Context, _: *const Target) CodegenError!void {
 
     // Finish building VCode
     var vcode = try builder.finish();
-    defer vcode.deinit();
+    errdefer vcode.deinit();
 
-    var block_insns = std.AutoHashMap(u32, []const Inst).init(ctx.allocator);
-    defer block_insns.deinit();
-
-    var block_iter2 = ctx.func.layout.blockIter();
-    while (block_iter2.next()) |block| {
-        const vcode_block = ir_to_vcode_blocks.get(block) orelse return error.LoweringFailed;
-        const vblock = vcode.blocks.items[@intCast(vcode_block)];
-        const block_id: u32 = @intCast(block.toIndex());
-        try block_insns.put(block_id, vcode.insns.items[vblock.insn_start..vblock.insn_end]);
+    if (ctx.aarch64_regalloc) |*state| {
+        state.deinit();
+        ctx.aarch64_regalloc = null;
     }
-
-    var liveness_info = try liveness_mod.computeLivenessWithCFG(
-        Inst,
-        ctx.cfg.data.items,
-        block_insns,
-        ctx.allocator,
-    );
-    defer liveness_info.deinit();
-
-    const has_sret = a64_abi.needsStructReturnPointer(ctx.func.sig.returns.items, null);
-    var pools = try buildAarch64Pools(ctx.allocator, ctx.func.sig.call_conv, has_sret);
-    defer pools.deinit(ctx.allocator);
-
-    var linear_scan = try linear_scan_mod.LinearScanAllocator.initWithRegs(
-        ctx.allocator,
-        pools.int.items,
-        pools.float.items,
-        pools.vector.items,
-    );
-    defer linear_scan.deinit();
-
-    // Collect coalesce pairs from mov_rr instructions
-    try collectCoalescePairs(Inst, &vcode, &liveness_info, &linear_scan);
-
-    var result = try linear_scan.allocate(&liveness_info);
-    defer result.deinit();
-
-    if (result.vreg_to_spill.count() > 0) {
-        try insertSpillScratch(ctx.allocator, &vcode, &result, pools.scratch, &vreg_origins, &ctx.domtree);
+    if (ctx.aarch64_lowered) |*state| {
+        state.deinit();
     }
-
-    const spill_bytes: u32 = linear_scan.next_spill_offset;
-    try emitAArch64WithAllocation(ctx, &vcode, &result, spill_bytes, &ir_to_vcode_blocks);
+    ctx.aarch64_lowered = .{
+        .allocator = ctx.allocator,
+        .vcode = vcode,
+        .vreg_origins = vreg_origins,
+        .ir_to_vcode_blocks = ir_to_vcode_blocks,
+    };
 }
 
 /// Collect coalesce pairs from mov_rr instructions.
@@ -5021,23 +4967,87 @@ fn lowerInstruction(lower_ctx: anytype, inst: ir.Inst, target: *const Target) Co
 
 /// Allocate registers.
 fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
-    // TODO: Register allocation not yet implemented
-    _ = ctx;
-    _ = target;
+    switch (target.arch) {
+        .aarch64 => {
+            const Inst = @import("../backends/aarch64/inst.zig").Inst;
+
+            if (ctx.aarch64_lowered) |*lowered| {
+                const vcode = &lowered.vcode;
+
+                var block_insns = std.AutoHashMap(u32, []const Inst).init(ctx.allocator);
+                defer block_insns.deinit();
+
+                var block_iter = ctx.func.layout.blockIter();
+                while (block_iter.next()) |block| {
+                    const vcode_block = lowered.ir_to_vcode_blocks.get(block) orelse return error.LoweringFailed;
+                    const vblock = vcode.blocks.items[@intCast(vcode_block)];
+                    const block_id: u32 = @intCast(block.toIndex());
+                    try block_insns.put(block_id, vcode.insns.items[vblock.insn_start..vblock.insn_end]);
+                }
+
+                var liveness_info = try liveness_mod.computeLivenessWithCFG(
+                    Inst,
+                    ctx.cfg.data.items,
+                    block_insns,
+                    ctx.allocator,
+                );
+                defer liveness_info.deinit();
+
+                const has_sret = a64_abi.needsStructReturnPointer(ctx.func.sig.returns.items, null);
+                var pools = try buildAarch64Pools(ctx.allocator, ctx.func.sig.call_conv, has_sret);
+                defer pools.deinit(ctx.allocator);
+
+                var linear_scan = try linear_scan_mod.LinearScanAllocator.initWithRegs(
+                    ctx.allocator,
+                    pools.int.items,
+                    pools.float.items,
+                    pools.vector.items,
+                );
+                defer linear_scan.deinit();
+
+                try collectCoalescePairs(Inst, vcode, &liveness_info, &linear_scan);
+
+                var result = try linear_scan.allocate(&liveness_info);
+                errdefer result.deinit();
+
+                if (result.vreg_to_spill.count() > 0) {
+                    try insertSpillScratch(ctx.allocator, vcode, &result, pools.scratch, &lowered.vreg_origins, &ctx.domtree);
+                }
+
+                const spill_bytes: u32 = linear_scan.next_spill_offset;
+
+                if (ctx.aarch64_regalloc) |*state| {
+                    state.deinit();
+                }
+                ctx.aarch64_regalloc = .{
+                    .allocator = ctx.allocator,
+                    .result = result,
+                    .spill_bytes = spill_bytes,
+                };
+            } else return error.LoweringFailed;
+        },
+        else => return error.UnsupportedTarget,
+    }
 }
 
 /// Insert function prologue and epilogue.
 fn insertPrologueEpilogue(ctx: *Context, target: *const Target) CodegenError!void {
-    // TODO: Prologue/epilogue insertion not yet implemented
     _ = ctx;
     _ = target;
 }
 
 /// Emit machine code.
 fn emit(ctx: *Context, target: *const Target) CodegenError!void {
-    // TODO: Machine code emission not yet implemented
-    _ = ctx;
-    _ = target;
+    switch (target.arch) {
+        .aarch64 => {
+            if (ctx.aarch64_lowered) |*lowered| {
+                if (ctx.aarch64_regalloc) |*regalloc| {
+                    try emitAArch64WithAllocation(ctx, &lowered.vcode, &regalloc.result, regalloc.spill_bytes, &lowered.ir_to_vcode_blocks);
+                } else return error.RegisterAllocationFailed;
+            } else return error.EmissionFailed;
+        },
+        else => return error.UnsupportedTarget,
+    }
 }
 
 /// Assemble final result from MachBuffer.
