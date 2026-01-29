@@ -151,12 +151,19 @@ pub const MatchCompiler = struct {
 
                         return source_id;
                     },
-                    .extractor => {
-                        // Extractor pattern - similar to constructor but generates MatchVariant bindings
+                    .extractor => |ext| {
                         const source = trie.Binding{
                             .argument = .{ .index = trie.TupleIndex.new(0) },
                         };
-                        return try ruleset.internBinding(source);
+                        const source_id = try ruleset.internBinding(source);
+                        _ = try self.compilePatternWithSourceArgs(
+                            ruleset,
+                            rule,
+                            ext.template,
+                            source_id,
+                            t.args,
+                        );
+                        return source_id;
                     },
                     .extern_func => {
                         return error.OutOfMemory; // External functions can't be patterns
@@ -258,8 +265,32 @@ pub const MatchCompiler = struct {
         pattern: sema.Pattern,
         source_id: trie.BindingId,
     ) error{ OutOfMemory, ConflictingConstraints }!trie.BindingId {
+        return self.compilePatternWithSourceArgs(ruleset, rule, pattern, source_id, null);
+    }
+
+    fn compilePatternWithSourceArgs(
+        self: *Self,
+        ruleset: *trie.RuleSet,
+        rule: *trie.Rule,
+        pattern: sema.Pattern,
+        source_id: trie.BindingId,
+        args: ?[]const sema.Pattern,
+    ) error{ OutOfMemory, ConflictingConstraints }!trie.BindingId {
         return switch (pattern) {
-            .var_pat => source_id,
+            .var_pat => |v| {
+                if (args) |arg_patterns| {
+                    if (v.var_id < arg_patterns.len) {
+                        return self.compilePatternWithSourceArgs(
+                            ruleset,
+                            rule,
+                            arg_patterns[v.var_id],
+                            source_id,
+                            null,
+                        );
+                    }
+                }
+                return source_id;
+            },
             .wildcard => source_id,
             .const_bool => |c| {
                 const constraint = trie.Constraint{
@@ -283,12 +314,12 @@ pub const MatchCompiler = struct {
                 return source_id;
             },
             .bind_pattern => |b| {
-                return try self.compilePatternWithSource(ruleset, rule, b.subpat.*, source_id);
+                return try self.compilePatternWithSourceArgs(ruleset, rule, b.subpat.*, source_id, args);
             },
             .and_pat => |a| {
                 var last: trie.BindingId = source_id;
                 for (a.subpats) |subpat| {
-                    last = try self.compilePatternWithSource(ruleset, rule, subpat, source_id);
+                    last = try self.compilePatternWithSourceArgs(ruleset, rule, subpat, source_id, args);
                 }
                 return last;
             },
@@ -321,15 +352,20 @@ pub const MatchCompiler = struct {
                                         },
                                     };
                                     const field_id = try ruleset.internBinding(field_binding);
-                                    _ = try self.compilePatternWithSource(ruleset, rule, arg_pat, field_id);
+                                    _ = try self.compilePatternWithSourceArgs(ruleset, rule, arg_pat, field_id, args);
                                 }
                             }
                         }
                         return source_id;
                     },
-                    .extractor => {
-                        // TODO: Handle extractor patterns
-                        return source_id;
+                    .extractor => |ext| {
+                        return try self.compilePatternWithSourceArgs(
+                            ruleset,
+                            rule,
+                            ext.template,
+                            source_id,
+                            t.args,
+                        );
                     },
                     .extern_func => return error.OutOfMemory,
                 }
@@ -729,6 +765,75 @@ test "MatchCompiler: variant field patterns" {
     if (rule.getConstraint(field1_id)) |field1_constraint| {
         switch (field1_constraint) {
             .const_int => |c| try testing.expectEqual(@as(i128, 2), c.val),
+            else => try testing.expect(false),
+        }
+    } else {
+        try testing.expect(false);
+    }
+}
+
+test "MatchCompiler: extractor patterns" {
+    var typeenv = sema.TypeEnv.init(testing.allocator);
+    defer typeenv.deinit();
+
+    var termenv = sema.TermEnv.init(testing.allocator);
+    defer termenv.deinit();
+
+    var compiler = MatchCompiler.init(testing.allocator, &typeenv, &termenv);
+
+    const i32_sym = try typeenv.internSym("i32");
+    const i32_ty = try typeenv.addType(.{ .primitive = .{
+        .id = sema.TypeId.new(0),
+        .name = i32_sym,
+        .pos = sema.Pos.new(0, 0),
+    } });
+
+    const ext_sym = try typeenv.internSym("Id");
+    const arg_sym = try typeenv.internSym("x");
+
+    const template = sema.Pattern{
+        .var_pat = .{
+            .var_id = 0,
+            .name = arg_sym,
+            .ty = i32_ty,
+            .pos = sema.Pos.new(0, 0),
+        },
+    };
+
+    const term = sema.Term{
+        .name = ext_sym,
+        .id = sema.TermId.new(0),
+        .kind = .{ .extractor = .{
+            .arg_tys = @constCast(&[_]sema.TypeId{ i32_ty }),
+            .ret_ty = i32_ty,
+            .template = template,
+        } },
+        .pos = sema.Pos.new(0, 0),
+    };
+    const term_id = try termenv.addTerm(term);
+
+    const pattern = sema.Pattern{
+        .term = .{
+            .term_id = term_id,
+            .args = @constCast(&[_]sema.Pattern{
+                .{ .const_int = .{ .val = 7, .ty = i32_ty, .pos = sema.Pos.new(0, 0) } },
+            }),
+            .ty = i32_ty,
+            .pos = sema.Pos.new(0, 0),
+        },
+    };
+
+    var ruleset = trie.RuleSet.init(testing.allocator);
+    defer ruleset.deinit();
+
+    var rule = trie.Rule.init(testing.allocator, sema.Pos.new(0, 0));
+    defer rule.deinit();
+
+    const source_id = try compiler.compilePattern(&ruleset, &rule, pattern);
+
+    if (rule.getConstraint(source_id)) |source_constraint| {
+        switch (source_constraint) {
+            .const_int => |c| try testing.expectEqual(@as(i128, 7), c.val),
             else => try testing.expect(false),
         }
     } else {
