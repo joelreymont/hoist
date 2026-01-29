@@ -469,6 +469,19 @@ pub const DataFlowGraph = struct {
             inst_data.forEachValueMut(&self.value_lists, &ctx, Ctx.visit);
         }
     }
+
+    /// Remove an instruction that produces no results.
+    pub fn removeInst(self: *Self, inst: Inst) !void {
+        if (self.numResults(inst) != 0) return error.InstHasResults;
+
+        if (self.insts.getMut(inst)) |inst_data| {
+            inst_data.* = InstructionData{ .nullary = .{ .opcode = .nop } };
+        }
+
+        if (self.results.getMut(inst)) |list| {
+            try self.value_lists.truncate(list, 0);
+        }
+    }
 };
 
 test "DataFlowGraph makeInst" {
@@ -491,4 +504,20 @@ test "DataFlowGraph append result" {
     try testing.expectEqual(Value.new(0), result);
     try testing.expectEqual(@as(usize, 1), dfg.numResults(inst));
     try testing.expectEqual(result, dfg.firstResult(inst).?);
+}
+
+test "DataFlowGraph removeInst" {
+    var dfg = DataFlowGraph.init(testing.allocator);
+    defer dfg.deinit();
+
+    const inst = try dfg.makeInst(.{ .nullary = .{ .opcode = .debugtrap } });
+    try dfg.removeInst(inst);
+
+    const data = dfg.insts.get(inst) orelse return error.MissingInst;
+    try testing.expect(data.* == .nullary);
+    try testing.expectEqual(Opcode.nop, data.nullary.opcode);
+
+    const inst2 = try dfg.makeInst(.{ .binary = instruction_data.BinaryData.init(.iadd, Value.new(1), Value.new(2)) });
+    _ = try dfg.appendInstResult(inst2, Type.I32);
+    try testing.expectError(error.InstHasResults, dfg.removeInst(inst2));
 }
