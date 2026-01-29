@@ -7,7 +7,7 @@ const DataId = module_mod.DataId;
 const FuncOrDataId = module_mod.FuncOrDataId;
 
 const types = @import("../ir/types.zig");
-const ir = @import("../ir/ir.zig");
+const ir = @import("../ir.zig");
 
 /// Relocation target for module symbols.
 pub const RelocTarget = union(enum) {

@@ -39,14 +39,14 @@ pub const DataDesc = struct {
     init: Init,
     func_relocs: std.ArrayList(struct { offset: u32, func: FuncId }),
     data_relocs: std.ArrayList(DataReloc),
-    align: ?u64,
+    @"align": ?u64,
 
     pub fn new(alloc: Allocator) DataDesc {
         return .{
             .init = .uninit,
             .func_relocs = std.ArrayList(@TypeOf(.{ .offset = 0, .func = FuncId.from(0) })).init(alloc),
             .data_relocs = std.ArrayList(DataReloc).init(alloc),
-            .align = null,
+            .@"align" = null,
         };
     }
 
