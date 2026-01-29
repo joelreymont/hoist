@@ -73,7 +73,7 @@ pub const SimplifyBranch = struct {
             if (next.index == jump_data.destination.index) {
                 // Jump to next block - can be eliminated (becomes fall-through)
                 func.layout.removeInst(inst);
-                // TODO: Need to implement DFG.removeInst or mark instruction as deleted
+                try func.dfg.removeInst(inst);
                 self.changed = true;
             }
         }
@@ -160,4 +160,33 @@ test "SimplifyBranch: preserve non-branch instructions" {
 
     const changed = try pass.run(&func);
     try testing.expect(!changed);
+}
+
+test "SimplifyBranch: remove fallthrough jump" {
+    const sig = @import("../../ir/signature.zig").Signature.init(testing.allocator, .fast);
+    var func = try Function.init(testing.allocator, "test", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    const block1 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+    try func.layout.appendBlock(block1);
+
+    const jump_inst = try func.dfg.makeInst(InstructionData{
+        .jump = .{ .opcode = .jump, .destination = block1 },
+    });
+    try func.layout.appendInst(jump_inst, block0);
+
+    var pass = SimplifyBranch.init(testing.allocator);
+    defer pass.deinit();
+
+    const changed = try pass.run(&func);
+    try testing.expect(changed);
+
+    const block0_node = func.layout.blocks.get(block0) orelse return error.MissingBlock;
+    try testing.expect(block0_node.last_inst == null);
+
+    const inst_data = func.dfg.insts.get(jump_inst) orelse return error.MissingInst;
+    try testing.expect(inst_data.* == .nullary);
+    try testing.expectEqual(@import("../../ir/opcodes.zig").Opcode.nop, inst_data.nullary.opcode);
 }
