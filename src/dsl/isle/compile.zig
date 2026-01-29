@@ -6,6 +6,7 @@ const lexer_mod = @import("lexer.zig");
 const parser_mod = @import("parser.zig");
 const sema_mod = @import("sema.zig");
 const codegen_mod = @import("codegen.zig");
+const ast_mod = @import("ast.zig");
 
 pub const Lexer = lexer_mod.Lexer;
 pub const Parser = parser_mod.Parser;
@@ -99,7 +100,7 @@ pub fn compile(
     defer {
         // Clean up AST
         for (defs) |def| {
-            cleanupDef(allocator, def);
+            ast_mod.cleanupDef(allocator, def);
         }
         allocator.free(defs);
     }
@@ -129,112 +130,6 @@ pub fn compile(
         .code = try allocator.dupe(u8, code),
         .allocator = allocator,
     };
-}
-
-/// Clean up AST definition (deallocate owned strings).
-fn cleanupDef(allocator: Allocator, def: @import("ast.zig").Def) void {
-    switch (def) {
-        .type_def => |td| {
-            allocator.free(td.name.name);
-            switch (td.ty) {
-                .primitive => |p| allocator.free(p.name),
-                .enum_type => |variants| {
-                    for (variants) |variant| {
-                        allocator.free(variant.name.name);
-                        for (variant.fields) |field| {
-                            allocator.free(field.name.name);
-                            allocator.free(field.ty.name);
-                        }
-                        allocator.free(variant.fields);
-                    }
-                    allocator.free(variants);
-                },
-            }
-        },
-        .decl => |d| {
-            allocator.free(d.term.name);
-            for (d.arg_tys) |arg| {
-                allocator.free(arg.name);
-            }
-            allocator.free(d.arg_tys);
-            for (d.ret_tys) |ret_ty| {
-                allocator.free(ret_ty.name);
-            }
-            allocator.free(d.ret_tys);
-        },
-        .rule => |r| {
-            cleanupPattern(allocator, r.pattern);
-            cleanupExpr(allocator, r.expr);
-            allocator.free(r.iflets);
-        },
-        .extern_def => |e| {
-            allocator.free(e.term.name);
-            allocator.free(e.func.name);
-        },
-        .extractor => |e| {
-            allocator.free(e.term.name);
-            for (e.args) |arg| {
-                allocator.free(arg.name);
-            }
-            allocator.free(e.args);
-            cleanupPattern(allocator, e.template);
-        },
-    }
-}
-
-fn cleanupPattern(allocator: Allocator, pattern: @import("ast.zig").Pattern) void {
-    switch (pattern) {
-        .var_pat => |v| {
-            allocator.free(v.var_name.name);
-        },
-        .bind_pattern => |b| {
-            allocator.free(b.var_name.name);
-            cleanupPattern(allocator, b.subpat.*);
-            allocator.destroy(b.subpat);
-        },
-        .term => |t| {
-            allocator.free(t.sym.name);
-            for (t.args) |arg| {
-                cleanupPattern(allocator, arg);
-            }
-            allocator.free(t.args);
-        },
-        .const_prim => |c| allocator.free(c.val.name),
-        .and_pat => |a| {
-            for (a.subpats) |sub| {
-                cleanupPattern(allocator, sub);
-            }
-            allocator.free(a.subpats);
-        },
-        else => {},
-    }
-}
-
-fn cleanupExpr(allocator: Allocator, expr: @import("ast.zig").Expr) void {
-    switch (expr) {
-        .var_expr => |v| {
-            allocator.free(v.name.name);
-        },
-        .term => |t| {
-            allocator.free(t.sym.name);
-            for (t.args) |arg| {
-                cleanupExpr(allocator, arg);
-            }
-            allocator.free(t.args);
-        },
-        .const_prim => |c| allocator.free(c.val.name),
-        .let_expr => |l| {
-            for (l.defs) |def| {
-                allocator.free(def.var_name.name);
-                allocator.free(def.ty.name);
-                cleanupExpr(allocator, def.val);
-            }
-            allocator.free(l.defs);
-            cleanupExpr(allocator, l.body.*);
-            allocator.destroy(l.body);
-        },
-        else => {},
-    }
 }
 
 test "compile type definition" {

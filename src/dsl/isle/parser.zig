@@ -119,12 +119,17 @@ pub const Parser = struct {
     fn parseDef(self: *Self) !ast.Def {
         const start_pos = try self.expect(.lparen);
         const kw = try self.expectSymbol();
+        defer self.allocator.free(kw.name);
         const keyword = kw.name;
 
         if (std.mem.eql(u8, keyword, "type")) {
             return ast.Def{ .type_def = try self.parseTypeDef(start_pos) };
         } else if (std.mem.eql(u8, keyword, "decl")) {
             return ast.Def{ .decl = try self.parseDecl(start_pos) };
+        } else if (std.mem.eql(u8, keyword, "extractor")) {
+            return ast.Def{ .extractor = try self.parseExtractor(start_pos) };
+        } else if (std.mem.eql(u8, keyword, "extern")) {
+            return ast.Def{ .extern_def = try self.parseExternDef(start_pos) };
         } else if (std.mem.eql(u8, keyword, "rule")) {
             return ast.Def{ .rule = try self.parseRule(start_pos) };
         } else {
@@ -134,24 +139,40 @@ pub const Parser = struct {
 
     fn parseTypeDef(self: *Self, start_pos: Pos) !ast.TypeDef {
         const name = try self.expectSymbol();
+        var is_extern = false;
+        if (self.peek()) |tok| {
+            if (tok == .symbol and std.mem.eql(u8, tok.symbol, "extern")) {
+                const kw = try self.expectSymbol();
+                self.allocator.free(kw.name);
+                is_extern = true;
+            }
+        }
+
         const ty = try self.parseTypeValue();
         _ = try self.expect(.rparen);
 
         return ast.TypeDef{
             .name = name,
-            .is_extern = false,
+            .is_extern = is_extern,
             .ty = ty,
             .pos = start_pos,
         };
     }
 
     fn parseTypeValue(self: *Self) !ast.TypeValue {
-        // Check if this is an enum type: (variant1 variant2 ...)
-        if (self.peek()) |tok| {
-            if (tok == .lparen) {
-                // Parse enum variants
-                try self.advance(); // consume lparen
+        const tok = self.peek() orelse return error.UnexpectedEof;
+        if (tok == .lparen) {
+            _ = try self.expect(.lparen);
+            const kind = try self.expectSymbol();
+            defer self.allocator.free(kind.name);
 
+            if (std.mem.eql(u8, kind.name, "primitive")) {
+                const prim = try self.expectSymbol();
+                _ = try self.expect(.rparen);
+                return ast.TypeValue{ .primitive = prim };
+            }
+
+            if (std.mem.eql(u8, kind.name, "enum")) {
                 var variants = std.ArrayList(ast.Variant){};
                 errdefer {
                     for (variants.items) |*v| {
@@ -164,38 +185,31 @@ pub const Parser = struct {
                     const peek_tok = self.peek() orelse break;
                     if (peek_tok == .rparen) break;
 
-                    // Each variant is either:
-                    // - A symbol (variant name with no fields)
-                    // - (variant_name (field_name field_type) ...)
                     if (peek_tok == .lparen) {
-                        try self.advance(); // consume lparen
+                        _ = try self.expect(.lparen);
                         const var_name = try self.expectSymbol();
 
                         var fields = std.ArrayList(ast.Field){};
                         errdefer fields.deinit(self.allocator);
 
-                        // Parse fields: (field_name field_type)
                         while (true) {
                             const field_tok = self.peek() orelse break;
                             if (field_tok == .rparen) break;
+                            if (field_tok != .lparen) return error.ExpectedFieldDefinition;
 
-                            if (field_tok == .lparen) {
-                                try self.advance(); // consume lparen
-                                const field_name = try self.expectSymbol();
-                                const field_type = try self.expectSymbol();
-                                _ = try self.expect(.rparen);
+                            _ = try self.expect(.lparen);
+                            const field_name = try self.expectSymbol();
+                            const field_type = try self.expectSymbol();
+                            _ = try self.expect(.rparen);
 
-                                try fields.append(self.allocator, ast.Field{
-                                    .name = field_name,
-                                    .ty = field_type,
-                                    .pos = field_name.pos,
-                                });
-                            } else {
-                                return error.ExpectedFieldDefinition;
-                            }
+                            try fields.append(self.allocator, ast.Field{
+                                .name = field_name,
+                                .ty = field_type,
+                                .pos = field_name.pos,
+                            });
                         }
 
-                        _ = try self.expect(.rparen); // close variant
+                        _ = try self.expect(.rparen);
 
                         try variants.append(self.allocator, ast.Variant{
                             .name = var_name,
@@ -203,7 +217,6 @@ pub const Parser = struct {
                             .pos = var_name.pos,
                         });
                     } else if (peek_tok == .symbol) {
-                        // Simple variant with no fields
                         const var_name = try self.expectSymbol();
                         try variants.append(self.allocator, ast.Variant{
                             .name = var_name,
@@ -215,37 +228,37 @@ pub const Parser = struct {
                     }
                 }
 
-                _ = try self.expect(.rparen); // close enum variants list
-
+                _ = try self.expect(.rparen);
                 return ast.TypeValue{ .enum_type = try variants.toOwnedSlice(self.allocator) };
             }
+
+            return error.UnknownTypeValue;
         }
 
-        // Otherwise, it's a primitive type
         const prim = try self.expectSymbol();
         return ast.TypeValue{ .primitive = prim };
     }
 
     fn parseDecl(self: *Self, start_pos: Pos) !ast.Decl {
-        const term = try self.expectSymbol();
-
-        var arg_tys = std.ArrayList(ast.Ident){};
-        errdefer arg_tys.deinit(self.allocator);
-
-        while (true) {
-            const tok = self.peek() orelse break;
-            if (tok == .rparen) break;
-            if (tok == .symbol and std.mem.eql(u8, tok.symbol, "pure")) break;
-            try arg_tys.append(self.allocator, try self.expectSymbol());
+        var pure = false;
+        var term = try self.expectSymbol();
+        if (std.mem.eql(u8, term.name, "pure")) {
+            self.allocator.free(term.name);
+            pure = true;
+            term = try self.expectSymbol();
         }
 
-        if (arg_tys.items.len == 0) return error.MissingReturnType;
-        const ret_ty = arg_tys.pop() orelse return error.MissingReturnType;
+        const arg_tys = try self.parseIdentList();
+        errdefer self.allocator.free(arg_tys);
 
-        var pure = false;
+        const ret_tys = try self.parseRetList();
+        errdefer self.allocator.free(ret_tys);
+        if (ret_tys.len == 0) return error.MissingReturnType;
+
         if (self.peek()) |tok| {
             if (tok == .symbol and std.mem.eql(u8, tok.symbol, "pure")) {
-                try self.advance();
+                const kw = try self.expectSymbol();
+                self.allocator.free(kw.name);
                 pure = true;
             }
         }
@@ -254,19 +267,29 @@ pub const Parser = struct {
 
         return ast.Decl{
             .term = term,
-            .arg_tys = try arg_tys.toOwnedSlice(self.allocator),
-            .ret_ty = ret_ty,
+            .arg_tys = arg_tys,
+            .ret_tys = ret_tys,
             .pure = pure,
             .pos = start_pos,
         };
     }
 
     fn parseExternDef(self: *Self, start_pos: Pos) !ast.ExternDef {
+        const kind_sym = try self.expectSymbol();
+        const kind = if (std.mem.eql(u8, kind_sym.name, "constructor"))
+            ast.ExternKind.constructor
+        else if (std.mem.eql(u8, kind_sym.name, "extractor"))
+            ast.ExternKind.extractor
+        else
+            return error.UnknownExternKind;
+        self.allocator.free(kind_sym.name);
+
         const term = try self.expectSymbol();
         const func = try self.expectSymbol();
         _ = try self.expect(.rparen);
 
         return ast.ExternDef{
+            .kind = kind,
             .term = term,
             .func = func,
             .pos = start_pos,
@@ -274,11 +297,10 @@ pub const Parser = struct {
     }
 
     fn parseExtractor(self: *Self, start_pos: Pos) !ast.Extractor {
-        // Parse: (extractor name (arg1 arg2) template_pattern)
+        // Parse: (extractor (name arg1 arg2) template_pattern)
+        _ = try self.expect(.lparen);
         const name = try self.expectSymbol();
 
-        // Parse argument list: (arg1 arg2 ...)
-        _ = try self.expect(.lparen);
         var args = std.ArrayList(ast.Ident){};
         errdefer args.deinit(self.allocator);
 
@@ -287,12 +309,9 @@ pub const Parser = struct {
             if (tok == .rparen) break;
             try args.append(self.allocator, try self.expectSymbol());
         }
-
         _ = try self.expect(.rparen);
 
-        // Parse template pattern
         const template = try self.parsePattern();
-
         _ = try self.expect(.rparen);
 
         return ast.Extractor{
@@ -304,11 +323,19 @@ pub const Parser = struct {
     }
 
     fn parseRule(self: *Self, start_pos: Pos) !ast.Rule {
+        var prio: ?i64 = null;
+        if (self.peek()) |tok| {
+            if (tok == .int) {
+                const int_tok = try self.expectInt();
+                prio = @intCast(int_tok[0]);
+            }
+        }
+
         const pattern = try self.parsePattern();
         var iflets = std.ArrayList(ast.IfLet){};
         errdefer iflets.deinit(self.allocator);
 
-        // Parse optional if-let guards: (if-let pattern expr)
+        // Parse optional if-let/if guards: (if-let pattern expr) or (if expr)
         while (true) {
             const tok = self.peek() orelse break;
             if (tok != .lparen) break;
@@ -317,37 +344,53 @@ pub const Parser = struct {
             const saved_current = self.current;
             _ = try self.expect(.lparen);
 
-            const is_iflet = blk: {
+            const guard_kind: enum { none, if_let, if_guard } = blk: {
                 if (self.peek()) |next_tok| {
                     if (next_tok == .symbol) {
                         const sym = next_tok.symbol;
                         if (std.mem.eql(u8, sym, "if-let")) {
-                            break :blk true;
+                            break :blk .if_let;
+                        }
+                        if (std.mem.eql(u8, sym, "if")) {
+                            break :blk .if_guard;
                         }
                     }
                 }
-                break :blk false;
+                break :blk .none;
             };
 
-            if (!is_iflet) {
+            if (guard_kind == .none) {
                 // Not an if-let, restore and break
                 self.current = saved_current;
                 break;
             }
 
-            // Consume "if-let" symbol
-            _ = try self.expectSymbol();
-
             const iflet_pos = self.peekPos().?;
-            const iflet_pattern = try self.parsePattern();
-            const iflet_expr = try self.parseExpr();
+            const guard_kw = try self.expectSymbol();
+            defer self.allocator.free(guard_kw.name);
+
+            if (guard_kind == .if_let) {
+                const iflet_pattern = try self.parsePattern();
+                const iflet_expr = try self.parseExpr();
+                _ = try self.expect(.rparen);
+
+                try iflets.append(self.allocator, ast.IfLet{
+                    .pattern = iflet_pattern,
+                    .expr = iflet_expr,
+                    .pos = iflet_pos,
+                });
+                continue;
+            }
+
+            const if_expr = try self.parseExpr();
             _ = try self.expect(.rparen);
 
             try iflets.append(self.allocator, ast.IfLet{
-                .pattern = iflet_pattern,
-                .expr = iflet_expr,
+                .pattern = .{ .const_bool = .{ .val = true, .pos = iflet_pos } },
+                .expr = if_expr,
                 .pos = iflet_pos,
             });
+
         }
 
         const expr = try self.parseExpr();
@@ -357,13 +400,32 @@ pub const Parser = struct {
             .pattern = pattern,
             .iflets = try iflets.toOwnedSlice(self.allocator),
             .expr = expr,
-            .prio = null,
+            .prio = prio,
             .name = null,
             .pos = start_pos,
         };
     }
 
     fn parsePattern(self: *Self) !ast.Pattern {
+        var pat = try self.parsePatternAtom();
+        if (self.peek()) |tok| {
+            if (tok == .at) {
+                _ = try self.expect(.at);
+                const subpat = try self.parsePattern();
+                if (pat != .var_pat) return error.InvalidBindPattern;
+                const subpat_ptr = try self.allocator.create(ast.Pattern);
+                subpat_ptr.* = subpat;
+                return ast.Pattern{ .bind_pattern = .{
+                    .var_name = pat.var_pat.var_name,
+                    .subpat = subpat_ptr,
+                    .pos = pat.getPos(),
+                } };
+            }
+        }
+        return pat;
+    }
+
+    fn parsePatternAtom(self: *Self) !ast.Pattern {
         const tok = self.peek() orelse return error.UnexpectedEof;
         const pos = self.peekPos().?;
 
@@ -387,8 +449,33 @@ pub const Parser = struct {
                     .pos = pos,
                 } };
             },
+            .int => {
+                const int_tok = try self.expectInt();
+                return ast.Pattern{ .const_int = .{ .val = int_tok[0], .pos = int_tok[1] } };
+            },
             .symbol => {
                 const sym = try self.expectSymbol();
+                if (std.mem.eql(u8, sym.name, "_")) {
+                    self.allocator.free(sym.name);
+                    return ast.Pattern{ .wildcard = .{ .pos = pos } };
+                }
+                if (std.mem.eql(u8, sym.name, "true") or std.mem.eql(u8, sym.name, "false")) {
+                    const val = std.mem.eql(u8, sym.name, "true");
+                    self.allocator.free(sym.name);
+                    return ast.Pattern{ .const_bool = .{ .val = val, .pos = pos } };
+                }
+                if (sym.name.len > 0 and sym.name[0] == '$') {
+                    try self.stripConstPrefix(&sym);
+                    if (std.mem.eql(u8, sym.name, "true") or std.mem.eql(u8, sym.name, "false")) {
+                        const val = std.mem.eql(u8, sym.name, "true");
+                        self.allocator.free(sym.name);
+                        return ast.Pattern{ .const_bool = .{ .val = val, .pos = pos } };
+                    }
+                    return ast.Pattern{ .const_prim = .{ .val = sym, .pos = pos } };
+                }
+                if (std.mem.indexOfScalar(u8, sym.name, '.')) |_| {
+                    return ast.Pattern{ .const_prim = .{ .val = sym, .pos = pos } };
+                }
                 return ast.Pattern{ .var_pat = .{ .var_name = sym, .pos = pos } };
             },
             else => return error.InvalidPattern,
@@ -403,6 +490,20 @@ pub const Parser = struct {
             .lparen => {
                 _ = try self.expect(.lparen);
                 const sym = try self.expectSymbol();
+                if (std.mem.eql(u8, sym.name, "let")) {
+                    self.allocator.free(sym.name);
+                    const defs = try self.parseLetDefs();
+                    errdefer self.allocator.free(defs);
+                    const body = try self.parseExpr();
+                    _ = try self.expect(.rparen);
+                    const body_ptr = try self.allocator.create(ast.Expr);
+                    body_ptr.* = body;
+                    return ast.Expr{ .let_expr = .{
+                        .defs = defs,
+                        .body = body_ptr,
+                        .pos = pos,
+                    } };
+                }
                 var args = std.ArrayList(ast.Expr){};
                 errdefer args.deinit(self.allocator);
 
@@ -419,12 +520,93 @@ pub const Parser = struct {
                     .pos = pos,
                 } };
             },
+            .int => {
+                const int_tok = try self.expectInt();
+                return ast.Expr{ .const_int = .{ .val = int_tok[0], .pos = int_tok[1] } };
+            },
             .symbol => {
                 const sym = try self.expectSymbol();
+                if (std.mem.eql(u8, sym.name, "true") or std.mem.eql(u8, sym.name, "false")) {
+                    const val = std.mem.eql(u8, sym.name, "true");
+                    self.allocator.free(sym.name);
+                    return ast.Expr{ .const_bool = .{ .val = val, .pos = pos } };
+                }
+                if (sym.name.len > 0 and sym.name[0] == '$') {
+                    try self.stripConstPrefix(&sym);
+                    if (std.mem.eql(u8, sym.name, "true") or std.mem.eql(u8, sym.name, "false")) {
+                        const val = std.mem.eql(u8, sym.name, "true");
+                        self.allocator.free(sym.name);
+                        return ast.Expr{ .const_bool = .{ .val = val, .pos = pos } };
+                    }
+                    return ast.Expr{ .const_prim = .{ .val = sym, .pos = pos } };
+                }
+                if (std.mem.indexOfScalar(u8, sym.name, '.')) |_| {
+                    return ast.Expr{ .const_prim = .{ .val = sym, .pos = pos } };
+                }
                 return ast.Expr{ .var_expr = .{ .name = sym, .pos = pos } };
             },
             else => return error.InvalidExpression,
         }
+    }
+
+    fn parseIdentList(self: *Self) ![]ast.Ident {
+        _ = try self.expect(.lparen);
+        var items = std.ArrayList(ast.Ident){};
+        errdefer items.deinit(self.allocator);
+
+        while (true) {
+            const tok = self.peek() orelse break;
+            if (tok == .rparen) break;
+            try items.append(self.allocator, try self.expectSymbol());
+        }
+
+        _ = try self.expect(.rparen);
+        return items.toOwnedSlice(self.allocator);
+    }
+
+    fn parseRetList(self: *Self) ![]ast.Ident {
+        if (self.peek()) |tok| {
+            if (tok == .lparen) {
+                return self.parseIdentList();
+            }
+        }
+        var list = std.ArrayList(ast.Ident){};
+        errdefer list.deinit(self.allocator);
+        try list.append(self.allocator, try self.expectSymbol());
+        return list.toOwnedSlice(self.allocator);
+    }
+
+    fn parseLetDefs(self: *Self) ![]ast.LetDef {
+        _ = try self.expect(.lparen);
+        var defs = std.ArrayList(ast.LetDef){};
+        errdefer defs.deinit(self.allocator);
+
+        while (true) {
+            const tok = self.peek() orelse break;
+            if (tok == .rparen) break;
+            _ = try self.expect(.lparen);
+            const name = try self.expectSymbol();
+            const ty = try self.expectSymbol();
+            const val = try self.parseExpr();
+            _ = try self.expect(.rparen);
+            try defs.append(self.allocator, .{
+                .var_name = name,
+                .ty = ty,
+                .val = val,
+                .pos = name.pos,
+            });
+        }
+
+        _ = try self.expect(.rparen);
+        return defs.toOwnedSlice(self.allocator);
+    }
+
+    fn stripConstPrefix(self: *Self, ident: *ast.Ident) !void {
+        if (ident.name.len == 0 or ident.name[0] != '$') return;
+        const raw = ident.name[1..];
+        const dup = try self.allocator.dupe(u8, raw);
+        self.allocator.free(ident.name);
+        ident.name = dup;
     }
 };
 
@@ -436,7 +618,7 @@ test "Parser type definition" {
     const defs = try parser.parseDefs();
     defer {
         for (defs) |def| {
-            testing.allocator.free(def.type_def.name.name);
+            ast.cleanupDef(testing.allocator, def);
         }
         testing.allocator.free(defs);
     }
@@ -452,12 +634,9 @@ test "Parser decl" {
 
     const defs = try parser.parseDefs();
     defer {
-        testing.allocator.free(defs[0].decl.term.name);
-        for (defs[0].decl.arg_tys) |arg| {
-            testing.allocator.free(arg.name);
+        for (defs) |def| {
+            ast.cleanupDef(testing.allocator, def);
         }
-        testing.allocator.free(defs[0].decl.arg_tys);
-        testing.allocator.free(defs[0].decl.ret_ty.name);
         testing.allocator.free(defs);
     }
 
@@ -465,7 +644,8 @@ test "Parser decl" {
     const decl = defs[0].decl;
     try testing.expectEqualStrings("iadd", decl.term.name);
     try testing.expectEqual(@as(usize, 2), decl.arg_tys.len);
-    try testing.expectEqualStrings("i32", decl.ret_ty.name);
+    try testing.expectEqual(@as(usize, 1), decl.ret_tys.len);
+    try testing.expectEqualStrings("i32", decl.ret_tys[0].name);
     try testing.expect(decl.pure);
 }
 
@@ -476,19 +656,9 @@ test "Parser simple rule" {
 
     const defs = try parser.parseDefs();
     defer {
-        testing.allocator.free(defs[0].rule.pattern.term.sym.name);
-        for (defs[0].rule.pattern.term.args) |arg| {
-            testing.allocator.free(arg.var_pat.var_name.name);
+        for (defs) |def| {
+            ast.cleanupDef(testing.allocator, def);
         }
-        testing.allocator.free(defs[0].rule.pattern.term.args);
-
-        testing.allocator.free(defs[0].rule.expr.term.sym.name);
-        for (defs[0].rule.expr.term.args) |arg| {
-            testing.allocator.free(arg.var_expr.name.name);
-        }
-        testing.allocator.free(defs[0].rule.expr.term.args);
-
-        testing.allocator.free(defs[0].rule.iflets);
         testing.allocator.free(defs);
     }
 
@@ -496,4 +666,65 @@ test "Parser simple rule" {
     const rule = defs[0].rule;
     try testing.expectEqualStrings("iadd", rule.pattern.term.sym.name);
     try testing.expectEqualStrings("iadd", rule.expr.term.sym.name);
+}
+
+test "Parser extern extractor" {
+    const src = "(extern extractor foo foo_impl)";
+    var lexer = Lexer.init(testing.allocator, 0, src);
+    var parser = try Parser.init(testing.allocator, &lexer);
+
+    const defs = try parser.parseDefs();
+    defer {
+        for (defs) |def| {
+            ast.cleanupDef(testing.allocator, def);
+        }
+        testing.allocator.free(defs);
+    }
+
+    try testing.expectEqual(@as(usize, 1), defs.len);
+    const ext = defs[0].extern_def;
+    try testing.expect(ext.kind == .extractor);
+    try testing.expectEqualStrings("foo", ext.term.name);
+    try testing.expectEqualStrings("foo_impl", ext.func.name);
+}
+
+test "Parser rule guards and let" {
+    const src = "(rule 2 (foo x) (if-let y x) (if (bar x)) (let ((z Type x)) z))";
+    var lexer = Lexer.init(testing.allocator, 0, src);
+    var parser = try Parser.init(testing.allocator, &lexer);
+
+    const defs = try parser.parseDefs();
+    defer {
+        for (defs) |def| {
+            ast.cleanupDef(testing.allocator, def);
+        }
+        testing.allocator.free(defs);
+    }
+
+    try testing.expectEqual(@as(usize, 1), defs.len);
+    const rule = defs[0].rule;
+    try testing.expectEqual(@as(i64, 2), rule.prio.?);
+    try testing.expectEqual(@as(usize, 2), rule.iflets.len);
+    try testing.expect(rule.iflets[0].pattern == .var_pat);
+    try testing.expect(rule.iflets[1].pattern == .const_bool);
+    try testing.expect(rule.expr == .let_expr);
+    try testing.expectEqual(@as(usize, 1), rule.expr.let_expr.defs.len);
+}
+
+test "Parser bind pattern" {
+    const src = "(rule (foo x @ (bar _ 1)) x)";
+    var lexer = Lexer.init(testing.allocator, 0, src);
+    var parser = try Parser.init(testing.allocator, &lexer);
+
+    const defs = try parser.parseDefs();
+    defer {
+        for (defs) |def| {
+            ast.cleanupDef(testing.allocator, def);
+        }
+        testing.allocator.free(defs);
+    }
+
+    try testing.expectEqual(@as(usize, 1), defs.len);
+    const rule = defs[0].rule;
+    try testing.expect(rule.pattern.term.args[0] == .bind_pattern);
 }
