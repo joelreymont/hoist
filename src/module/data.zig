@@ -11,9 +11,9 @@ pub const Init = union(enum) {
     zeros: usize,
     bytes: []const u8,
 
-    pub fn size(self: Init) usize {
+    pub fn size(self: Init) !usize {
         return switch (self) {
-            .uninit => @panic("uninit data size"),
+            .uninit => error.UninitializedData,
             .zeros => |sz| sz,
             .bytes => |b| b.len,
         };
