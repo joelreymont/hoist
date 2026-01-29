@@ -4833,9 +4833,8 @@ pub fn vec_extract_imm4_from_immediate(imm: u128) ?u8 {
 
 /// u128_from_immediate - Extract u128 constant from Immediate
 /// Used for matching specific shuffle patterns (UZP/ZIP/TRN/REV)
-pub fn u128_from_immediate(expected: u128, actual: u128) ?u128 {
-    if (expected == actual) return actual;
-    return null;
+pub fn u128_from_immediate(actual: u128) ?u128 {
+    return actual;
 }
 
 /// Helper: Check if bytes form a valid lane index
