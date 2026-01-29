@@ -1346,7 +1346,7 @@ fn lower(ctx: *Context, target: *const Target) CodegenError!void {
 }
 
 /// Lower IR to AArch64 VCode.
-fn lowerAArch64(ctx: *Context, _: *const Target) CodegenError!void {
+fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
     const Inst = @import("../backends/aarch64/inst.zig").Inst;
     const VCodeBuilder = @import("../machinst/vcode_builder.zig").VCodeBuilder;
     const BlockIndex = @import("../machinst/vcode.zig").BlockIndex;
@@ -1432,7 +1432,12 @@ fn lowerAArch64(ctx: *Context, _: *const Target) CodegenError!void {
         // Lower each instruction in block
         var inst_iter = ctx.func.layout.blockInsts(block);
         while (inst_iter.next()) |inst| {
-            try lowerInstructionAArch64(ctx, &builder, inst, &block_index_map, &vreg_origins);
+            try lowerInstruction(.{
+                .ctx = ctx,
+                .builder = &builder,
+                .block_map = &block_index_map,
+                .vreg_origins = &vreg_origins,
+            }, inst, target);
 
             // Check if this was a try_call and emit exception handling branch
             const inst_data_ptr = ctx.func.dfg.insts.get(inst);
@@ -4952,13 +4957,18 @@ fn lowerS390x(ctx: *Context) CodegenError!void {
     return error.UnsupportedTarget;
 }
 
-/// Lower a single instruction.
+/// Lower a single instruction via backend dispatch.
 fn lowerInstruction(lower_ctx: anytype, inst: ir.Inst, target: *const Target) CodegenError!void {
-    _ = lower_ctx;
-    _ = inst;
-    _ = target;
-    // TODO: Call ISLE-generated lowering rules or backend-specific lowering
-    // For now, this is a stub that will be connected to the ISLE compiler output
+    switch (target.arch) {
+        .aarch64 => try lowerInstructionAArch64(
+            lower_ctx.ctx,
+            lower_ctx.builder,
+            inst,
+            lower_ctx.block_map,
+            lower_ctx.vreg_origins,
+        ),
+        else => return error.UnsupportedTarget,
+    }
 }
 
 /// Allocate registers.
