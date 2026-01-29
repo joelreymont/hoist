@@ -90,11 +90,14 @@ fn runFiletest(alloc: Allocator, name: []const u8, src: []const u8) !void {
                 };
                 defer parser.deinit();
 
-                var func = parser.parseFunction() catch |err| {
+                const func = parser.parseFunction() catch |err| {
                     std.debug.print("filetest '{s}': parse error: {}\n", .{ name, err });
                     return error.ParseFailed;
                 };
-                defer func.deinit();
+                defer {
+                    func.deinit();
+                    alloc.destroy(func);
+                }
 
                 var verifier = Verifier.init(alloc, func);
                 defer verifier.deinit();
@@ -114,11 +117,14 @@ fn runFiletest(alloc: Allocator, name: []const u8, src: []const u8) !void {
                 };
                 defer parser.deinit();
 
-                var func = parser.parseFunction() catch |err| {
+                const func = parser.parseFunction() catch |err| {
                     std.debug.print("filetest '{s}': parse error: {}\n", .{ name, err });
                     return error.ParseFailed;
                 };
-                defer func.deinit();
+                defer {
+                    func.deinit();
+                    alloc.destroy(func);
+                }
 
                 var ctx = Context.init(alloc);
                 var code = ctx.compileFunction(func) catch |err| {
@@ -134,11 +140,14 @@ fn runFiletest(alloc: Allocator, name: []const u8, src: []const u8) !void {
                 };
                 defer parser1.deinit();
 
-                var func1 = parser1.parseFunction() catch |err| {
+                const func1 = parser1.parseFunction() catch |err| {
                     std.debug.print("filetest '{s}': parse error: {}\n", .{ name, err });
                     return error.ParseFailed;
                 };
-                defer func1.deinit();
+                defer {
+                    func1.deinit();
+                    alloc.destroy(func1);
+                }
 
                 var printer = Printer.init(alloc, func1);
                 defer printer.deinit();
@@ -151,11 +160,14 @@ fn runFiletest(alloc: Allocator, name: []const u8, src: []const u8) !void {
                 };
                 defer parser2.deinit();
 
-                var func2 = parser2.parseFunction() catch |err| {
+                const func2 = parser2.parseFunction() catch |err| {
                     std.debug.print("filetest '{s}': roundtrip parse error: {}\n", .{ name, err });
                     return error.RoundtripFailed;
                 };
-                defer func2.deinit();
+                defer {
+                    func2.deinit();
+                    alloc.destroy(func2);
+                }
 
                 var printer2 = Printer.init(alloc, func2);
                 defer printer2.deinit();

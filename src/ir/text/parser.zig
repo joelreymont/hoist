@@ -378,7 +378,6 @@ pub const Parser = struct {
 
         while (self.current.type == .block) {
             const blk = try self.parseBlockHeader(&builder);
-            try builder.appendBlock(blk);
             builder.switchToBlock(blk);
 
             while (self.current.type != .block and self.current.type != .rbrace and self.current.type != .eof) {

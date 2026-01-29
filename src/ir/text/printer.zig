@@ -146,6 +146,22 @@ pub const Printer = struct {
                 try self.writer().writeAll(", ");
                 try self.printValue(b.args[1]);
             },
+            .ternary => |t| {
+                try self.printOpcode(t.opcode);
+                try self.writer().writeAll(" ");
+                try self.printValue(t.args[0]);
+                try self.writer().writeAll(", ");
+                try self.printValue(t.args[1]);
+                try self.writer().writeAll(", ");
+                try self.printValue(t.args[2]);
+            },
+            .ternary_imm8 => |t| {
+                try self.printOpcode(t.opcode);
+                try self.writer().writeAll(" ");
+                try self.printValue(t.args[0]);
+                try self.writer().print(", {d}, ", .{t.imm});
+                try self.printValue(t.args[1]);
+            },
 
             .binary_imm64 => |bi| {
                 try self.printOpcode(bi.opcode);
@@ -215,9 +231,9 @@ pub const Printer = struct {
             .store => |s| {
                 try self.printOpcode(s.opcode);
                 try self.writer().writeAll(" ");
-                try self.printValue(s.args[0]);
-                try self.writer().writeAll(", ");
                 try self.printValue(s.args[1]);
+                try self.writer().writeAll(", ");
+                try self.printValue(s.args[0]);
             },
             .stack_load => |sl| {
                 try self.writer().writeAll("stack_load ");
