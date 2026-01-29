@@ -156,27 +156,6 @@ pub const VRegOrigin = struct {
     }
 };
 
-/// Block-level spill tracking for reload hoisting.
-/// Tracks which vregs need to be reloaded at block entry.
-const BlockSpillInfo = struct {
-    /// Set of vregs that are spilled and used in this block.
-    spilled_uses: std.AutoHashMap(reg_mod.VReg, void),
-    /// Vregs already reloaded (preg assigned) - avoid duplicate reloads.
-    reloaded: std.AutoHashMap(reg_mod.VReg, reg_mod.PReg),
-
-    fn init(allocator: std.mem.Allocator) BlockSpillInfo {
-        return .{
-            .spilled_uses = std.AutoHashMap(reg_mod.VReg, void).init(allocator),
-            .reloaded = std.AutoHashMap(reg_mod.VReg, reg_mod.PReg).init(allocator),
-        };
-    }
-
-    fn deinit(self: *BlockSpillInfo) void {
-        self.spilled_uses.deinit();
-        self.reloaded.deinit();
-    }
-};
-
 const scratch_int_regs = [_]reg_mod.PReg{
     reg_mod.PReg.new(.int, 9),
     reg_mod.PReg.new(.int, 10),
@@ -723,13 +702,30 @@ fn insertSpillScratch(
 
                     // Try rematerialization for cheap constants
                     if (vreg_origins.get(vreg)) |origin| {
+                        const dst = reg_mod.WritableReg.fromReg(reg_mod.Reg.fromPReg(preg));
                         if (origin.opcode == .iconst) {
-                            const dst = reg_mod.WritableReg.fromReg(reg_mod.Reg.fromPReg(preg));
                             const imm: u64 = @bitCast(origin.imm.?);
                             try new_insns.append(allocator, .{ .mov_imm = .{
                                 .dst = dst,
                                 .imm = imm,
                                 .size = if (vreg.class() == .int) .size64 else .size32,
+                            } });
+                            continue;
+                        } else if (origin.opcode == .f32const) {
+                            const bits: u32 = @intCast(@as(u64, @bitCast(origin.imm.?)) & 0xFFFFFFFF);
+                            const imm: f64 = @floatCast(@as(f32, @bitCast(bits)));
+                            try new_insns.append(allocator, .{ .fmov_imm = .{
+                                .dst = dst,
+                                .imm = imm,
+                                .size = .size32,
+                            } });
+                            continue;
+                        } else if (origin.opcode == .f64const) {
+                            const imm: f64 = @bitCast(origin.imm.?);
+                            try new_insns.append(allocator, .{ .fmov_imm = .{
+                                .dst = dst,
+                                .imm = imm,
+                                .size = .size64,
                             } });
                             continue;
                         }

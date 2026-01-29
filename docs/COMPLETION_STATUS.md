@@ -85,7 +85,7 @@
 ## Remaining Work (0 dots - advanced optimizations deferred)
 
 ### Register Allocation Optimizations (partially implemented)
-1. **Rematerialization** ✅: Constant rematerialization (iconst) emits `mov_imm` instead of reload
+1. **Rematerialization** ✅: Constant rematerialization (iconst, f32const, f64const) emits mov_imm/fmov_imm instead of reload
 2. **Reload hoisting** ⚠️: Analysis infrastructure in place (vreg-to-blocks mapping, domtree threaded); actual hoisting deferred (requires persisting pregs across instructions)
 
 Note: Spill/reload emission and linear scan are integrated. Peephole optimizer handles STP combining for adjacent spills.
