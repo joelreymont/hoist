@@ -1523,8 +1523,8 @@ pub fn computeArgLocs(
     needs_sret: bool,
     struct_store: ?*const types.StructStore,
 ) ![]ArgLoc {
-    var locs = std.ArrayList(ArgLoc).init(allocator);
-    errdefer locs.deinit();
+    var locs = std.ArrayList(ArgLoc).empty;
+    errdefer locs.deinit(allocator);
 
     var next_gpr: u8 = 0; // Next general-purpose register (X0-X7)
     var next_fpr: u8 = 0; // Next floating-point register (V0-V7)
@@ -1548,10 +1548,10 @@ pub fn computeArgLocs(
             if (bits <= 64) {
                 // Single register
                 if (next_gpr < 8) {
-                    try locs.append(.{ .reg = PReg.new(.int, next_gpr) });
+                    try locs.append(allocator, .{ .reg = PReg.new(.int, @intCast(next_gpr)) });
                     next_gpr += 1;
                 } else {
-                    try locs.append(.{ .stack = next_stack });
+                    try locs.append(allocator, .{ .stack = next_stack });
                     next_stack += 8;
                 }
             } else if (bits == 128) {
@@ -1563,45 +1563,45 @@ pub fn computeArgLocs(
                 }
 
                 if (next_gpr + 1 < 8) {
-                    try locs.append(.{ .reg_pair = .{
-                        .lo = PReg.new(.int, next_gpr),
-                        .hi = PReg.new(.int, next_gpr + 1),
+                    try locs.append(allocator, .{ .reg_pair = .{
+                        .lo = PReg.new(.int, @intCast(next_gpr)),
+                        .hi = PReg.new(.int, @intCast(next_gpr + 1)),
                     } });
                     next_gpr += 2;
                 } else {
                     // Stack must be 16-byte aligned for i128
                     next_stack = std.mem.alignForward(u32, next_stack, 16);
-                    try locs.append(.{ .stack = next_stack });
+                    try locs.append(allocator, .{ .stack = next_stack });
                     next_stack += 16;
                 }
             } else {
                 // Larger integers: indirect
                 if (next_gpr < 8) {
-                    try locs.append(.{ .indirect_reg = PReg.new(.int, next_gpr) });
+                    try locs.append(allocator, .{ .indirect_reg = PReg.new(.int, @intCast(next_gpr)) });
                     next_gpr += 1;
                 } else {
-                    try locs.append(.{ .stack = next_stack });
+                    try locs.append(allocator, .{ .stack = next_stack });
                     next_stack += 8; // Pointer size
                 }
             }
         } else if (ty.isFloat()) {
             // Float/double in FP register
             if (next_fpr < 8) {
-                try locs.append(.{ .reg = PReg.new(.float, next_fpr) });
+                try locs.append(allocator, .{ .reg = PReg.new(.float, @intCast(next_fpr)) });
                 next_fpr += 1;
             } else {
-                try locs.append(.{ .stack = next_stack });
+                try locs.append(allocator, .{ .stack = next_stack });
                 next_stack += ty.bytes();
             }
         } else if (ty.isVector()) {
             // Vector in FP register
             if (next_fpr < 8) {
-                try locs.append(.{ .reg = PReg.new(.vector, next_fpr) });
+                try locs.append(allocator, .{ .reg = PReg.new(.vector, @intCast(next_fpr)) });
                 next_fpr += 1;
             } else {
                 // Stack alignment for vectors (typically 16 bytes)
                 next_stack = std.mem.alignForward(u32, next_stack, 16);
-                try locs.append(.{ .stack = next_stack });
+                try locs.append(allocator, .{ .stack = next_stack });
                 next_stack += ty.bytes();
             }
         } else if (ty.isStruct()) {
@@ -1614,23 +1614,23 @@ pub fn computeArgLocs(
                 if (isHfaIr(flds)) |_| {
                     const count: u8 = @intCast(flds.len);
                     if (next_fpr + count <= 8) {
-                        try locs.append(.{ .hfa = .{ .base_reg = next_fpr, .count = count } });
+                        try locs.append(allocator, .{ .hfa = .{ .base_reg = next_fpr, .count = count } });
                         next_fpr += count;
                     } else {
                         // Stack: align to 8 bytes, push all fields
                         next_stack = std.mem.alignForward(u32, next_stack, 8);
-                        try locs.append(.{ .stack = next_stack });
+                        try locs.append(allocator, .{ .stack = next_stack });
                         next_stack += size;
                     }
                 } else if (isHvaIr(flds)) |_| {
                     // HVA: 1-4 same-type vectors
                     const count: u8 = @intCast(flds.len);
                     if (next_fpr + count <= 8) {
-                        try locs.append(.{ .hfa = .{ .base_reg = next_fpr, .count = count } });
+                        try locs.append(allocator, .{ .hfa = .{ .base_reg = next_fpr, .count = count } });
                         next_fpr += count;
                     } else {
                         next_stack = std.mem.alignForward(u32, next_stack, 16);
-                        try locs.append(.{ .stack = next_stack });
+                        try locs.append(allocator, .{ .stack = next_stack });
                         next_stack += size;
                     }
                 } else if (size <= 16) {
@@ -1638,52 +1638,92 @@ pub fn computeArgLocs(
                     const regs_needed: u8 = @intCast((size + 7) / 8);
                     if (next_gpr + regs_needed <= 8) {
                         if (regs_needed == 1) {
-                            try locs.append(.{ .reg = PReg.new(.int, next_gpr) });
+                            try locs.append(allocator, .{ .reg = PReg.new(.int, @intCast(next_gpr)) });
                         } else {
-                            try locs.append(.{ .reg_pair = .{
-                                .lo = PReg.new(.int, next_gpr),
-                                .hi = PReg.new(.int, next_gpr + 1),
+                            try locs.append(allocator, .{ .reg_pair = .{
+                                .lo = PReg.new(.int, @intCast(next_gpr)),
+                                .hi = PReg.new(.int, @intCast(next_gpr + 1)),
                             } });
                         }
                         next_gpr += regs_needed;
                     } else {
                         next_stack = std.mem.alignForward(u32, next_stack, 8);
-                        try locs.append(.{ .stack = next_stack });
+                        try locs.append(allocator, .{ .stack = next_stack });
                         next_stack += size;
                     }
                 } else {
                     // Large struct: pass by reference
                     if (next_gpr < 8) {
-                        try locs.append(.{ .indirect_reg = PReg.new(.int, next_gpr) });
+                        try locs.append(allocator, .{ .indirect_reg = PReg.new(.int, @intCast(next_gpr)) });
                         next_gpr += 1;
                     } else {
-                        try locs.append(.{ .stack = next_stack });
+                        try locs.append(allocator, .{ .stack = next_stack });
                         next_stack += 8; // Pointer size
                     }
                 }
             } else {
                 // No struct store: fallback to GPR
                 if (next_gpr < 8) {
-                    try locs.append(.{ .reg = PReg.new(.int, next_gpr) });
+                    try locs.append(allocator, .{ .reg = PReg.new(.int, @intCast(next_gpr)) });
                     next_gpr += 1;
                 } else {
-                    try locs.append(.{ .stack = next_stack });
+                    try locs.append(allocator, .{ .stack = next_stack });
                     next_stack += 8;
                 }
             }
         } else {
             // Unknown type: fallback to GPR
             if (next_gpr < 8) {
-                try locs.append(.{ .reg = PReg.new(.int, next_gpr) });
+                try locs.append(allocator, .{ .reg = PReg.new(.int, @intCast(next_gpr)) });
                 next_gpr += 1;
             } else {
-                try locs.append(.{ .stack = next_stack });
+                try locs.append(allocator, .{ .stack = next_stack });
                 next_stack += 8;
             }
         }
     }
 
-    return locs.toOwnedSlice();
+    return locs.toOwnedSlice(allocator);
+}
+
+test "computeArgLocs HFA IR" {
+    var store = types.StructStore.init(testing.allocator);
+    defer store.deinit();
+
+    const fields = [_]types.StructField{
+        .{ .ty = Type.F32, .offset = 0 },
+        .{ .ty = Type.F32, .offset = 4 },
+    };
+    const id = try store.intern(&fields, 8);
+    const ty = Type.fromStructId(id);
+
+    const params = [_]AbiParam{AbiParam.new(ty)};
+    const locs = try computeArgLocs(testing.allocator, &params, false, &store);
+    defer testing.allocator.free(locs);
+
+    try testing.expect(locs[0] == .hfa);
+    try testing.expectEqual(@as(u8, 0), locs[0].hfa.base_reg);
+    try testing.expectEqual(@as(u8, 2), locs[0].hfa.count);
+}
+
+test "computeArgLocs HVA IR" {
+    var store = types.StructStore.init(testing.allocator);
+    defer store.deinit();
+
+    const fields = [_]types.StructField{
+        .{ .ty = Type.I8X16, .offset = 0 },
+        .{ .ty = Type.I8X16, .offset = 16 },
+    };
+    const id = try store.intern(&fields, 32);
+    const ty = Type.fromStructId(id);
+
+    const params = [_]AbiParam{AbiParam.new(ty)};
+    const locs = try computeArgLocs(testing.allocator, &params, false, &store);
+    defer testing.allocator.free(locs);
+
+    try testing.expect(locs[0] == .hfa);
+    try testing.expectEqual(@as(u8, 0), locs[0].hfa.base_reg);
+    try testing.expectEqual(@as(u8, 2), locs[0].hfa.count);
 }
 
 test "Aarch64ABICallee prologue/epilogue" {
