@@ -251,10 +251,7 @@ test "ISLE lowering: backend instantiation" {
     const backend = aarch64_lower.backend;
 
     // Backend should expose lowering functions
-    _ = backend;
-
-    // Basic smoke test - backend exists
-    try testing.expect(true);
+    try testing.expect(backend.lower != null);
 }
 
 // Test complete lowering flow (stub until IR is available)
