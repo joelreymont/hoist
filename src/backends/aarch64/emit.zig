@@ -235,7 +235,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
                         const bits: u64 = @as(u64, bits32);
                         try emitFploadConst(i.dst.toReg(), bits, .size32, buffer);
                     },
-                    error.OutOfMemory => return error.OutOfMemory,
+                    else => return err,
                 };
             },
             .size64 => {
@@ -244,7 +244,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
                         const bits: u64 = @bitCast(i.imm);
                         try emitFploadConst(i.dst.toReg(), bits, .size64, buffer);
                     },
-                    error.OutOfMemory => return error.OutOfMemory,
+                    else => return err,
                 };
             },
             else => unreachable,
@@ -437,13 +437,10 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
 }
 
 /// Get hardware register encoding.
-fn hwEnc(reg: Reg) u5 {
-    if (reg.isVirtual()) {
-        @panic("FATAL: Virtual register reached emit stage! Register rewriting incomplete.");
-    } else {
-        const preg = reg.toRealReg() orelse unreachable;
-        return @intCast(preg.hwEnc() & 0x1F);
-    }
+fn hwEnc(reg: Reg) !u5 {
+    if (reg.isVirtual()) return error.VirtualRegister;
+    const preg = reg.toRealReg() orelse return error.VirtualRegister;
+    return @intCast(preg.hwEnc() & 0x1F);
 }
 
 /// Get sf bit for 64-bit operands.
@@ -457,8 +454,8 @@ fn sf(size: OperandSize) u1 {
 /// MOV Xd, Xn (implemented as ORR Xd, XZR, Xn)
 pub fn emitMovRR(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rm = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rm = try hwEnc(src);
 
     // ORR Xd, XZR, Xm: sf|opc|01010|shift|N|Rm|imm6|Rn|Rd
     // sf[31] opc[30:29]=01 fixed[28:24]=01010 shift[23:22]=00 N[21]=0 Rm[20:16] imm6[15:10]=0 Rn[9:5]=31 Rd[4:0]
@@ -544,7 +541,7 @@ pub fn emitMovImm(dst: Reg, imm: u64, size: OperandSize, buffer: *buffer_mod.Mac
 /// opc=10 for MOVZ, hw = shift / 16
 fn emitMovz(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
+    const rd = try hwEnc(dst);
     const hw: u2 = @intCast(shift / 16);
 
     // MOVZ: sf|10|100101|hw|imm16|Rd
@@ -562,7 +559,7 @@ fn emitMovz(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mo
 /// opc=11 for MOVK, hw = shift / 16
 fn emitMovk(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
+    const rd = try hwEnc(dst);
     const hw: u2 = @intCast(shift / 16);
 
     // MOVK: sf|11|100101|hw|imm16|Rd
@@ -580,7 +577,7 @@ fn emitMovk(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mo
 /// opc=00 for MOVN, hw = shift / 16
 fn emitMovn(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
+    const rd = try hwEnc(dst);
     const hw: u2 = @intCast(shift / 16);
 
     // MOVN: sf|00|100101|hw|imm16|Rd
@@ -596,9 +593,9 @@ fn emitMovn(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mo
 /// ADD Xd, Xn, Xm
 pub fn emitAddRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     // ADD: sf|0|0|01011|shift|0|Rm|imm6|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -613,8 +610,8 @@ pub fn emitAddRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buf
 /// ADD Xd, Xn, #imm
 fn emitAddImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const imm12: u12 = @truncate(imm);
 
     // ADD imm: sf|0|0|10001|shift|imm12|Rn|Rd
@@ -631,9 +628,9 @@ fn emitAddImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_m
 /// ADD (shifted register) instruction
 fn emitAddShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: inst_mod.ShiftOp, shift_amt: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const shift: u32 = @intFromEnum(shift_op);
     const imm6: u32 = @intCast(shift_amt);
 
@@ -653,9 +650,9 @@ fn emitAddShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: inst_mod.ShiftOp, sh
 /// ADD (extended register) instruction
 fn emitAddExtended(dst: Reg, src1: Reg, src2: Reg, extend_op: inst_mod.ExtendOp, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const option: u32 = @intFromEnum(extend_op);
     const imm3: u32 = 0; // shift amount, typically 0 for add with extend
 
@@ -676,9 +673,9 @@ fn emitAddExtended(dst: Reg, src1: Reg, src2: Reg, extend_op: inst_mod.ExtendOp,
 /// SUB Xd, Xn, Xm
 fn emitSubRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     // SUB: sf|1|0|01011|shift|0|Rm|imm6|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -694,9 +691,9 @@ fn emitSubRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
 /// SUB Xd, Xn, Xm, shift #amount
 fn emitSubShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: ShiftOp, shift_amt: u6, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const shift: u2 = @intFromEnum(shift_op);
 
     // SUB shifted: sf|1|0|01011|shift|0|Rm|imm6|Rn|Rd
@@ -715,9 +712,9 @@ fn emitSubShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: ShiftOp, shift_amt: 
 /// SUB Xd, Xn, Xm, extend
 fn emitSubExtended(dst: Reg, src1: Reg, src2: Reg, extend: ExtendOp, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const option: u3 = @intFromEnum(extend);
     const imm3: u3 = 0; // No extra shift for basic extend
 
@@ -738,8 +735,8 @@ fn emitSubExtended(dst: Reg, src1: Reg, src2: Reg, extend: ExtendOp, size: Opera
 /// SUB Xd, Xn, #imm
 fn emitSubImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const imm12: u12 = @truncate(imm);
 
     // SUB imm: sf|1|0|10001|shift|imm12|Rn|Rd
@@ -756,9 +753,9 @@ fn emitSubImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_m
 /// ADDS Xd, Xn, Xm (add and set flags)
 fn emitAddsRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     // ADDS: sf|0|1|01011|shift|0|Rm|imm6|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -776,9 +773,9 @@ fn emitAddsRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer
 /// Encoding: sf|0|1|11010000|Rm|000000|Rn|Rd
 fn emitAdcs(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     // ADCS encoding: sf|0|1|11010000|Rm|000000|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -796,9 +793,9 @@ fn emitAdcs(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_m
 /// Encoding: sf|1|1|11010000|Rm|000000|Rn|Rd
 fn emitSbcs(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     // SBCS encoding: sf|1|1|11010000|Rm|000000|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -814,8 +811,8 @@ fn emitSbcs(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_m
 /// ADDS Xd, Xn, #imm (add immediate and set flags)
 fn emitAddsImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const imm12: u12 = @truncate(imm);
 
     // ADDS imm: sf|0|1|10001|shift|imm12|Rn|Rd
@@ -832,9 +829,9 @@ fn emitAddsImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_
 /// SUBS Xd, Xn, Xm (subtract and set flags)
 fn emitSubsRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     // SUBS: sf|1|1|01011|shift|0|Rm|imm6|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -850,8 +847,8 @@ fn emitSubsRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer
 /// SUBS Xd, Xn, #imm (subtract immediate and set flags)
 fn emitSubsImm(dst: Reg, src: Reg, imm: inst_mod.Imm12, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     // SUBS imm: sf|1|1|10001|shift|imm12|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -868,9 +865,9 @@ fn emitSubsImm(dst: Reg, src: Reg, imm: inst_mod.Imm12, size: OperandSize, buffe
 /// MUL Xd, Xn, Xm (alias for MADD Xd, Xn, Xm, XZR)
 pub fn emitMulRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const ra: u5 = 31; // XZR
 
     // MADD: sf|0|0|11011|000|Rm|0|Ra|Rn|Rd
@@ -887,10 +884,10 @@ pub fn emitMulRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buf
 /// MADD Xd, Xn, Xm, Xa
 fn emitMadd(dst: Reg, src1: Reg, src2: Reg, addend: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
-    const ra = hwEnc(addend);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
+    const ra = try hwEnc(addend);
 
     // MADD: sf|0|0|11011|000|Rm|0|Ra|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -906,10 +903,10 @@ fn emitMadd(dst: Reg, src1: Reg, src2: Reg, addend: Reg, size: OperandSize, buff
 /// MSUB Xd, Xn, Xm, Xa
 fn emitMsub(dst: Reg, src1: Reg, src2: Reg, subtrahend: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
-    const ra = hwEnc(subtrahend);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
+    const ra = try hwEnc(subtrahend);
 
     // MSUB: sf|0|0|11011|000|Rm|1|Ra|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -925,9 +922,9 @@ fn emitMsub(dst: Reg, src1: Reg, src2: Reg, subtrahend: Reg, size: OperandSize, 
 
 /// SMULH Xd, Xn, Xm (signed multiply high)
 fn emitSmulh(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const ra: u5 = 31; // Must be 31
 
     // SMULH: 1|0|0|11011|010|Rm|0|11111|Rn|Rd
@@ -944,8 +941,8 @@ fn emitSmulh(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 /// CCMP Xn, Xm, #nzcv, cond (conditional compare register)
 fn emitCcmp(src1: Reg, src2: Reg, nzcv: u4, cond: CondCode, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = if (size == .size64) 1 else 0;
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     // CCMP: sf|1|1|11010010|Rm|cond|0|0|Rn|0|nzcv
     const insn: u32 = (sf_bit << 31) |
@@ -961,7 +958,7 @@ fn emitCcmp(src1: Reg, src2: Reg, nzcv: u4, cond: CondCode, size: OperandSize, b
 /// CCMP Xn, #imm, #nzcv, cond (conditional compare immediate)
 fn emitCcmpImm(src: Reg, imm: u5, nzcv: u4, cond: CondCode, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = if (size == .size64) 1 else 0;
-    const rn = hwEnc(src);
+    const rn = try hwEnc(src);
 
     // CCMP: sf|1|1|11010010|imm5|cond|1|0|Rn|0|nzcv
     const insn: u32 = (sf_bit << 31) |
@@ -977,9 +974,9 @@ fn emitCcmpImm(src: Reg, imm: u5, nzcv: u4, cond: CondCode, size: OperandSize, b
 
 /// UMULH Xd, Xn, Xm (unsigned multiply high)
 fn emitUmulh(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const ra: u5 = 31; // Must be 31
 
     // UMULH: 1|0|0|11011|110|Rm|0|11111|Rn|Rd
@@ -995,9 +992,9 @@ fn emitUmulh(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 
 /// SMULL Xd, Wn, Wm (signed multiply long 32x32→64)
 fn emitSmull(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const ra: u5 = 31; // XZR
 
     // SMULL (alias for SMADDL with Ra=31): 1|0|0|11011|001|Rm|0|11111|Rn|Rd
@@ -1013,9 +1010,9 @@ fn emitSmull(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 
 /// UMULL Xd, Wn, Wm (unsigned multiply long 32x32→64)
 fn emitUmull(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const ra: u5 = 31; // XZR
 
     // UMULL (alias for UMADDL with Ra=31): 1|0|0|11011|101|Rm|0|11111|Rn|Rd
@@ -1032,9 +1029,9 @@ fn emitUmull(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 /// SDIV Xd, Xn, Xm (signed divide)
 fn emitSdiv(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     // SDIV: sf|0|0|11010110|Rm|00001|1|Rn|Rd
     // Encoding: sf|0|0|11010110|Rm[20:16]|00001[15:11]|1[10]|Rn[9:5]|Rd[4:0]
@@ -1053,9 +1050,9 @@ fn emitSdiv(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_m
 /// UDIV Xd, Xn, Xm (unsigned divide)
 fn emitUdiv(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     // UDIV: sf|0|0|11010110|Rm|00001|0|Rn|Rd
     // Encoding: sf|0|0|11010110|Rm[20:16]|00001[15:11]|0[10]|Rn[9:5]|Rd[4:0]
@@ -1074,9 +1071,9 @@ fn emitUdiv(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_m
 /// LSL Xd, Xn, Xm (logical shift left, variable)
 fn emitLslRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     // LSLV (LSL variable): sf|0|0|11010110|Rm|001000|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -1092,8 +1089,8 @@ fn emitLslRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
 /// LSL Xd, Xn, #imm (logical shift left, immediate)
 fn emitLslImm(dst: Reg, src: Reg, imm: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const datasize: u8 = if (size == .size64) 64 else 32;
 
     // LSL is an alias for UBFM (unsigned bitfield move)
@@ -1117,9 +1114,9 @@ fn emitLslImm(dst: Reg, src: Reg, imm: u8, size: OperandSize, buffer: *buffer_mo
 /// LSR Xd, Xn, Xm (logical shift right, variable)
 fn emitLsrRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     // LSRV (LSR variable): sf|0|0|11010110|Rm|001001|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -1135,8 +1132,8 @@ fn emitLsrRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
 /// LSR Xd, Xn, #imm (logical shift right, immediate)
 fn emitLsrImm(dst: Reg, src: Reg, imm: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const datasize: u8 = if (size == .size64) 64 else 32;
     const n: u1 = if (size == .size64) 1 else 0;
 
@@ -1159,9 +1156,9 @@ fn emitLsrImm(dst: Reg, src: Reg, imm: u8, size: OperandSize, buffer: *buffer_mo
 /// ASR Xd, Xn, Xm (arithmetic shift right, variable)
 fn emitAsrRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     // ASRV (ASR variable): sf|0|0|11010110|Rm|001010|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -1177,8 +1174,8 @@ fn emitAsrRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
 /// ASR Xd, Xn, #imm (arithmetic shift right, immediate)
 fn emitAsrImm(dst: Reg, src: Reg, imm: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const datasize: u8 = if (size == .size64) 64 else 32;
     const n: u1 = if (size == .size64) 1 else 0;
 
@@ -1201,9 +1198,9 @@ fn emitAsrImm(dst: Reg, src: Reg, imm: u8, size: OperandSize, buffer: *buffer_mo
 /// ROR Xd, Xn, Xm (rotate right, variable)
 fn emitRorRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     // RORV (ROR variable): sf|0|0|11010110|Rm|001011|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -1219,9 +1216,9 @@ fn emitRorRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
 /// ROR Xd, Xn, #imm (rotate right, immediate)
 fn emitRorImm(dst: Reg, src: Reg, imm: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
-    const rs = hwEnc(src); // Source register used twice
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
+    const rs = try hwEnc(src); // Source register used twice
 
     // ROR is an alias for EXTR: ROR Xd, Xn, #shift == EXTR Xd, Xn, Xn, #shift
     const n: u1 = if (size == .size64) 1 else 0;
@@ -1250,9 +1247,9 @@ fn emitLogicalShifted(
     buffer: *buffer_mod.MachBuffer,
 ) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const shift: u32 = @intFromEnum(shift_op);
     const imm6: u32 = @intCast(shift_amt);
 
@@ -1279,8 +1276,8 @@ fn emitAndRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
 fn emitAndImm(dst: Reg, src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_mod.MachBuffer) !void {
     const size = imm_logic.size;
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     // Encode the logical immediate to get N:immr:imms packed in u13
     const encoding = @import("encoding.zig");
@@ -1313,8 +1310,8 @@ fn emitOrrRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
 fn emitOrrImm(dst: Reg, src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_mod.MachBuffer) !void {
     const size = imm_logic.size;
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     // Encode the logical immediate to get N:immr:imms packed in u13
     const encoding = @import("encoding.zig");
@@ -1347,8 +1344,8 @@ fn emitEorRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
 fn emitEorImm(dst: Reg, src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_mod.MachBuffer) !void {
     const size = imm_logic.size;
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     // Encode the logical immediate to get N:immr:imms packed in u13
     const encoding = @import("encoding.zig");
@@ -1405,8 +1402,8 @@ fn emitNeg(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
 /// NGC Xd, Xm (negate with carry - implemented as SBC Xd, XZR, Xm)
 fn emitNgc(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rm = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rm = try hwEnc(src);
     const rn: u5 = 31; // XZR
 
     // SBC (subtract with carry): sf|1|0|11010000|Rm|000000|Rn|Rd
@@ -1469,7 +1466,7 @@ fn emitTstImm(src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_mod.MachBu
     const size = imm_logic.size;
     const sf_bit: u32 = @intCast(sf(size));
     const rd: u5 = 31; // XZR
-    const rn = hwEnc(src);
+    const rn = try hwEnc(src);
 
     // Encode the logical immediate to get N:immr:imms packed in u13
     const encoding = @import("encoding.zig");
@@ -1496,8 +1493,8 @@ fn emitTstImm(src: Reg, imm_logic: inst_mod.ImmLogic, buffer: *buffer_mod.MachBu
 /// CLZ Xd, Xn (count leading zeros)
 fn emitClz(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     // CLZ: sf|1|S|11010110|opcode2|opcode|Rn|Rd
     // CLZ: sf|1|0|11010110|00000|00100|Rn|Rd
@@ -1515,8 +1512,8 @@ fn emitClz(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
 /// CLS Xd, Xn (count leading sign bits)
 fn emitCls(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     // CLS: sf|1|S|11010110|opcode2|opcode|Rn|Rd
     // CLS: sf|1|0|11010110|00000|00101|Rn|Rd
@@ -1534,8 +1531,8 @@ fn emitCls(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
 /// RBIT Xd, Xn (reverse bits)
 fn emitRbit(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     // RBIT: sf|1|S|11010110|opcode2|opcode|Rn|Rd
     // RBIT: sf|1|0|11010110|00000|00000|Rn|Rd
@@ -1565,8 +1562,8 @@ fn emitCtz(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
 /// Encoding: sf|1|0|11010110|00000|00001|Rn|Rd
 fn emitRev16(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (sf_bit << 31) |
         (1 << 30) |
@@ -1584,8 +1581,8 @@ fn emitRev16(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuff
 /// For 32-bit (REV Wd): sf=0, opcode=00010
 fn emitRev32(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (sf_bit << 31) |
         (1 << 30) |
@@ -1601,8 +1598,8 @@ fn emitRev32(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuff
 /// REV64 - Reverse bytes in 64-bit (REV Xd, Xn)
 /// Encoding: 1|1|0|11010110|00000|00011|Rn|Rd
 fn emitRev64(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (1 << 31) | // sf=1 for 64-bit
         (1 << 30) |
@@ -1619,9 +1616,9 @@ fn emitRev64(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// Encoding: sf|0|0|11010100|Rm|cond|00|Rn|Rd
 fn emitCsel(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const cond_bits: u32 = @intCast(@intFromEnum(cond));
 
     // CSEL: sf|0|0|11010100|Rm|cond|00|Rn|Rd
@@ -1641,7 +1638,7 @@ fn emitCsel(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize, b
 /// Encoding: sf|0|0|11010100|11111|cond_inv|01|11111|Rd
 fn emitCset(dst: Reg, cond: CondCode, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
+    const rd = try hwEnc(dst);
     const cond_inv: u32 = @intCast(@intFromEnum(cond) ^ 1); // Invert condition
     const xzr: u32 = 31; // XZR/WZR register
 
@@ -1662,8 +1659,8 @@ fn emitCset(dst: Reg, cond: CondCode, size: OperandSize, buffer: *buffer_mod.Mac
 /// CSINC: sf|0|0|11010100|Rm|cond|0|1|Rn|Rd
 fn emitCinc(dst: Reg, src: Reg, cond: CondCode, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const rm = rn; // CINC uses same register for both operands
     const cond_inv = cond.invert(); // Inverted condition
     const cond_bits: u32 = @intFromEnum(cond_inv);
@@ -1684,9 +1681,9 @@ fn emitCinc(dst: Reg, src: Reg, cond: CondCode, size: OperandSize, buffer: *buff
 /// Encoding: sf|0|0|11010100|Rm|cond|01|Rn|Rd
 fn emitCsinc(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const cond_bits: u32 = @intCast(@intFromEnum(cond));
 
     // CSINC: sf|0|0|11010100|Rm|cond|01|Rn|Rd
@@ -1705,9 +1702,9 @@ fn emitCsinc(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize, 
 /// Encoding: sf|1|0|11010100|Rm|cond|00|Rn|Rd
 fn emitCsinv(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const cond_bits: u32 = @intCast(@intFromEnum(cond));
 
     // CSINV: sf|1|0|11010100|Rm|cond|00|Rn|Rd
@@ -1727,9 +1724,9 @@ fn emitCsinv(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize, 
 /// Encoding: sf|1|0|11010100|Rm|cond|01|Rn|Rd
 fn emitCsneg(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const cond_bits: u32 = @intCast(@intFromEnum(cond));
 
     // CSNEG: sf|1|0|11010100|Rm|cond|01|Rn|Rd
@@ -1750,8 +1747,8 @@ fn emitCsneg(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, size: OperandSize, 
 /// Implemented as SBFM Wd, Wn, #0, #7 (32-bit) or SBFM Xd, Xn, #0, #7 (64-bit)
 fn emitSxtb(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const n: u1 = if (size == .size64) 1 else 0;
 
     // SXTB is an alias for SBFM: SXTB Wd, Wn == SBFM Wd, Wn, #0, #7
@@ -1775,8 +1772,8 @@ fn emitSxtb(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffe
 /// Implemented as SBFM Wd, Wn, #0, #15 (32-bit) or SBFM Xd, Xn, #0, #15 (64-bit)
 fn emitSxth(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const n: u1 = if (size == .size64) 1 else 0;
 
     // SXTH is an alias for SBFM: SXTH Wd, Wn == SBFM Wd, Wn, #0, #15
@@ -1799,8 +1796,8 @@ fn emitSxth(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffe
 /// Sign extends lowest 32 bits to 64-bit destination.
 /// Implemented as SBFM Xd, Xn, #0, #31
 fn emitSxtw(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     // SXTW is an alias for SBFM: SXTW Xd, Wn == SBFM Xd, Xn, #0, #31
     // SBFM: sf|00|100110|N|immr|imms|Rn|Rd
@@ -1826,8 +1823,8 @@ fn emitSxtw(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// Implemented as UBFM Wd, Wn, #0, #7 (32-bit) or UBFM Xd, Xn, #0, #7 (64-bit)
 fn emitUxtb(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const n: u1 = if (size == .size64) 1 else 0;
 
     // UXTB is an alias for UBFM: UXTB Wd, Wn == UBFM Wd, Wn, #0, #7
@@ -1851,8 +1848,8 @@ fn emitUxtb(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffe
 /// Implemented as UBFM Wd, Wn, #0, #15 (32-bit) or UBFM Xd, Xn, #0, #15 (64-bit)
 fn emitUxth(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const n: u1 = if (size == .size64) 1 else 0;
 
     // UXTH is an alias for UBFM: UXTH Wd, Wn == UBFM Wd, Wn, #0, #15
@@ -1873,8 +1870,8 @@ fn emitUxth(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffe
 /// LDR Xt, [Xn, #offset]
 fn emitLdr(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
     const imm9: u9 = @truncate(@as(u16, @bitCast(offset)));
 
     // LDR (immediate): sf|11|111|0|00|01|imm9|0|Rn|Rt
@@ -1890,8 +1887,8 @@ fn emitLdr(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_
 /// STR Xt, [Xn, #offset]
 fn emitStr(src: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
     const imm9: u9 = @truncate(@as(u16, @bitCast(offset)));
 
     // STR (immediate): sf|11|111|0|00|00|imm9|0|Rn|Rt
@@ -1907,8 +1904,8 @@ fn emitStr(src: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_
 /// LDR Vt, [Xn, #offset] (SIMD/FP load with immediate offset)
 /// Encoding: size|111|V=1|01|imm12|Rn|Rt
 fn emitVldr(dst: Reg, base: Reg, offset: i16, fp_size: FpuOperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
 
     // Scale offset by element size
     const scale: u4 = switch (fp_size) {
@@ -1944,8 +1941,8 @@ fn emitVldr(dst: Reg, base: Reg, offset: i16, fp_size: FpuOperandSize, buffer: *
 /// Encoding: 0Q|001101|1|L=1|0|00000|110|0|size|Rn|Rt
 /// Q=0 for 64-bit (8B,4H,2S), Q=1 for 128-bit (16B,8H,4S,2D)
 fn emitLd1r(dst: Reg, base: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
 
     // Determine Q bit and size field from VecElemSize
     const q_bit: u32 = switch (vec_size) {
@@ -1977,8 +1974,8 @@ fn emitLd1r(dst: Reg, base: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mach
 /// STR Vt, [Xn, #offset] (SIMD/FP store with immediate offset)
 /// Encoding: size|111|V=1|00|imm12|Rn|Rt
 fn emitVstr(src: Reg, base: Reg, offset: i16, fp_size: FpuOperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     // Scale offset by element size
     const scale: u4 = switch (fp_size) {
@@ -2013,9 +2010,9 @@ fn emitVstr(src: Reg, base: Reg, offset: i16, fp_size: FpuOperandSize, buffer: *
 /// LDP Vt1, Vt2, [Xn, #offset] (SIMD/FP load pair, signed offset)
 /// Encoding: opc|00|10110|00|L|imm7|Rt2|Rn|Rt
 fn emitVldp(dst1: Reg, dst2: Reg, base: Reg, offset: i16, fp_size: FpuOperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst1);
-    const rt2 = hwEnc(dst2);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst1);
+    const rt2 = try hwEnc(dst2);
+    const rn = try hwEnc(base);
 
     // Scale offset by element size
     const scale: u4 = switch (fp_size) {
@@ -2046,9 +2043,9 @@ fn emitVldp(dst1: Reg, dst2: Reg, base: Reg, offset: i16, fp_size: FpuOperandSiz
 /// STP Vt1, Vt2, [Xn, #offset] (SIMD/FP store pair, signed offset)
 /// Encoding: opc|00|10110|00|L|imm7|Rt2|Rn|Rt
 fn emitVstp(src1: Reg, src2: Reg, base: Reg, offset: i16, fp_size: FpuOperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src1);
-    const rt2 = hwEnc(src2);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(src1);
+    const rt2 = try hwEnc(src2);
+    const rn = try hwEnc(base);
 
     // Scale offset by element size
     const scale: u4 = switch (fp_size) {
@@ -2109,9 +2106,9 @@ fn emitLoadStoreRegOffset(
 
 /// LDR Xt, [Xn, Xm] (register offset, no shift)
 fn emitLdrReg(dst: Reg, base: Reg, offset: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
-    const rm = hwEnc(offset);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
+    const rm = try hwEnc(offset);
 
     // LDR (register): size|111|0|00|01|1|Rm|011|0|10|Rn|Rt
     try emitLoadStoreRegOffset(rt, rn, rm, size, 0b01, 0b011, 0, buffer);
@@ -2119,9 +2116,9 @@ fn emitLdrReg(dst: Reg, base: Reg, offset: Reg, size: OperandSize, buffer: *buff
 
 /// LDR Xt, [Xn, Wm, extend] (extended register offset)
 fn emitLdrExt(dst: Reg, base: Reg, offset: Reg, extend: ExtendOp, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
-    const rm = hwEnc(offset);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
+    const rm = try hwEnc(offset);
     const option: u3 = @intFromEnum(extend);
 
     // LDR (register, extended): size|111|0|00|01|1|Rm|option|S|10|Rn|Rt
@@ -2151,18 +2148,18 @@ fn emitLdrExt(dst: Reg, base: Reg, offset: Reg, extend: ExtendOp, size: OperandS
 fn emitLdrShifted(dst: Reg, base: Reg, offset: Reg, shift_op: ShiftOp, shift_amt: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // Validate that only LSL is used for load/store addressing
     if (shift_op != .lsl) {
-        @panic("ARM64 load/store register offset only supports LSL shift operation");
+        return error.InvalidShift;
     }
 
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
-    const rm = hwEnc(offset);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
+    const rm = try hwEnc(offset);
     const scale_shift: u8 = switch (size) {
         .size32 => 2,
         .size64 => 3,
     };
     const s_bit: u1 = if (shift_amt == 0) 0 else if (shift_amt == scale_shift) 1 else {
-        @panic("ARM64 load/store register offset only supports LSL #0 or scaled shift");
+        return error.InvalidShift;
     };
 
     // LDR (register, shifted): size|111|0|00|01|1|Rm|011|S|10|Rn|Rt
@@ -2172,9 +2169,9 @@ fn emitLdrShifted(dst: Reg, base: Reg, offset: Reg, shift_op: ShiftOp, shift_amt
 
 /// STR Xt, [Xn, Xm] (register offset, no shift)
 fn emitStrReg(src: Reg, base: Reg, offset: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
-    const rm = hwEnc(offset);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
+    const rm = try hwEnc(offset);
 
     // STR (register): size|111|0|00|00|1|Rm|011|0|10|Rn|Rt
     // option=011 (LSL/reserved), S=0 (no scale)
@@ -2183,9 +2180,9 @@ fn emitStrReg(src: Reg, base: Reg, offset: Reg, size: OperandSize, buffer: *buff
 
 /// STR Xt, [Xn, Wm, extend] (extended register offset)
 fn emitStrExt(src: Reg, base: Reg, offset: Reg, extend: ExtendOp, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
-    const rm = hwEnc(offset);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
+    const rm = try hwEnc(offset);
     const option: u3 = @intFromEnum(extend);
 
     // STR (register, extended): size|111|0|00|00|1|Rm|option|S|10|Rn|Rt
@@ -2215,18 +2212,18 @@ fn emitStrExt(src: Reg, base: Reg, offset: Reg, extend: ExtendOp, size: OperandS
 fn emitStrShifted(src: Reg, base: Reg, offset: Reg, shift_op: ShiftOp, shift_amt: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // Validate that only LSL is used for load/store addressing
     if (shift_op != .lsl) {
-        @panic("ARM64 load/store register offset only supports LSL shift operation");
+        return error.InvalidShift;
     }
 
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
-    const rm = hwEnc(offset);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
+    const rm = try hwEnc(offset);
     const scale_shift: u8 = switch (size) {
         .size32 => 2,
         .size64 => 3,
     };
     const s_bit: u1 = if (shift_amt == 0) 0 else if (shift_amt == scale_shift) 1 else {
-        @panic("ARM64 load/store register offset only supports LSL #0 or scaled shift");
+        return error.InvalidShift;
     };
 
     // STR (register, shifted): sf|111|0|00|00|Rm|011|S|10|Rn|Rt
@@ -2237,8 +2234,8 @@ fn emitStrShifted(src: Reg, base: Reg, offset: Reg, shift_op: ShiftOp, shift_amt
 /// LDRB Wt, [Xn, #offset] - Load byte (unsigned, zero-extend)
 fn emitLdrb(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     _ = size; // Byte loads are always to W registers, size affects dest reg type only
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
     const imm12: u12 = @truncate(@as(u16, @bitCast(offset)));
 
     // LDRB (immediate, unsigned offset): size|111|V|00|opc|imm12|Rn|Rt
@@ -2258,8 +2255,8 @@ fn emitLdrb(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer
 /// LDRH Wt, [Xn, #offset] - Load halfword (unsigned, zero-extend)
 fn emitLdrh(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     _ = size; // Halfword loads are always to W registers, size affects dest reg type only
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
     // Offset is scaled by 2 for halfword
     const imm12: u12 = @truncate(@as(u16, @bitCast(offset)) >> 1);
 
@@ -2280,8 +2277,8 @@ fn emitLdrh(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer
 /// LDRSB Wt/Xt, [Xn, #offset] - Load signed byte
 fn emitLdrsb(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const opc: u2 = if (size == .size64) 0b10 else 0b11; // 10=64-bit dest, 11=32-bit dest
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
     const imm12: u12 = @truncate(@as(u16, @bitCast(offset)));
 
     // LDRSB (immediate, unsigned offset): size|111|V|00|opc|imm12|Rn|Rt
@@ -2301,8 +2298,8 @@ fn emitLdrsb(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffe
 /// LDRSH Wt/Xt, [Xn, #offset] - Load signed halfword
 fn emitLdrsh(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const opc: u2 = if (size == .size64) 0b10 else 0b11; // 10=64-bit dest, 11=32-bit dest
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
     // Offset is scaled by 2 for halfword
     const imm12: u12 = @truncate(@as(u16, @bitCast(offset)) >> 1);
 
@@ -2319,8 +2316,8 @@ fn emitLdrsh(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffe
 
 /// LDRSW Xt, [Xn, #offset] - Load signed word (32→64 bit)
 fn emitLdrsw(dst: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
     // Offset is scaled by 4 for word
     const imm12: u12 = @truncate(@as(u16, @bitCast(offset)) >> 2);
 
@@ -2337,8 +2334,8 @@ fn emitLdrsw(dst: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !
 
 /// STRB Wt, [Xn, #offset] - Store byte
 fn emitStrb(src: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
     const imm12: u12 = @truncate(@as(u16, @bitCast(offset)));
 
     // STRB (immediate, unsigned offset): 00|111|0|01|00|imm12|Rn|Rt
@@ -2354,8 +2351,8 @@ fn emitStrb(src: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !v
 
 /// STRH Wt, [Xn, #offset] - Store halfword
 fn emitStrh(src: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
     // Offset is scaled by 2 for halfword
     const imm12: u12 = @truncate(@as(u16, @bitCast(offset)) >> 1);
 
@@ -2373,9 +2370,9 @@ fn emitStrh(src: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !v
 /// STP Xt1, Xt2, [Xn, #offset]
 fn emitStp(src1: Reg, src2: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rt = hwEnc(src1);
-    const rt2 = hwEnc(src2);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(src1);
+    const rt2 = try hwEnc(src2);
+    const rn = try hwEnc(base);
     // Offset is scaled by size: 8 bytes for 64-bit, 4 bytes for 32-bit
     const scale: u4 = if (size == .size64) 3 else 2; // shift by 3 (÷8) for 64-bit, 2 (÷4) for 32-bit
     const imm7: u7 = @truncate(@as(u16, @bitCast(offset)) >> scale);
@@ -2394,9 +2391,9 @@ fn emitStp(src1: Reg, src2: Reg, base: Reg, offset: i16, size: OperandSize, buff
 /// LDP Xt1, Xt2, [Xn, #offset]
 fn emitLdp(dst1: Reg, dst2: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rt = hwEnc(dst1);
-    const rt2 = hwEnc(dst2);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst1);
+    const rt2 = try hwEnc(dst2);
+    const rn = try hwEnc(base);
     // Offset is scaled by size: 8 bytes for 64-bit, 4 bytes for 32-bit
     const scale: u4 = if (size == .size64) 3 else 2; // shift by 3 (÷8) for 64-bit, 2 (÷4) for 32-bit
     const imm7: u7 = @truncate(@as(u16, @bitCast(offset)) >> scale);
@@ -2415,9 +2412,9 @@ fn emitLdp(dst1: Reg, dst2: Reg, base: Reg, offset: i16, size: OperandSize, buff
 /// STP Xt1, Xt2, [Xn, #offset]! - Pre-index
 fn emitStpPre(src1: Reg, src2: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rt = hwEnc(src1);
-    const rt2 = hwEnc(src2);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(src1);
+    const rt2 = try hwEnc(src2);
+    const rn = try hwEnc(base);
     const scale: u4 = if (size == .size64) 3 else 2;
     const imm7: u7 = @truncate(@as(u16, @bitCast(offset)) >> scale);
 
@@ -2437,9 +2434,9 @@ fn emitStpPre(src1: Reg, src2: Reg, base: Reg, offset: i16, size: OperandSize, b
 /// LDP Xt1, Xt2, [Xn], #offset - Post-index
 fn emitLdpPost(dst1: Reg, dst2: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
-    const rt = hwEnc(dst1);
-    const rt2 = hwEnc(dst2);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst1);
+    const rt2 = try hwEnc(dst2);
+    const rn = try hwEnc(base);
     const scale: u4 = if (size == .size64) 3 else 2;
     const imm7: u7 = @truncate(@as(u16, @bitCast(offset)) >> scale);
 
@@ -2491,8 +2488,8 @@ fn emitLoadStoreImm9Indexed(
 /// - Rn: Base register (updated)
 /// - Rt: Destination register
 fn emitLdrPre(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
     const imm9: u9 = @truncate(@as(u16, @bitCast(offset)));
 
     // LDR (immediate, pre-index): size|111|0|00|01|imm9|11|Rn|Rt
@@ -2507,8 +2504,8 @@ fn emitLdrPre(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buff
 /// - Rn: Base register (updated)
 /// - Rt: Destination register
 fn emitLdrPost(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
     const imm9: u9 = @truncate(@as(u16, @bitCast(offset)));
 
     // LDR (immediate, post-index): size|111|0|00|01|imm9|01|Rn|Rt
@@ -2523,8 +2520,8 @@ fn emitLdrPost(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buf
 /// - Rn: Base register (updated)
 /// - Rt: Source register
 fn emitStrPre(src: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
     const imm9: u9 = @truncate(@as(u16, @bitCast(offset)));
 
     // STR (immediate, pre-index): size|111|0|00|00|imm9|11|Rn|Rt
@@ -2539,8 +2536,8 @@ fn emitStrPre(src: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buff
 /// - Rn: Base register (updated)
 /// - Rt: Source register
 fn emitStrPost(src: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
     const imm9: u9 = @truncate(@as(u16, @bitCast(offset)));
 
     // STR (immediate, post-index): size|111|0|00|00|imm9|01|Rn|Rt
@@ -2549,8 +2546,8 @@ fn emitStrPost(src: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buf
 
 /// LDARB Wt, [Xn] - Load-Acquire Register Byte
 fn emitLdarb(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
 
     // LDARB: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
     // size=00 (byte), L=1 (load), Rs=11111, Rt2=11111
@@ -2569,8 +2566,8 @@ fn emitLdarb(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// LDARH Wt, [Xn] - Load-Acquire Register Halfword
 fn emitLdarh(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
 
     // LDARH: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
     // size=01 (halfword), L=1 (load), Rs=11111, Rt2=11111
@@ -2588,8 +2585,8 @@ fn emitLdarh(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// LDAR Wt, [Xn] - Load-Acquire Register Word
 fn emitLdarW(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
 
     // LDAR: size|001000|1|L|o0|Rs|0|Rt2|Rn|Rt
     // size=10 (word), L=1 (load), o0=0, Rs=11111, Rt2=11111
@@ -2609,8 +2606,8 @@ fn emitLdarW(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// LDAR Xt, [Xn] - Load-Acquire Register Doubleword
 fn emitLdarX(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
 
     // LDAR: size|001000|1|L|o0|Rs|0|Rt2|Rn|Rt
     // size=11 (doubleword), L=1 (load), o0=0, Rs=11111, Rt2=11111
@@ -2630,8 +2627,8 @@ fn emitLdarX(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// STLRB Wt, [Xn] - Store-Release Register Byte
 fn emitStlrb(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     // STLRB: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
     // size=00 (byte), L=0 (store), Rs=11111, Rt2=11111
@@ -2649,8 +2646,8 @@ fn emitStlrb(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// STLRH Wt, [Xn] - Store-Release Register Halfword
 fn emitStlrh(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     // STLRH: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
     // size=01 (halfword), L=0 (store), Rs=11111, Rt2=11111
@@ -2668,8 +2665,8 @@ fn emitStlrh(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// STLR Wt, [Xn] - Store-Release Register Word
 fn emitStlrW(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     // STLR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
     // size=10 (word), L=0 (store), Rs=11111, Rt2=11111
@@ -2687,8 +2684,8 @@ fn emitStlrW(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// STLR Xt, [Xn] - Store-Release Register Doubleword
 fn emitStlrX(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     // STLR: size|001000|1|L|1|Rs|1|Rt2|Rn|Rt
     // size=11 (doubleword), L=0 (store), Rs=11111, Rt2=11111
@@ -2709,8 +2706,8 @@ fn emitStlrX(src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// LDXR - Load Exclusive Register (32-bit)
 /// Encoding: size|001000|0|1|0|Rs|0|Rt2|Rn|Rt
 fn emitLdxrW(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b10 << 30) | // size = word
         (0b001000 << 24) |
@@ -2728,8 +2725,8 @@ fn emitLdxrW(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// LDXR - Load Exclusive Register (64-bit)
 fn emitLdxrX(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b11 << 30) | // size = doubleword
         (0b001000 << 24) |
@@ -2747,8 +2744,8 @@ fn emitLdxrX(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// LDXRB - Load Exclusive Register Byte
 fn emitLdxrb(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b00 << 30) | // size = byte
         (0b001000 << 24) |
@@ -2766,8 +2763,8 @@ fn emitLdxrb(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// LDXRH - Load Exclusive Register Halfword
 fn emitLdxrh(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b01 << 30) | // size = halfword
         (0b001000 << 24) |
@@ -2786,9 +2783,9 @@ fn emitLdxrh(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// STXR - Store Exclusive Register (32-bit)
 /// Encoding: size|001000|0|0|0|Rs|0|Rt2|Rn|Rt
 fn emitStxrW(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rs = hwEnc(status);
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rs = try hwEnc(status);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b10 << 30) | // size = word
         (0b001000 << 24) |
@@ -2806,9 +2803,9 @@ fn emitStxrW(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !
 
 /// STXR - Store Exclusive Register (64-bit)
 fn emitStxrX(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rs = hwEnc(status);
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rs = try hwEnc(status);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b11 << 30) | // size = doubleword
         (0b001000 << 24) |
@@ -2826,9 +2823,9 @@ fn emitStxrX(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !
 
 /// STXRB - Store Exclusive Register Byte
 fn emitStxrb(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rs = hwEnc(status);
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rs = try hwEnc(status);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b00 << 30) | // size = byte
         (0b001000 << 24) |
@@ -2846,9 +2843,9 @@ fn emitStxrb(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !
 
 /// STXRH - Store Exclusive Register Halfword
 fn emitStxrh(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rs = hwEnc(status);
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rs = try hwEnc(status);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b01 << 30) | // size = halfword
         (0b001000 << 24) |
@@ -2867,8 +2864,8 @@ fn emitStxrh(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !
 /// LDAXR - Load-Acquire Exclusive Register (32-bit)
 /// Encoding: size|001000|0|1|1|Rs|0|Rt2|Rn|Rt
 fn emitLdaxrW(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b10 << 30) | // size = word
         (0b001000 << 24) |
@@ -2886,8 +2883,8 @@ fn emitLdaxrW(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// LDAXR - Load-Acquire Exclusive Register (64-bit)
 fn emitLdaxrX(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b11 << 30) | // size = doubleword
         (0b001000 << 24) |
@@ -2905,8 +2902,8 @@ fn emitLdaxrX(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// LDAXRB - Load-Acquire Exclusive Register Byte
 fn emitLdaxrb(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b00 << 30) | // size = byte
         (0b001000 << 24) |
@@ -2924,8 +2921,8 @@ fn emitLdaxrb(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// LDAXRH - Load-Acquire Exclusive Register Halfword
 fn emitLdaxrh(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b01 << 30) | // size = halfword
         (0b001000 << 24) |
@@ -2944,9 +2941,9 @@ fn emitLdaxrh(dst: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// STLXR - Store-Release Exclusive Register (32-bit)
 /// Encoding: size|001000|0|0|1|Rs|0|Rt2|Rn|Rt
 fn emitStlxrW(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rs = hwEnc(status);
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rs = try hwEnc(status);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b10 << 30) | // size = word
         (0b001000 << 24) |
@@ -2964,9 +2961,9 @@ fn emitStlxrW(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) 
 
 /// STLXR - Store-Release Exclusive Register (64-bit)
 fn emitStlxrX(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rs = hwEnc(status);
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rs = try hwEnc(status);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b11 << 30) | // size = doubleword
         (0b001000 << 24) |
@@ -2984,9 +2981,9 @@ fn emitStlxrX(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) 
 
 /// STLXRB - Store-Release Exclusive Register Byte
 fn emitStlxrb(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rs = hwEnc(status);
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rs = try hwEnc(status);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b00 << 30) | // size = byte
         (0b001000 << 24) |
@@ -3004,9 +3001,9 @@ fn emitStlxrb(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) 
 
 /// STLXRH - Store-Release Exclusive Register Halfword
 fn emitStlxrh(status: Reg, src: Reg, base: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rs = hwEnc(status);
-    const rt = hwEnc(src);
-    const rn = hwEnc(base);
+    const rs = try hwEnc(status);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (0b01 << 30) | // size = halfword
         (0b001000 << 24) |
@@ -3035,9 +3032,9 @@ fn lseSizeBits(size: OperandSize) u2 {
 
 fn emitAtomicOp(dst: Reg, src: Reg, base: Reg, size: OperandSize, opc: u3, ar_bits: u2, buffer: *buffer_mod.MachBuffer) !void {
     const size_bits = lseSizeBits(size);
-    const rt = hwEnc(dst);
-    const rs = hwEnc(src);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rs = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (@as(u32, size_bits) << 30) |
         (0b111 << 27) | // fixed
@@ -3218,9 +3215,9 @@ fn emitLduminl(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer
 /// Encoding: size|111|V=0|00|A|R|1|Rs|1000|00|Rn|Rt
 fn emitSwp(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const size_bits = lseSizeBits(size);
-    const rt = hwEnc(dst);
-    const rs = hwEnc(src);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rs = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (@as(u32, size_bits) << 30) |
         (0b111 << 27) | // fixed
@@ -3240,9 +3237,9 @@ fn emitSwp(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod
 /// SWPA - Atomic swap with acquire
 fn emitSwpa(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const size_bits = lseSizeBits(size);
-    const rt = hwEnc(dst);
-    const rs = hwEnc(src);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rs = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (@as(u32, size_bits) << 30) |
         (0b111 << 27) |
@@ -3262,9 +3259,9 @@ fn emitSwpa(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mo
 /// SWPAL - Atomic swap with acquire-release
 fn emitSwpal(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const size_bits = lseSizeBits(size);
-    const rt = hwEnc(dst);
-    const rs = hwEnc(src);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rs = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (@as(u32, size_bits) << 30) |
         (0b111 << 27) |
@@ -3284,9 +3281,9 @@ fn emitSwpal(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_m
 /// SWPL - Atomic swap with release
 fn emitSwpl(dst: Reg, src: Reg, base: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const size_bits = lseSizeBits(size);
-    const rt = hwEnc(dst);
-    const rs = hwEnc(src);
-    const rn = hwEnc(base);
+    const rt = try hwEnc(dst);
+    const rs = try hwEnc(src);
+    const rn = try hwEnc(base);
 
     const insn: u32 = (@as(u32, size_bits) << 30) |
         (0b111 << 27) |
@@ -3371,7 +3368,7 @@ fn emitBCond(cond: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void {
 fn emitCbz(reg: Reg, label: u32, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // CBZ: sf|011010|0|imm19|Rt
     const sf_bit: u32 = @intCast(sf(size));
-    const rt = hwEnc(reg);
+    const rt = try hwEnc(reg);
     const insn: u32 = (sf_bit << 31) | (0b011010 << 25) | rt;
 
     try buffer.put4(insn);
@@ -3387,7 +3384,7 @@ fn emitCbz(reg: Reg, label: u32, size: OperandSize, buffer: *buffer_mod.MachBuff
 fn emitCbnz(reg: Reg, label: u32, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     // CBNZ: sf|011010|1|imm19|Rt
     const sf_bit: u32 = @intCast(sf(size));
-    const rt = hwEnc(reg);
+    const rt = try hwEnc(reg);
     const insn: u32 = (sf_bit << 31) | (0b011010 << 25) | (1 << 24) | rt;
 
     try buffer.put4(insn);
@@ -3406,7 +3403,7 @@ fn emitTbz(reg: Reg, bit: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void 
     // b40 (bits 23-19): bit[4:0] - lower 5 bits of bit index
     const b5: u32 = @intCast((bit >> 5) & 1);
     const b40: u32 = @intCast(bit & 0x1F);
-    const rt = hwEnc(reg);
+    const rt = try hwEnc(reg);
     const insn: u32 = (b5 << 31) | (0b011011 << 25) | (b40 << 19) | rt;
 
     try buffer.put4(insn);
@@ -3425,7 +3422,7 @@ fn emitTbnz(reg: Reg, bit: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void
     // b40 (bits 23-19): bit[4:0] - lower 5 bits of bit index
     const b5: u32 = @intCast((bit >> 5) & 1);
     const b40: u32 = @intCast(bit & 0x1F);
-    const rt = hwEnc(reg);
+    const rt = try hwEnc(reg);
     const insn: u32 = (b5 << 31) | (0b011011 << 25) | (1 << 24) | (b40 << 19) | rt;
 
     try buffer.put4(insn);
@@ -3469,7 +3466,7 @@ fn emitBLExternal(name: []const u8, buffer: *buffer_mod.MachBuffer) !void {
 
 /// BR Xn (branch to register)
 fn emitBR(target: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rn = hwEnc(target);
+    const rn = try hwEnc(target);
 
     // BR: 1101011|0000|11111|000000|Rn|00000
     const insn: u32 = (0b1101011000011111000000 << 10) |
@@ -3480,7 +3477,7 @@ fn emitBR(target: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// BLR Xn (branch and link to register)
 fn emitBLR(target: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rn = hwEnc(target);
+    const rn = try hwEnc(target);
 
     // BLR: 1101011|0001|11111|000000|Rn|00000
     const insn: u32 = (0b1101011000111111000000 << 10) |
@@ -3491,7 +3488,7 @@ fn emitBLR(target: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// RET [Xn] (return from subroutine)
 pub fn emitRet(reg: ?Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rn = if (reg) |r| hwEnc(r) else 30; // Default to X30 (LR)
+    const rn = if (reg) |r| try hwEnc(r) else 30; // Default to X30 (LR)
 
     // RET: 1101011|0010|11111|000000|Rn|00000
     const insn: u32 = (0b1101011001011111000000 << 10) |
@@ -3502,7 +3499,7 @@ pub fn emitRet(reg: ?Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 /// ADRP Xd, symbol (load page address of global symbol)
 fn emitAdrpSymbol(dst: Reg, symbol: []const u8, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
+    const rd = try hwEnc(dst);
 
     // ADRP: 1|immlo|10000|immhi|Rd
     // Placeholder encoding - immhi:immlo will be patched by linker
@@ -3521,8 +3518,8 @@ fn emitAdrpSymbol(dst: Reg, symbol: []const u8, buffer: *buffer_mod.MachBuffer) 
 
 /// ADD Xd, Xn, :lo12:symbol (add low 12 bits of symbol offset)
 fn emitAddSymbolLo12(dst: Reg, src: Reg, symbol: []const u8, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     // ADD imm: 1|00|100010|shift|imm12|Rn|Rd
     // Placeholder encoding - imm12 will be patched by linker
@@ -3544,7 +3541,7 @@ fn emitAddSymbolLo12(dst: Reg, src: Reg, symbol: []const u8, buffer: *buffer_mod
 ///   adrp rd, :got:symbol
 ///   ldr  rd, [rd, :got_lo12:symbol]
 fn emitLoadExtNameGot(dst: Reg, symbol: []const u8, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
+    const rd = try hwEnc(dst);
 
     // ADRP rd, :got:symbol
     // ADRP: 1|immlo|10000|immhi|Rd
@@ -3594,9 +3591,9 @@ fn emitJtSequence(
     }
     const table_label = buffer.getJumpTableLabel(jt_index);
 
-    const rd = hwEnc(table_base);
-    const rn = hwEnc(index);
-    const rt = hwEnc(target);
+    const rd = try hwEnc(table_base);
+    const rn = try hwEnc(index);
+    const rt = try hwEnc(target);
 
     // ADR table_base, .LJT<N>
     // ADR: 0|immlo|10000|immhi|Rd
@@ -3672,9 +3669,9 @@ fn emitAutiasp(buffer: *buffer_mod.MachBuffer) !void {
 /// FADD Sd, Sn, Sm (scalar single-precision)
 /// Encoding: 0|0|0|11110|00|1|Rm|001010|Rn|Rd
 fn emitFaddS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b000 << 29) | // M=0, S=0, ptype=00
         (0b11110 << 24) | // FP data-processing
@@ -3691,9 +3688,9 @@ fn emitFaddS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 /// FADD Dd, Dn, Dm (scalar double-precision)
 /// Encoding: 0|0|0|11110|01|1|Rm|001010|Rn|Rd
 fn emitFaddD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -3710,9 +3707,9 @@ fn emitFaddD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 /// FSUB Sd, Sn, Sm (scalar single-precision)
 /// Encoding: 0|0|0|11110|00|1|Rm|001110|Rn|Rd
 fn emitFsubS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -3729,9 +3726,9 @@ fn emitFsubS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 /// FSUB Dd, Dn, Dm (scalar double-precision)
 /// Encoding: 0|0|0|11110|01|1|Rm|001110|Rn|Rd
 fn emitFsubD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -3748,9 +3745,9 @@ fn emitFsubD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 /// FMUL Sd, Sn, Sm (scalar single-precision)
 /// Encoding: 0|0|0|11110|00|1|Rm|000010|Rn|Rd
 fn emitFmulS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -3767,9 +3764,9 @@ fn emitFmulS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 /// FMUL Dd, Dn, Dm (scalar double-precision)
 /// Encoding: 0|0|0|11110|01|1|Rm|000010|Rn|Rd
 fn emitFmulD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -3786,9 +3783,9 @@ fn emitFmulD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 /// FDIV Sd, Sn, Sm (scalar single-precision)
 /// Encoding: 0|0|0|11110|00|1|Rm|000110|Rn|Rd
 fn emitFdivS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -3805,9 +3802,9 @@ fn emitFdivS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 /// FDIV Dd, Dn, Dm (scalar double-precision)
 /// Encoding: 0|0|0|11110|01|1|Rm|000110|Rn|Rd
 fn emitFdivD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -3824,8 +3821,8 @@ fn emitFdivD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 /// FMOV Sd, Sn (scalar single-precision register)
 /// Encoding: 0|0|0|11110|00|1|00000|010000|Rn|Rd
 fn emitFmovRRS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -3842,8 +3839,8 @@ fn emitFmovRRS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FMOV Dd, Dn (scalar double-precision register)
 /// Encoding: 0|0|0|11110|01|1|00000|010000|Rn|Rd
 fn emitFmovRRD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -3861,8 +3858,8 @@ fn emitFmovRRD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// Encoding: 0|0|0|11110|00|1|00|111|000000|Rn|Rd (32-bit)
 /// Encoding: 1|0|0|11110|01|1|00|111|000000|Rn|Rd (64-bit)
 fn emitFmovFromGpr(dst: Reg, src: Reg, size: FpuOperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const sf_bits: u32 = switch (size) {
         .size32 => 0b000,
         .size64 => 0b100,
@@ -3887,8 +3884,8 @@ fn emitFmovFromGpr(dst: Reg, src: Reg, size: FpuOperandSize, buffer: *buffer_mod
 /// Encoding: 0|0|0|11110|00|1|00|110|000000|Rn|Rd (32-bit)
 /// Encoding: 1|0|0|11110|01|1|00|110|000000|Rn|Rd (64-bit)
 fn emitFmovToGpr(dst: Reg, src: Reg, size: FpuOperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const sf_bits: u32 = switch (size) {
         .size32 => 0b000,
         .size64 => 0b100,
@@ -3968,7 +3965,7 @@ fn encodeF64Imm8(value: f64) ?u8 {
 /// Valid values: ±n/16 × 2^r for n=16..31, r=-3..4 (NOT 0.0)
 /// Encoding: 0|0|0|11110|00|1|imm8|10000000|Rd
 fn emitFmovImmS(dst: Reg, imm: f32, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
+    const rd = try hwEnc(dst);
     const imm8 = encodeF32Imm8(imm) orelse return error.UnsupportedFPImmediate;
 
     const insn: u32 = (0b000 << 29) |
@@ -3986,7 +3983,7 @@ fn emitFmovImmS(dst: Reg, imm: f32, buffer: *buffer_mod.MachBuffer) !void {
 /// Valid values: ±n/16 × 2^r for n=16..31, r=-3..4 (NOT 0.0)
 /// Encoding: 0|0|0|11110|01|1|imm8|10000000|Rd
 fn emitFmovImmD(dst: Reg, imm: f64, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
+    const rd = try hwEnc(dst);
     const imm8 = encodeF64Imm8(imm) orelse return error.UnsupportedFPImmediate;
 
     const insn: u32 = (0b000 << 29) |
@@ -4003,8 +4000,8 @@ fn emitFmovImmD(dst: Reg, imm: f64, buffer: *buffer_mod.MachBuffer) !void {
 /// FCMP Sn, Sm (compare single-precision)
 /// Encoding: 0|0|0|11110|00|1|Rm|00|1000|Rn|opcode2
 fn emitFcmpS(src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4022,8 +4019,8 @@ fn emitFcmpS(src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FCMP Dn, Dm (compare double-precision)
 /// Encoding: 0|0|0|11110|01|1|Rm|00|1000|Rn|opcode2
 fn emitFcmpD(src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4041,7 +4038,7 @@ fn emitFcmpD(src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FCMP Sn, #0.0 (compare single-precision with zero)
 /// Encoding: 0|0|0|11110|00|1|00000|00|1000|Rn|01000
 fn emitFcmpZeroS(src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rn = hwEnc(src);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4059,7 +4056,7 @@ fn emitFcmpZeroS(src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FCMP Dn, #0.0 (compare double-precision with zero)
 /// Encoding: 0|0|0|11110|01|1|00000|00|1000|Rn|01000
 fn emitFcmpZeroD(src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rn = hwEnc(src);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4077,9 +4074,9 @@ fn emitFcmpZeroD(src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FCSEL Sd, Sn, Sm, cond (conditional select single-precision)
 /// Encoding: 0|0|0|11110|00|1|Rm|cond|11|Rn|Rd
 fn emitFcselS(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const cond_bits: u32 = @intCast(@intFromEnum(cond));
 
     const insn: u32 = (0b000 << 29) |
@@ -4098,9 +4095,9 @@ fn emitFcselS(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, buffer: *buffer_mo
 /// FCSEL Dd, Dn, Dm, cond (conditional select double-precision)
 /// Encoding: 0|0|0|11110|01|1|Rm|cond|11|Rn|Rd
 fn emitFcselD(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const cond_bits: u32 = @intCast(@intFromEnum(cond));
 
     const insn: u32 = (0b000 << 29) |
@@ -4120,8 +4117,8 @@ fn emitFcselD(dst: Reg, src1: Reg, src2: Reg, cond: CondCode, buffer: *buffer_mo
 /// Encoding: 0|0|0|11110|00|1|00|010|opc|10000|Rn|Rd
 /// opc=01 for S->D
 fn emitFcvtSToD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4141,8 +4138,8 @@ fn emitFcvtSToD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// Encoding: 0|0|0|11110|01|1|00|010|opc|10000|Rn|Rd
 /// opc=00 for D->S
 fn emitFcvtDToS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4161,8 +4158,8 @@ fn emitFcvtDToS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// SCVTF Sd, Wn (convert signed 32-bit int to single-precision)
 /// Encoding: 0|0|0|11110|00|1|00|010|000000|Rn|Rd
 fn emitScvtfWToS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4180,8 +4177,8 @@ fn emitScvtfWToS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// SCVTF Sd, Xn (convert signed 64-bit int to single-precision)
 /// Encoding: 1|0|0|11110|00|1|00|010|000000|Rn|Rd
 fn emitScvtfXToS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b100 << 29) | // sf=1 for 64-bit int
         (0b11110 << 24) |
@@ -4199,8 +4196,8 @@ fn emitScvtfXToS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// SCVTF Dd, Wn (convert signed 32-bit int to double-precision)
 /// Encoding: 0|0|0|11110|01|1|00|010|000000|Rn|Rd
 fn emitScvtfWToD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4218,8 +4215,8 @@ fn emitScvtfWToD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// SCVTF Dd, Xn (convert signed 64-bit int to double-precision)
 /// Encoding: 1|0|0|11110|01|1|00|010|000000|Rn|Rd
 fn emitScvtfXToD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b100 << 29) | // sf=1 for 64-bit int
         (0b11110 << 24) |
@@ -4237,8 +4234,8 @@ fn emitScvtfXToD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// UCVTF Sd, Wn (convert unsigned 32-bit int to single-precision)
 /// Encoding: 0|0|0|11110|00|1|00|011|000000|Rn|Rd
 fn emitUcvtfWToS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4256,8 +4253,8 @@ fn emitUcvtfWToS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// UCVTF Sd, Xn (convert unsigned 64-bit int to single-precision)
 /// Encoding: 1|0|0|11110|00|1|00|011|000000|Rn|Rd
 fn emitUcvtfXToS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b100 << 29) | // sf=1 for 64-bit int
         (0b11110 << 24) |
@@ -4275,8 +4272,8 @@ fn emitUcvtfXToS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// UCVTF Dd, Wn (convert unsigned 32-bit int to double-precision)
 /// Encoding: 0|0|0|11110|01|1|00|011|000000|Rn|Rd
 fn emitUcvtfWToD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4294,8 +4291,8 @@ fn emitUcvtfWToD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// UCVTF Dd, Xn (convert unsigned 64-bit int to double-precision)
 /// Encoding: 1|0|0|11110|01|1|00|011|000000|Rn|Rd
 fn emitUcvtfXToD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b100 << 29) | // sf=1 for 64-bit int
         (0b11110 << 24) |
@@ -4313,8 +4310,8 @@ fn emitUcvtfXToD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FCVTZS Wd, Sn (convert single-precision to signed 32-bit int, toward zero)
 /// Encoding: 0|0|0|11110|00|1|11|000|000000|Rn|Rd
 fn emitFcvtzsSTow(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4332,8 +4329,8 @@ fn emitFcvtzsSTow(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FCVTZS Xd, Sn (convert single-precision to signed 64-bit int, toward zero)
 /// Encoding: 1|0|0|11110|00|1|11|000|000000|Rn|Rd
 fn emitFcvtzsSToX(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b100 << 29) | // sf=1 for 64-bit int
         (0b11110 << 24) |
@@ -4351,8 +4348,8 @@ fn emitFcvtzsSToX(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FCVTZS Wd, Dn (convert double-precision to signed 32-bit int, toward zero)
 /// Encoding: 0|0|0|11110|01|1|11|000|000000|Rn|Rd
 fn emitFcvtzsDToW(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4370,8 +4367,8 @@ fn emitFcvtzsDToW(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FCVTZS Xd, Dn (convert double-precision to signed 64-bit int, toward zero)
 /// Encoding: 1|0|0|11110|01|1|11|000|000000|Rn|Rd
 fn emitFcvtzsDToX(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b100 << 29) | // sf=1 for 64-bit int
         (0b11110 << 24) |
@@ -4389,8 +4386,8 @@ fn emitFcvtzsDToX(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FCVTZU Wd, Sn (convert single-precision to unsigned 32-bit int, toward zero)
 /// Encoding: 0|0|0|11110|00|1|11|001|000000|Rn|Rd
 fn emitFcvtzuSToW(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4408,8 +4405,8 @@ fn emitFcvtzuSToW(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FCVTZU Xd, Sn (convert single-precision to unsigned 64-bit int, toward zero)
 /// Encoding: 1|0|0|11110|00|1|11|001|000000|Rn|Rd
 fn emitFcvtzuSToX(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b100 << 29) | // sf=1 for 64-bit int
         (0b11110 << 24) |
@@ -4427,8 +4424,8 @@ fn emitFcvtzuSToX(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FCVTZU Wd, Dn (convert double-precision to unsigned 32-bit int, toward zero)
 /// Encoding: 0|0|0|11110|01|1|11|001|000000|Rn|Rd
 fn emitFcvtzuDToW(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4446,8 +4443,8 @@ fn emitFcvtzuDToW(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FCVTZU Xd, Dn (convert double-precision to unsigned 64-bit int, toward zero)
 /// Encoding: 1|0|0|11110|01|1|11|001|000000|Rn|Rd
 fn emitFcvtzuDToX(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b100 << 29) | // sf=1 for 64-bit int
         (0b11110 << 24) |
@@ -4465,8 +4462,8 @@ fn emitFcvtzuDToX(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FNEG Sd, Sn (negate single-precision)
 /// Encoding: 0|0|0|11110|00|1|00001|010000|Rn|Rd
 fn emitFnegS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4483,8 +4480,8 @@ fn emitFnegS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FNEG Dd, Dn (negate double-precision)
 /// Encoding: 0|0|0|11110|01|1|00001|010000|Rn|Rd
 fn emitFnegD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4501,8 +4498,8 @@ fn emitFnegD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FABS Sd, Sn (absolute value single-precision)
 /// Encoding: 0|0|0|11110|00|1|00000|110000|Rn|Rd
 fn emitFabsS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4519,8 +4516,8 @@ fn emitFabsS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FABS Dd, Dn (absolute value double-precision)
 /// Encoding: 0|0|0|11110|01|1|00000|110000|Rn|Rd
 fn emitFabsD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4538,8 +4535,8 @@ fn emitFabsD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// Encoding: 0|0|0|11110|ftype|1|00000|011000|Rn|Rd
 /// ftype: 00=S (32-bit), 01=D (64-bit)
 fn emitFsqrt(dst: Reg, src: Reg, size: FpuOperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const ftype: u32 = if (size == .size32) 0b00 else 0b01;
 
     const insn: u32 = (0b000 << 29) |
@@ -4557,9 +4554,9 @@ fn emitFsqrt(dst: Reg, src: Reg, size: FpuOperandSize, buffer: *buffer_mod.MachB
 /// FMAX Sd, Sn, Sm (maximum single-precision)
 /// Encoding: 0|0|0|11110|00|1|Rm|010010|Rn|Rd
 fn emitFmaxS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4576,9 +4573,9 @@ fn emitFmaxS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 /// FMAX Dd, Dn, Dm (maximum double-precision)
 /// Encoding: 0|0|0|11110|01|1|Rm|010010|Rn|Rd
 fn emitFmaxD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4595,9 +4592,9 @@ fn emitFmaxD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 /// FMIN Sd, Sn, Sm (minimum single-precision)
 /// Encoding: 0|0|0|11110|00|1|Rm|010110|Rn|Rd
 fn emitFminS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4614,9 +4611,9 @@ fn emitFminS(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 /// FMIN Dd, Dn, Dm (minimum double-precision)
 /// Encoding: 0|0|0|11110|01|1|Rm|010110|Rn|Rd
 fn emitFminD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4633,8 +4630,8 @@ fn emitFminD(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !vo
 /// FRINTN Sd, Sn (round to nearest, ties to even, single-precision)
 /// Encoding: 0|0|0|11110|00|1|001|000|10000|Rn|Rd
 fn emitFrintnS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4652,8 +4649,8 @@ fn emitFrintnS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FRINTN Dd, Dn (round to nearest, ties to even, double-precision)
 /// Encoding: 0|0|0|11110|01|1|001|000|10000|Rn|Rd
 fn emitFrintnD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4671,8 +4668,8 @@ fn emitFrintnD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FRINTZ Sd, Sn (round toward zero, single-precision)
 /// Encoding: 0|0|0|11110|00|1|001|011|10000|Rn|Rd
 fn emitFrintzS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4690,8 +4687,8 @@ fn emitFrintzS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FRINTZ Dd, Dn (round toward zero, double-precision)
 /// Encoding: 0|0|0|11110|01|1|001|011|10000|Rn|Rd
 fn emitFrintzD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4709,8 +4706,8 @@ fn emitFrintzD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FRINTP Sd, Sn (round toward +infinity, single-precision)
 /// Encoding: 0|0|0|11110|00|1|001|001|10000|Rn|Rd
 fn emitFrintpS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4728,8 +4725,8 @@ fn emitFrintpS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FRINTP Dd, Dn (round toward +infinity, double-precision)
 /// Encoding: 0|0|0|11110|01|1|001|001|10000|Rn|Rd
 fn emitFrintpD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4747,8 +4744,8 @@ fn emitFrintpD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FRINTM Sd, Sn (round toward -infinity, single-precision)
 /// Encoding: 0|0|0|11110|00|1|001|010|10000|Rn|Rd
 fn emitFrintmS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4766,8 +4763,8 @@ fn emitFrintmS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FRINTM Dd, Dn (round toward -infinity, double-precision)
 /// Encoding: 0|0|0|11110|01|1|001|010|10000|Rn|Rd
 fn emitFrintmD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4785,8 +4782,8 @@ fn emitFrintmD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FRINTA Sd, Sn (round to nearest, ties to away, single-precision)
 /// Encoding: 0|0|0|11110|00|1|001|100|10000|Rn|Rd
 fn emitFrintaS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4804,8 +4801,8 @@ fn emitFrintaS(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// FRINTA Dd, Dn (round to nearest, ties to away, double-precision)
 /// Encoding: 0|0|0|11110|01|1|001|100|10000|Rn|Rd
 fn emitFrintaD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const insn: u32 = (0b000 << 29) |
         (0b11110 << 24) |
@@ -4824,10 +4821,10 @@ fn emitFrintaD(dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 /// d = a + (n * m)
 /// Encoding: 0|0|0|11111|00|0|Rm|0|Ra|Rn|Rd
 fn emitFmaddS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src_n);
-    const rm = hwEnc(src_m);
-    const ra = hwEnc(src_a);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src_n);
+    const rm = try hwEnc(src_m);
+    const ra = try hwEnc(src_a);
 
     const insn: u32 = (0b000 << 29) |
         (0b11111 << 24) |
@@ -4846,10 +4843,10 @@ fn emitFmaddS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.
 /// d = a + (n * m)
 /// Encoding: 0|0|0|11111|01|0|Rm|0|Ra|Rn|Rd
 fn emitFmaddD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src_n);
-    const rm = hwEnc(src_m);
-    const ra = hwEnc(src_a);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src_n);
+    const rm = try hwEnc(src_m);
+    const ra = try hwEnc(src_a);
 
     const insn: u32 = (0b000 << 29) |
         (0b11111 << 24) |
@@ -4868,10 +4865,10 @@ fn emitFmaddD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.
 /// d = a - (n * m)
 /// Encoding: 0|0|0|11111|00|0|Rm|1|Ra|Rn|Rd
 fn emitFmsubS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src_n);
-    const rm = hwEnc(src_m);
-    const ra = hwEnc(src_a);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src_n);
+    const rm = try hwEnc(src_m);
+    const ra = try hwEnc(src_a);
 
     const insn: u32 = (0b000 << 29) |
         (0b11111 << 24) |
@@ -4890,10 +4887,10 @@ fn emitFmsubS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.
 /// d = a - (n * m)
 /// Encoding: 0|0|0|11111|01|0|Rm|1|Ra|Rn|Rd
 fn emitFmsubD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src_n);
-    const rm = hwEnc(src_m);
-    const ra = hwEnc(src_a);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src_n);
+    const rm = try hwEnc(src_m);
+    const ra = try hwEnc(src_a);
 
     const insn: u32 = (0b000 << 29) |
         (0b11111 << 24) |
@@ -4912,10 +4909,10 @@ fn emitFmsubD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.
 /// d = -a - (n * m)
 /// Encoding: 0|0|0|11111|00|1|Rm|0|Ra|Rn|Rd
 fn emitFnmaddS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src_n);
-    const rm = hwEnc(src_m);
-    const ra = hwEnc(src_a);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src_n);
+    const rm = try hwEnc(src_m);
+    const ra = try hwEnc(src_a);
 
     const insn: u32 = (0b000 << 29) |
         (0b11111 << 24) |
@@ -4934,10 +4931,10 @@ fn emitFnmaddS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod
 /// d = -a - (n * m)
 /// Encoding: 0|0|0|11111|01|1|Rm|0|Ra|Rn|Rd
 fn emitFnmaddD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src_n);
-    const rm = hwEnc(src_m);
-    const ra = hwEnc(src_a);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src_n);
+    const rm = try hwEnc(src_m);
+    const ra = try hwEnc(src_a);
 
     const insn: u32 = (0b000 << 29) |
         (0b11111 << 24) |
@@ -4956,10 +4953,10 @@ fn emitFnmaddD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod
 /// d = -a + (n * m)
 /// Encoding: 0|0|0|11111|00|1|Rm|1|Ra|Rn|Rd
 fn emitFnmsubS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src_n);
-    const rm = hwEnc(src_m);
-    const ra = hwEnc(src_a);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src_n);
+    const rm = try hwEnc(src_m);
+    const ra = try hwEnc(src_a);
 
     const insn: u32 = (0b000 << 29) |
         (0b11111 << 24) |
@@ -4978,10 +4975,10 @@ fn emitFnmsubS(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod
 /// d = -a + (n * m)
 /// Encoding: 0|0|0|11111|01|1|Rm|1|Ra|Rn|Rd
 fn emitFnmsubD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src_n);
-    const rm = hwEnc(src_m);
-    const ra = hwEnc(src_a);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src_n);
+    const rm = try hwEnc(src_m);
+    const ra = try hwEnc(src_a);
 
     const insn: u32 = (0b000 << 29) |
         (0b11111 << 24) |
@@ -5001,7 +4998,7 @@ fn emitFnmsubD(dst: Reg, src_n: Reg, src_m: Reg, src_a: Reg, buffer: *buffer_mod
 /// Encoding: op|immlo|10000|immhi|Rd
 /// op=0 for ADR, immlo is bits [1:0] of offset, immhi is bits [20:2]
 fn emitAdr(dst: Reg, offset: i32, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
+    const rd = try hwEnc(dst);
 
     // Check offset is within ±1MB range (21-bit signed)
     if (offset < -(1 << 20) or offset > ((1 << 20) - 1)) {
@@ -5029,7 +5026,7 @@ fn emitAdr(dst: Reg, offset: i32, buffer: *buffer_mod.MachBuffer) !void {
 /// Encoding: op|immlo|10000|immhi|Rd
 /// op=1 for ADRP, immlo is bits [1:0] of offset, immhi is bits [20:2]
 fn emitAdrp(dst: Reg, offset: i32, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
+    const rd = try hwEnc(dst);
     const offset_u: u32 = @bitCast(offset);
 
     if ((offset_u & 0xFFF) != 0) {
@@ -11784,9 +11781,9 @@ test "emit memory barriers" {
 /// Vector ADD (NEON): ADD Vd.T, Vn.T, Vm.T
 /// Encoding: Q|0|0|01110|size|1|Rm|100001|Rn|Rd
 fn emitVecAdd(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -11807,9 +11804,9 @@ fn emitVecAdd(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *bu
 /// Vector SUB (NEON): SUB Vd.T, Vn.T, Vm.T
 /// Encoding: Q|1|0|01110|size|1|Rm|100001|Rn|Rd
 fn emitVecSub(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -11830,9 +11827,9 @@ fn emitVecSub(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *bu
 /// Vector ADDP (NEON): ADDP Vd.T, Vn.T, Vm.T (pairwise add)
 /// Encoding: Q|0|0|01110|size|1|Rm|101111|Rn|Rd
 fn emitVecAddp(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -11853,9 +11850,9 @@ fn emitVecAddp(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
 /// Vector EXT (NEON): EXT Vd.T, Vn.T, Vm.T, #index
 /// Encoding: Q|0|0|101110|000|Rm|0|index|Rn|Rd
 fn emitVecExt(dst: Reg, src1: Reg, src2: Reg, index: u8, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
 
     const insn: u32 = (@as(u32, q) << 30) |
@@ -11875,9 +11872,9 @@ fn emitVecExt(dst: Reg, src1: Reg, src2: Reg, index: u8, vec_size: VecElemSize, 
 /// Vector MUL (NEON): MUL Vd.T, Vn.T, Vm.T
 /// Encoding: Q|0|0|01110|size|1|Rm|100111|Rn|Rd
 fn emitVecMul(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -11899,9 +11896,9 @@ fn emitVecMul(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *bu
 /// Encoding: 0|Q|0|01110|10|0|Rm|100101|Rn|Rd
 /// Requires FEAT_DotProd
 fn emitVecSdot(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q: u32 = 1; // Always 128-bit (4S destination)
 
     const insn: u32 = (@as(u32, q) << 30) |
@@ -11922,9 +11919,9 @@ fn emitVecSdot(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !
 /// Encoding: 0|Q|1|01110|10|0|Rm|100101|Rn|Rd
 /// Requires FEAT_DotProd
 fn emitVecUdot(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q: u32 = 1; // Always 128-bit (4S destination)
 
     const insn: u32 = (@as(u32, q) << 30) |
@@ -11944,9 +11941,9 @@ fn emitVecUdot(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !
 /// Vector CMEQ (compare equal): CMEQ Vd.T, Vn.T, Vm.T
 /// Encoding: Q|1|0|01110|size|1|Rm|100011|Rn|Rd
 fn emitVecCmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -11967,9 +11964,9 @@ fn emitVecCmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
 /// Vector CMGT (compare greater than, signed): CMGT Vd.T, Vn.T, Vm.T
 /// Encoding: Q|0|0|01110|size|1|Rm|001101|Rn|Rd
 fn emitVecCmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -11990,9 +11987,9 @@ fn emitVecCmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
 /// Vector CMGE (compare greater or equal, signed): CMGE Vd.T, Vn.T, Vm.T
 /// Encoding: Q|0|0|01110|size|1|Rm|001111|Rn|Rd
 fn emitVecCmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -12013,9 +12010,9 @@ fn emitVecCmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
 /// Vector AND (bitwise): AND Vd.16B, Vn.16B, Vm.16B
 /// Encoding: 0|Q|0|01110|00|1|Rm|000111|Rn|Rd (Q=1 for 128-bit)
 fn emitVecAnd(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b1 << 30) | // Q=1 for 128-bit
         (0b0 << 29) |
@@ -12033,9 +12030,9 @@ fn emitVecAnd(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !v
 /// Vector ORR (bitwise OR): ORR Vd.16B, Vn.16B, Vm.16B
 /// Encoding: 0|Q|0|01110|10|1|Rm|000111|Rn|Rd
 fn emitVecOrr(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b1 << 30) | // Q=1 for 128-bit
         (0b0 << 29) |
@@ -12053,9 +12050,9 @@ fn emitVecOrr(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !v
 /// Vector EOR (bitwise XOR): EOR Vd.16B, Vn.16B, Vm.16B
 /// Encoding: 0|Q|1|01110|00|1|Rm|000111|Rn|Rd
 fn emitVecEor(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b1 << 30) | // Q=1 for 128-bit
         (0b1 << 29) |
@@ -12074,9 +12071,9 @@ fn emitVecEor(dst: Reg, src1: Reg, src2: Reg, buffer: *buffer_mod.MachBuffer) !v
 /// Encoding: 0|Q|0|01110|0|sz|1|Rm|110101|Rn|Rd
 /// sz: 0 for .2s/.4s, 1 for .2d
 fn emitVecFadd(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
 
     // sz bit: 0 for single, 1 for double
@@ -12103,9 +12100,9 @@ fn emitVecFadd(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
 /// Vector FSUB (FP subtract): FSUB Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|1|sz|1|Rm|110101|Rn|Rd
 fn emitVecFsub(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
 
     const sz: u1 = switch (vec_size) {
@@ -12131,9 +12128,9 @@ fn emitVecFsub(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
 /// Vector FMUL (FP multiply): FMUL Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|1|01110|0|sz|1|Rm|110111|Rn|Rd
 fn emitVecFmul(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
 
     const sz: u1 = switch (vec_size) {
@@ -12159,9 +12156,9 @@ fn emitVecFmul(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
 /// Vector FDIV (FP divide): FDIV Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|1|01110|1|sz|1|Rm|111111|Rn|Rd
 fn emitVecFdiv(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
 
     const sz: u1 = switch (vec_size) {
@@ -12187,8 +12184,8 @@ fn emitVecFdiv(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
 /// ADDV (add across vector): ADDV Vd, Vn.T
 /// Encoding: 0|Q|0|01110|size|11000|110110|Rn|Rd
 fn emitAddv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -12208,8 +12205,8 @@ fn emitAddv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachB
 /// SMINV (signed minimum across vector): SMINV Vd, Vn.T
 /// Encoding: 0|Q|0|01110|size|11000|110010|Rn|Rd
 fn emitSminv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -12229,8 +12226,8 @@ fn emitSminv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mach
 /// SMAXV (signed maximum across vector): SMAXV Vd, Vn.T
 /// Encoding: 0|Q|0|01110|size|11000|110100|Rn|Rd
 fn emitSmaxv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -12250,8 +12247,8 @@ fn emitSmaxv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mach
 /// UMINV (unsigned minimum across vector): UMINV Vd, Vn.T
 /// Encoding: 0|Q|1|01110|size|11000|110010|Rn|Rd
 fn emitUminv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -12271,8 +12268,8 @@ fn emitUminv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mach
 /// UMAXV (unsigned maximum across vector): UMAXV Vd, Vn.T
 /// Encoding: 0|Q|1|01110|size|11000|110100|Rn|Rd
 fn emitUmaxv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -12293,9 +12290,9 @@ fn emitUmaxv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mach
 /// Encoding: Q|0|001110|000|Rm|0|len|00|Rn|Rd
 /// len = number of consecutive table registers - 1 (0-3 for 1-4 regs)
 fn emitTbl(dst: Reg, table: Reg, indices: Reg, table_regs: u2, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(table);
-    const rm = hwEnc(indices);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(table);
+    const rm = try hwEnc(indices);
     const len: u32 = table_regs; // 0=1reg, 1=2regs, 2=3regs, 3=4regs
 
     const insn: u32 = (1 << 30) | // Q=1 (always 128-bit)
@@ -12315,9 +12312,9 @@ fn emitTbl(dst: Reg, table: Reg, indices: Reg, table_regs: u2, buffer: *buffer_m
 /// Encoding: Q|0|001110|000|Rm|0|len|10|Rn|Rd
 /// Like TBL but preserves dst bytes when index out of range
 fn emitTbx(dst: Reg, table: Reg, indices: Reg, table_regs: u2, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(table);
-    const rm = hwEnc(indices);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(table);
+    const rm = try hwEnc(indices);
     const len: u32 = table_regs; // 0=1reg, 1=2regs, 2=3regs, 3=4regs
 
     const insn: u32 = (1 << 30) | // Q=1 (always 128-bit)
@@ -12336,9 +12333,9 @@ fn emitTbx(dst: Reg, table: Reg, indices: Reg, table_regs: u2, buffer: *buffer_m
 /// ZIP1 (zip vectors, primary): ZIP1 Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|0|Rm|001110|Rn|Rd
 fn emitZip1(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -12359,9 +12356,9 @@ fn emitZip1(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buff
 /// ZIP2 (zip vectors, secondary): ZIP2 Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|0|Rm|011110|Rn|Rd
 fn emitZip2(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -12382,9 +12379,9 @@ fn emitZip2(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buff
 /// UZP1 (unzip vectors, primary): UZP1 Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|0|Rm|000110|Rn|Rd
 fn emitUzp1(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -12405,9 +12402,9 @@ fn emitUzp1(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buff
 /// UZP2 (unzip vectors, secondary): UZP2 Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|0|Rm|010110|Rn|Rd
 fn emitUzp2(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -12428,9 +12425,9 @@ fn emitUzp2(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buff
 /// TRN1 (transpose vectors, primary): TRN1 Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|0|Rm|001010|Rn|Rd
 fn emitTrn1(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -12451,9 +12448,9 @@ fn emitTrn1(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buff
 /// TRN2 (transpose vectors, secondary): TRN2 Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|0|Rm|011010|Rn|Rd
 fn emitTrn2(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -12474,8 +12471,8 @@ fn emitTrn2(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buff
 /// REV16 - Reverse bytes within 16-bit halfwords (vector)
 /// Encoding: 0|Q|001110|size|100000|00001|10|Rn|Rd
 fn emitVecRev16(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q: u32 = vec_size.qBit();
     const size: u32 = vec_size.sizeBits();
 
@@ -12495,8 +12492,8 @@ fn emitVecRev16(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.M
 /// REV32 - Reverse bytes within 32-bit words (vector)
 /// Encoding: 0|Q|101110|size|100000|00000|10|Rn|Rd
 fn emitVecRev32(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q: u32 = vec_size.qBit();
     const size: u32 = vec_size.sizeBits();
 
@@ -12516,8 +12513,8 @@ fn emitVecRev32(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.M
 /// REV64 - Reverse bytes within 64-bit doublewords (vector)
 /// Encoding: 0|Q|001110|size|100000|00000|10|Rn|Rd
 fn emitVecRev64(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q: u32 = vec_size.qBit();
     const size: u32 = vec_size.sizeBits();
 
@@ -12548,8 +12545,8 @@ fn emitVecShiftImm(
     imm: u8,
     buffer: *buffer_mod.MachBuffer,
 ) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q: u32 = vec_size.qBit();
 
     // Encode immh:immb based on element size
@@ -12592,8 +12589,8 @@ fn emitVecShiftImm(
 /// Encoding: 0|Q|0011010|L|0|00000|opcode|size|Rn|Rt
 /// L=1 for load, opcode=0111 for single register
 fn emitLd1(dst: Reg, addr: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
-    const rn = hwEnc(addr);
+    const rt = try hwEnc(dst);
+    const rn = try hwEnc(addr);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -12615,8 +12612,8 @@ fn emitLd1(dst: Reg, addr: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachB
 /// Encoding: 0|Q|0011010|L|0|00000|opcode|size|Rn|Rt
 /// L=0 for store, opcode=0111 for single register
 fn emitSt1(src: Reg, addr: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
-    const rn = hwEnc(addr);
+    const rt = try hwEnc(src);
+    const rn = try hwEnc(addr);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -12638,8 +12635,8 @@ fn emitSt1(src: Reg, addr: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachB
 /// Encoding: 0|Q|1|01110000|imm5|0|imm4|1|Rn|Rd
 /// imm5 encodes size and destination index, imm4=0000 for source lane 0
 fn emitIns(dst: Reg, src: Reg, index: u4, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     // imm5: index << (size_bits + 1) | (1 << size_bits)
     const size_bits: u3 = switch (vec_size) {
@@ -12668,9 +12665,9 @@ fn emitIns(dst: Reg, src: Reg, index: u4, vec_size: VecElemSize, buffer: *buffer
 /// Encoding: 0|Q|101110|00|0|Rm|0|imm4|0|Rn|Rd
 /// Q=1 for 128-bit, imm4 specifies byte position
 fn emitExt(dst: Reg, src1: Reg, src2: Reg, imm: u4, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const insn: u32 = (0b0 << 31) |
         (0b1 << 30) | // Q=1 for 128-bit
@@ -12691,8 +12688,8 @@ fn emitExt(dst: Reg, src1: Reg, src2: Reg, imm: u4, buffer: *buffer_mod.MachBuff
 /// Encoding: 0|Q|0|01110000|imm5|0|00001|Rn|Rd
 /// imm5 encodes size and source index
 fn emitDupElem(dst: Reg, src: Reg, index: u4, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q = vec_size.qBit();
 
     // imm5: index << (size_bits + 1) | (1 << size_bits)
@@ -12721,8 +12718,8 @@ fn emitDupElem(dst: Reg, src: Reg, index: u4, vec_size: VecElemSize, buffer: *bu
 /// Encoding: 0|Q|0|01111|immh|immb|101001|Rn|Rd
 /// immh:immb = shift amount (element width for extend)
 fn emitSxtl(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     // immh encodes destination element size
     const immh: u4 = switch (vec_size) {
@@ -12748,8 +12745,8 @@ fn emitSxtl(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachB
 /// UXTL (unsigned extend long): UXTL Vd.T, Vn.Tb
 /// Encoding: 0|Q|1|01111|immh|immb|101001|Rn|Rd
 fn emitUxtl(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const immh: u4 = switch (vec_size) {
         .size16x8 => 0b0001,
@@ -12775,9 +12772,9 @@ fn emitUxtl(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachB
 /// Encoding: 0|Q|0|01110|size|1|Rm|000000|Rn|Rd
 /// Q=0 for lower half, size encodes source element size
 fn emitSaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     // size encodes source element size
     const size: u2 = switch (vec_size) {
@@ -12804,9 +12801,9 @@ fn emitSaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buf
 /// UADDL (unsigned add long): UADDL Vd.T, Vn.Tb, Vm.Tb
 /// Encoding: 0|Q|1|01110|size|1|Rm|000000|Rn|Rd
 fn emitUaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
 
     const size: u2 = switch (vec_size) {
         .size16x8 => 0b00,
@@ -12833,8 +12830,8 @@ fn emitUaddl(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buf
 /// Encoding: 0|Q|0|01110|size|100001|010010|Rn|Rd
 /// size encodes source element size
 fn emitXtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const size: u2 = switch (vec_size) {
         .size16x8 => 0b00, // 8h -> 8b
@@ -12859,8 +12856,8 @@ fn emitXtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBu
 /// SQXTN (signed saturating extract narrow): SQXTN Vd.Tb, Vn.T
 /// Encoding: 0|Q|0|01110|size|100001|010010|Rn|Rd (with U=0)
 fn emitSqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const size: u2 = switch (vec_size) {
         .size16x8 => 0b00,
@@ -12885,8 +12882,8 @@ fn emitSqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mach
 /// UQXTN (unsigned saturating extract narrow): UQXTN Vd.Tb, Vn.T
 /// Encoding: 0|Q|1|01110|size|100001|010010|Rn|Rd (with U=1)
 fn emitUqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     const size: u2 = switch (vec_size) {
         .size16x8 => 0b00,
@@ -12938,9 +12935,9 @@ fn emitStlxr(status: Reg, src: Reg, addr: Reg, size: OperandSize, buffer: *buffe
 /// o2=0, o1=0 for CAS (no acquire/release)
 fn emitCas(compare: Reg, swap: Reg, dst: Reg, addr: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     _ = dst; // dst should equal compare for CAS
-    const rs = hwEnc(compare); // Rs = compare value, receives loaded value
-    const rt = hwEnc(swap); // Rt = value to store
-    const rn = hwEnc(addr);
+    const rs = try hwEnc(compare); // Rs = compare value, receives loaded value
+    const rt = try hwEnc(swap); // Rt = value to store
+    const rn = try hwEnc(addr);
     const sz: u2 = if (size == .size64) 0b11 else 0b10;
 
     const insn: u32 = (@as(u32, sz) << 30) |
@@ -12962,9 +12959,9 @@ fn emitCas(compare: Reg, swap: Reg, dst: Reg, addr: Reg, size: OperandSize, buff
 /// o2=1, o1=0 for CASA
 fn emitCasa(compare: Reg, swap: Reg, dst: Reg, addr: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     _ = dst; // dst should equal compare for CAS
-    const rs = hwEnc(compare); // Rs = compare value, receives loaded value
-    const rt = hwEnc(swap); // Rt = value to store
-    const rn = hwEnc(addr);
+    const rs = try hwEnc(compare); // Rs = compare value, receives loaded value
+    const rt = try hwEnc(swap); // Rt = value to store
+    const rn = try hwEnc(addr);
     const sz: u2 = if (size == .size64) 0b11 else 0b10;
 
     const insn: u32 = (@as(u32, sz) << 30) |
@@ -12986,9 +12983,9 @@ fn emitCasa(compare: Reg, swap: Reg, dst: Reg, addr: Reg, size: OperandSize, buf
 /// o2=0, o1=1 for CASL
 fn emitCasl(compare: Reg, swap: Reg, dst: Reg, addr: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     _ = dst; // dst should equal compare for CAS
-    const rs = hwEnc(compare); // Rs = compare value, receives loaded value
-    const rt = hwEnc(swap); // Rt = value to store
-    const rn = hwEnc(addr);
+    const rs = try hwEnc(compare); // Rs = compare value, receives loaded value
+    const rt = try hwEnc(swap); // Rt = value to store
+    const rn = try hwEnc(addr);
     const sz: u2 = if (size == .size64) 0b11 else 0b10;
 
     const insn: u32 = (@as(u32, sz) << 30) |
@@ -13010,9 +13007,9 @@ fn emitCasl(compare: Reg, swap: Reg, dst: Reg, addr: Reg, size: OperandSize, buf
 /// o2=1, o1=1 for CASAL
 fn emitCasal(compare: Reg, swap: Reg, dst: Reg, addr: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     _ = dst; // dst should equal compare for CAS
-    const rs = hwEnc(compare); // Rs = compare value, receives loaded value
-    const rt = hwEnc(swap); // Rt = value to store
-    const rn = hwEnc(addr);
+    const rs = try hwEnc(compare); // Rs = compare value, receives loaded value
+    const rt = try hwEnc(swap); // Rt = value to store
+    const rn = try hwEnc(addr);
     const sz: u2 = if (size == .size64) 0b11 else 0b10;
 
     const insn: u32 = (@as(u32, sz) << 30) |
@@ -13072,8 +13069,8 @@ fn emitEonRR(dst: Reg, src1: Reg, src2: Reg, size: OperandSize, buffer: *buffer_
 ///           sf|1|0|11010110|00000|00000|0|Rn|Rd (for 32-bit)
 /// Reverses byte order in register
 fn emitRev(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const sf_bit = sf(size);
     // opc field: 10 for REV (32-bit), 11 for REV (64-bit)
     const opc: u2 = if (size == .size64) 0b11 else 0b10;
@@ -13095,8 +13092,8 @@ fn emitRev(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
 /// Encoding: 0|Q|0|01110000|imm5|0|00011|Rn|Rd
 /// imm5 encodes element size
 fn emitDupScalar(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q = vec_size.qBit();
 
     // imm5: 1 << size_bits
@@ -13125,7 +13122,7 @@ fn emitDupScalar(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.
 /// Encoding: 0|Q|0|0111100000|abc|cmode|01|defgh|Rd
 /// Simplified encoding for byte replication
 fn emitMovi(dst: Reg, imm: u8, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
+    const rd = try hwEnc(dst);
     const q = vec_size.qBit();
 
     // For simplicity, use cmode=1110 which replicates imm8 to all bytes
@@ -13149,9 +13146,9 @@ fn emitMovi(dst: Reg, imm: u8, vec_size: VecElemSize, buffer: *buffer_mod.MachBu
 /// Vector SMIN (signed minimum element-wise): SMIN Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|1|Rm|011011|Rn|Rd
 fn emitVecSmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -13172,9 +13169,9 @@ fn emitVecSmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
 /// Vector SMAX (signed maximum element-wise): SMAX Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|size|1|Rm|011001|Rn|Rd
 fn emitVecSmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -13195,9 +13192,9 @@ fn emitVecSmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
 /// Vector UMIN (unsigned minimum element-wise): UMIN Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|1|01110|size|1|Rm|011011|Rn|Rd
 fn emitVecUmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -13218,9 +13215,9 @@ fn emitVecUmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
 /// Vector UMAX (unsigned maximum element-wise): UMAX Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|1|01110|size|1|Rm|011001|Rn|Rd
 fn emitVecUmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -13242,8 +13239,8 @@ fn emitVecUmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
 /// Encoding: sf|0|0|11010110|00000|00001|0|Rn|Rd
 /// Implemented using CSNEG (Xd = (Xn >= 0) ? Xn : -Xn)
 fn emitAbs(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const sf_bit = sf(size);
 
     // ABS is typically implemented as: CMP Xn, #0 followed by CSNEG
@@ -13265,8 +13262,8 @@ fn emitAbs(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer
 /// Vector ABS (absolute value): ABS Vd.T, Vn.T
 /// Encoding: 0|Q|0|01110|size|10000|010110|Rn|Rd
 fn emitVecAbs(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -13286,8 +13283,8 @@ fn emitVecAbs(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mac
 /// Vector NEG (negate): NEG Vd.T, Vn.T
 /// Encoding: 0|Q|1|01110|size|10000|010110|Rn|Rd
 fn emitVecNeg(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q = vec_size.qBit();
     const size = vec_size.sizeBits();
 
@@ -13307,9 +13304,9 @@ fn emitVecNeg(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mac
 /// Vector FP FCMEQ (compare equal): FCMEQ Vd.T, Vn.T, Vm.T
 /// Encoding: 0|Q|0|01110|0|sz|1|Rm|111001|Rn|Rd
 fn emitVecFcmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
@@ -13332,9 +13329,9 @@ fn emitVecFcmeq(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *
     try buffer.put4(insn);
 }
 fn emitVecFcmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
@@ -13345,9 +13342,9 @@ fn emitVecFcmgt(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *
     try buffer.put4(insn);
 }
 fn emitVecFcmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
@@ -13358,9 +13355,9 @@ fn emitVecFcmge(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *
     try buffer.put4(insn);
 }
 fn emitVecFmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
@@ -13371,9 +13368,9 @@ fn emitVecFmin(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
     try buffer.put4(insn);
 }
 fn emitVecFmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src1);
-    const rm = hwEnc(src2);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src1);
+    const rm = try hwEnc(src2);
     const q = vec_size.qBit();
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
@@ -13384,8 +13381,8 @@ fn emitVecFmax(dst: Reg, src1: Reg, src2: Reg, vec_size: VecElemSize, buffer: *b
     try buffer.put4(insn);
 }
 fn emitVecFabs(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q = vec_size.qBit();
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
@@ -13396,8 +13393,8 @@ fn emitVecFabs(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Ma
     try buffer.put4(insn);
 }
 fn emitVecFneg(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q = vec_size.qBit();
     const sz: u1 = switch (vec_size) {
         .size32x2, .size32x4 => 0,
@@ -13411,7 +13408,7 @@ fn emitVecFneg(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Ma
 /// Emit LDR (literal) instruction to load from constant pool.
 /// Format: LDR Xt, label  OR  LDR Wt, label
 pub fn emitLdrLiteral(dst: Reg, label: buffer_mod.MachLabel, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
+    const rt = try hwEnc(dst);
 
     // LDR (literal) encoding:
     // - For 64-bit: opc=01
@@ -13428,7 +13425,7 @@ pub fn emitLdrLiteral(dst: Reg, label: buffer_mod.MachLabel, size: OperandSize, 
 
 /// Emit LDR (literal, SIMD&FP) instruction.
 pub fn emitLdrLiteralFp(dst: Reg, label: buffer_mod.MachLabel, fp_size: enum { s, d }, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
+    const rt = try hwEnc(dst);
 
     // LDR (literal, SIMD&FP): opc|011|V=1|00|imm19|Rt
     const opc: u32 = if (fp_size == .d) 0b01 else 0b00;
@@ -13460,7 +13457,7 @@ pub fn emitCallExternal(func_name: []const u8, buffer: *buffer_mod.MachBuffer) !
 /// Load address of global symbol using ADRP + ADD.
 /// This is the standard AArch64 position-independent sequence.
 pub fn emitLoadSymbolAddr(dst: Reg, symbol: []const u8, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
+    const rd = try hwEnc(dst);
 
     // ADRP Xd, symbol@PAGE
     const adrp_offset = buffer.curOffset();
@@ -13477,7 +13474,7 @@ pub fn emitLoadSymbolAddr(dst: Reg, symbol: []const u8, buffer: *buffer_mod.Mach
 
 /// Load from global variable: ADRP + LDR.
 pub fn emitLoadGlobal(dst: Reg, symbol: []const u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
+    const rd = try hwEnc(dst);
 
     // Use temporary register for address (x9 is caller-saved)
     const temp_reg: u5 = 9; // x9
@@ -13505,7 +13502,7 @@ pub fn emitLoadGlobal(dst: Reg, symbol: []const u8, size: OperandSize, buffer: *
 /// Encoding: 1101 0101 0011 SSSSSSS SSSSS Rt
 /// where S is the system register encoding and Rt is the destination register
 fn emitMrs(dst: Reg, sysreg: inst_mod.SystemReg, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
+    const rd = try hwEnc(dst);
     const sys_enc: u15 = sysreg.encoding();
 
     const insn: u32 =
@@ -13519,8 +13516,8 @@ fn emitMrs(dst: Reg, sysreg: inst_mod.SystemReg, buffer: *buffer_mod.MachBuffer)
 /// SSHLL/SSHLL2 - Signed Shift Left Long
 /// Encoding: 0 Q 0 0 1 1 1 1 0 immh:immb 1 0 1 0 0 1 Rn Rd
 fn emitVecSshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VecElemSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q: u1 = if (high) 1 else 0;
 
     // For SSHLL, immh:immb encodes both element size and shift amount
@@ -13549,8 +13546,8 @@ fn emitVecSshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VecElemSize, high: 
 /// USHLL/USHLL2 - Unsigned Shift Left Long
 /// Encoding: 0 Q 1 0 1 1 1 1 0 immh:immb 1 0 1 0 0 1 Rn Rd
 fn emitVecUshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VecElemSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q: u1 = if (high) 1 else 0;
 
     // Same immh:immb encoding as SSHLL
@@ -13576,8 +13573,8 @@ fn emitVecUshll(dst: Reg, src: Reg, shift_amt: u8, vec_size: VecElemSize, high: 
 /// Encoding: 0Q001110 immh:immb 100101 Rn Rd
 /// Q=0 for SQXTN (low half), Q=1 for SQXTN2 (high half)
 fn emitVecSqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q: u1 = if (high) 1 else 0;
 
     // immh determines element size (output size)
@@ -13601,8 +13598,8 @@ fn emitVecSqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, high: bool, buffer: *
 /// SQXTUN/SQXTUN2 - Signed saturating extract unsigned narrow
 /// Encoding: 0Q101110 immh:immb 100101 Rn Rd
 fn emitVecSqxtun(dst: Reg, src: Reg, vec_size: VecElemSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q: u1 = if (high) 1 else 0;
 
     const immh: u4 = switch (vec_size) {
@@ -13625,8 +13622,8 @@ fn emitVecSqxtun(dst: Reg, src: Reg, vec_size: VecElemSize, high: bool, buffer: 
 /// UQXTN/UQXTN2 - Unsigned saturating extract narrow
 /// Encoding: 0Q101110 immh:immb 100110 Rn Rd
 fn emitVecUqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, high: bool, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q: u1 = if (high) 1 else 0;
 
     const immh: u4 = switch (vec_size) {
@@ -13651,8 +13648,8 @@ fn emitVecUqxtn(dst: Reg, src: Reg, vec_size: VecElemSize, high: bool, buffer: *
 /// Encoding: 0Q00 1110 0010 0001 0111 10nn nnnd dddd
 /// Q=0: FCVTL (low half), Q=1: FCVTL2 (high half)
 fn emitVecFcvtl(dst: Reg, src: Reg, high: bool, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q: u1 = if (high) 1 else 0;
 
     const insn: u32 = (@as(u32, q) << 30) |
@@ -13670,8 +13667,8 @@ fn emitVecFcvtl(dst: Reg, src: Reg, high: bool, buffer: *buffer_mod.MachBuffer) 
 /// Encoding: 0Q00 1110 0110 0001 0110 10nn nnnd dddd
 /// Q=0: FCVTN (writes low half), Q=1: FCVTN2 (writes high half)
 fn emitVecFcvtn(dst: Reg, src: Reg, high: bool, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
     const q: u1 = if (high) 1 else 0;
 
     const insn: u32 = (@as(u32, q) << 30) |
@@ -13688,7 +13685,7 @@ fn emitVecFcvtn(dst: Reg, src: Reg, high: bool, buffer: *buffer_mod.MachBuffer) 
 /// Encoding: 1101 0101 0001 SSSSSSS SSSSS Rt
 /// where S is the system register encoding and Rt is the source register
 fn emitMsr(sysreg: inst_mod.SystemReg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(src);
+    const rt = try hwEnc(src);
     const sys_enc: u15 = sysreg.encoding();
 
     const insn: u32 =
@@ -13704,8 +13701,8 @@ fn emitMsr(sysreg: inst_mod.SystemReg, src: Reg, buffer: *buffer_mod.MachBuffer)
 /// Q: 0=64-bit, 1=128-bit
 /// imm5: element size encoding
 fn emitVecDup(dst: Reg, src: Reg, size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     // Determine Q bit and imm5 from VecElemSize
     const q: u32 = switch (size) {
@@ -13735,8 +13732,8 @@ fn emitVecDup(dst: Reg, src: Reg, size: VecElemSize, buffer: *buffer_mod.MachBuf
 /// Q: 0=64-bit, 1=128-bit
 /// imm5: encodes element size and lane index
 fn emitVecDupLane(dst: Reg, src: Reg, lane: u8, size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     // Determine Q bit and imm5 from VecElemSize and lane
     const q: u32 = switch (size) {
@@ -13778,8 +13775,8 @@ fn emitVecDupLane(dst: Reg, src: Reg, lane: u8, size: VecElemSize, buffer: *buff
 /// Q: 0=32-bit access, 1=64-bit access
 /// imm5: encodes element size and lane index
 fn emitVecExtractLane(dst: Reg, src: Reg, lane: u8, size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
 
     // Determine Q bit and imm5 encoding
     // imm5 = (lane << shift) | size_bits
@@ -13812,13 +13809,13 @@ fn emitVecExtractLane(dst: Reg, src: Reg, lane: u8, size: VecElemSize, buffer: *
 /// Q: 0=64-bit, 1=128-bit
 /// imm5: encodes element size and lane index
 fn emitVecInsertLane(dst: Reg, vec: Reg, src: Reg, lane: u8, size: VecElemSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rd = hwEnc(dst);
-    const rn = hwEnc(src);
-    const rv = hwEnc(vec);
+    const rd = try hwEnc(dst);
+    const rn = try hwEnc(src);
+    const rv = try hwEnc(vec);
 
     // First, move vec to dst if they're different (INS modifies destination)
     // Vector MOV is implemented as ORR Vd.16B, Vn.16B, Vn.16B
-    if (hwEnc(dst) != hwEnc(vec)) {
+    if (try hwEnc(dst) != try hwEnc(vec)) {
         const mov_insn: u32 = (0b01 << 30) | // Q=1 (128-bit)
             (0b001110101 << 21) |
             (@as(u32, rv) << 16) |
@@ -13854,7 +13851,7 @@ fn emitVecInsertLane(dst: Reg, vec: Reg, src: Reg, lane: u8, size: VecElemSize, 
 /// Load FP constant from constant pool (LDR Vt, =imm).
 /// Adds constant to pool and emits LDR literal instruction.
 fn emitFploadConst(dst: Reg, bits: u64, fp_size: FpuOperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    const rt = hwEnc(dst);
+    const rt = try hwEnc(dst);
 
     // Determine size for constant pool entry
     const const_size: u8 = switch (fp_size) {

@@ -123,6 +123,12 @@ pub const CodegenError = error{
     InvalidConstantSize,
     /// Unimplemented instruction reached emit stage.
     UnimplementedInstruction,
+    /// Virtual register reached emit stage.
+    VirtualRegister,
+    /// Invalid shift encoding for instruction.
+    InvalidShift,
+    /// Unsupported floating-point immediate encoding.
+    UnsupportedFPImmediate,
 };
 
 /// Compilation result type.
