@@ -67,6 +67,12 @@ pub const ENode = struct {
     }
 };
 
+/// Parent entry: e-class that owns the parent node.
+const Parent = struct {
+    id: EClassId,
+    node: ENode,
+};
+
 /// E-class: equivalence class of equivalent e-nodes.
 /// Represents a set of expressions known to be equal.
 pub const EClass = struct {
@@ -79,14 +85,14 @@ pub const EClass = struct {
 
     /// Parent e-nodes that reference this e-class.
     /// Used for congruence closure: when e-classes merge, parents must be updated.
-    parents: ArrayList(ENode),
+    parents: ArrayList(Parent),
 
     pub fn init(allocator: Allocator, id: EClassId) EClass {
         _ = allocator;
         return .{
             .id = id,
             .nodes = ArrayList(ENode){},
-            .parents = ArrayList(ENode){},
+            .parents = ArrayList(Parent){},
         };
     }
 
@@ -97,7 +103,7 @@ pub const EClass = struct {
         self.nodes.deinit(allocator);
 
         for (self.parents.items) |parent| {
-            allocator.free(parent.children);
+            allocator.free(parent.node.children);
         }
         self.parents.deinit(allocator);
     }
@@ -226,7 +232,7 @@ pub const EGraph = struct {
         while (class_iter.next()) |eclass| {
             eclass.nodes.deinit(self.allocator);
             for (eclass.parents.items) |parent| {
-                self.allocator.free(parent.children);
+                self.allocator.free(parent.node.children);
             }
             eclass.parents.deinit(self.allocator);
         }
@@ -285,7 +291,10 @@ pub const EGraph = struct {
                     .children = try self.allocator.dupe(EClassId, canonical_children),
                     .imm = null,
                 };
-                try child_class.parents.append(self.allocator, parent_node);
+                try child_class.parents.append(self.allocator, .{
+                    .id = id,
+                    .node = parent_node,
+                });
             }
         }
 
@@ -337,28 +346,43 @@ pub const EGraph = struct {
             var i: usize = 0;
             while (i < eclass.parents.items.len) : (i += 1) {
                 const parent = eclass.parents.items[i];
+                const parent_id = self.uf.find(parent.id);
+                eclass.parents.items[i].id = parent_id;
 
                 // Canonicalize parent's children
-                const canonical_children = try self.allocator.alloc(EClassId, parent.children.len);
-                defer self.allocator.free(canonical_children);
+                const canonical_children = try self.allocator.alloc(EClassId, parent.node.children.len);
 
-                for (parent.children, 0..) |child, j| {
+                for (parent.node.children, 0..) |child, j| {
                     canonical_children[j] = self.uf.find(child);
                 }
 
                 const canonical_parent = ENode{
-                    .op = parent.op,
+                    .op = parent.node.op,
                     .children = canonical_children,
-                    .imm = parent.imm,
+                    .imm = parent.node.imm,
                 };
+                const is_canonical = ENode.eql(parent.node, canonical_parent);
 
                 // Check if canonical parent already exists
                 if (self.hashcons.get(canonical_parent)) |existing_id| {
-                    const existing_canon = self.uf.find(existing_id);
-                    if (existing_canon != canon_id) {
-                        // Congruence: merge parent e-classes
-                        _ = try self.merge(existing_id, canon_id);
+                    if (!is_canonical) {
+                        if (self.hashcons.fetchRemove(parent.node)) |entry| {
+                            self.allocator.free(entry.key.children);
+                        }
                     }
+                    self.allocator.free(canonical_children);
+                    const existing_canon = self.uf.find(existing_id);
+                    if (existing_canon != parent_id) {
+                        // Congruence: merge parent e-classes
+                        _ = try self.merge(existing_id, parent_id);
+                    }
+                } else {
+                    if (!is_canonical) {
+                        if (self.hashcons.fetchRemove(parent.node)) |entry| {
+                            self.allocator.free(entry.key.children);
+                        }
+                    }
+                    try self.hashcons.put(self.allocator, canonical_parent, parent_id);
                 }
             }
         }
