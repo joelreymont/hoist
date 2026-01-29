@@ -495,7 +495,7 @@ test "JIT: executable memory boundaries" {
 }
 
 test "JIT: register spilling with 40+ live values" {
-    // Skip - register allocator doesn't support spilling yet
+    // Skip - test body not implemented yet (spilling is supported in regalloc)
     return error.SkipZigTest;
 }
 
