@@ -732,6 +732,245 @@ pub fn classifyStructIr(ty: Type, struct_store: *const types.StructStore) !struc
     return .{ .class = .general, .elem_ty = null };
 }
 
+pub const StackLoc = struct {
+    offset: u32,
+    size: u32,
+    align: u32,
+};
+
+pub const StructIntLoc = struct {
+    start: u8,
+    count: u8,
+    size: u32,
+};
+
+pub const StructFpLoc = struct {
+    start: u8,
+    count: u8,
+    elem_ty: Type,
+};
+
+pub const CallArgLoc = union(enum) {
+    sret,
+    int_reg: u8,
+    fp_reg: u8,
+    stack: StackLoc,
+    struct_int: StructIntLoc,
+    struct_fp: StructFpLoc,
+    struct_stack: StackLoc,
+    struct_indirect_reg: u8,
+    struct_indirect_stack: StackLoc,
+};
+
+pub const CallLayout = struct {
+    arg_locs: []CallArgLoc,
+    stack_size: u32,
+    sret_index: ?usize,
+
+    pub fn deinit(self: *CallLayout, allocator: Allocator) void {
+        allocator.free(self.arg_locs);
+    }
+};
+
+fn alignUp(value: u32, align: u32) u32 {
+    const mask = align - 1;
+    return (value + mask) & ~mask;
+}
+
+fn typeAlignIr(ty: Type, struct_store: *const types.StructStore) !u32 {
+    if (ty.isStruct()) {
+        const fields = ty.getStructFields(struct_store) orelse return error.MissingStructFields;
+        if (fields.len == 0) return 1;
+        var max_align: u32 = 1;
+        for (fields) |field| {
+            const field_align = try typeAlignIr(field.ty, struct_store);
+            if (field_align > max_align) max_align = field_align;
+        }
+        return max_align;
+    }
+
+    if (ty.isDynamicVector()) return error.UnsupportedDynamicVector;
+
+    if (ty.isVector()) {
+        const size = ty.bytes();
+        return if (size > 8) 16 else 8;
+    }
+
+    const size = ty.bytes();
+    if (size == 0) return 1;
+    return if (size > 16) 16 else size;
+}
+
+fn stackArgAlign(ty: Type, struct_store: *const types.StructStore) !u32 {
+    const align = try typeAlignIr(ty, struct_store);
+    if (align < 8) return 8;
+    return if (align > 16) 16 else align;
+}
+
+fn stackArgSize(ty: Type, struct_store: *const types.StructStore) !u32 {
+    if (ty.isDynamicVector()) return error.UnsupportedDynamicVector;
+
+    if (ty.isStruct()) {
+        const size = ty.structBytes(struct_store) orelse return error.MissingStructSize;
+        if (size == 0) return 0;
+        return alignUp(size, 8);
+    }
+
+    if (ty.isVector()) {
+        const size = ty.bytes();
+        return if (size > 8) 16 else 8;
+    }
+
+    return 8;
+}
+
+pub fn computeCallLayout(
+    allocator: Allocator,
+    args: []const Type,
+    sig: ?*const signature_mod.Signature,
+    call_conv: signature_mod.CallConv,
+    struct_store: *const types.StructStore,
+) !CallLayout {
+    const abi_spec = abiSpecForCallConv(call_conv);
+    const arg_locs = try allocator.alloc(CallArgLoc, args.len);
+    errdefer allocator.free(arg_locs);
+
+    var int_count: u8 = 0;
+    var fp_count: u8 = 0;
+    var stack_offset: u32 = 0;
+
+    var sret_index: ?usize = null;
+    if (sig) |s| {
+        if (needsStructReturnPointer(s.returns.items, struct_store)) {
+            for (s.params.items, 0..) |param, idx| {
+                if (std.meta.eql(param.purpose, signature_mod.ArgumentPurpose.struct_return)) {
+                    sret_index = idx;
+                    break;
+                }
+            }
+        }
+    }
+
+    for (args, 0..) |arg_ty, idx| {
+        if (sret_index) |sret_idx| {
+            if (idx == sret_idx) {
+                arg_locs[idx] = .sret;
+                continue;
+            }
+        }
+
+        if (arg_ty.isStruct()) {
+            const struct_fields = arg_ty.getStructFields(struct_store) orelse return error.MissingStructFields;
+            const struct_size = arg_ty.structBytes(struct_store) orelse return error.MissingStructSize;
+            const classification = try classifyStructIr(arg_ty, struct_store);
+
+            switch (classification.class) {
+                .hfa, .hva => {
+                    const field_count: u8 = @intCast(struct_fields.len);
+                    if (@as(usize, fp_count) + field_count <= abi_spec.float_arg_regs.len) {
+                        arg_locs[idx] = .{ .struct_fp = .{
+                            .start = fp_count,
+                            .count = field_count,
+                            .elem_ty = classification.elem_ty.?,
+                        } };
+                        fp_count += field_count;
+                    } else {
+                        const align = try stackArgAlign(arg_ty, struct_store);
+                        const size = try stackArgSize(arg_ty, struct_store);
+                        stack_offset = alignUp(stack_offset, align);
+                        arg_locs[idx] = .{ .struct_stack = .{ .offset = stack_offset, .size = size, .align = align } };
+                        stack_offset += size;
+                    }
+                },
+                .general => {
+                    if (struct_size <= 8) {
+                        if (@as(usize, int_count) < abi_spec.int_arg_regs.len) {
+                            arg_locs[idx] = .{ .struct_int = .{
+                                .start = int_count,
+                                .count = 1,
+                                .size = struct_size,
+                            } };
+                            int_count += 1;
+                        } else {
+                            const align = try stackArgAlign(arg_ty, struct_store);
+                            const size = try stackArgSize(arg_ty, struct_store);
+                            stack_offset = alignUp(stack_offset, align);
+                            arg_locs[idx] = .{ .struct_stack = .{ .offset = stack_offset, .size = size, .align = align } };
+                            stack_offset += size;
+                        }
+                    } else if (struct_size <= 16) {
+                        if (@as(usize, int_count) + 1 < abi_spec.int_arg_regs.len) {
+                            arg_locs[idx] = .{ .struct_int = .{
+                                .start = int_count,
+                                .count = 2,
+                                .size = struct_size,
+                            } };
+                            int_count += 2;
+                        } else {
+                            const align = try stackArgAlign(arg_ty, struct_store);
+                            const size = try stackArgSize(arg_ty, struct_store);
+                            stack_offset = alignUp(stack_offset, align);
+                            arg_locs[idx] = .{ .struct_stack = .{ .offset = stack_offset, .size = size, .align = align } };
+                            stack_offset += size;
+                        }
+                    } else {
+                        const align = try stackArgAlign(arg_ty, struct_store);
+                        const size = try stackArgSize(arg_ty, struct_store);
+                        stack_offset = alignUp(stack_offset, align);
+                        arg_locs[idx] = .{ .struct_stack = .{ .offset = stack_offset, .size = size, .align = align } };
+                        stack_offset += size;
+                    }
+                },
+                .indirect => {
+                    if (@as(usize, int_count) < abi_spec.int_arg_regs.len) {
+                        arg_locs[idx] = .{ .struct_indirect_reg = int_count };
+                        int_count += 1;
+                    } else {
+                        const align: u32 = 8;
+                        const size: u32 = 8;
+                        stack_offset = alignUp(stack_offset, align);
+                        arg_locs[idx] = .{ .struct_indirect_stack = .{ .offset = stack_offset, .size = size, .align = align } };
+                        stack_offset += size;
+                    }
+                },
+            }
+
+            continue;
+        }
+
+        const is_fp = arg_ty.isFloat() or arg_ty.isVector();
+        if (is_fp) {
+            if (@as(usize, fp_count) < abi_spec.float_arg_regs.len) {
+                arg_locs[idx] = .{ .fp_reg = fp_count };
+                fp_count += 1;
+            } else {
+                const align = try stackArgAlign(arg_ty, struct_store);
+                const size = try stackArgSize(arg_ty, struct_store);
+                stack_offset = alignUp(stack_offset, align);
+                arg_locs[idx] = .{ .stack = .{ .offset = stack_offset, .size = size, .align = align } };
+                stack_offset += size;
+            }
+        } else {
+            if (@as(usize, int_count) < abi_spec.int_arg_regs.len) {
+                arg_locs[idx] = .{ .int_reg = int_count };
+                int_count += 1;
+            } else {
+                const align = try stackArgAlign(arg_ty, struct_store);
+                const size = try stackArgSize(arg_ty, struct_store);
+                stack_offset = alignUp(stack_offset, align);
+                arg_locs[idx] = .{ .stack = .{ .offset = stack_offset, .size = size, .align = align } };
+                stack_offset += size;
+            }
+        }
+    }
+
+    return .{
+        .arg_locs = arg_locs,
+        .stack_size = alignUp(stack_offset, 16),
+        .sret_index = sret_index,
+    };
+}
+
 /// Generate struct copy instructions using LDP/STP pairs.
 /// Copies size bytes from src_reg to dst_reg using 16-byte loads/stores where possible.
 /// Returns list of instructions to emit.
