@@ -93,12 +93,63 @@ pub fn PeepholeOptimizer(comptime MachInst: type) type {
         /// - Offset within LDP encoding range [-512, 504], multiple of 8
         /// - No writes to base register between the two loads
         /// - No writes to first destination before second load
-        fn combineLoadPairs(self: *Self, insts: *std.ArrayList(MachInst)) !bool {
-            _ = self;
-            _ = insts;
-            // TODO: Implement load-pair combining
-            // This requires backend-specific instruction analysis
-            return false;
+        pub fn combineLoadPairs(self: *Self, insts: *std.ArrayList(MachInst)) !bool {
+            if (!(@hasField(MachInst, "ldr") and @hasField(MachInst, "ldp"))) {
+                return false;
+            }
+
+            var changed = false;
+            var i: usize = 0;
+
+            while (i + 1 < insts.items.len) {
+                const inst1 = &insts.items[i];
+                const inst2 = &insts.items[i + 1];
+
+                if (inst1.* != .ldr or inst2.* != .ldr) {
+                    i += 1;
+                    continue;
+                }
+
+                const ldr1 = inst1.ldr;
+                const ldr2 = inst2.ldr;
+
+                if (ldr1.size != .size64 or ldr2.size != .size64) {
+                    i += 1;
+                    continue;
+                }
+
+                if (!std.meta.eql(ldr1.base, ldr2.base)) {
+                    i += 1;
+                    continue;
+                }
+
+                if (!canFormPair(ldr1.offset, ldr2.offset)) {
+                    i += 1;
+                    continue;
+                }
+
+                if (std.meta.eql(ldr1.dst.toReg(), ldr2.dst.toReg())) {
+                    i += 1;
+                    continue;
+                }
+
+                const ldp = MachInst{ .ldp = .{
+                    .dst1 = ldr1.dst,
+                    .dst2 = ldr2.dst,
+                    .base = ldr1.base,
+                    .offset = @intCast(ldr1.offset),
+                    .size = .size64,
+                } };
+
+                insts.items[i] = ldp;
+                _ = insts.orderedRemove(i + 1);
+
+                self.stats.load_pairs_formed += 1;
+                changed = true;
+                i += 1;
+            }
+
+            return changed;
         }
 
         /// Combine adjacent STR instructions into STP.
@@ -111,11 +162,58 @@ pub fn PeepholeOptimizer(comptime MachInst: type) type {
         /// - Offset within STP encoding range [-512, 504], multiple of 8
         /// - No writes to base register between the two stores
         /// - No writes to source registers between stores
-        fn combineStorePairs(self: *Self, insts: *std.ArrayList(MachInst)) !bool {
-            _ = self;
-            _ = insts;
-            // TODO: Implement store-pair combining
-            return false;
+        pub fn combineStorePairs(self: *Self, insts: *std.ArrayList(MachInst)) !bool {
+            if (!(@hasField(MachInst, "str") and @hasField(MachInst, "stp"))) {
+                return false;
+            }
+
+            var changed = false;
+            var i: usize = 0;
+
+            while (i + 1 < insts.items.len) {
+                const inst1 = &insts.items[i];
+                const inst2 = &insts.items[i + 1];
+
+                if (inst1.* != .str or inst2.* != .str) {
+                    i += 1;
+                    continue;
+                }
+
+                const str1 = inst1.str;
+                const str2 = inst2.str;
+
+                if (str1.size != .size64 or str2.size != .size64) {
+                    i += 1;
+                    continue;
+                }
+
+                if (!std.meta.eql(str1.base, str2.base)) {
+                    i += 1;
+                    continue;
+                }
+
+                if (!canFormPair(str1.offset, str2.offset)) {
+                    i += 1;
+                    continue;
+                }
+
+                const stp = MachInst{ .stp = .{
+                    .src1 = str1.src,
+                    .src2 = str2.src,
+                    .base = str1.base,
+                    .offset = @intCast(str1.offset),
+                    .size = .size64,
+                } };
+
+                insts.items[i] = stp;
+                _ = insts.orderedRemove(i + 1);
+
+                self.stats.store_pairs_formed += 1;
+                changed = true;
+                i += 1;
+            }
+
+            return changed;
         }
 
         /// Eliminate dead moves where source and destination are identical.

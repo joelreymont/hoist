@@ -26,80 +26,7 @@ pub fn combineLoadPairs(
     optimizer: *AArch64PeepholeOptimizer,
     insts: *std.ArrayList(Inst),
 ) !bool {
-    var changed = false;
-    var i: usize = 0;
-
-    while (i + 1 < insts.items.len) {
-        const inst1 = &insts.items[i];
-        const inst2 = &insts.items[i + 1];
-
-        // Check if both are LDR instructions
-        if (inst1.* != .ldr or inst2.* != .ldr) {
-            i += 1;
-            continue;
-        }
-
-        const ldr1 = inst1.ldr;
-        const ldr2 = inst2.ldr;
-
-        // Must be same size (only combine 64-bit loads for now)
-        if (ldr1.size != .size64 or ldr2.size != .size64) {
-            i += 1;
-            continue;
-        }
-
-        // Must have same base register
-        if (!regEq(ldr1.base, ldr2.base)) {
-            i += 1;
-            continue;
-        }
-
-        // Check if offsets are suitable for pairing
-        const offset1 = ldr1.offset;
-        const offset2 = ldr2.offset;
-
-        if (!peephole_mod.canFormPair(offset1, offset2)) {
-            i += 1;
-            continue;
-        }
-
-        // Check for hazards between the two loads:
-        // 1. Base register must not be written between loads
-        // 2. First destination must not be written before second load
-        // 3. Destinations must be different registers
-        if (regEq(ldr1.dst.toReg(), ldr2.dst.toReg())) {
-            i += 1;
-            continue;
-        }
-
-        // Since we're only looking at adjacent instructions, no intervening
-        // writes are possible. In a more sophisticated implementation, we
-        // could look for non-adjacent pairs with intervening instructions.
-
-        // Form the LDP instruction
-        const ldp = Inst{ .ldp = .{
-            .dst1 = ldr1.dst,
-            .dst2 = ldr2.dst,
-            .base = ldr1.base,
-            .offset = @intCast(offset1),
-            .size = .size64,
-        } };
-
-        // Replace first load with LDP
-        insts.items[i] = ldp;
-
-        // Remove second load
-        _ = insts.orderedRemove(i + 1);
-
-        // Update statistics
-        optimizer.stats.load_pairs_formed += 1;
-        changed = true;
-
-        // Continue from the LDP instruction
-        i += 1;
-    }
-
-    return changed;
+    return optimizer.combineLoadPairs(insts);
 }
 
 /// AArch64-specific store-pair combining implementation.
@@ -108,72 +35,7 @@ pub fn combineStorePairs(
     optimizer: *AArch64PeepholeOptimizer,
     insts: *std.ArrayList(Inst),
 ) !bool {
-    var changed = false;
-    var i: usize = 0;
-
-    while (i + 1 < insts.items.len) {
-        const inst1 = &insts.items[i];
-        const inst2 = &insts.items[i + 1];
-
-        // Check if both are STR instructions
-        if (inst1.* != .str or inst2.* != .str) {
-            i += 1;
-            continue;
-        }
-
-        const str1 = inst1.str;
-        const str2 = inst2.str;
-
-        // Must be same size (only combine 64-bit stores for now)
-        if (str1.size != .size64 or str2.size != .size64) {
-            i += 1;
-            continue;
-        }
-
-        // Must have same base register
-        if (!regEq(str1.base, str2.base)) {
-            i += 1;
-            continue;
-        }
-
-        // Check if offsets are suitable for pairing
-        const offset1 = str1.offset;
-        const offset2 = str2.offset;
-
-        if (!peephole_mod.canFormPair(offset1, offset2)) {
-            i += 1;
-            continue;
-        }
-
-        // Check for hazards:
-        // 1. Base register must not be written between stores
-        // 2. Source registers must not be written between stores
-        // (Both automatically satisfied for adjacent instructions)
-
-        // Form the STP instruction
-        const stp = Inst{ .stp = .{
-            .src1 = str1.src,
-            .src2 = str2.src,
-            .base = str1.base,
-            .offset = @intCast(offset1),
-            .size = .size64,
-        } };
-
-        // Replace first store with STP
-        insts.items[i] = stp;
-
-        // Remove second store
-        _ = insts.orderedRemove(i + 1);
-
-        // Update statistics
-        optimizer.stats.store_pairs_formed += 1;
-        changed = true;
-
-        // Continue from the STP instruction
-        i += 1;
-    }
-
-    return changed;
+    return optimizer.combineStorePairs(insts);
 }
 
 /// AArch64-specific dead move elimination.
