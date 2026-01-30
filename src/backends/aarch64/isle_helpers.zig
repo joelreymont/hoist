@@ -4319,6 +4319,15 @@ fn marshalReturnValues(sig_ref: SigRef, ctx: *lower_mod.LowerCtx(Inst)) !lower_m
         const ret_type = ret_param.value_type;
         const is_fp = ret_type.isFloat() or ret_type.isVector();
 
+        if (!is_fp) {
+            if (!ret_type.isInt() and !ret_type.isRef()) {
+                return error.UnsupportedReturnType;
+            }
+            if (ret_type.isInt() and ret_type.bits() > 64) {
+                return error.UnsupportedReturnType;
+            }
+        }
+
         if (is_fp) {
             if (fp_count >= 8) {
                 std.log.err("Too many FP return values: max 8 allowed", .{});

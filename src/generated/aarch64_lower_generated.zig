@@ -1625,6 +1625,47 @@ pub fn lower(
                 return true;
             }
         },
+        .@"return" => |data| {
+            const args = ctx.func.dfg.value_lists.asSlice(data.args);
+            var int_idx: u8 = 0;
+            var fp_idx: u8 = 0;
+
+            for (args) |arg| {
+                const ty = ctx.getValueType(arg);
+                if (ty.isFloat()) {
+                    if (fp_idx >= 8) return false;
+                    const fp_hw: u6 = @intCast(fp_idx);
+                    const src_reg = Reg.fromVReg(try ctx.getValueReg(arg, .float));
+                    const dst_reg = Reg.fromPReg(PReg.new(.float, fp_hw));
+                    const dst = WritableReg.fromReg(dst_reg);
+                    const size: FpuOperandSize = if (ty.bits() == 64) .size64 else .size32;
+                    try ctx.emit(Inst{ .fmov = .{
+                        .dst = dst,
+                        .src = src_reg,
+                        .size = size,
+                    } });
+                    fp_idx += 1;
+                } else {
+                    if (ty.isVector()) return false;
+                    if (int_idx >= 8) return false;
+                    const int_hw: u6 = @intCast(int_idx);
+                    const src_reg = Reg.fromVReg(try ctx.getValueReg(arg, .int));
+                    const dst_reg = Reg.fromPReg(PReg.new(.int, int_hw));
+                    const dst = WritableReg.fromReg(dst_reg);
+                    const bits = ty.bits();
+                    const size: OperandSize = if (bits != 0 and bits <= 32) .size32 else .size64;
+                    try ctx.emit(Inst{ .mov_rr = .{
+                        .dst = dst,
+                        .src = src_reg,
+                        .size = size,
+                    } });
+                    int_idx += 1;
+                }
+            }
+
+            try ctx.emit(Inst.ret);
+            return true;
+        },
         .nullary => |data| {
             if (data.opcode == .@"return") {
                 // Void return - just emit ret instruction

@@ -152,6 +152,31 @@ pub fn lower(
 
             return false;
         },
+        .@"return" => |data| {
+            const args = ctx.func.dfg.value_lists.asSlice(data.args);
+            if (args.len == 0) {
+                try ctx.emit(Inst.ret);
+                return true;
+            }
+            if (args.len != 1) return false;
+
+            const ret_val = args[0];
+            const ty = ctx.getValueType(ret_val);
+            if (ty.isFloat()) return false;
+
+            const bits = ty.bits();
+            const size: OperandSize = if (bits != 0 and bits <= 32) .size32 else .size64;
+            const src = Reg.fromVReg(try ctx.getValueReg(ret_val, .int));
+            const rax = Reg.fromPReg(PReg.new(.int, 0));
+            const dst = WritableReg.fromReg(rax);
+            try ctx.emit(Inst{ .mov_rr = .{
+                .dst = dst,
+                .src = src,
+                .size = size,
+            } });
+            try ctx.emit(Inst.ret);
+            return true;
+        },
         .nullary => |data| {
             if (data.opcode == .@"return") {
                 try ctx.emit(Inst.ret);

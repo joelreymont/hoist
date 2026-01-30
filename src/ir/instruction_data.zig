@@ -49,6 +49,7 @@ pub const InstructionData = union(enum) {
     jump: JumpData,
     branch_table: BranchTableData,
     branch_z: BranchZData,
+    @"return": ReturnData,
     call: CallData,
     call_indirect: CallIndirectData,
     try_call: TryCallData,
@@ -251,6 +252,16 @@ pub const InstructionData = union(enum) {
                 } else {
                     func(ctx, &data.condition);
                 }
+                const slice = listSlice(pool, data.args);
+                for (slice) |*val| {
+                    if (comptime is_error) {
+                        try func(ctx, val);
+                    } else {
+                        func(ctx, val);
+                    }
+                }
+            },
+            .@"return" => |*data| {
                 const slice = listSlice(pool, data.args);
                 for (slice) |*val| {
                     if (comptime is_error) {
@@ -540,6 +551,11 @@ pub const BranchZData = struct {
     pub fn init(op: Opcode, cond: Value, dest: entities.Block) BranchZData {
         return .{ .opcode = op, .condition = cond, .destination = dest };
     }
+};
+
+pub const ReturnData = struct {
+    opcode: Opcode,
+    args: ValueList,
 };
 
 pub const CallData = struct {

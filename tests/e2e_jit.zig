@@ -292,6 +292,81 @@ test "JIT: compile and execute return constant i32" {
     try testing.expectEqual(@as(i32, 42), result);
 }
 
+test "JIT: compile and execute multi-return i64 pair" {
+    if (builtin.os.tag != .linux and builtin.os.tag != .macos and builtin.os.tag != .windows) {
+        return error.SkipZigTest;
+    }
+    if (builtin.cpu.arch != .aarch64 and builtin.cpu.arch != .aarch64_be) {
+        return error.SkipZigTest;
+    }
+
+    var sig = Signature.init(testing.allocator, .system_v);
+    try sig.returns.append(testing.allocator, hoist.signature.AbiParam.new(Type.I64));
+    try sig.returns.append(testing.allocator, hoist.signature.AbiParam.new(Type.I64));
+
+    var func = try Function.init(testing.allocator, "ret_pair_i64", sig);
+    defer func.deinit();
+
+    const entry = try func.dfg.makeBlock();
+    try func.layout.appendBlock(entry);
+
+    const first_const = InstructionData{
+        .unary_imm = .{
+            .opcode = .iconst,
+            .imm = Imm64.new(11),
+        },
+    };
+    const first_inst = try func.dfg.makeInst(first_const);
+    const first_val = try func.dfg.appendInstResult(first_inst, Type.I64);
+    try func.layout.appendInst(first_inst, entry);
+
+    const second_const = InstructionData{
+        .unary_imm = .{
+            .opcode = .iconst,
+            .imm = Imm64.new(22),
+        },
+    };
+    const second_inst = try func.dfg.makeInst(second_const);
+    const second_val = try func.dfg.appendInstResult(second_inst, Type.I64);
+    try func.layout.appendInst(second_inst, entry);
+
+    var ret_args = value_list.ValueList.default();
+    try func.dfg.value_lists.extend(&ret_args, &.{ first_val, second_val });
+
+    const ret_data = InstructionData{
+        .@"return" = .{
+            .opcode = .@"return",
+            .args = ret_args,
+        },
+    };
+    const ret_inst = try func.dfg.makeInst(ret_data);
+    try func.layout.appendInst(ret_inst, entry);
+
+    var builder = ContextBuilder.init(testing.allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
+
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
+
+    const exec_mem = try allocExecutableMemory(testing.allocator, code.code.items.len);
+    defer freeExecutableMemory(exec_mem);
+
+    @memcpy(exec_mem[0..code.code.items.len], code.code.items);
+    try makeExecutable(exec_mem);
+
+    const RetPair = extern struct {
+        a: i64,
+        b: i64,
+    };
+    const FnType = *const fn () callconv(.c) RetPair;
+    const jit_fn: FnType = @ptrCast(exec_mem.ptr);
+    const result = jit_fn();
+
+    try testing.expectEqual(@as(i64, 11), result.a);
+    try testing.expectEqual(@as(i64, 22), result.b);
+}
+
 test "JIT: compile and execute i32 add" {
     // Skip on unsupported platforms
     if (builtin.os.tag != .linux and builtin.os.tag != .macos and builtin.os.tag != .windows) {

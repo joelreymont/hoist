@@ -1486,13 +1486,21 @@ pub const Aarch64ABICallee = struct {
 pub fn needsStructReturnPointer(returns: []const AbiParam, struct_store: ?*const types.StructStore) bool {
     if (returns.len == 0) return false;
     if (returns.len > 1) {
-        // Multiple returns not directly supported in AAPCS64 - require sret
-        return true;
+        return false;
     }
 
     const ret_ty = returns[0].value_type;
     const ret_loc = classifyReturn(ret_ty, struct_store);
     return ret_loc == .indirect;
+}
+
+test "needsStructReturnPointer multi-return" {
+    const returns = [_]AbiParam{
+        AbiParam.new(Type.I64),
+        AbiParam.new(Type.I32),
+    };
+
+    try testing.expect(!needsStructReturnPointer(&returns, null));
 }
 
 /// Argument location according to AAPCS64.

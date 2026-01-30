@@ -336,7 +336,23 @@ pub const Parser = struct {
             };
             try builder.brif(cond, then_blk, else_blk);
         } else if (std.mem.eql(u8, op, "return")) {
-            try builder.ret();
+            if (self.current.type == .value) {
+                var values = std.ArrayList(Value){};
+                defer values.deinit(self.alloc);
+
+                while (self.current.type == .value) {
+                    try values.append(self.alloc, try self.parseValue());
+                    if (self.current.type == .comma) {
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+
+                try builder.retValues(values.items);
+            } else {
+                try builder.ret();
+            }
         } else if (std.mem.eql(u8, op, "call")) {
             const name_tok = try self.expect(.identifier);
             const func_id = try self.alloc.create(FuncRef);

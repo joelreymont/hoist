@@ -61,6 +61,14 @@ fn writeInstData(writer: anytype, func: *const Function, data: InstructionData, 
             try writer.writeAll(" ");
             try writeValue(writer, func, d.arg, options);
         },
+        .@"return" => |d| {
+            try writer.writeAll(@tagName(d.opcode));
+            const args = func.dfg.value_lists.asSlice(d.args);
+            if (args.len > 0) {
+                try writer.writeAll(" ");
+                try writeValueList(writer, func, args, options);
+            }
+        },
         .unary_with_trap => |d| {
             try writer.writeAll(@tagName(d.opcode));
             try writer.writeAll(" ");

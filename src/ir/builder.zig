@@ -458,9 +458,16 @@ pub const FunctionBuilder = struct {
     }
 
     pub fn ret(self: *Self) !void {
+        return self.retValues(&.{});
+    }
+
+    pub fn retValues(self: *Self, args: []const Value) !void {
         const block = self.current_block orelse return error.NoCurrentBlock;
 
-        const inst_data = InstructionData{ .nullary = NullaryData.init(.@"return") };
+        const inst_data = InstructionData{ .@"return" = .{
+            .opcode = .@"return",
+            .args = try self.buildValueList(args),
+        } };
         const inst = try self.func.dfg.makeInst(inst_data);
 
         try self.func.layout.appendInst(inst, block);

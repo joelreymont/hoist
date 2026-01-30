@@ -129,6 +129,23 @@ pub fn lower(ctx: *LowerCtx(Inst), inst: lower_mod.Inst) !bool {
             }
             return false;
         },
+        .@"return" => |ret_data| {
+            const args = ctx.func.dfg.value_lists.asSlice(ret_data.args);
+            if (args.len == 0) return true;
+            if (args.len != 1) return false;
+
+            const ret_val = args[0];
+            const ret_reg = Reg.fromVReg(try ctx.getValueReg(ret_val, .int));
+            const a0 = Reg.fromPReg(PReg.new(.int, 10));
+            const dst_a0 = WritableReg.fromReg(a0);
+
+            try ctx.emit(Inst{ .addi = .{
+                .dst = dst_a0,
+                .src = ret_reg,
+                .imm = 0,
+            } });
+            return true;
+        },
         .nullary => |null_data| {
             if (null_data.opcode == .@"return") {
                 // No-op return - epilogue handles frame cleanup

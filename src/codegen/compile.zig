@@ -1537,6 +1537,63 @@ fn irTypeToAbiType(ty: ir.Type) @import("../machinst/abi.zig").Type {
     return .i64;
 }
 
+fn emitReturnMovesAArch64(
+    ctx: *Context,
+    builder: anytype,
+    values: []const ir.Value,
+) CodegenError!void {
+    const Inst = @import("../backends/aarch64/inst.zig").Inst;
+    const OperandSize = @import("../backends/aarch64/inst.zig").OperandSize;
+    const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+    const Reg = @import("../machinst/reg.zig").Reg;
+    const PReg = @import("../machinst/reg.zig").PReg;
+    const VReg = @import("../machinst/reg.zig").VReg;
+    const WritableReg = @import("../machinst/reg.zig").WritableReg;
+    const RegClass = @import("../machinst/reg.zig").RegClass;
+
+    if (values.len != ctx.func.sig.returns.items.len) {
+        return error.LoweringFailed;
+    }
+
+    var int_idx: u8 = 0;
+    var fp_idx: u8 = 0;
+
+    for (values) |val| {
+        const value_type = ctx.func.dfg.valueType(val) orelse return error.LoweringFailed;
+        if (value_type.isFloat()) {
+            if (fp_idx >= 8) return error.LoweringFailed;
+            const fp_hw: u6 = @intCast(fp_idx);
+            const src_vreg = VReg.new(@intCast(val.index + Reg.PINNED_VREGS), RegClass.float);
+            const src = Reg.fromVReg(src_vreg);
+            const dst_reg = Reg.fromPReg(PReg.new(.float, fp_hw));
+            const dst = WritableReg.fromReg(dst_reg);
+            const size: FpuOperandSize = if (value_type.bits() == 64) .size64 else .size32;
+            try builder.emit(Inst{ .fmov = .{
+                .dst = dst,
+                .src = src,
+                .size = size,
+            } });
+            fp_idx += 1;
+        } else {
+            if (value_type.isVector()) return error.LoweringFailed;
+            if (int_idx >= 8) return error.LoweringFailed;
+            const int_hw: u6 = @intCast(int_idx);
+            const src_vreg = VReg.new(@intCast(val.index + Reg.PINNED_VREGS), RegClass.int);
+            const src = Reg.fromVReg(src_vreg);
+            const dst_reg = Reg.fromPReg(PReg.new(.int, int_hw));
+            const dst = WritableReg.fromReg(dst_reg);
+            const bits = value_type.bits();
+            const size: OperandSize = if (bits != 0 and bits <= 32) .size32 else .size64;
+            try builder.emit(Inst{ .mov_rr = .{
+                .dst = dst,
+                .src = src,
+                .size = size,
+            } });
+            int_idx += 1;
+        }
+    }
+}
+
 /// Emit AArch64 machine code with register allocation applied.
 fn emitAArch64WithAllocation(
     ctx: *Context,
@@ -1772,8 +1829,9 @@ fn emitMovWideImmediate(
 
 /// Lower a single AArch64 instruction.
 fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block_map: anytype, vreg_origins: *std.AutoHashMap(reg_mod.VReg, VRegOrigin)) CodegenError!void {
-    const Inst = @import("../backends/aarch64/inst.zig").Inst;
-    const OperandSize = @import("../backends/aarch64/inst.zig").OperandSize;
+    const InstMod = @import("../backends/aarch64/inst.zig");
+    const Inst = InstMod.Inst;
+    const OperandSize = InstMod.OperandSize;
 
     // Get instruction data from DFG
     const inst_data_ptr = ctx.func.dfg.insts.get(inst) orelse return error.LoweringFailed;
@@ -1870,7 +1928,10 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
         },
         .nullary => |data| {
             // Handle nullary instructions (trap, debugtrap, nop, etc.)
-            if (data.opcode == .trap) {
+            if (data.opcode == .@"return") {
+                try emitReturnMovesAArch64(ctx, builder, &.{});
+                try builder.emit(Inst.ret);
+            } else if (data.opcode == .trap) {
                 // Unconditional trap - BRK with trap code as immediate
                 const trap_code = if (@hasField(@TypeOf(data), "trap_code"))
                     data.trap_code.toRaw()
@@ -3677,40 +3738,8 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
         .unary => |data| {
             // Handle unary instructions (return, etc.)
             if (data.opcode == .@"return") {
-                const VReg = @import("../machinst/reg.zig").VReg;
-                const PReg = @import("../machinst/reg.zig").PReg;
-                const Reg = @import("../machinst/reg.zig").Reg;
-                const WritableReg = @import("../machinst/reg.zig").WritableReg;
-                const RegClass = @import("../machinst/reg.zig").RegClass;
-
-                // Map return value to vreg (will be rewritten to preg later)
-                // Offset by PINNED_VREGS to avoid collision with physical registers
-                const return_val_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), RegClass.int);
-                const src = Reg.fromVReg(return_val_vreg);
-
-                // Destination is PHYSICAL x0
-                const x0_preg = PReg.new(RegClass.int, 0);
-                const x0 = Reg.fromPReg(x0_preg);
-                const dst = WritableReg.fromReg(x0);
-
-                // Get size from return value type
-                const value_type = ctx.func.dfg.valueType(data.arg) orelse return error.LoweringFailed;
-
-                const size: OperandSize = if (value_type.bits() == 64)
-                    .size64
-                else
-                    .size32;
-
-                // Emit: MOV x0, return_val_vreg
-                try builder.emit(Inst{
-                    .mov_rr = .{
-                        .dst = dst,
-                        .src = src,
-                        .size = size,
-                    },
-                });
-
-                // Emit RET instruction
+                const vals = [_]ir.Value{data.arg};
+                try emitReturnMovesAArch64(ctx, builder, vals[0..]);
                 try builder.emit(Inst.ret);
             } else if (data.opcode == .ireduce) {
                 const VReg = @import("../machinst/reg.zig").VReg;
@@ -4198,6 +4227,11 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
             } else {
                 return error.LoweringFailed;
             }
+        },
+        .@"return" => |data| {
+            const args = ctx.func.dfg.value_lists.asSlice(data.args);
+            try emitReturnMovesAArch64(ctx, builder, args);
+            try builder.emit(Inst.ret);
         },
         .unary_with_trap => |data| {
             // Handle unary instructions with trap codes (trapz, trapnz)

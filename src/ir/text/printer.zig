@@ -218,6 +218,17 @@ pub const Printer = struct {
                 try self.writer().writeAll(", ");
                 try self.printBlockRef(br.destination);
             },
+            .@"return" => |ret| {
+                try self.printOpcode(ret.opcode);
+                const args = self.func.dfg.value_lists.asSlice(ret.args);
+                if (args.len > 0) {
+                    try self.writer().writeAll(" ");
+                    for (args, 0..) |arg, i| {
+                        if (i > 0) try self.writer().writeAll(", ");
+                        try self.printValue(arg);
+                    }
+                }
+            },
             .call => |c| {
                 try self.printOpcode(c.opcode);
                 try self.writer().writeAll(" ");
