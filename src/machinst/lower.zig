@@ -88,6 +88,8 @@ pub fn LowerCtx(comptime MachInst: type) type {
         /// Value use state (unused, once, multiple) for each SSA value.
         /// Used to skip dead code and enable single-use optimizations.
         value_uses: std.AutoHashMap(Value, ValueUseState),
+        /// Max outgoing stack arg space (bytes).
+        out_stack_max: u32,
 
         /// Allocator.
         allocator: Allocator,
@@ -107,6 +109,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
                 .block_map = std.AutoHashMap(Block, vcode_mod.BlockIndex).init(allocator),
                 .next_vreg = 0,
                 .value_uses = std.AutoHashMap(Value, ValueUseState).init(allocator),
+                .out_stack_max = 0,
                 .allocator = allocator,
             };
         }
@@ -190,6 +193,15 @@ pub fn LowerCtx(comptime MachInst: type) type {
 
         pub fn getAllocator(self: *const Self) Allocator {
             return self.allocator;
+        }
+
+        pub fn setOutStackMax(self: *Self, size: u32) void {
+            self.out_stack_max = size;
+            self.vcode.out_stack_max = size;
+        }
+
+        pub fn getOutStackMax(self: *const Self) u32 {
+            return self.out_stack_max;
         }
 
         pub fn allocStackSlot(self: *Self, size: u32, align_bytes: u32) !StackSlot {
@@ -293,7 +305,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
         /// Note: This is NOT the final SP offset - the ABI layer adds FP/LR
         /// and callee-save overhead during prologue/epilogue generation.
         pub fn getStackSlotOffset(self: *const Self, slot: StackSlot) i32 {
-            var offset: u32 = 0;
+            var offset: u32 = self.out_stack_max;
 
             // Iterate through all stack slots up to the requested one
             const slots = self.func.stack_slots.elems.items;
@@ -339,6 +351,9 @@ pub fn LowerBackend(comptime MachInst: type) type {
             ctx: *LowerCtx(MachInst),
             inst: Inst,
         ) anyerror!bool,
+
+        /// Optional preparation pass before lowering.
+        prepareFn: ?*const fn (ctx: *LowerCtx(MachInst)) anyerror!void = null,
     };
 }
 
@@ -433,6 +448,10 @@ pub fn lowerFunction(
     // Compute value use counts for dead code elimination
     try ctx.computeValueUses();
 
+    if (backend.prepareFn) |prepare| {
+        try prepare(&ctx);
+    }
+
     // Lower each block in reverse postorder
     var rpo = try computeRPO(allocator, func);
     defer rpo.deinit(allocator);
@@ -497,6 +516,32 @@ test "LowerCtx basic" {
     const v2 = Value.new(1);
     const r2 = try ctx.getValueReg(v2, .int);
     try testing.expect(!std.meta.eql(r1, r2));
+}
+
+test "LowerCtx stack offsets include outgoing args" {
+    const TestInst = struct {
+        opcode: u32,
+    };
+
+    const sig = Signature.init(testing.allocator, .fast);
+    var func = try Function.init(testing.allocator, "test_out_stack", sig);
+    defer func.deinit();
+
+    var vcode = vcode_mod.VCode(TestInst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = LowerCtx(TestInst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    ctx.setOutStackMax(24);
+
+    const slot0 = try ctx.allocStackSlot(8, 16);
+    const off0 = ctx.getStackSlotOffset(slot0);
+    try testing.expectEqual(@as(i32, 32), off0);
+
+    const slot1 = try ctx.allocStackSlot(8, 8);
+    const off1 = ctx.getStackSlotOffset(slot1);
+    try testing.expectEqual(@as(i32, 40), off1);
 }
 
 test "SSA VReg pre-allocation" {

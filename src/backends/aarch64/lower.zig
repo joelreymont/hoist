@@ -8,6 +8,8 @@ const OperandSize = root.aarch64_inst.OperandSize;
 const WritableReg = root.aarch64_inst.WritableReg;
 const lower_mod = root.lower;
 const LowerCtx = lower_mod.LowerCtx;
+const types = root.types;
+const abi_mod = @import("abi.zig");
 
 // Import ISLE-generated lowering code
 const isle_lower = @import("../../generated/aarch64_lower_generated.zig");
@@ -15,6 +17,66 @@ const isle_lower = @import("../../generated/aarch64_lower_generated.zig");
 /// Aarch64 lowering backend implementation.
 /// This connects ISLE rules to actual instruction emission.
 pub const Aarch64Lower = struct {
+    fn prepare(ctx: *LowerCtx(Inst)) !void {
+        var max_stack: u32 = 0;
+        var block_iter = ctx.func.layout.blockIter();
+        while (block_iter.next()) |block| {
+            var inst_iter = ctx.func.layout.blockInsts(block);
+            while (inst_iter.next()) |inst| {
+                const inst_data_ptr = ctx.func.dfg.insts.get(inst) orelse continue;
+                switch (inst_data_ptr.*) {
+                    .call => |data| {
+                        const meta = ctx.func.func_metadata.getMetadata(data.func_ref) orelse return error.MissingFuncMetadata;
+                        const sig = ctx.func.signatures.get(meta.sig_ref) orelse return error.MissingSignature;
+                        max_stack = @max(max_stack, try callStackMax(ctx, sig, ctx.func.dfg.value_lists.asSlice(data.args)));
+                    },
+                    .call_indirect => |data| {
+                        const sig = ctx.func.signatures.get(data.sig_ref) orelse return error.MissingSignature;
+                        const args_all = ctx.func.dfg.value_lists.asSlice(data.args);
+                        if (args_all.len == 0) return error.MissingCallee;
+                        max_stack = @max(max_stack, try callStackMax(ctx, sig, args_all[1..]));
+                    },
+                    .try_call => |data| {
+                        const meta = ctx.func.func_metadata.getMetadata(data.func_ref) orelse return error.MissingFuncMetadata;
+                        const sig = ctx.func.signatures.get(meta.sig_ref) orelse return error.MissingSignature;
+                        max_stack = @max(max_stack, try callStackMax(ctx, sig, ctx.func.dfg.value_lists.asSlice(data.args)));
+                    },
+                    .try_call_indirect => |data| {
+                        const sig = ctx.func.signatures.get(data.sig_ref) orelse return error.MissingSignature;
+                        const args_all = ctx.func.dfg.value_lists.asSlice(data.args);
+                        if (args_all.len == 0) return error.MissingCallee;
+                        max_stack = @max(max_stack, try callStackMax(ctx, sig, args_all[1..]));
+                    },
+                    else => {},
+                }
+            }
+        }
+        ctx.setOutStackMax(max_stack);
+    }
+
+    fn callStackMax(
+        ctx: *LowerCtx(Inst),
+        sig: *const root.signature.Signature,
+        args: []const root.entities.Value,
+    ) !u32 {
+        var arg_types = try ctx.getAllocator().alloc(types.Type, args.len);
+        defer ctx.getAllocator().free(arg_types);
+
+        for (args, 0..) |arg, idx| {
+            arg_types[idx] = ctx.func.dfg.valueType(arg) orelse return error.MissingValueType;
+        }
+
+        var layout = try abi_mod.computeCallLayout(
+            ctx.getAllocator(),
+            arg_types,
+            sig,
+            sig.call_conv,
+            &ctx.func.struct_store,
+        );
+        defer layout.deinit(ctx.getAllocator());
+
+        return layout.stack_size;
+    }
     /// Lower a single IR instruction.
     pub fn lowerInst(
         ctx: *LowerCtx(Inst),
@@ -50,6 +112,7 @@ pub const Aarch64Lower = struct {
         return .{
             .lowerInstFn = lowerInst,
             .lowerBranchFn = lowerBranch,
+            .prepareFn = prepare,
         };
     }
 };

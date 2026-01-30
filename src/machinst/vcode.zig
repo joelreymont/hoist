@@ -55,6 +55,8 @@ pub fn VCode(comptime Inst: type) type {
         preds: std.ArrayList(BlockIndex),
         /// Block parameter lists (concatenated for all blocks).
         block_params: std.ArrayList(VReg),
+        /// Max outgoing stack arg space (bytes).
+        out_stack_max: u32,
         /// Allocator.
         allocator: Allocator,
 
@@ -68,6 +70,7 @@ pub fn VCode(comptime Inst: type) type {
                 .succs = std.ArrayList(BlockIndex){},
                 .preds = std.ArrayList(BlockIndex){},
                 .block_params = std.ArrayList(VReg){},
+                .out_stack_max = 0,
                 .allocator = allocator,
             };
         }

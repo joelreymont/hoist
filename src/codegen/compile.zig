@@ -1643,7 +1643,7 @@ fn emitAArch64WithAllocation(
             try abi_callee.clobberCalleeSave(preg.*);
         }
     }
-    abi_callee.setLocalsSize(spill_bytes);
+    abi_callee.setLocalsSize(spill_bytes + vcode.out_stack_max);
 
     // Emit function prologue
     try abi_callee.emitPrologue(&buffer);
