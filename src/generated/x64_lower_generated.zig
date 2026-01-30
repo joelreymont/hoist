@@ -10,6 +10,7 @@ const WritableReg = inst_mod.WritableReg;
 const PReg = inst_mod.PReg;
 const OperandSize = inst_mod.OperandSize;
 const lower_mod = @import("../machinst/lower.zig");
+const x64_abi = root.x64_abi;
 
 const Opcode = root.opcodes.Opcode;
 const InstructionData = root.instruction_data.InstructionData;
@@ -154,43 +155,67 @@ pub fn lower(
         },
         .@"return" => |data| {
             const args = ctx.func.dfg.value_lists.asSlice(data.args);
+            const sig_rets = ctx.func.sig.returns.items;
+            if (args.len != sig_rets.len) return false;
             if (args.len == 0) {
                 try ctx.emit(Inst.ret);
                 return true;
             }
-            if (args.len != 1) return false;
 
-            const ret_val = args[0];
-            const ty = ctx.getValueType(ret_val);
-            if (ty.isFloat()) {
-                const src = Reg.fromVReg(try ctx.getValueReg(ret_val, .float));
-                const xmm0 = Reg.fromPReg(PReg.new(.float, 0));
-                const dst = WritableReg.fromReg(xmm0);
-                if (ty.bits() == 32) {
-                    try ctx.emit(Inst{ .movss_rr = .{
-                        .dst = dst,
-                        .src = src,
-                    } });
+            const abi = switch (ctx.func.sig.call_conv) {
+                .system_v => x64_abi.systemV(),
+                .windows_fastcall => x64_abi.windowsFastcall(),
+                else => return false,
+            };
+
+            var int_idx: usize = 0;
+            var float_idx: usize = 0;
+
+            for (args, 0..) |ret_val, i| {
+                const ty = ctx.getValueType(ret_val);
+                if (!ty.eql(sig_rets[i].value_type)) return false;
+                if (ty.isStruct() or ty.isVector() or ty.isDynamicVector()) return false;
+
+                if (ty.isFloat()) {
+                    const bits = ty.bits();
+                    if (bits != 32 and bits != 64) return false;
+                    if (float_idx >= abi.float_ret_regs.len) return false;
+
+                    const src = Reg.fromVReg(try ctx.getValueReg(ret_val, .float));
+                    const dst_reg = Reg.fromPReg(abi.float_ret_regs[float_idx]);
+                    const dst = WritableReg.fromReg(dst_reg);
+
+                    if (bits == 32) {
+                        try ctx.emit(Inst{ .movss_rr = .{
+                            .dst = dst,
+                            .src = src,
+                        } });
+                    } else {
+                        try ctx.emit(Inst{ .movsd_rr = .{
+                            .dst = dst,
+                            .src = src,
+                        } });
+                    }
+
+                    float_idx += 1;
                 } else {
-                    try ctx.emit(Inst{ .movsd_rr = .{
+                    const bits = ty.bits();
+                    if (bits == 128) return false;
+                    if (int_idx >= abi.int_ret_regs.len) return false;
+
+                    const size: OperandSize = if (bits != 0 and bits <= 32) .size32 else .size64;
+                    const src = Reg.fromVReg(try ctx.getValueReg(ret_val, .int));
+                    const dst_reg = Reg.fromPReg(abi.int_ret_regs[int_idx]);
+                    const dst = WritableReg.fromReg(dst_reg);
+                    try ctx.emit(Inst{ .mov_rr = .{
                         .dst = dst,
                         .src = src,
+                        .size = size,
                     } });
+                    int_idx += 1;
                 }
-                try ctx.emit(Inst.ret);
-                return true;
             }
 
-            const bits = ty.bits();
-            const size: OperandSize = if (bits != 0 and bits <= 32) .size32 else .size64;
-            const src = Reg.fromVReg(try ctx.getValueReg(ret_val, .int));
-            const rax = Reg.fromPReg(PReg.new(.int, 0));
-            const dst = WritableReg.fromReg(rax);
-            try ctx.emit(Inst{ .mov_rr = .{
-                .dst = dst,
-                .src = src,
-                .size = size,
-            } });
             try ctx.emit(Inst.ret);
             return true;
         },
@@ -203,4 +228,67 @@ pub fn lower(
         },
         else => return false,
     }
+}
+
+test "x64 lower multi-return i64 pair" {
+    const testing = std.testing;
+
+    var sig = root.signature.Signature.init(testing.allocator, .system_v);
+    try sig.params.append(testing.allocator, root.signature.AbiParam.new(Type.I64));
+    try sig.params.append(testing.allocator, root.signature.AbiParam.new(Type.I64));
+    try sig.returns.append(testing.allocator, root.signature.AbiParam.new(Type.I64));
+    try sig.returns.append(testing.allocator, root.signature.AbiParam.new(Type.I64));
+
+    var func = try root.function.Function.init(testing.allocator, "ret_pair", sig);
+    defer func.deinit();
+
+    var builder = try root.builder.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+
+    const block = try builder.createBlock();
+    const p0 = try builder.appendBlockParam(block, Type.I64);
+    const p1 = try builder.appendBlockParam(block, Type.I64);
+    builder.switchToBlock(block);
+    try builder.retValues(&.{ p0, p1 });
+    try builder.sealBlock(block);
+
+    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    const params = func.dfg.blockParams(block);
+    for (params) |param| {
+        _ = try ctx.getValueReg(param, .int);
+    }
+
+    _ = try ctx.startBlock(block);
+    var inst_iter = func.layout.blockInsts(block);
+    while (inst_iter.next()) |ir_inst| {
+        const handled = try lower(&ctx, ir_inst);
+        try testing.expect(handled);
+    }
+    ctx.endBlock();
+
+    const rax = Reg.fromPReg(PReg.new(.int, 0));
+    const rdx = Reg.fromPReg(PReg.new(.int, 2));
+    var saw_rax = false;
+    var saw_rdx = false;
+    var saw_ret = false;
+
+    for (vcode.insns.items) |inst| {
+        switch (inst) {
+            .mov_rr => |mov| {
+                if (mov.dst.toReg().bits == rax.bits) saw_rax = true;
+                if (mov.dst.toReg().bits == rdx.bits) saw_rdx = true;
+            },
+            .ret => saw_ret = true,
+            else => {},
+        }
+    }
+
+    try testing.expect(saw_rax);
+    try testing.expect(saw_rdx);
+    try testing.expect(saw_ret);
 }
