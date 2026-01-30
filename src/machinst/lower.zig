@@ -5,6 +5,8 @@ const Allocator = std.mem.Allocator;
 const root = @import("../root.zig");
 const vcode_mod = @import("vcode.zig");
 const reg_mod = @import("reg.zig");
+const stackslots = @import("../ir/stackslots.zig");
+const stack_slot_data = @import("../ir/stack_slot_data.zig");
 
 /// Track whether an SSA value is used zero, one, or multiple times.
 /// Enables dead code elimination and single-use optimizations.
@@ -29,6 +31,30 @@ pub const Signature = root.signature.Signature;
 pub const VReg = reg_mod.VReg;
 pub const Reg = reg_mod.Reg;
 pub const RegClass = reg_mod.RegClass;
+pub const ValueRegs = reg_mod.ValueRegs;
+pub const ValueSlice = []const Value;
+
+pub const WritableReg = struct {
+    pub const fromReg = reg_mod.WritableReg.fromReg;
+    pub const fromVReg = reg_mod.WritableReg.fromVReg;
+
+    pub fn from(reg: Reg) reg_mod.WritableReg {
+        return reg_mod.WritableReg.fromReg(reg);
+    }
+
+    pub fn allocReg(class: RegClass, ctx: anytype) reg_mod.WritableReg {
+        return reg_mod.WritableReg.fromVReg(ctx.allocVReg(class));
+    }
+};
+
+pub const WritableVReg = struct {
+    pub const fromReg = reg_mod.WritableReg.fromReg;
+    pub const fromVReg = reg_mod.WritableReg.fromVReg;
+
+    pub fn allocVReg(class: RegClass, ctx: anytype) reg_mod.WritableReg {
+        return reg_mod.WritableReg.fromVReg(ctx.allocVReg(class));
+    }
+};
 
 /// Simplified lowering context for IR -> MachInst translation.
 /// This is a minimal bootstrap implementation - full lowering includes:
@@ -40,7 +66,7 @@ pub const RegClass = reg_mod.RegClass;
 pub fn LowerCtx(comptime MachInst: type) type {
     return struct {
         /// Input IR function.
-        func: *const Function,
+        func: *Function,
 
         /// Output VCode being built.
         vcode: *vcode_mod.VCode(MachInst),
@@ -70,7 +96,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
 
         pub fn init(
             allocator: Allocator,
-            func: *const Function,
+            func: *Function,
             vcode: *vcode_mod.VCode(MachInst),
         ) Self {
             return .{
@@ -158,8 +184,20 @@ pub fn LowerCtx(comptime MachInst: type) type {
 
         /// Get a signature from the function's signature table.
         /// Returns null if the signature reference is not found.
-        pub fn getSig(self: *const Self, sig_ref: SigRef) ?Signature {
+        pub fn getSig(self: *const Self, sig_ref: SigRef) ?*const Signature {
             return self.func.signatures.get(sig_ref);
+        }
+
+        pub fn getAllocator(self: *const Self) Allocator {
+            return self.allocator;
+        }
+
+        pub fn allocStackSlot(self: *Self, size: u32, align_bytes: u32) !StackSlot {
+            if (align_bytes == 0 or !std.math.isPowerOfTwo(align_bytes)) {
+                return error.InvalidAlignment;
+            }
+            const align_shift: u8 = @intCast(std.math.log2_int(u32, align_bytes));
+            return stackslots.createStackSlot(self.func, stack_slot_data.StackSlotKind.explicit_slot, size, align_shift);
         }
 
         /// Compute value use counts for dead code elimination.
@@ -259,7 +297,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
 
             // Iterate through all stack slots up to the requested one
             const slots = self.func.stack_slots.elems.items;
-            const slot_idx = slot.index();
+            const slot_idx = slot.toIndex();
 
             for (slots[0..@min(slot_idx, slots.len)]) |slot_data| {
                 // Align to slot's required alignment
@@ -380,7 +418,7 @@ fn dfsPostorder(
 pub fn lowerFunction(
     comptime MachInst: type,
     allocator: Allocator,
-    func: *const Function,
+    func: *Function,
     backend: LowerBackend(MachInst),
 ) !vcode_mod.VCode(MachInst) {
     var vcode = vcode_mod.VCode(MachInst).init(allocator);

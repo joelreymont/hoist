@@ -84,6 +84,10 @@ pub const VReg = struct {
         return self.bits & INDEX_MASK;
     }
 
+    pub fn toReg(self: VReg) Reg {
+        return Reg.fromVReg(self);
+    }
+
     pub fn format(self: VReg, writer: anytype) !void {
         try writer.print("v{d}(class={s})", .{ self.index(), @tagName(self.class()) });
     }
@@ -97,7 +101,28 @@ pub const Reg = struct {
 
     const SPILLSLOT_BIT: u32 = 0x8000_0000;
     const SPILLSLOT_MASK: u32 = ~SPILLSLOT_BIT;
+    const INVALID_BITS: u32 = 0xFFFF_FFFF;
     pub const PINNED_VREGS: usize = 192; // 64 int, 64 float, 64 vec
+
+    pub fn invalid() Reg {
+        return .{ .bits = INVALID_BITS };
+    }
+
+    pub fn isInvalid(self: Reg) bool {
+        return self.bits == INVALID_BITS;
+    }
+
+    pub fn eq(self: Reg, other: Reg) bool {
+        return self.bits == other.bits;
+    }
+
+    pub fn gpr(hw_enc: u6) Reg {
+        return Reg.fromPReg(PReg.new(.int, hw_enc));
+    }
+
+    pub fn fpr(hw_enc: u6) Reg {
+        return Reg.fromPReg(PReg.new(.float, hw_enc));
+    }
 
     pub fn fromVReg(vreg: VReg) Reg {
         return .{ .bits = vreg.bits };

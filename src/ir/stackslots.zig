@@ -5,8 +5,9 @@ const Allocator = std.mem.Allocator;
 const root = @import("../root.zig");
 const Function = root.function.Function;
 const StackSlot = root.entities.StackSlot;
-const StackSlotData = root.ir.stack_slot_data.StackSlotData;
-const StackSlotKind = root.ir.stack_slot_data.StackSlotKind;
+const stack_slot_data = @import("stack_slot_data.zig");
+const StackSlotData = stack_slot_data.StackSlotData;
+const StackSlotKind = stack_slot_data.StackSlotKind;
 
 /// Allocate a new stack slot.
 pub fn createStackSlot(
@@ -23,7 +24,7 @@ pub fn createStackSlot(
 
 /// Get stack slot data.
 pub fn getStackSlot(func: *const Function, slot: StackSlot) ?StackSlotData {
-    return func.stack_slots.get(slot);
+    return if (func.stack_slots.get(slot)) |data| data.* else null;
 }
 
 /// Calculate total stack frame size.
@@ -42,7 +43,7 @@ fn alignUp(value: u32, alignment: u32) u32 {
 }
 
 test "createStackSlot" {
-    const sig = try @import("signature.zig").Signature.init(testing.allocator, .fast);
+    const sig = @import("signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -55,7 +56,7 @@ test "createStackSlot" {
 }
 
 test "calculateFrameSize" {
-    const sig = try @import("signature.zig").Signature.init(testing.allocator, .fast);
+    const sig = @import("signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
     defer func.deinit();
 
@@ -73,13 +74,13 @@ test "alignUp" {
     try testing.expectEqual(@as(u32, 4), alignUp(1, 4));
     try testing.expectEqual(@as(u32, 4), alignUp(4, 4));
     try testing.expectEqual(@as(u32, 8), alignUp(5, 4));
-    try testing.expectEqual(@as(u32, 8), alignUp(0, 8));
+    try testing.expectEqual(@as(u32, 0), alignUp(0, 8));
     try testing.expectEqual(@as(u32, 8), alignUp(1, 8));
     try testing.expectEqual(@as(u32, 16), alignUp(9, 8));
 }
 
 test "Stack slots with various sizes and alignments" {
-    const sig = try @import("signature.zig").Signature.init(testing.allocator, .fast);
+    const sig = @import("signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test_various_sizes", sig);
     defer func.deinit();
 
@@ -113,7 +114,7 @@ test "Stack slots with various sizes and alignments" {
 }
 
 test "Stack slot frame size with alignment padding" {
-    const sig = try @import("signature.zig").Signature.init(testing.allocator, .fast);
+    const sig = @import("signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test_alignment_padding", sig);
     defer func.deinit();
 
@@ -137,7 +138,7 @@ test "Stack slot frame size with alignment padding" {
 }
 
 test "Multiple stack slots of same size" {
-    const sig = try @import("signature.zig").Signature.init(testing.allocator, .fast);
+    const sig = @import("signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test_same_size", sig);
     defer func.deinit();
 
@@ -152,7 +153,7 @@ test "Multiple stack slots of same size" {
 }
 
 test "Dynamic stack slot" {
-    const sig = try @import("signature.zig").Signature.init(testing.allocator, .fast);
+    const sig = @import("signature.zig").Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test_dynamic", sig);
     defer func.deinit();
 
