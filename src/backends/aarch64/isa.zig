@@ -247,7 +247,7 @@ pub const Aarch64ISA = struct {
     /// Compile a function to machine code using this ISA.
     pub fn compileFunction(
         ctx: compile_mod.CompileCtx,
-        func: *const lower_mod.Function,
+        func: *lower_mod.Function,
     ) !compile_mod.CompiledCode {
         return compileWithRegalloc2(ctx, func);
     }
@@ -255,7 +255,7 @@ pub const Aarch64ISA = struct {
     /// Compile function using regalloc2 for register allocation.
     fn compileWithRegalloc2(
         ctx: compile_mod.CompileCtx,
-        func: *const lower_mod.Function,
+        func: *lower_mod.Function,
     ) !compile_mod.CompiledCode {
         const RegAllocBridge = @import("regalloc_bridge.zig").RegAllocBridge;
         const buffer_mod = @import("../../machinst/buffer.zig");
@@ -1462,7 +1462,7 @@ pub const Aarch64ISA = struct {
     /// Compile function using linear scan register allocation.
     fn compileWithLinearScan(
         ctx: compile_mod.CompileCtx,
-        func: *const lower_mod.Function,
+        func: *lower_mod.Function,
     ) !compile_mod.CompiledCode {
         const linear_scan_mod = @import("../../regalloc/linear_scan.zig");
         const buffer_mod = @import("../../machinst/buffer.zig");

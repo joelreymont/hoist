@@ -102,7 +102,7 @@ pub const CompileCtx = struct {
 pub fn compile(
     comptime MachInst: type,
     ctx: CompileCtx,
-    func: *const lower_mod.Function,
+    func: *lower_mod.Function,
     backend: lower_mod.LowerBackend(MachInst),
 ) !CompiledCode {
     // Phase 1: Lower IR to VCode

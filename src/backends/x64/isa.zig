@@ -47,7 +47,7 @@ pub const X64ISA = struct {
     /// Compile a function to machine code using this ISA.
     pub fn compileFunction(
         ctx: compile_mod.CompileCtx,
-        func: *const lower_mod.Function,
+        func: *lower_mod.Function,
     ) !compile_mod.CompiledCode {
         return compile_mod.compile(
             Inst,

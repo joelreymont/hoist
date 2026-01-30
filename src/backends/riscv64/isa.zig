@@ -46,14 +46,14 @@ pub const Riscv64ISA = struct {
     /// Compile a function to machine code using this ISA.
     pub fn compileFunction(
         ctx: compile_mod.CompileCtx,
-        func: *const lower_mod.Function,
+        func: *lower_mod.Function,
     ) !compile_mod.CompiledCode {
         return compileWithLinearScan(ctx, func);
     }
 
     fn compileWithLinearScan(
         ctx: compile_mod.CompileCtx,
-        func: *const lower_mod.Function,
+        func: *lower_mod.Function,
     ) !compile_mod.CompiledCode {
         const linear_scan_mod = @import("../../regalloc/linear_scan.zig");
         const buffer_mod = @import("../../machinst/buffer.zig");
