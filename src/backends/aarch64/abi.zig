@@ -35,26 +35,18 @@ const AbiParam = signature_mod.AbiParam;
 /// This design eliminates the need for separate exception status registers
 /// and keeps exception handling aligned with standard calling conventions.
 ///
-/// Exception Detection After try_call:
-/// ====================================
+/// Exception Handling After try_call:
+/// ==================================
 ///
-/// After a try_call instruction (which is lowered to a BL call + exception
-/// check), the following sequence is used:
+/// Hoist uses DWARF-based unwinding for exceptions (see docs/exception-handling-abi.md).
+/// A try_call is lowered to a BL only; there is **no explicit check/branch** after
+/// the call. On an exception:
 ///
-/// 1. BL instruction transfers control to the callee
-/// 2. Callee returns with X0 containing either:
-///    - Null (0): No exception occurred; X0 is the normal return value
-///    - Non-null: An exception occurred; X0 is a pointer to the exception
-/// 3. Exception check: Compare X0 against null
-/// 4. Conditional branch:
-///    - If X0 != 0: Jump to landing pad with exception pointer in X0
-///    - If X0 == 0: Continue to next instruction with normal return value
+/// 1. The runtime unwinder walks the stack using .eh_frame CFI.
+/// 2. It consults the LSDA call-site table to find the landing pad.
+/// 3. It transfers control directly to the landing pad.
 ///
-/// This approach:
-/// - Requires only one register (X0) for both return and exception
-/// - Minimizes branching overhead in normal execution (no exception case)
-/// - Aligns with AAPCS64 calling convention without extension
-/// - Preserves all AAPCS64 register guarantees
+/// On normal return, execution falls through to the normal successor.
 ///
 /// AAPCS64 Register Convention:
 /// =============================
@@ -83,7 +75,7 @@ const AbiParam = signature_mod.AbiParam;
 ///
 /// When control flow transfers to a landing pad block:
 ///
-/// 1. Control Transfer: Conditional branch to landing pad (from try_call site)
+/// 1. Control Transfer: Runtime unwinder jumps to landing pad
 /// 2. Exception Value Location: X0 contains the exception pointer
 /// 3. Register State: All callee-save registers (X19-X30, V8-V15) are preserved
 ///    from the try_call caller's context
@@ -121,9 +113,8 @@ const AbiParam = signature_mod.AbiParam;
 /// Call site (try_call to func):
 /// ```
 ///   BL func              ; Call with return/exception in X0
-///   CMP X0, #0          ; Test for exception (null vs non-null)
-///   BNE .L_landing_pad  ; If exception, jump to handler
-///   ; Normal path - X0 contains return value
+///   ; Normal path: fall through with return value in X0
+///   ; Exception path: unwinder jumps to .L_landing_pad with X0=exception
 ///   ... continue ...
 /// .L_landing_pad:
 ///   ; Exception path - X0 contains exception pointer
@@ -718,6 +709,29 @@ pub fn classifyStruct(ty: abi_mod.Type) struct { class: StructClass, elem_ty: ?a
     return .{ .class = .general, .elem_ty = null };
 }
 
+pub fn classifyStructIr(ty: Type, struct_store: *const types.StructStore) !struct { class: StructClass, elem_ty: ?Type } {
+    if (!ty.isStruct()) {
+        return .{ .class = .general, .elem_ty = null };
+    }
+
+    const fields = ty.getStructFields(struct_store) orelse return error.MissingStructFields;
+    const size = ty.structBytes(struct_store) orelse return error.MissingStructSize;
+
+    if (isHfaIr(fields)) |elem_ty| {
+        return .{ .class = .hfa, .elem_ty = elem_ty };
+    }
+
+    if (isHvaIr(fields)) |elem_ty| {
+        return .{ .class = .hva, .elem_ty = elem_ty };
+    }
+
+    if (size > 16) {
+        return .{ .class = .indirect, .elem_ty = null };
+    }
+
+    return .{ .class = .general, .elem_ty = null };
+}
+
 /// Generate struct copy instructions using LDP/STP pairs.
 /// Copies size bytes from src_reg to dst_reg using 16-byte loads/stores where possible.
 /// Returns list of instructions to emit.
@@ -727,8 +741,8 @@ pub fn generateStructCopy(
     src_reg: inst_mod.Reg,
     size: u32,
 ) !std.ArrayList(Inst) {
-    var insts = std.ArrayList(Inst).init(allocator);
-    errdefer insts.deinit();
+    var insts = std.ArrayList(Inst).empty;
+    errdefer insts.deinit(allocator);
 
     var offset: i32 = 0;
     var remaining = size;
@@ -742,19 +756,21 @@ pub fn generateStructCopy(
         const tmp2 = WritableReg.fromReg(inst_mod.Reg.gpr(17)); // X17 temp
 
         // LDP x16, x17, [src_reg, #offset]
-        try insts.append(Inst{ .ldp = .{
+        try insts.append(allocator, Inst{ .ldp = .{
             .dst1 = tmp1,
             .dst2 = tmp2,
             .base = src_reg,
-            .offset = offset,
+            .offset = @intCast(offset),
+            .size = .size64,
         } });
 
         // STP x16, x17, [dst_reg, #offset]
-        try insts.append(Inst{ .stp = .{
+        try insts.append(allocator, Inst{ .stp = .{
             .src1 = tmp1.toReg(),
             .src2 = tmp2.toReg(),
             .base = dst_reg,
-            .offset = offset,
+            .offset = @intCast(offset),
+            .size = .size64,
         } });
     }
 
@@ -762,17 +778,17 @@ pub fn generateStructCopy(
     if (remaining >= 8) {
         const tmp = WritableReg.fromReg(inst_mod.Reg.gpr(16)); // X16 temp
 
-        try insts.append(Inst{ .ldr = .{
+        try insts.append(allocator, Inst{ .ldr = .{
             .dst = tmp,
             .base = src_reg,
-            .offset = offset,
+            .offset = @intCast(offset),
             .size = .size64,
         } });
 
-        try insts.append(Inst{ .str = .{
+        try insts.append(allocator, Inst{ .str = .{
             .src = tmp.toReg(),
             .base = dst_reg,
-            .offset = offset,
+            .offset = @intCast(offset),
             .size = .size64,
         } });
 
@@ -787,18 +803,17 @@ pub fn generateStructCopy(
     }) {
         const tmp = WritableReg.fromReg(inst_mod.Reg.gpr(16)); // X16 temp
 
-        try insts.append(Inst{ .ldr = .{
+        try insts.append(allocator, Inst{ .ldrb = .{
             .dst = tmp,
             .base = src_reg,
-            .offset = offset,
-            .size = .size8,
+            .offset = @intCast(offset),
+            .size = .size32,
         } });
 
-        try insts.append(Inst{ .str = .{
+        try insts.append(allocator, Inst{ .strb = .{
             .src = tmp.toReg(),
             .base = dst_reg,
-            .offset = offset,
-            .size = .size8,
+            .offset = @intCast(offset),
         } });
     }
 
@@ -2200,6 +2215,40 @@ test "classifyStruct non-struct type" {
     const ty = abi_mod.Type.i64;
     const result = classifyStruct(ty);
     try testing.expectEqual(StructClass.general, result.class);
+    try testing.expect(result.elem_ty == null);
+}
+
+test "classifyStructIr HFA" {
+    var store = types.StructStore.init(testing.allocator);
+    defer store.deinit();
+
+    const fields = [_]types.StructField{
+        .{ .ty = Type.F32, .offset = 0 },
+        .{ .ty = Type.F32, .offset = 4 },
+    };
+    const id = try store.intern(&fields, 8);
+    const ty = Type.fromStructId(id);
+    const result = try classifyStructIr(ty, &store);
+
+    try testing.expectEqual(StructClass.hfa, result.class);
+    try testing.expect(result.elem_ty != null);
+    try testing.expect(result.elem_ty.?.eql(Type.F32));
+}
+
+test "classifyStructIr indirect" {
+    var store = types.StructStore.init(testing.allocator);
+    defer store.deinit();
+
+    const fields = [_]types.StructField{
+        .{ .ty = Type.I64, .offset = 0 },
+        .{ .ty = Type.I64, .offset = 8 },
+        .{ .ty = Type.I64, .offset = 16 },
+    };
+    const id = try store.intern(&fields, 24);
+    const ty = Type.fromStructId(id);
+    const result = try classifyStructIr(ty, &store);
+
+    try testing.expectEqual(StructClass.indirect, result.class);
     try testing.expect(result.elem_ty == null);
 }
 

@@ -311,10 +311,12 @@ pub fn aarch64_cmp_imm(ty: hoist.types.Type, x: lower_mod.Value, imm: i64, cc: h
     recordRule("aarch64_cmp_imm");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
+    if (imm < 0) return error.InvalidImmediate;
+    const imm12 = Imm12.maybeFromU64(@intCast(imm)) orelse return error.InvalidImmediate;
     _ = cc; // Condition code stored separately for branch
     return Inst{ .cmp_imm = .{
         .src = reg_x,
-        .imm = @intCast(imm),
+        .imm = imm12,
         .size = size,
     } };
 }
@@ -370,9 +372,12 @@ pub fn aarch64_cmn_imm(ty: hoist.types.Type, x: lower_mod.Value, imm: i64, ctx: 
     recordRule("aarch64_cmn_imm");
     const size = typeToOperandSize(ty);
     const reg_x = try getValueReg(ctx, x);
-    return Inst{ .cmn_imm = .{
+    if (imm < 0 or imm > 4095) return error.InvalidImmediate;
+    const imm_u16: u16 = @intCast(imm);
+    return Inst{ .adds_imm = .{
+        .dst = lower_mod.WritableReg.fromReg(Reg.gpr(31)),
         .src = reg_x,
-        .imm = @intCast(imm),
+        .imm = imm_u16,
         .size = size,
     } };
 }
@@ -439,7 +444,6 @@ pub fn aarch64_tst_imm(ty: hoist.types.Type, x: lower_mod.Value, imm: u64, ctx: 
     return Inst{ .tst_imm = .{
         .src = reg_x,
         .imm = imm_logic,
-        .size = size,
     } };
 }
 
@@ -808,6 +812,35 @@ fn typeToRegClass(ty: hoist.types.Type) hoist.machinst.RegClass {
     }
 }
 
+fn structFields(ctx: *lower_mod.LowerCtx(Inst), ty: Type) ![]const types.StructField {
+    const fields = ty.getStructFields(&ctx.func.struct_store) orelse return error.MissingStructFields;
+    return fields;
+}
+
+fn tySize(ctx: *lower_mod.LowerCtx(Inst), ty: Type) !u32 {
+    if (ty.isStruct()) {
+        return ty.structBytes(&ctx.func.struct_store) orelse return error.MissingStructSize;
+    }
+    return ty.bytes();
+}
+
+fn tyAlign(ctx: *lower_mod.LowerCtx(Inst), ty: Type) !u32 {
+    if (ty.isStruct()) {
+        const fields = try structFields(ctx, ty);
+        if (fields.len == 0) return 1;
+        var max_align: u32 = 1;
+        for (fields) |field| {
+            const field_align = try tyAlign(ctx, field.ty);
+            if (field_align > max_align) max_align = field_align;
+        }
+        return max_align;
+    }
+    if (ty.isDynamicVector()) return 16;
+    const size = ty.bytes();
+    if (size == 0) return 1;
+    return if (size > 16) 16 else size;
+}
+
 /// Helper: Get register for IR value.
 fn getValueReg(ctx: *lower_mod.LowerCtx(Inst), value: lower_mod.Value) !lower_mod.Reg {
     const vreg = try ctx.getValueReg(value, .int);
@@ -929,8 +962,10 @@ test "imm12_from_u64" {
     try testing.expectEqual(@as(u16, 1), imm2.bits);
     try testing.expectEqual(true, imm2.shift12);
 
-    // Invalid - too large
-    try testing.expectEqual(@as(?Imm12, null), imm12_from_u64(0x10000));
+    // Valid shifted immediate
+    const imm3 = imm12_from_u64(0x10000).?;
+    try testing.expectEqual(@as(u16, 16), imm3.bits);
+    try testing.expectEqual(true, imm3.shift12);
 }
 
 
@@ -970,7 +1005,7 @@ test "intccToCondCode: unsigned conditions" {
 test "aarch64_cmp_rr: creates compare instruction" {
     const testing = std.testing;
 
-    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, &.{}, &.{}, .system_v));
+    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, .system_v));
     defer func.deinit();
 
     var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
@@ -991,7 +1026,7 @@ test "aarch64_cmp_rr: creates compare instruction" {
 test "aarch64_cmp_imm: creates compare immediate instruction" {
     const testing = std.testing;
 
-    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, &.{}, &.{}, .system_v));
+    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, .system_v));
     defer func.deinit();
 
     var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
@@ -1006,7 +1041,7 @@ test "aarch64_cmp_imm: creates compare immediate instruction" {
 
     try testing.expectEqual(Inst.cmp_imm, @as(std.meta.Tag(Inst), inst));
     try testing.expectEqual(hoist.aarch64_inst.OperandSize.size32, inst.cmp_imm.size);
-    try testing.expectEqual(@as(u16, 42), inst.cmp_imm.imm);
+    try testing.expectEqual(@as(u64, 42), inst.cmp_imm.imm.toU64());
 }
 
 test "aarch64_fcvtzs_32_trap emits traps" {
@@ -1015,7 +1050,7 @@ test "aarch64_fcvtzs_32_trap emits traps" {
     var func = try lower_mod.Function.init(
         testing.allocator,
         "test",
-        signature_mod.Signature.init(testing.allocator, &.{}, &.{}, .system_v),
+        signature_mod.Signature.init(testing.allocator, .system_v),
     );
     defer func.deinit();
 
@@ -1052,7 +1087,7 @@ test "aarch64_fcvtzs_32_trap emits traps" {
 test "aarch64_cmn_rr: creates compare negative instruction" {
     const testing = std.testing;
 
-    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, &.{}, &.{}, .system_v));
+    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, .system_v));
     defer func.deinit();
 
     var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
@@ -1073,7 +1108,7 @@ test "aarch64_cmn_rr: creates compare negative instruction" {
 test "aarch64_cmn_imm: creates compare negative immediate instruction" {
     const testing = std.testing;
 
-    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, &.{}, &.{}, .system_v));
+    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, .system_v));
     defer func.deinit();
 
     var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
@@ -1086,15 +1121,15 @@ test "aarch64_cmn_imm: creates compare negative immediate instruction" {
 
     const inst = try aarch64_cmn_imm(hoist.types.Type.I32, v1, 100, &ctx);
 
-    try testing.expectEqual(Inst.cmn_imm, @as(std.meta.Tag(Inst), inst));
-    try testing.expectEqual(hoist.aarch64_inst.OperandSize.size32, inst.cmn_imm.size);
-    try testing.expectEqual(@as(u16, 100), inst.cmn_imm.imm);
+    try testing.expectEqual(Inst.adds_imm, @as(std.meta.Tag(Inst), inst));
+    try testing.expectEqual(hoist.aarch64_inst.OperandSize.size32, inst.adds_imm.size);
+    try testing.expectEqual(@as(u16, 100), inst.adds_imm.imm);
 }
 
 test "aarch64_tst_rr: creates test bits instruction" {
     const testing = std.testing;
 
-    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, &.{}, &.{}, .system_v));
+    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, .system_v));
     defer func.deinit();
 
     var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
@@ -1115,7 +1150,7 @@ test "aarch64_tst_rr: creates test bits instruction" {
 test "aarch64_tst_imm: creates test bits immediate instruction" {
     const testing = std.testing;
 
-    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, &.{}, &.{}, .system_v));
+    var func = try lower_mod.Function.init(testing.allocator, "test", hoist.function.signature.Signature.init(testing.allocator, .system_v));
     defer func.deinit();
 
     var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
@@ -1979,9 +2014,10 @@ pub fn min_fp_value(signed: bool, in_bits: u8, out_bits: u8, ctx: *lower_mod.Low
 
         const bits: u32 = @bitCast(min_f32);
         // Load constant into integer register, then move to FPU
-        const int_reg = try ctx.getValueReg(lower_mod.Value.new(0), .int); // Temp allocation
+        const int_vreg = try ctx.getValueReg(lower_mod.Value.new(0), .int); // Temp allocation
+        const int_reg = Reg.fromVReg(int_vreg);
         const load_inst = Inst{ .mov_imm = .{
-            .dst = lower_mod.WritableVReg.fromReg(int_reg),
+            .dst = lower_mod.WritableVReg.fromVReg(int_vreg),
             .imm = @intCast(bits),
             .size = .size32,
         } };
@@ -2010,9 +2046,10 @@ pub fn min_fp_value(signed: bool, in_bits: u8, out_bits: u8, ctx: *lower_mod.Low
 
         const bits: u64 = @bitCast(min_f64);
         // Load constant into integer register, then move to FPU
-        const int_reg = try ctx.getValueReg(lower_mod.Value.new(0), .int);
+        const int_vreg = try ctx.getValueReg(lower_mod.Value.new(0), .int);
+        const int_reg = Reg.fromVReg(int_vreg);
         const load_inst = Inst{ .mov_imm = .{
-            .dst = lower_mod.WritableVReg.fromReg(int_reg),
+            .dst = lower_mod.WritableVReg.fromVReg(int_vreg),
             .imm = @intCast(bits),
             .size = .size64,
         } };
@@ -2172,9 +2209,10 @@ pub fn max_fp_value(signed: bool, in_bits: u8, out_bits: u8, ctx: *lower_mod.Low
         };
 
         const bits: u32 = @bitCast(max_f32);
-        const int_reg = try ctx.getValueReg(lower_mod.Value.new(0), .int);
+        const int_vreg = try ctx.getValueReg(lower_mod.Value.new(0), .int);
+        const int_reg = Reg.fromVReg(int_vreg);
         const load_inst = Inst{ .mov_imm = .{
-            .dst = lower_mod.WritableVReg.fromReg(int_reg),
+            .dst = lower_mod.WritableVReg.fromVReg(int_vreg),
             .imm = @intCast(bits),
             .size = .size32,
         } };
@@ -2205,9 +2243,10 @@ pub fn max_fp_value(signed: bool, in_bits: u8, out_bits: u8, ctx: *lower_mod.Low
         };
 
         const bits: u64 = @bitCast(max_f64);
-        const int_reg = try ctx.getValueReg(lower_mod.Value.new(0), .int);
+        const int_vreg = try ctx.getValueReg(lower_mod.Value.new(0), .int);
+        const int_reg = Reg.fromVReg(int_vreg);
         const load_inst = Inst{ .mov_imm = .{
-            .dst = lower_mod.WritableVReg.fromReg(int_reg),
+            .dst = lower_mod.WritableVReg.fromVReg(int_vreg),
             .imm = @intCast(bits),
             .size = .size64,
         } };
@@ -2889,9 +2928,9 @@ pub fn aarch64_stack_addr(stack_slot: StackSlot, offset: i32, ctx: *lower_mod.Lo
         return Inst{
             .add_imm = .{
                 .dst = dst,
-                .rn = Reg.gpr(31), // SP
+                .src = Reg.gpr(31), // SP
                 .imm = @intCast(total_offset),
-                .is_64 = true,
+                .size = .size64,
             },
         };
     } else {
@@ -2900,17 +2939,28 @@ pub fn aarch64_stack_addr(stack_slot: StackSlot, offset: i32, ctx: *lower_mod.Lo
         try ctx.emit(Inst{ .mov_imm = .{
             .dst = offset_reg,
             .imm = @bitCast(@as(i64, total_offset)),
-            .is_64 = true,
+            .size = .size64,
         } });
         return Inst{
             .add_rr = .{
                 .dst = dst,
-                .rn = Reg.gpr(31), // SP
-                .rm = offset_reg.toReg(),
-                .is_64 = true,
+                .src1 = Reg.gpr(31), // SP
+                .src2 = offset_reg.toReg(),
+                .size = .size64,
             },
         };
     }
+}
+
+fn stackSlotAddrReg(stack_slot: StackSlot, ctx: *lower_mod.LowerCtx(Inst)) !Reg {
+    const addr_inst = try aarch64_stack_addr(stack_slot, 0, ctx);
+    const dst = switch (addr_inst) {
+        .add_imm => |data| data.dst,
+        .add_rr => |data| data.dst,
+        else => return error.UnexpectedStackAddrInst,
+    };
+    try ctx.emit(addr_inst);
+    return dst.toReg();
 }
 
 /// Symbol address loading (ISLE constructors)
@@ -3055,22 +3105,22 @@ fn tcAddr(base: Reg, offset: u32, ctx: *lower_mod.LowerCtx(Inst)) !Reg {
     if (offset <= 4095) {
         try ctx.emit(Inst{ .add_imm = .{
             .dst = dst,
-            .rn = base,
+            .src = base,
             .imm = @intCast(offset),
-            .is_64 = true,
+            .size = .size64,
         } });
     } else {
         const off = lower_mod.WritableReg.allocReg(.int, ctx);
         try ctx.emit(Inst{ .mov_imm = .{
             .dst = off,
             .imm = offset,
-            .is_64 = true,
+            .size = .size64,
         } });
         try ctx.emit(Inst{ .add_rr = .{
             .dst = dst,
-            .rn = base,
-            .rm = off.toReg(),
-            .is_64 = true,
+            .src1 = base,
+            .src2 = off.toReg(),
+            .size = .size64,
         } });
     }
     return dst.toReg();
@@ -3078,6 +3128,16 @@ fn tcAddr(base: Reg, offset: u32, ctx: *lower_mod.LowerCtx(Inst)) !Reg {
 
 fn tcOutSp(frame_size: u32, ctx: *lower_mod.LowerCtx(Inst)) !Reg {
     return tcAddr(Reg.gpr(31), frame_size, ctx);
+}
+
+fn copyStructToStack(base: Reg, offset: u32, src: Reg, size: u32, ctx: *lower_mod.LowerCtx(Inst)) !void {
+    const dst = try tcAddr(base, offset, ctx);
+    var copy_insts = try abi_mod.generateStructCopy(ctx.getAllocator(), dst, src, size);
+    defer copy_insts.deinit(ctx.getAllocator());
+
+    for (copy_insts.items) |inst| {
+        try ctx.emit(inst);
+    }
 }
 
 fn tcStoreArg(base: Reg, offset: u32, src: Reg, ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !void {
@@ -3092,7 +3152,7 @@ fn tcStoreArg(base: Reg, offset: u32, src: Reg, ty: types.Type, ctx: *lower_mod.
         const max_off: u32 = 0xfff << @intCast(scale);
         const align_mask: u32 = (@as(u32, 1) << @intCast(scale)) - 1;
         if (offset <= max_off and (offset & align_mask) == 0) {
-            try ctx.emit(Inst{ .str_fp = .{
+            try ctx.emit(Inst{ .vstr = .{
                 .src = src,
                 .base = base,
                 .offset = @intCast(offset),
@@ -3100,7 +3160,7 @@ fn tcStoreArg(base: Reg, offset: u32, src: Reg, ty: types.Type, ctx: *lower_mod.
             } });
         } else {
             const addr = try tcAddr(base, offset, ctx);
-            try ctx.emit(Inst{ .str_fp = .{
+            try ctx.emit(Inst{ .vstr = .{
                 .src = src,
                 .base = addr,
                 .offset = 0,
@@ -3171,16 +3231,17 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
     // First pass: Marshal register arguments
     // These are safe because they don't conflict with frame deallocation
     for (args) |arg_value| {
-        const arg_type = ctx.func.dfg.valueType(arg_value);
+        const arg_type = ctx.func.dfg.valueType(arg_value) orelse return error.MissingValueType;
         // Classify struct arguments for HFA/HVA handling
         if (arg_type.isStruct()) {
-            const classification = abi_mod.classifyStruct(arg_type);
+            const struct_fields = try structFields(ctx, arg_type);
+            const struct_size = try tySize(ctx, arg_type);
+            const classification = try abi_mod.classifyStructIr(arg_type, &ctx.func.struct_store);
 
             if (classification.class == .hfa) {
                 // HFA: 2-4 same-type FP fields passed in V0-V3
                 const elem_ty = classification.elem_ty.?;
-                const fields = arg_type.@"struct";
-                const field_count = fields.len;
+                const field_count = struct_fields.len;
 
                 if (fp_count + field_count <= abi_spec.float_arg_regs.len) {
                     // Load struct address
@@ -3188,23 +3249,23 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
 
                     // Extract each field and move to FP register
                     for (0..field_count) |field_idx| {
-                        const offset: i32 = @intCast(field_idx * elem_ty.bytes());
+                        const offset: i16 = @intCast(struct_fields[field_idx].offset);
                         const field_reg = lower_mod.WritableReg.allocReg(.float, ctx);
 
                         // Load field from struct
-                        try ctx.emit(Inst{ .ldr_fp = .{
+                        try ctx.emit(Inst{ .vldr = .{
                             .dst = field_reg,
-                            .base = struct_ptr.toReg(),
+                            .base = Reg.fromVReg(struct_ptr),
                             .offset = offset,
                             .size = typeToFpuOperandSize(elem_ty),
                         } });
 
                         // Move to ABI FP register
                         const abi_preg = abi_spec.float_arg_regs[fp_count + field_idx];
-                        const abi_reg = Reg.fpr(abi_preg.hw_enc);
+                        const abi_reg = Reg.fpr(abi_preg.hwEnc());
 
                         if (!field_reg.toReg().eq(abi_reg)) {
-                            try ctx.emit(Inst{ .fmov_rr = .{
+                            try ctx.emit(Inst{ .fmov = .{
                                 .dst = lower_mod.WritableReg.fromReg(abi_reg),
                                 .src = field_reg.toReg(),
                                 .size = typeToFpuOperandSize(elem_ty),
@@ -3216,12 +3277,11 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
                     continue;
                 } else {
                     // Stack HFA: fields spill to stack when FP regs exhausted
-                    stack_offset += arg_type.bytes();
+                    stack_offset += struct_size;
                     continue;
                 }
             } else if (classification.class == .general) {
                 // Non-HFA structs ≤16 bytes: load as 1-2 i64 values in X0-X7
-                const struct_size = arg_type.bytes();
                 const struct_ptr = try ctx.getValueReg(arg_value, .int);
 
                 if (struct_size <= 8) {
@@ -3230,13 +3290,13 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
                         const val_reg = lower_mod.WritableReg.allocReg(.int, ctx);
                         try ctx.emit(Inst{ .ldr = .{
                             .dst = val_reg,
-                            .base = struct_ptr.toReg(),
+                            .base = Reg.fromVReg(struct_ptr),
                             .offset = 0,
                             .size = .size64,
                         } });
 
                         const abi_preg = abi_spec.int_arg_regs[int_count];
-                        const abi_reg = Reg.gpr(abi_preg.hw_enc);
+                        const abi_reg = Reg.gpr(abi_preg.hwEnc());
 
                         if (!val_reg.toReg().eq(abi_reg)) {
                             try ctx.emit(Inst{ .mov_rr = .{
@@ -3256,13 +3316,13 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
                         const val1_reg = lower_mod.WritableReg.allocReg(.int, ctx);
                         try ctx.emit(Inst{ .ldr = .{
                             .dst = val1_reg,
-                            .base = struct_ptr.toReg(),
+                            .base = Reg.fromVReg(struct_ptr),
                             .offset = 0,
                             .size = .size64,
                         } });
 
                         const abi_preg1 = abi_spec.int_arg_regs[int_count];
-                        const abi_reg1 = Reg.gpr(abi_preg1.hw_enc);
+                        const abi_reg1 = Reg.gpr(abi_preg1.hwEnc());
 
                         if (!val1_reg.toReg().eq(abi_reg1)) {
                             try ctx.emit(Inst{ .mov_rr = .{
@@ -3276,13 +3336,13 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
                         const val2_reg = lower_mod.WritableReg.allocReg(.int, ctx);
                         try ctx.emit(Inst{ .ldr = .{
                             .dst = val2_reg,
-                            .base = struct_ptr.toReg(),
+                            .base = Reg.fromVReg(struct_ptr),
                             .offset = 8,
                             .size = .size64,
                         } });
 
                         const abi_preg2 = abi_spec.int_arg_regs[int_count + 1];
-                        const abi_reg2 = Reg.gpr(abi_preg2.hw_enc);
+                        const abi_reg2 = Reg.gpr(abi_preg2.hwEnc());
 
                         if (!val2_reg.toReg().eq(abi_reg2)) {
                             try ctx.emit(Inst{ .mov_rr = .{
@@ -3296,23 +3356,24 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
                         continue;
                     }
                 }
+                stack_offset += struct_size;
+                continue;
             } else if (classification.class == .indirect) {
                 // Structs >16 bytes: allocate stack space, copy struct, pass pointer
-                const struct_size = arg_type.bytes();
                 const struct_ptr = try ctx.getValueReg(arg_value, .int);
 
                 // Allocate stack slot for struct copy
-                const stack_slot = try ctx.allocStackSlot(struct_size, arg_type.minAlignBytes());
-                const stack_slot_addr = ctx.stackSlotAddr(stack_slot);
+                const stack_slot = try ctx.allocStackSlot(struct_size, try tyAlign(ctx, arg_type));
+                const stack_slot_addr = try stackSlotAddrReg(stack_slot, ctx);
 
                 // Generate struct copy instructions using generateStructCopy
-                const copy_insts = try abi_mod.generateStructCopy(
-                    ctx.allocator(),
+                var copy_insts = try abi_mod.generateStructCopy(
+                    ctx.getAllocator(),
                     stack_slot_addr,
-                    struct_ptr.toReg(),
+                    Reg.fromVReg(struct_ptr),
                     struct_size,
                 );
-                defer copy_insts.deinit();
+                defer copy_insts.deinit(ctx.getAllocator());
 
                 // Emit copy instructions
                 for (copy_insts.items) |inst| {
@@ -3322,7 +3383,7 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
                 // Pass pointer to struct copy in int register
                 if (int_count < abi_spec.int_arg_regs.len) {
                     const abi_preg = abi_spec.int_arg_regs[int_count];
-                    const abi_reg = Reg.gpr(abi_preg.hw_enc);
+                    const abi_reg = Reg.gpr(abi_preg.hwEnc());
 
                     if (!stack_slot_addr.eq(abi_reg)) {
                         try ctx.emit(Inst{ .mov_rr = .{
@@ -3335,13 +3396,14 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
                     int_count += 1;
                     continue;
                 }
+                stack_offset += 8;
+                continue;
             }
 
             if (classification.class == .hva) {
                 // HVA: 2-4 same-type vector fields passed in V0-V3
                 const elem_ty = classification.elem_ty.?;
-                const fields = arg_type.@"struct";
-                const field_count = fields.len;
+                const field_count = struct_fields.len;
 
                 if (fp_count + field_count <= abi_spec.float_arg_regs.len) {
                     // Load struct address
@@ -3349,26 +3411,27 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
 
                     // Extract each vector field and move to FP register
                     for (0..field_count) |field_idx| {
-                        const offset: i32 = @intCast(field_idx * elem_ty.bytes());
+                        const offset: i16 = @intCast(struct_fields[field_idx].offset);
                         const field_reg = lower_mod.WritableReg.allocReg(.float, ctx);
 
                         // Load vector field from struct
                         try ctx.emit(Inst{ .vldr = .{
                             .dst = field_reg,
-                            .base = struct_ptr.toReg(),
+                            .base = Reg.fromVReg(struct_ptr),
                             .offset = offset,
-                            .size = vectorSizeFromType(elem_ty),
+                            .size = typeToFpuOperandSize(elem_ty),
                         } });
 
                         // Move to ABI FP register
                         const abi_preg = abi_spec.float_arg_regs[fp_count + field_idx];
-                        const abi_reg = Reg.fpr(abi_preg.hw_enc);
+                        const abi_reg = Reg.fpr(abi_preg.hwEnc());
 
                         if (!field_reg.toReg().eq(abi_reg)) {
-                            try ctx.emit(Inst{ .vmov = .{
+                            try ctx.emit(Inst{ .vec_orr = .{
                                 .dst = lower_mod.WritableReg.fromReg(abi_reg),
-                                .src = field_reg.toReg(),
-                                .size = vectorSizeFromType(elem_ty),
+                                .src1 = field_reg.toReg(),
+                                .src2 = field_reg.toReg(),
+                                .size = typeToFpuOperandSize(elem_ty),
                             } });
                         }
                     }
@@ -3377,7 +3440,7 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
                     continue;
                 } else {
                     // Stack HVA handling
-                    stack_offset += arg_type.bytes();
+                    stack_offset += struct_size;
                     continue;
                 }
             }
@@ -3390,7 +3453,7 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
                 const arg_reg = try ctx.getValueReg(arg_value, .float);
                 const abi_reg = Reg.fpr(@intCast(fp_count));
                 if (!arg_reg.toReg().eq(abi_reg)) {
-                    try ctx.emit(Inst{ .fmov_rr = .{
+                    try ctx.emit(Inst{ .fmov = .{
                         .dst = lower_mod.WritableReg.fromReg(abi_reg),
                         .src = arg_reg.toReg(),
                         .size = typeToFpuOperandSize(arg_type),
@@ -3478,7 +3541,7 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
     const lr = Reg.gpr(30);
 
     // 1. Restore callee-save registers in reverse order
-    var restore_offset: i32 = 16;
+    var restore_offset: i16 = 16;
     var i: usize = 0;
     while (i < abi_callee.clobbered_callee_saves.items.len) : (i += 2) {
         const reg1 = Reg.fromPReg(abi_callee.clobbered_callee_saves.items[i]);
@@ -3529,9 +3592,9 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
         // Deallocate FP/LR space
         try ctx.emit(Inst{ .add_imm = .{
             .dst = lower_mod.WritableReg.fromReg(sp),
-            .rn = sp,
+            .src = sp,
             .imm = 16,
-            .is_64 = true,
+            .size = .size64,
         } });
 
         // Deallocate remaining frame
@@ -3540,9 +3603,9 @@ pub fn aarch64_return_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.
             const chunk = @min(remaining, 4095);
             try ctx.emit(Inst{ .add_imm = .{
                 .dst = lower_mod.WritableReg.fromReg(sp),
-                .rn = sp,
+                .src = sp,
                 .imm = @intCast(chunk),
-                .is_64 = true,
+                .size = .size64,
             } });
             remaining -= chunk;
         }
@@ -3595,9 +3658,9 @@ pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args:
             if (fp_count < abi_spec.float_arg_regs.len) {
                 const arg_reg = try ctx.getValueReg(arg_value, .float);
                 const abi_preg = abi_spec.float_arg_regs[fp_count];
-                const abi_reg = Reg.fpr(abi_preg.hw_enc);
+                const abi_reg = Reg.fpr(abi_preg.hwEnc());
                 if (!arg_reg.toReg().eq(abi_reg)) {
-                    try ctx.emit(Inst{ .fmov_rr = .{
+                    try ctx.emit(Inst{ .fmov = .{
                         .dst = lower_mod.WritableReg.fromReg(abi_reg),
                         .src = arg_reg.toReg(),
                         .size = typeToFpuOperandSize(arg_type),
@@ -3611,7 +3674,7 @@ pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args:
             if (int_count < abi_spec.int_arg_regs.len) {
                 const arg_reg = try ctx.getValueReg(arg_value, .int);
                 const abi_preg = abi_spec.int_arg_regs[int_count];
-                const abi_reg = Reg.gpr(abi_preg.hw_enc);
+                const abi_reg = Reg.gpr(abi_preg.hwEnc());
                 if (!arg_reg.toReg().eq(abi_reg)) {
                     try ctx.emit(Inst{ .mov_rr = .{
                         .dst = lower_mod.WritableReg.fromReg(abi_reg),
@@ -3671,7 +3734,7 @@ pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args:
     const lr = Reg.gpr(30);
 
     // 1. Restore callee-save registers in reverse order
-    var offset: i32 = 16;
+    var offset: i16 = 16;
     var i: usize = 0;
     while (i < abi_callee.clobbered_callee_saves.items.len) : (i += 2) {
         const reg1 = Reg.fromPReg(abi_callee.clobbered_callee_saves.items[i]);
@@ -3722,9 +3785,9 @@ pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args:
         // Deallocate FP/LR space
         try ctx.emit(Inst{ .add_imm = .{
             .dst = lower_mod.WritableReg.fromReg(sp),
-            .rn = sp,
+            .src = sp,
             .imm = 16,
-            .is_64 = true,
+            .size = .size64,
         } });
 
         // Deallocate remaining frame
@@ -3733,9 +3796,9 @@ pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args:
             const chunk = @min(remaining, 4095);
             try ctx.emit(Inst{ .add_imm = .{
                 .dst = lower_mod.WritableReg.fromReg(sp),
-                .rn = sp,
+                .src = sp,
                 .imm = @intCast(chunk),
-                .is_64 = true,
+                .size = .size64,
             } });
             remaining -= chunk;
         }
@@ -3850,13 +3913,16 @@ pub fn aarch64_vhigh_bits(vec: lower_mod.Value, ty: types.Type, ctx: *lower_mod.
     } };
 }
 
-fn vectorSizeFromType(ty: types.Type) emit.VectorSize {
+fn vectorSizeFromType(ty: types.Type) hoist.aarch64_inst.VecElemSize {
     return switch (ty) {
-        .I8X16 => .Size8x16,
-        .I16X8 => .Size16x8,
-        .I32X4 => .Size32x4,
-        .I64X2 => .Size64x2,
-        else => .Size8x16, // Default
+        .I8X8 => .size8x8,
+        .I8X16 => .size8x16,
+        .I16X4 => .size16x4,
+        .I16X8 => .size16x8,
+        .I32X2 => .size32x2,
+        .I32X4 => .size32x4,
+        .I64X2 => .size64x2,
+        else => .size8x16, // Default
     };
 }
 
@@ -3887,10 +3953,10 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
         // Check fixed argument types match
         for (0..expected) |i| {
             const arg_value = args[i];
-            const arg_type = ctx.func.dfg.valueType(arg_value);
+            const arg_type = ctx.func.dfg.valueType(arg_value) orelse return error.MissingValueType;
             const param_type = s.params.items[i].value_type;
-            if (!arg_type.eq(param_type)) {
-                std.log.err("Call argument {} type mismatch: got {}, expected {}", .{ i, arg_type, param_type });
+            if (!arg_type.eql(param_type)) {
+                std.log.err("Call argument {} type mismatch: got {f}, expected {f}", .{ i, arg_type, param_type });
                 return error.SignatureArgumentTypeMismatch;
             }
         }
@@ -3899,7 +3965,7 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
     const abi_spec = abi_mod.abiSpecForCallConv(call_conv);
 
     // Check if callee uses indirect return (sret) and pass pointer in X8
-    const needs_sret = if (sig) |s| abi_mod.needsStructReturnPointer(s.returns.items, null) else false;
+    const needs_sret = if (sig) |s| abi_mod.needsStructReturnPointer(s.returns.items, &ctx.func.struct_store) else false;
 
     var sret_param_index: ?usize = null;
     if (needs_sret) {
@@ -3920,19 +3986,19 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
     var stack_offset: u32 = 0;
 
     for (args, 0..) |arg_value, arg_idx| {
-        const arg_type = ctx.func.dfg.valueType(arg_value);
+        const arg_type = ctx.func.dfg.valueType(arg_value) orelse return error.MissingValueType;
 
         // Handle sret parameter specially - goes in X8, not X0
         if (sret_param_index) |sret_idx| {
             if (arg_idx == sret_idx) {
-                const sret_ptr_reg = try ctx.getValueReg(arg_value, .int);
+                const sret_ptr_reg = Reg.fromVReg(try ctx.getValueReg(arg_value, .int));
                 const x8 = Reg.gpr(8);
 
                 // Move sret pointer to X8
-                if (!sret_ptr_reg.toReg().eq(x8)) {
+                if (!sret_ptr_reg.eq(x8)) {
                     try ctx.emit(Inst{ .mov_rr = .{
                         .dst = lower_mod.WritableReg.fromReg(x8),
-                        .src = sret_ptr_reg.toReg(),
+                        .src = sret_ptr_reg,
                         .size = .size64,
                     } });
                 }
@@ -3944,13 +4010,14 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
 
         // Classify struct arguments for HFA/HVA handling
         if (arg_type.isStruct()) {
-            const classification = abi_mod.classifyStruct(arg_type);
+            const struct_fields = try structFields(ctx, arg_type);
+            const struct_size = try tySize(ctx, arg_type);
+            const classification = try abi_mod.classifyStructIr(arg_type, &ctx.func.struct_store);
 
             if (classification.class == .hfa) {
                 // HFA: 2-4 same-type FP fields passed in V0-V3
                 const elem_ty = classification.elem_ty.?;
-                const fields = arg_type.@"struct";
-                const field_count = fields.len;
+                const field_count = struct_fields.len;
 
                 if (fp_count + field_count <= abi_spec.float_arg_regs.len) {
                     // Load struct address
@@ -3958,23 +4025,23 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
 
                     // Extract each field and move to FP register
                     for (0..field_count) |field_idx| {
-                        const offset: i32 = @intCast(field_idx * elem_ty.bytes());
+                        const offset: i16 = @intCast(struct_fields[field_idx].offset);
                         const field_reg = lower_mod.WritableReg.allocReg(.float, ctx);
 
                         // Load field from struct
-                        try ctx.emit(Inst{ .ldr_fp = .{
+                        try ctx.emit(Inst{ .vldr = .{
                             .dst = field_reg,
-                            .base = struct_ptr.toReg(),
+                            .base = Reg.fromVReg(struct_ptr),
                             .offset = offset,
                             .size = typeToFpuOperandSize(elem_ty),
                         } });
 
                         // Move to ABI FP register
                         const abi_preg = abi_spec.float_arg_regs[fp_count + field_idx];
-                        const abi_reg = Reg.fpr(abi_preg.hw_enc);
+                        const abi_reg = Reg.fpr(abi_preg.hwEnc());
 
                         if (!field_reg.toReg().eq(abi_reg)) {
-                            try ctx.emit(Inst{ .fmov_rr = .{
+                            try ctx.emit(Inst{ .fmov = .{
                                 .dst = lower_mod.WritableReg.fromReg(abi_reg),
                                 .src = field_reg.toReg(),
                                 .size = typeToFpuOperandSize(elem_ty),
@@ -3986,12 +4053,13 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                     continue;
                 } else {
                     // Stack HFA: fields spill to stack when FP regs exhausted
-                    stack_offset += arg_type.bytes();
+                    const struct_ptr = try ctx.getValueReg(arg_value, .int);
+                    try copyStructToStack(Reg.gpr(31), stack_offset, Reg.fromVReg(struct_ptr), struct_size, ctx);
+                    stack_offset += struct_size;
                     continue;
                 }
             } else if (classification.class == .general) {
                 // Non-HFA structs ≤16 bytes: load as 1-2 i64 values in X0-X7
-                const struct_size = arg_type.bytes();
                 const struct_ptr = try ctx.getValueReg(arg_value, .int);
 
                 if (struct_size <= 8) {
@@ -4000,13 +4068,13 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                         const val_reg = lower_mod.WritableReg.allocReg(.int, ctx);
                         try ctx.emit(Inst{ .ldr = .{
                             .dst = val_reg,
-                            .base = struct_ptr.toReg(),
+                            .base = Reg.fromVReg(struct_ptr),
                             .offset = 0,
                             .size = .size64,
                         } });
 
                         const abi_preg = abi_spec.int_arg_regs[int_count];
-                        const abi_reg = Reg.gpr(abi_preg.hw_enc);
+                        const abi_reg = Reg.gpr(abi_preg.hwEnc());
 
                         if (!val_reg.toReg().eq(abi_reg)) {
                             try ctx.emit(Inst{ .mov_rr = .{
@@ -4026,13 +4094,13 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                         const val1_reg = lower_mod.WritableReg.allocReg(.int, ctx);
                         try ctx.emit(Inst{ .ldr = .{
                             .dst = val1_reg,
-                            .base = struct_ptr.toReg(),
+                            .base = Reg.fromVReg(struct_ptr),
                             .offset = 0,
                             .size = .size64,
                         } });
 
                         const abi_preg1 = abi_spec.int_arg_regs[int_count];
-                        const abi_reg1 = Reg.gpr(abi_preg1.hw_enc);
+                        const abi_reg1 = Reg.gpr(abi_preg1.hwEnc());
 
                         if (!val1_reg.toReg().eq(abi_reg1)) {
                             try ctx.emit(Inst{ .mov_rr = .{
@@ -4046,13 +4114,13 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                         const val2_reg = lower_mod.WritableReg.allocReg(.int, ctx);
                         try ctx.emit(Inst{ .ldr = .{
                             .dst = val2_reg,
-                            .base = struct_ptr.toReg(),
+                            .base = Reg.fromVReg(struct_ptr),
                             .offset = 8,
                             .size = .size64,
                         } });
 
                         const abi_preg2 = abi_spec.int_arg_regs[int_count + 1];
-                        const abi_reg2 = Reg.gpr(abi_preg2.hw_enc);
+                        const abi_reg2 = Reg.gpr(abi_preg2.hwEnc());
 
                         if (!val2_reg.toReg().eq(abi_reg2)) {
                             try ctx.emit(Inst{ .mov_rr = .{
@@ -4066,23 +4134,25 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                         continue;
                     }
                 }
+                try copyStructToStack(Reg.gpr(31), stack_offset, Reg.fromVReg(struct_ptr), struct_size, ctx);
+                stack_offset += struct_size;
+                continue;
             } else if (classification.class == .indirect) {
                 // Structs >16 bytes: allocate stack space, copy struct, pass pointer
-                const struct_size = arg_type.bytes();
                 const struct_ptr = try ctx.getValueReg(arg_value, .int);
 
                 // Allocate stack slot for struct copy
-                const stack_slot = try ctx.allocStackSlot(struct_size, arg_type.minAlignBytes());
-                const stack_slot_addr = ctx.stackSlotAddr(stack_slot);
+                const stack_slot = try ctx.allocStackSlot(struct_size, try tyAlign(ctx, arg_type));
+                const stack_slot_addr = try stackSlotAddrReg(stack_slot, ctx);
 
                 // Generate struct copy instructions using generateStructCopy
-                const copy_insts = try abi_mod.generateStructCopy(
-                    ctx.allocator(),
+                var copy_insts = try abi_mod.generateStructCopy(
+                    ctx.getAllocator(),
                     stack_slot_addr,
-                    struct_ptr.toReg(),
+                    Reg.fromVReg(struct_ptr),
                     struct_size,
                 );
-                defer copy_insts.deinit();
+                defer copy_insts.deinit(ctx.getAllocator());
 
                 // Emit copy instructions
                 for (copy_insts.items) |inst| {
@@ -4092,7 +4162,7 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                 // Pass pointer to struct copy in int register
                 if (int_count < abi_spec.int_arg_regs.len) {
                     const abi_preg = abi_spec.int_arg_regs[int_count];
-                    const abi_reg = Reg.gpr(abi_preg.hw_enc);
+                    const abi_reg = Reg.gpr(abi_preg.hwEnc());
 
                     if (!stack_slot_addr.eq(abi_reg)) {
                         try ctx.emit(Inst{ .mov_rr = .{
@@ -4105,13 +4175,20 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                     int_count += 1;
                     continue;
                 }
+                try ctx.emit(Inst{ .str = .{
+                    .src = stack_slot_addr,
+                    .base = Reg.gpr(31),
+                    .offset = @intCast(stack_offset),
+                    .size = .size64,
+                } });
+                stack_offset += 8;
+                continue;
             }
 
             if (classification.class == .hva) {
                 // HVA: 2-4 same-type vector fields passed in V0-V3
                 const elem_ty = classification.elem_ty.?;
-                const fields = arg_type.@"struct";
-                const field_count = fields.len;
+                const field_count = struct_fields.len;
 
                 if (fp_count + field_count <= abi_spec.float_arg_regs.len) {
                     // Load struct address
@@ -4119,26 +4196,27 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
 
                     // Extract each vector field and move to FP register
                     for (0..field_count) |field_idx| {
-                        const offset: i32 = @intCast(field_idx * elem_ty.bytes());
+                        const offset: i16 = @intCast(struct_fields[field_idx].offset);
                         const field_reg = lower_mod.WritableReg.allocReg(.float, ctx);
 
                         // Load vector field from struct
                         try ctx.emit(Inst{ .vldr = .{
                             .dst = field_reg,
-                            .base = struct_ptr.toReg(),
+                            .base = Reg.fromVReg(struct_ptr),
                             .offset = offset,
-                            .size = vectorSizeFromType(elem_ty),
+                            .size = typeToFpuOperandSize(elem_ty),
                         } });
 
                         // Move to ABI FP register
                         const abi_preg = abi_spec.float_arg_regs[fp_count + field_idx];
-                        const abi_reg = Reg.fpr(abi_preg.hw_enc);
+                        const abi_reg = Reg.fpr(abi_preg.hwEnc());
 
                         if (!field_reg.toReg().eq(abi_reg)) {
-                            try ctx.emit(Inst{ .vmov = .{
+                            try ctx.emit(Inst{ .vec_orr = .{
                                 .dst = lower_mod.WritableReg.fromReg(abi_reg),
-                                .src = field_reg.toReg(),
-                                .size = vectorSizeFromType(elem_ty),
+                                .src1 = field_reg.toReg(),
+                                .src2 = field_reg.toReg(),
+                                .size = typeToFpuOperandSize(elem_ty),
                             } });
                         }
                     }
@@ -4147,7 +4225,9 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                     continue;
                 } else {
                     // Stack HVA handling
-                    stack_offset += arg_type.bytes();
+                    const struct_ptr = try ctx.getValueReg(arg_value, .int);
+                    try copyStructToStack(Reg.gpr(31), stack_offset, Reg.fromVReg(struct_ptr), struct_size, ctx);
+                    stack_offset += struct_size;
                     continue;
                 }
             }
@@ -4160,11 +4240,11 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                 // FP/SIMD args in registers per calling convention
                 const arg_reg = try ctx.getValueReg(arg_value, .float);
                 const abi_preg = abi_spec.float_arg_regs[fp_count];
-                const abi_reg = Reg.fpr(abi_preg.hw_enc);
+                const abi_reg = Reg.fpr(abi_preg.hwEnc());
 
                 // Emit move to ABI register if not already there
                 if (!arg_reg.toReg().eq(abi_reg)) {
-                    try ctx.emit(Inst{ .fmov_rr = .{
+                    try ctx.emit(Inst{ .fmov = .{
                         .dst = lower_mod.WritableReg.fromReg(abi_reg),
                         .src = arg_reg.toReg(),
                         .size = typeToFpuOperandSize(arg_type),
@@ -4175,7 +4255,7 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                 // FP args beyond register limit go on stack
                 const arg_reg = try ctx.getValueReg(arg_value, .float);
                 try ctx.emit(Inst{
-                    .str_fp = .{
+                    .vstr = .{
                         .src = arg_reg.toReg(),
                         .base = Reg.gpr(31), // SP
                         .offset = @intCast(stack_offset),
@@ -4189,7 +4269,7 @@ pub fn aarch64_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSl
                 // Integer args in registers per calling convention
                 const arg_reg = try ctx.getValueReg(arg_value, .int);
                 const abi_preg = abi_spec.int_arg_regs[int_count];
-                const abi_reg = Reg.gpr(abi_preg.hw_enc);
+                const abi_reg = Reg.gpr(abi_preg.hwEnc());
 
                 // Emit move to ABI register if not already there
                 if (!arg_reg.toReg().eq(abi_reg)) {
@@ -4261,7 +4341,7 @@ fn marshalReturnValues(sig_ref: SigRef, ctx: *lower_mod.LowerCtx(Inst)) !lower_m
     if (returns.len == 1) {
         // Single return value - use classifyReturn
         const ret_type = returns[0].value_type;
-        const ret_loc = abi_mod.classifyReturn(ret_type, null);
+        const ret_loc = abi_mod.classifyReturn(ret_type, &ctx.func.struct_store);
 
         return switch (ret_loc) {
             .single_reg => |preg| lower_mod.ValueRegs.single(Reg.fromPReg(preg)),
@@ -4272,23 +4352,26 @@ fn marshalReturnValues(sig_ref: SigRef, ctx: *lower_mod.LowerCtx(Inst)) !lower_m
             .hfa => |hfa| {
                 // HFA returns in V0-V3 - assemble into struct
                 // Allocate memory for return struct
-                const struct_size = ret_type.bytes();
-                const stack_slot = try ctx.allocStackSlot(struct_size, ret_type.minAlignBytes());
-                const stack_slot_addr = ctx.stackSlotAddr(stack_slot);
+                const classification = try abi_mod.classifyStructIr(ret_type, &ctx.func.struct_store);
+                if (classification.class != .hfa and classification.class != .hva) {
+                    return error.ExpectedStructType;
+                }
+                const struct_size = try tySize(ctx, ret_type);
+                const stack_slot = try ctx.allocStackSlot(struct_size, try tyAlign(ctx, ret_type));
+                const stack_slot_addr = try stackSlotAddrReg(stack_slot, ctx);
 
                 // Store each FP register field to struct memory
-                const elem_ty = switch (ret_type) {
-                    .@"struct" => |fields| fields[0].ty,
-                    else => return error.ExpectedStructType,
-                };
+                const struct_fields = try structFields(ctx, ret_type);
+                const elem_ty = classification.elem_ty.?;
 
-                for (hfa.regs, 0..) |preg, field_idx| {
-                    if (preg.hw_enc >= 32) break; // Stop at first invalid register
+                for (0..hfa.count) |field_idx| {
+                    if (field_idx >= struct_fields.len) break;
+                    const preg = hfa.regs[field_idx];
 
-                    const offset: i32 = @intCast(field_idx * elem_ty.bytes());
+                    const offset: i16 = @intCast(struct_fields[field_idx].offset);
                     const src_reg = Reg.fromPReg(preg);
 
-                    try ctx.emit(Inst{ .str_fp = .{
+                    try ctx.emit(Inst{ .vstr = .{
                         .src = src_reg,
                         .base = stack_slot_addr,
                         .offset = offset,
@@ -4333,14 +4416,14 @@ fn marshalReturnValues(sig_ref: SigRef, ctx: *lower_mod.LowerCtx(Inst)) !lower_m
                 std.log.err("Too many FP return values: max 8 allowed", .{});
                 return error.TooManyReturnValues;
             }
-            regs[reg_count] = Reg.fpr(fp_count);
+            regs[reg_count] = Reg.fpr(@intCast(fp_count));
             fp_count += 1;
         } else {
             if (int_count >= 8) {
                 std.log.err("Too many integer return values: max 8 allowed", .{});
                 return error.TooManyReturnValues;
             }
-            regs[reg_count] = Reg.gpr(int_count);
+            regs[reg_count] = Reg.gpr(@intCast(int_count));
             int_count += 1;
         }
         reg_count += 1;
@@ -4387,7 +4470,7 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
             const arg_value = args[i];
             const arg_type = ctx.func.dfg.valueType(arg_value);
             const param_type = s.params.items[i].value_type;
-            if (!arg_type.eq(param_type)) {
+            if (!arg_type.eql(param_type)) {
                 std.log.err("Call_indirect argument {} type mismatch: got {}, expected {}", .{ i, arg_type, param_type });
                 return error.SignatureArgumentTypeMismatch;
             }
@@ -4397,7 +4480,7 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
     const abi_spec = abi_mod.abiSpecForCallConv(call_conv);
 
     // Check if callee uses indirect return (sret) and pass pointer in X8
-    const needs_sret = if (sig) |s| abi_mod.needsStructReturnPointer(s.returns.items, null) else false;
+    const needs_sret = if (sig) |s| abi_mod.needsStructReturnPointer(s.returns.items, &ctx.func.struct_store) else false;
 
     var sret_param_index: ?usize = null;
     if (needs_sret) {
@@ -4454,13 +4537,14 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
 
         // Classify struct arguments for HFA/HVA handling
         if (arg_type.isStruct()) {
-            const classification = abi_mod.classifyStruct(arg_type);
+            const struct_fields = try structFields(ctx, arg_type);
+            const struct_size = try tySize(ctx, arg_type);
+            const classification = try abi_mod.classifyStructIr(arg_type, &ctx.func.struct_store);
 
             if (classification.class == .hfa) {
                 // HFA: 2-4 same-type FP fields passed in V0-V3
                 const elem_ty = classification.elem_ty.?;
-                const fields = arg_type.@"struct";
-                const field_count = fields.len;
+                const field_count = struct_fields.len;
 
                 if (fp_count + field_count <= abi_spec.float_arg_regs.len) {
                     // Load struct address
@@ -4468,23 +4552,23 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
 
                     // Extract each field and move to FP register
                     for (0..field_count) |field_idx| {
-                        const offset: i32 = @intCast(field_idx * elem_ty.bytes());
+                        const offset: i16 = @intCast(struct_fields[field_idx].offset);
                         const field_reg = lower_mod.WritableReg.allocReg(.float, ctx);
 
                         // Load field from struct
-                        try ctx.emit(Inst{ .ldr_fp = .{
+                        try ctx.emit(Inst{ .vldr = .{
                             .dst = field_reg,
-                            .base = struct_ptr.toReg(),
+                            .base = Reg.fromVReg(struct_ptr),
                             .offset = offset,
                             .size = typeToFpuOperandSize(elem_ty),
                         } });
 
                         // Move to ABI FP register
                         const abi_preg = abi_spec.float_arg_regs[fp_count + field_idx];
-                        const abi_reg = Reg.fpr(abi_preg.hw_enc);
+                        const abi_reg = Reg.fpr(abi_preg.hwEnc());
 
                         if (!field_reg.toReg().eq(abi_reg)) {
-                            try ctx.emit(Inst{ .fmov_rr = .{
+                            try ctx.emit(Inst{ .fmov = .{
                                 .dst = lower_mod.WritableReg.fromReg(abi_reg),
                                 .src = field_reg.toReg(),
                                 .size = typeToFpuOperandSize(elem_ty),
@@ -4496,12 +4580,13 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                     continue;
                 } else {
                     // Stack HFA: fields spill to stack when FP regs exhausted
-                    stack_offset += arg_type.bytes();
+                    const struct_ptr = try ctx.getValueReg(arg_value, .int);
+                    try copyStructToStack(Reg.gpr(31), stack_offset, Reg.fromVReg(struct_ptr), struct_size, ctx);
+                    stack_offset += struct_size;
                     continue;
                 }
             } else if (classification.class == .general) {
                 // Non-HFA structs ≤16 bytes: load as 1-2 i64 values in X0-X7
-                const struct_size = arg_type.bytes();
                 const struct_ptr = try ctx.getValueReg(arg_value, .int);
 
                 if (struct_size <= 8) {
@@ -4510,13 +4595,13 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                         const val_reg = lower_mod.WritableReg.allocReg(.int, ctx);
                         try ctx.emit(Inst{ .ldr = .{
                             .dst = val_reg,
-                            .base = struct_ptr.toReg(),
+                            .base = Reg.fromVReg(struct_ptr),
                             .offset = 0,
                             .size = .size64,
                         } });
 
                         const abi_preg = abi_spec.int_arg_regs[int_count];
-                        const abi_reg = Reg.gpr(abi_preg.hw_enc);
+                        const abi_reg = Reg.gpr(abi_preg.hwEnc());
 
                         if (!val_reg.toReg().eq(abi_reg)) {
                             try ctx.emit(Inst{ .mov_rr = .{
@@ -4536,13 +4621,13 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                         const val1_reg = lower_mod.WritableReg.allocReg(.int, ctx);
                         try ctx.emit(Inst{ .ldr = .{
                             .dst = val1_reg,
-                            .base = struct_ptr.toReg(),
+                            .base = Reg.fromVReg(struct_ptr),
                             .offset = 0,
                             .size = .size64,
                         } });
 
                         const abi_preg1 = abi_spec.int_arg_regs[int_count];
-                        const abi_reg1 = Reg.gpr(abi_preg1.hw_enc);
+                        const abi_reg1 = Reg.gpr(abi_preg1.hwEnc());
 
                         if (!val1_reg.toReg().eq(abi_reg1)) {
                             try ctx.emit(Inst{ .mov_rr = .{
@@ -4556,13 +4641,13 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                         const val2_reg = lower_mod.WritableReg.allocReg(.int, ctx);
                         try ctx.emit(Inst{ .ldr = .{
                             .dst = val2_reg,
-                            .base = struct_ptr.toReg(),
+                            .base = Reg.fromVReg(struct_ptr),
                             .offset = 8,
                             .size = .size64,
                         } });
 
                         const abi_preg2 = abi_spec.int_arg_regs[int_count + 1];
-                        const abi_reg2 = Reg.gpr(abi_preg2.hw_enc);
+                        const abi_reg2 = Reg.gpr(abi_preg2.hwEnc());
 
                         if (!val2_reg.toReg().eq(abi_reg2)) {
                             try ctx.emit(Inst{ .mov_rr = .{
@@ -4576,25 +4661,27 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                         continue;
                     }
                 }
+                try copyStructToStack(Reg.gpr(31), stack_offset, Reg.fromVReg(struct_ptr), struct_size, ctx);
+                stack_offset += struct_size;
+                continue;
             }
 
             // Handle indirect struct (>16 bytes) - allocate, copy, pass pointer
             if (classification.class == .indirect) {
-                const struct_size = arg_type.bytes();
                 const struct_ptr = try ctx.getValueReg(arg_value, .int);
 
                 // Allocate stack slot for struct copy
-                const stack_slot = try ctx.allocStackSlot(struct_size, arg_type.minAlignBytes());
-                const stack_slot_addr = ctx.stackSlotAddr(stack_slot);
+                const stack_slot = try ctx.allocStackSlot(struct_size, try tyAlign(ctx, arg_type));
+                const stack_slot_addr = try stackSlotAddrReg(stack_slot, ctx);
 
                 // Generate struct copy instructions
-                const copy_insts = try abi_mod.generateStructCopy(
-                    ctx.allocator(),
+                var copy_insts = try abi_mod.generateStructCopy(
+                    ctx.getAllocator(),
                     stack_slot_addr,
-                    struct_ptr.toReg(),
+                    Reg.fromVReg(struct_ptr),
                     struct_size,
                 );
-                defer copy_insts.deinit();
+                defer copy_insts.deinit(ctx.getAllocator());
 
                 // Emit copy instructions
                 for (copy_insts.items) |inst| {
@@ -4604,7 +4691,7 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                 // Pass pointer to struct copy in int register
                 if (int_count < abi_spec.int_arg_regs.len) {
                     const abi_preg = abi_spec.int_arg_regs[int_count];
-                    const abi_reg = Reg.gpr(abi_preg.hw_enc);
+                    const abi_reg = Reg.gpr(abi_preg.hwEnc());
 
                     if (!stack_slot_addr.eq(abi_reg)) {
                         try ctx.emit(Inst{ .mov_rr = .{
@@ -4617,13 +4704,20 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                     int_count += 1;
                     continue;
                 }
+                try ctx.emit(Inst{ .str = .{
+                    .src = stack_slot_addr,
+                    .base = Reg.gpr(31),
+                    .offset = @intCast(stack_offset),
+                    .size = .size64,
+                } });
+                stack_offset += 8;
+                continue;
             }
 
             if (classification.class == .hva) {
                 // HVA: 2-4 same-type vector fields passed in V0-V3
                 const elem_ty = classification.elem_ty.?;
-                const fields = arg_type.@"struct";
-                const field_count = fields.len;
+                const field_count = struct_fields.len;
 
                 if (fp_count + field_count <= abi_spec.float_arg_regs.len) {
                     // Load struct address
@@ -4631,26 +4725,27 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
 
                     // Extract each vector field and move to FP register
                     for (0..field_count) |field_idx| {
-                        const offset: i32 = @intCast(field_idx * elem_ty.bytes());
+                        const offset: i16 = @intCast(struct_fields[field_idx].offset);
                         const field_reg = lower_mod.WritableReg.allocReg(.float, ctx);
 
                         // Load vector field from struct
                         try ctx.emit(Inst{ .vldr = .{
                             .dst = field_reg,
-                            .base = struct_ptr.toReg(),
+                            .base = Reg.fromVReg(struct_ptr),
                             .offset = offset,
-                            .size = vectorSizeFromType(elem_ty),
+                            .size = typeToFpuOperandSize(elem_ty),
                         } });
 
                         // Move to ABI FP register
                         const abi_preg = abi_spec.float_arg_regs[fp_count + field_idx];
-                        const abi_reg = Reg.fpr(abi_preg.hw_enc);
+                        const abi_reg = Reg.fpr(abi_preg.hwEnc());
 
                         if (!field_reg.toReg().eq(abi_reg)) {
-                            try ctx.emit(Inst{ .vmov = .{
+                            try ctx.emit(Inst{ .vec_orr = .{
                                 .dst = lower_mod.WritableReg.fromReg(abi_reg),
-                                .src = field_reg.toReg(),
-                                .size = vectorSizeFromType(elem_ty),
+                                .src1 = field_reg.toReg(),
+                                .src2 = field_reg.toReg(),
+                                .size = typeToFpuOperandSize(elem_ty),
                             } });
                         }
                     }
@@ -4659,7 +4754,9 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                     continue;
                 } else {
                     // Stack HVA handling
-                    stack_offset += arg_type.bytes();
+                    const struct_ptr = try ctx.getValueReg(arg_value, .int);
+                    try copyStructToStack(Reg.gpr(31), stack_offset, Reg.fromVReg(struct_ptr), struct_size, ctx);
+                    stack_offset += struct_size;
                     continue;
                 }
             }
@@ -4672,11 +4769,11 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                 // FP/SIMD args in registers per calling convention
                 const arg_reg = try ctx.getValueReg(arg_value, .float);
                 const abi_preg = abi_spec.float_arg_regs[fp_count];
-                const abi_reg = Reg.fpr(abi_preg.hw_enc);
+                const abi_reg = Reg.fpr(abi_preg.hwEnc());
 
                 // Emit move to ABI register if not already there
                 if (!arg_reg.toReg().eq(abi_reg)) {
-                    try ctx.emit(Inst{ .fmov_rr = .{
+                    try ctx.emit(Inst{ .fmov = .{
                         .dst = lower_mod.WritableReg.fromReg(abi_reg),
                         .src = arg_reg.toReg(),
                         .size = typeToFpuOperandSize(arg_type),
@@ -4687,7 +4784,7 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                 // FP args beyond register limit go on stack
                 const arg_reg = try ctx.getValueReg(arg_value, .float);
                 try ctx.emit(Inst{
-                    .str_fp = .{
+                    .vstr = .{
                         .src = arg_reg.toReg(),
                         .base = Reg.gpr(31), // SP
                         .offset = @intCast(stack_offset),
@@ -4701,7 +4798,7 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
                 // Integer args in registers per calling convention
                 const arg_reg = try ctx.getValueReg(arg_value, .int);
                 const abi_preg = abi_spec.int_arg_regs[int_count];
-                const abi_reg = Reg.gpr(abi_preg.hw_enc);
+                const abi_reg = Reg.gpr(abi_preg.hwEnc());
 
                 // Emit move to ABI register if not already there
                 if (!arg_reg.toReg().eq(abi_reg)) {

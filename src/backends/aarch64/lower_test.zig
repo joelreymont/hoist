@@ -14,6 +14,7 @@ const Inst = inst_mod.Inst;
 const Function = root.function.Function;
 const Signature = root.signature.Signature;
 const AbiParam = root.signature.AbiParam;
+const ExternalName = root.extfunc.ExternalName;
 const Type = root.types.Type;
 const Block = root.entities.Block;
 const Value = root.entities.Value;
@@ -225,6 +226,55 @@ test "lower unconditional jump" {
 
     try testing.expect(vcode.insns.items.len > 0);
     try testing.expectEqual(@as(usize, 2), vcode.blocks.items.len);
+}
+
+test "lower try_call direct" {
+    var sig = Signature.init(testing.allocator, .fast);
+    try sig.returns.append(testing.allocator, AbiParam.new(Type.I64));
+    var func = try Function.init(testing.allocator, "test_try_call", sig);
+    defer func.deinit();
+
+    var builder = try root.builder.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+
+    const block0 = try builder.createBlock();
+    const block1 = try builder.createBlock();
+    const block2 = try builder.createBlock();
+    try builder.appendBlock(block0);
+    try builder.appendBlock(block1);
+    try builder.appendBlock(block2);
+
+    var callee_sig = Signature.init(testing.allocator, .fast);
+    try callee_sig.returns.append(testing.allocator, AbiParam.new(Type.I64));
+    const sig_ref = root.entities.SigRef.new(0);
+    try func.signatures.set(func.allocator, sig_ref, callee_sig);
+
+    const name = try ExternalName.fromTestcase(testing.allocator, "callee");
+    const func_ref = try func.func_metadata.registerExternalFunc(name, sig_ref, .import);
+
+    builder.switchToBlock(block0);
+    const call_res = try builder.instTryCall(func_ref, &.{}, block1, block2);
+    try builder.sealBlock(block0);
+
+    builder.switchToBlock(block1);
+    try builder.retValues(&.{ call_res });
+    try builder.sealBlock(block1);
+
+    builder.switchToBlock(block2);
+    const zero = try builder.iconst(Type.I64, 0);
+    try builder.retValues(&.{ zero });
+    try builder.sealBlock(block2);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+
+    var vcode = try lower_mod.lowerFunction(Inst, testing.allocator, &func, backend);
+    defer vcode.deinit();
+
+    try testing.expect(vcode.insns.items.len > 0);
+    try testing.expectEqual(@as(usize, 3), vcode.blocks.items.len);
 }
 
 // Helper wrappers to call generated lowering functions
