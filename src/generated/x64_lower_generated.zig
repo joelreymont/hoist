@@ -162,7 +162,24 @@ pub fn lower(
 
             const ret_val = args[0];
             const ty = ctx.getValueType(ret_val);
-            if (ty.isFloat()) return false;
+            if (ty.isFloat()) {
+                const src = Reg.fromVReg(try ctx.getValueReg(ret_val, .float));
+                const xmm0 = Reg.fromPReg(PReg.new(.float, 0));
+                const dst = WritableReg.fromReg(xmm0);
+                if (ty.bits() == 32) {
+                    try ctx.emit(Inst{ .movss_rr = .{
+                        .dst = dst,
+                        .src = src,
+                    } });
+                } else {
+                    try ctx.emit(Inst{ .movsd_rr = .{
+                        .dst = dst,
+                        .src = src,
+                    } });
+                }
+                try ctx.emit(Inst.ret);
+                return true;
+            }
 
             const bits = ty.bits();
             const size: OperandSize = if (bits != 0 and bits <= 32) .size32 else .size64;
