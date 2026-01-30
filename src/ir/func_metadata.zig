@@ -6,11 +6,11 @@
 const std = @import("std");
 const entities = @import("entities.zig");
 const signature_mod = @import("signature.zig");
-const external_name_mod = @import("external_name.zig");
+const extfunc = @import("extfunc.zig");
 
 pub const FuncRef = entities.FuncRef;
 pub const SigRef = entities.SigRef;
-pub const ExternalName = external_name_mod.ExternalName;
+pub const ExternalName = extfunc.ExternalName;
 pub const Signature = signature_mod.Signature;
 
 /// Metadata for an external function.
@@ -48,7 +48,7 @@ pub const FuncMetadataTable = struct {
 
     pub fn deinit(self: *FuncMetadataTable) void {
         // Free external names
-        for (self.metadata.items) |meta| {
+        for (self.metadata.items) |*meta| {
             meta.name.deinit(self.allocator);
         }
         self.metadata.deinit(self.allocator);
@@ -103,7 +103,7 @@ test "FuncMetadataTable: register and get" {
     defer table.deinit();
 
     // Register a function
-    const name = try ExternalName.testable(allocator, "test_func");
+    const name = try ExternalName.fromTestcase(allocator, "test_func");
     const func_ref = try table.registerExternalFunc(name, SigRef.new(0), .import);
 
     try testing.expectEqual(@as(u32, 0), func_ref.index);
@@ -122,13 +122,13 @@ test "FuncMetadataTable: multiple functions" {
     defer table.deinit();
 
     // Register multiple functions
-    const name1 = try ExternalName.testable(allocator, "func1");
+    const name1 = try ExternalName.fromTestcase(allocator, "func1");
     const func1 = try table.registerExternalFunc(name1, SigRef.new(0), .import);
 
-    const name2 = try ExternalName.testable(allocator, "func2");
+    const name2 = try ExternalName.fromTestcase(allocator, "func2");
     const func2 = try table.registerExternalFunc(name2, SigRef.new(1), .@"export");
 
-    const name3 = try ExternalName.testable(allocator, "func3");
+    const name3 = try ExternalName.fromTestcase(allocator, "func3");
     const func3 = try table.registerExternalFunc(name3, SigRef.new(2), .local);
 
     try testing.expectEqual(@as(usize, 3), table.metadata.items.len);

@@ -6,6 +6,7 @@ const ArrayList = std.ArrayList;
 const root = @import("../root.zig");
 const ir = @import("../ir.zig");
 const Function = ir.Function;
+const cfg_mod = @import("cfg.zig");
 const Block = root.entities.Block;
 const Value = root.entities.Value;
 const Type = root.types.Type;
@@ -40,6 +41,17 @@ pub const SSABuilder = struct {
         use_var: struct { variable: Variable, ty: Type, block: Block },
         finish_preds: struct { sentinel: Value, dest: Block },
     };
+
+    fn cfgFor(self: *SSABuilder, func: *Function) !*cfg_mod.ControlFlowGraph {
+        if (func.cfg == null) {
+            func.cfg = cfg_mod.ControlFlowGraph.init(self.alloc);
+        }
+        const cfg = &func.cfg.?;
+        if (!cfg.valid) {
+            try cfg.compute(func);
+        }
+        return cfg;
+    }
 
     pub fn init(alloc: Allocator) !SSABuilder {
         return .{
@@ -101,7 +113,7 @@ pub const SSABuilder = struct {
     fn useVarNonlocal(self: *SSABuilder, func: *Function, variable: Variable, ty: Type, block: Block) !void {
         if (self.variables.get(variable)) |var_defs| {
             if (var_defs.get(block)) |val| {
-                try self.results.append(val);
+                try self.results.append(self.alloc, val);
                 return;
             }
         }
@@ -118,18 +130,21 @@ pub const SSABuilder = struct {
             if (!gop.found_existing) {
                 gop.value_ptr.* = .{ .sealed = false, .undef_vars = ArrayList(Variable){} };
             }
-            try gop.value_ptr.undef_vars.append(variable);
-            try self.results.append(sentinel);
+            try gop.value_ptr.undef_vars.append(self.alloc, variable);
+            try self.results.append(self.alloc, sentinel);
             return;
         }
 
-        const preds = func.cfg.?.blockPredecessors(block);
-        if (preds.len == 0) {
+        const cfg = try self.cfgFor(func);
+        const pred_count = cfg.predecessorCount(block);
+        if (pred_count == 0) {
             const zero = try func.dfg.makeConst(0);
             try self.defVar(variable, zero, block);
-            try self.results.append(zero);
-        } else if (preds.len == 1) {
-            try self.useVarNonlocal(func, variable, ty, func.layout.instBlock(preds[0]).?);
+            try self.results.append(self.alloc, zero);
+        } else if (pred_count == 1) {
+            var pred_iter = cfg.predecessors(block);
+            const pred_block = pred_iter.next().?.block;
+            try self.useVarNonlocal(func, variable, ty, pred_block);
         } else {
             const sentinel = try func.dfg.appendBlockParam(block, ty);
             try self.defVar(variable, sentinel, block);
@@ -138,17 +153,18 @@ pub const SSABuilder = struct {
     }
 
     fn beginPredsLookup(self: *SSABuilder, func: *Function, variable: Variable, ty: Type, block: Block, sentinel: Value) !void {
-        const preds = func.cfg.?.blockPredecessors(block);
-        for (preds) |pred_br| {
-            const pred = func.layout.instBlock(pred_br).?;
-            try self.calls.append(.{ .use_var = .{ .variable = variable, .ty = ty, .block = pred } });
+        const cfg = try self.cfgFor(func);
+        var pred_iter = cfg.predecessors(block);
+        while (pred_iter.next()) |pred| {
+            try self.calls.append(self.alloc, .{ .use_var = .{ .variable = variable, .ty = ty, .block = pred.block } });
         }
-        try self.calls.append(.{ .finish_preds = .{ .sentinel = sentinel, .dest = block } });
+        try self.calls.append(self.alloc, .{ .finish_preds = .{ .sentinel = sentinel, .dest = block } });
     }
 
     fn finishPredsLookup(self: *SSABuilder, func: *Function, sentinel: Value, dest: Block) !Value {
-        const preds = func.cfg.?.blockPredecessors(dest);
-        const pred_vals = self.results.items[self.results.items.len - preds.len ..];
+        const cfg = try self.cfgFor(func);
+        const pred_count = cfg.predecessorCount(dest);
+        const pred_vals = self.results.items[self.results.items.len - pred_count ..];
 
         var unique: ?Value = null;
         var all_same = true;
@@ -169,16 +185,18 @@ pub const SSABuilder = struct {
         if (all_same and unique != null) {
             func.dfg.removeBlockParam(sentinel);
             func.dfg.changeToAlias(sentinel, unique.?);
-            self.results.shrinkRetainingCapacity(self.results.items.len - preds.len);
+            self.results.shrinkRetainingCapacity(self.results.items.len - pred_count);
             return unique.?;
         }
 
-        for (preds, 0..) |pred_br, i| {
-            const val = pred_vals[i];
-            try func.dfg.appendBranchArg(pred_br, val);
+        var pred_iter = cfg.predecessors(dest);
+        var idx: usize = 0;
+        while (pred_iter.next()) |pred| : (idx += 1) {
+            const val = pred_vals[idx];
+            try func.dfg.appendBranchArg(pred.inst, val);
         }
 
-        self.results.shrinkRetainingCapacity(self.results.items.len - preds.len);
+        self.results.shrinkRetainingCapacity(self.results.items.len - pred_count);
         return sentinel;
     }
 
@@ -188,7 +206,7 @@ pub const SSABuilder = struct {
                 .use_var => |uv| try self.useVarNonlocal(func, uv.variable, uv.ty, uv.block),
                 .finish_preds => |fp| {
                     const val = try self.finishPredsLookup(func, fp.sentinel, fp.dest);
-                    try self.results.append(val);
+                    try self.results.append(self.alloc, val);
                 },
             }
         }

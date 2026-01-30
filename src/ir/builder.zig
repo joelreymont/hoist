@@ -506,9 +506,7 @@ pub const FunctionBuilder = struct {
     ) !Value {
         const block = self.current_block orelse return error.NoCurrentBlock;
 
-        // Create empty args list and populate with provided arguments
-        var args_list = instruction_data.ValueList.default();
-        try self.func.dfg.value_lists.extend(&args_list, args);
+        const args_list = try self.buildValueList(args);
 
         // Create try_call instruction with both successors
         const inst_data = InstructionData{

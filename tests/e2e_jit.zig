@@ -13,7 +13,7 @@ const Imm64 = hoist.immediates.Imm64;
 const entities = hoist.entities;
 const value_list = hoist.value_list;
 const Builder = hoist.builder.FunctionBuilder;
-const ExternalName = hoist.external_name.ExternalName;
+const ExternalName = hoist.extfunc.ExternalName;
 const types = hoist.types;
 const instruction_data = hoist.instruction_data;
 const NullaryData = instruction_data.NullaryData;
@@ -1018,7 +1018,7 @@ test "try_call with external function reference" {
     defer func.deinit();
 
     // Register external function in metadata table
-    const ext_name = try ExternalName.init(allocator, "test_external");
+    const ext_name = try ExternalName.fromTestcase(allocator, "test_external");
     const sig_ref = entities.SigRef.new(0);
     try func.signatures.elems.append(allocator, ext_sig);
 
@@ -1096,7 +1096,10 @@ test "try_call with external function reference" {
     const metadata = func.func_metadata.getMetadata(func_ref);
     try testing.expect(metadata != null);
     try testing.expectEqual(sig_ref, metadata.?.sig_ref);
-    try testing.expectEqualStrings("test_external", metadata.?.name.name);
+    switch (metadata.?.name) {
+        .testcase => |name| try testing.expectEqualStrings("test_external", name),
+        else => return error.UnexpectedExternalName,
+    }
 
     // Test compilation would go here, but requires full lowering infrastructure
     // For now, this validates the FuncRef system and IR building

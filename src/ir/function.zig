@@ -11,6 +11,8 @@ const stack_slot_data = @import("stack_slot_data.zig");
 const global_value_data = @import("global_value_data.zig");
 const jump_table_data = @import("jump_table_data.zig");
 const func_metadata_mod = @import("func_metadata.zig");
+const cfg_mod = @import("cfg.zig");
+const types = @import("types.zig");
 const maps = @import("../foundation/maps.zig");
 
 const Signature = signature.Signature;
@@ -26,6 +28,8 @@ const JumpTableData = jump_table_data.JumpTableData;
 const PrimaryMap = maps.PrimaryMap;
 const SigRef = entities.SigRef;
 const FuncMetadataTable = func_metadata_mod.FuncMetadataTable;
+const ControlFlowGraph = cfg_mod.ControlFlowGraph;
+const StructStore = types.StructStore;
 
 /// Function - a unit of code with signature, blocks, instructions, and data.
 pub const Function = struct {
@@ -35,6 +39,8 @@ pub const Function = struct {
     sig: Signature,
     /// Data flow graph with instructions and values.
     dfg: DataFlowGraph,
+    /// Struct type storage for this function.
+    struct_store: StructStore,
     /// Block and instruction layout.
     layout: Layout,
     /// Stack slot allocations.
@@ -43,6 +49,8 @@ pub const Function = struct {
     global_values: PrimaryMap(GlobalValue, GlobalValueData),
     /// Jump table definitions.
     jump_tables: PrimaryMap(JumpTable, JumpTableData),
+    /// Cached control flow graph (optional, computed on demand).
+    cfg: ?ControlFlowGraph,
     /// Signature references used in this function (for calls, etc).
     signatures: PrimaryMap(SigRef, Signature),
     /// External function metadata (for try_call, call, etc).
@@ -58,12 +66,14 @@ pub const Function = struct {
             .name = name_copy,
             .sig = sig,
             .dfg = DataFlowGraph.init(allocator),
+            .struct_store = StructStore.init(allocator),
             .layout = Layout.init(allocator),
             .stack_slots = PrimaryMap(StackSlot, StackSlotData).init(allocator),
             .global_values = PrimaryMap(GlobalValue, GlobalValueData).init(allocator),
             .jump_tables = PrimaryMap(JumpTable, JumpTableData).init(allocator),
             .signatures = PrimaryMap(SigRef, Signature).init(allocator),
             .func_metadata = FuncMetadataTable.init(allocator),
+            .cfg = null,
             .allocator = allocator,
         };
     }
@@ -71,6 +81,7 @@ pub const Function = struct {
     pub fn deinit(self: *Self) void {
         self.allocator.free(self.name);
         self.dfg.deinit();
+        self.struct_store.deinit();
         self.layout.deinit();
         self.stack_slots.deinit();
         self.global_values.deinit();
@@ -92,6 +103,10 @@ pub const Function = struct {
 
         // Function metadata
         self.func_metadata.deinit();
+
+        if (self.cfg) |*cfg| {
+            cfg.deinit(self.allocator);
+        }
     }
 
     pub fn entryBlock(self: *const Self) ?Block {

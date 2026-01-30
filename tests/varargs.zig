@@ -13,7 +13,7 @@ const Imm64 = hoist.immediates.Imm64;
 const entities = hoist.entities;
 const value_list = hoist.value_list;
 const Builder = hoist.builder.Builder;
-const ExternalName = hoist.external_name.ExternalName;
+const ExternalName = hoist.extfunc.ExternalName;
 const types = hoist.types;
 const CallConv = hoist.signature.CallConv;
 const AbiParam = hoist.signature.AbiParam;
@@ -52,8 +52,8 @@ test "variadic call with fixed parameters" {
     const arg2 = builder.iconst(Type.I32, 99);
 
     // Call with 3 arguments (1 fixed + 2 variadic)
-    const ext_name = try ExternalName.init(testing.allocator, "printf_test");
-    defer ext_name.deinit();
+    var ext_name = try ExternalName.fromTestcase(testing.allocator, "printf_test");
+    defer ext_name.deinit(testing.allocator);
 
     var args = std.ArrayList(entities.Value).init(testing.allocator);
     defer args.deinit();
