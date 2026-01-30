@@ -36,6 +36,26 @@ fn regClassForType(ty: Type) lower_mod.RegClass {
     return if (ty.isFloat()) .float else .int;
 }
 
+fn vmctxReg(ctx: *IsleContext) !Reg {
+    const sig = ctx.lower_ctx.func.sig;
+    const vmctx_idx = sig.specialParamIndex(.vm_context) orelse return error.VmctxNotFound;
+
+    const needs_sret = abi_mod.needsStructReturnPointer(sig.returns.items, null);
+    const locs = try abi_mod.computeArgLocs(
+        ctx.lower_ctx.allocator,
+        sig.params.items,
+        needs_sret,
+        null,
+    );
+    defer ctx.lower_ctx.allocator.free(locs);
+
+    return switch (locs[vmctx_idx]) {
+        .reg => |preg| Reg.fromPReg(preg),
+        .indirect_reg => |preg| Reg.fromPReg(preg),
+        else => error.UnsupportedVmctxLocation,
+    };
+}
+
 /// ISLE context for aarch64 lowering.
 /// This wraps LowerCtx with backend-specific state needed by ISLE constructors.
 pub const IsleContext = struct {
@@ -859,6 +879,36 @@ test "IsleContext creation" {
     try testing.expect(@intFromPtr(ctx.lower_ctx) != 0);
 }
 
+test "aarch64_global_value vmctx uses abi reg" {
+    var sig = root.signature.Signature.init(testing.allocator, .system_v);
+    try sig.params.append(
+        testing.allocator,
+        root.signature.AbiParam.special(Type.I64, .vm_context),
+    );
+
+    var func = try lower_mod.Function.init(testing.allocator, "vmctx", sig);
+    defer func.deinit();
+
+    const gv = try func.global_values.push(.{ .vmctx = {} });
+
+    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var lower_ctx = LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer lower_ctx.deinit();
+
+    _ = try lower_ctx.startBlock(lower_mod.Block.new(0));
+
+    var ctx = IsleContext.init(&lower_ctx);
+    _ = try aarch64_global_value(&ctx, @intCast(gv.toIndex()));
+
+    try testing.expectEqual(@as(usize, 1), vcode.insns.items.len);
+    try testing.expectEqual(Inst.mov_rr, @as(std.meta.Tag(Inst), vcode.insns.items[0]));
+    const mov = vcode.insns.items[0].mov_rr;
+    const expected = Reg.fromPReg(PReg.new(.int, 0));
+    try testing.expectEqual(expected.bits, mov.src.bits);
+}
+
 test "aarch64_add_rr constructor" {
     var func = lower_mod.Function.init(testing.allocator);
     defer func.deinit();
@@ -1348,12 +1398,12 @@ pub fn aarch64_global_value(
     switch (gv_data.*) {
         .vmctx => {
             // VM context is passed in a register (typically x0 or similar)
-            // For now, assume it's in a specific register
-            // TODO: Get vmctx register from ABI
+            // Use ABI arg locations to find its register.
+            const src_reg = try vmctxReg(ctx);
             try ctx.emit(Inst{
                 .mov_rr = .{
                     .dst = dst,
-                    .src = Reg.fromPReg(PReg.x0), // Placeholder - should come from ABI
+                    .src = src_reg,
                     .size = .size64,
                 },
             });
