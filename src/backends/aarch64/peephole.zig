@@ -182,41 +182,7 @@ pub fn eliminateDeadMoves(
     optimizer: *AArch64PeepholeOptimizer,
     insts: *std.ArrayList(Inst),
 ) !bool {
-    var changed = false;
-    var i: usize = 0;
-
-    while (i < insts.items.len) {
-        const inst = &insts.items[i];
-
-        // Check for MOV Xd, Xd
-        if (inst.* == .mov_rr) {
-            const mov = inst.mov_rr;
-            if (regEq(mov.dst.toReg(), mov.src)) {
-                // Dead move - remove it
-                _ = insts.orderedRemove(i);
-                optimizer.stats.dead_moves_eliminated += 1;
-                changed = true;
-                // Don't increment i - check the new instruction at this index
-                continue;
-            }
-        }
-
-        // Check for FMOV Vd, Vd
-        if (inst.* == .fmov) {
-            const fmov = inst.fmov;
-            if (regEq(fmov.dst.toReg(), fmov.src)) {
-                // Dead move - remove it
-                _ = insts.orderedRemove(i);
-                optimizer.stats.dead_moves_eliminated += 1;
-                changed = true;
-                continue;
-            }
-        }
-
-        i += 1;
-    }
-
-    return changed;
+    return optimizer.eliminateDeadMoves(insts);
 }
 
 test "combineLoadPairs: adjacent loads with consecutive offsets" {

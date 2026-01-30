@@ -121,7 +121,7 @@ pub fn PeepholeOptimizer(comptime MachInst: type) type {
         /// Eliminate dead moves where source and destination are identical.
         /// Pattern: MOV Ra, Ra
         /// Rewrite: (delete)
-        fn eliminateDeadMoves(self: *Self, insts: *std.ArrayList(MachInst)) !bool {
+        pub fn eliminateDeadMoves(self: *Self, insts: *std.ArrayList(MachInst)) !bool {
             var changed = false;
             var i: usize = 0;
 
