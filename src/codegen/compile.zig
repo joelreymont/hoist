@@ -1710,13 +1710,50 @@ fn emitAArch64WithAllocation(
 
         // Emit optimized instructions
         for (block_insts.items) |inst| {
-            // Emit epilogue before return instructions
-            if (inst == .ret) {
-                try abi_callee.emitEpilogue(&buffer);
-            }
+            switch (inst) {
+                .tailcall_sp => |data| {
+                    const sp = a64_inst.Reg.gpr(31);
+                    const frame_size = abi_callee.frame_size;
+                    if (frame_size == 0) {
+                        try emit_mod.emit(.{ .mov_rr = .{
+                            .dst = data.dst,
+                            .src = sp,
+                            .size = .size64,
+                        } }, &buffer);
+                    } else if (frame_size <= 4095) {
+                        try emit_mod.emit(.{ .add_imm = .{
+                            .dst = data.dst,
+                            .src = sp,
+                            .imm = @intCast(frame_size),
+                            .size = .size64,
+                        } }, &buffer);
+                    } else {
+                        try emit_mod.emit(.{ .mov_imm = .{
+                            .dst = data.dst,
+                            .imm = frame_size,
+                            .size = .size64,
+                        } }, &buffer);
+                        try emit_mod.emit(.{ .add_rr = .{
+                            .dst = data.dst,
+                            .src1 = sp,
+                            .src2 = data.dst.toReg(),
+                            .size = .size64,
+                        } }, &buffer);
+                    }
+                },
+                .epilogue_placeholder => {
+                    try abi_callee.emitEpilogue(&buffer);
+                },
+                else => {
+                    // Emit epilogue before return instructions
+                    if (inst == .ret) {
+                        try abi_callee.emitEpilogue(&buffer);
+                    }
 
-            // Emit instruction
-            try emit_mod.emit(inst, &buffer);
+                    // Emit instruction
+                    try emit_mod.emit(inst, &buffer);
+                },
+            }
         }
     }
 

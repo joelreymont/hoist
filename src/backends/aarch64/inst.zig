@@ -2221,6 +2221,12 @@ pub const Inst = union(enum) {
     /// Pseudo-instruction that becomes RET.
     ret_call: void,
 
+    /// Compute caller SP for tail calls (SP + frame_size).
+    /// Pseudo-instruction expanded during emission.
+    tailcall_sp: struct {
+        dst: WritableReg,
+    },
+
     /// Extend byte to word, signed (SXTB).
     sxtb: struct {
         dst: WritableReg,
@@ -2577,6 +2583,7 @@ pub const Inst = union(enum) {
             .call => |i| try writer.print("call {f}", .{i.target}),
             .call_indirect => |i| try writer.print("call {f}", .{i.target}),
             .ret_call => try writer.print("ret", .{}),
+            .tailcall_sp => |i| try writer.print("tailcall_sp {f}", .{i.dst}),
             .sxtb => |i| try writer.print("sxtb.{f} {f}, {f}", .{ i.dst_size, i.dst, i.src }),
             .uxtb => |i| try writer.print("uxtb.{f} {f}, {f}", .{ i.dst_size, i.dst, i.src }),
             .sxth => |i| try writer.print("sxth.{f} {f}, {f}", .{ i.dst_size, i.dst, i.src }),
@@ -3741,6 +3748,10 @@ pub const Inst = union(enum) {
             },
             .ret_call => {
                 // No operands to collect (implicit use of X30/LR handled by ABI)
+            },
+            .tailcall_sp => |*i| {
+                try collector.regUse(Reg.fromPReg(PReg.new(.int, 31)));
+                try collector.regDef(i.dst);
             },
             .call, .b, .b_cond, .nop, .dmb, .dsb, .fence, .epilogue_placeholder, .data, .brk, .udf, .bti, .csdb, .isb, .autiasp, .paciasp => {
                 // No register operands (labels/immediates/special only)
