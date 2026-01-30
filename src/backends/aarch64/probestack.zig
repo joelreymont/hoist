@@ -18,6 +18,8 @@ const Inst = inst_mod.Inst;
 const Reg = inst_mod.Reg;
 const PReg = inst_mod.PReg;
 const WritableReg = inst_mod.WritableReg;
+const CondCode = inst_mod.CondCode;
+const Imm12 = inst_mod.Imm12;
 
 // Register helpers
 fn xzr() Reg {
@@ -38,6 +40,29 @@ fn x16() Reg {
 
 fn x17() Reg {
     return Reg.fromPReg(PReg.new(.int, 17));
+}
+
+fn x15() Reg {
+    return Reg.fromPReg(PReg.new(.int, 15));
+}
+
+fn emitLoadImm32(result: *ProbeResult, dst: WritableReg, value: u32) !void {
+    try result.insts.append(.{ .movz = .{
+        .dst = dst,
+        .imm = @as(u16, @truncate(value)),
+        .shift = 0,
+        .size = .d,
+    } });
+
+    const upper = value >> 16;
+    if (upper != 0) {
+        try result.insts.append(.{ .movk = .{
+            .dst = dst,
+            .imm = @as(u16, @truncate(upper)),
+            .shift = 16,
+            .size = .d,
+        } });
+    }
 }
 
 /// Probestack configuration.
@@ -115,13 +140,8 @@ fn emitInlineProbes(result: *ProbeResult, frame_size: u32, config: Config) !void
     } else {
         // Loop-based probing for many pages
 
-        // mov x16, #-page_size
-        try result.insts.append(.{ .movz = .{
-            .dst = scratch.toWritable(),
-            .imm = @as(u16, @truncate(config.page_size)),
-            .shift = 0,
-            .size = .d,
-        } });
+        // mov x16, #page_size
+        try emitLoadImm32(result, scratch.toWritable(), config.page_size);
 
         // neg x16, x16
         try result.insts.append(.{ .neg = .{
@@ -140,8 +160,10 @@ fn emitInlineProbes(result: *ProbeResult, frame_size: u32, config: Config) !void
             .size = .d,
         } });
 
-        // Loop body would need labels - for now just document
-        // TODO: Implement loop with proper label support
+        const counter = x15();
+        try emitLoadImm32(result, counter.toWritable(), num_pages);
+
+        const loop_start: i32 = @intCast(result.insts.items.len);
 
         // str xzr, [x17]
         try result.insts.append(.{ .str_imm = .{
@@ -149,6 +171,31 @@ fn emitInlineProbes(result: *ProbeResult, frame_size: u32, config: Config) !void
             .base = probe_addr,
             .offset = 0,
             .size = .d,
+        } });
+
+        // add x17, x17, x16
+        try result.insts.append(.{ .add_reg = .{
+            .dst = probe_addr.toWritable(),
+            .src1 = probe_addr,
+            .src2 = scratch,
+            .size = .d,
+        } });
+
+        // subs x15, x15, #1
+        const dec = Imm12{ .bits = 1, .shift12 = false };
+        try result.insts.append(.{ .subs_imm = .{
+            .dst = counter.toWritable(),
+            .src = counter,
+            .imm = dec,
+            .size = .d,
+        } });
+
+        // b.ne loop_start
+        const branch_idx: i32 = @intCast(result.insts.items.len);
+        const offset_bytes: i32 = (loop_start - branch_idx) * 4;
+        try result.insts.append(.{ .b_cond = .{
+            .cond = CondCode.ne,
+            .target = .{ .offset = offset_bytes },
         } });
     }
 }
@@ -235,4 +282,40 @@ test "emitProbestack one page" {
 
     // Should emit 2 probe stores
     try testing.expectEqual(@as(usize, 2), result.insts.items.len);
+}
+
+test "emitProbestack loop probes" {
+    const testing = std.testing;
+
+    const cfg = Config{
+        .page_size = 4096,
+        .inline_threshold = 4096 * 8,
+        .unroll_limit = 2,
+    };
+
+    var result = try emitProbestack(testing.allocator, 4096 * 5, cfg);
+    defer result.deinit();
+
+    try testing.expect(result.insts.items.len > 0);
+
+    var saw_subs = false;
+    var saw_str = false;
+    for (result.insts.items) |inst| {
+        switch (inst) {
+            .subs_imm => saw_subs = true,
+            .str_imm => saw_str = true,
+            else => {},
+        }
+    }
+
+    try testing.expect(saw_subs);
+    try testing.expect(saw_str);
+
+    const last = result.insts.items[result.insts.items.len - 1];
+    try testing.expect(last == .b_cond);
+    try testing.expectEqual(CondCode.ne, last.b_cond.cond);
+    switch (last.b_cond.target) {
+        .offset => |off| try testing.expect(off < 0),
+        else => try testing.expect(false),
+    }
 }
