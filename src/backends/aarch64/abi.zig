@@ -735,7 +735,7 @@ pub fn classifyStructIr(ty: Type, struct_store: *const types.StructStore) !struc
 pub const StackLoc = struct {
     offset: u32,
     size: u32,
-    align: u32,
+    alignment: u32,
 };
 
 pub const StructIntLoc = struct {
@@ -772,8 +772,8 @@ pub const CallLayout = struct {
     }
 };
 
-fn alignUp(value: u32, align: u32) u32 {
-    const mask = align - 1;
+fn alignUp(value: u32, alignment: u32) u32 {
+    const mask = alignment - 1;
     return (value + mask) & ~mask;
 }
 
@@ -802,9 +802,9 @@ fn typeAlignIr(ty: Type, struct_store: *const types.StructStore) !u32 {
 }
 
 fn stackArgAlign(ty: Type, struct_store: *const types.StructStore) !u32 {
-    const align = try typeAlignIr(ty, struct_store);
-    if (align < 8) return 8;
-    return if (align > 16) 16 else align;
+    const alignment = try typeAlignIr(ty, struct_store);
+    if (alignment < 8) return 8;
+    return if (alignment > 16) 16 else alignment;
 }
 
 fn stackArgSize(ty: Type, struct_store: *const types.StructStore) !u32 {
@@ -875,10 +875,10 @@ pub fn computeCallLayout(
                         } };
                         fp_count += field_count;
                     } else {
-                        const align = try stackArgAlign(arg_ty, struct_store);
+                        const alignment = try stackArgAlign(arg_ty, struct_store);
                         const size = try stackArgSize(arg_ty, struct_store);
-                        stack_offset = alignUp(stack_offset, align);
-                        arg_locs[idx] = .{ .struct_stack = .{ .offset = stack_offset, .size = size, .align = align } };
+                        stack_offset = alignUp(stack_offset, alignment);
+                        arg_locs[idx] = .{ .struct_stack = .{ .offset = stack_offset, .size = size, .alignment = alignment } };
                         stack_offset += size;
                     }
                 },
@@ -892,10 +892,10 @@ pub fn computeCallLayout(
                             } };
                             int_count += 1;
                         } else {
-                            const align = try stackArgAlign(arg_ty, struct_store);
+                            const alignment = try stackArgAlign(arg_ty, struct_store);
                             const size = try stackArgSize(arg_ty, struct_store);
-                            stack_offset = alignUp(stack_offset, align);
-                            arg_locs[idx] = .{ .struct_stack = .{ .offset = stack_offset, .size = size, .align = align } };
+                            stack_offset = alignUp(stack_offset, alignment);
+                            arg_locs[idx] = .{ .struct_stack = .{ .offset = stack_offset, .size = size, .alignment = alignment } };
                             stack_offset += size;
                         }
                     } else if (struct_size <= 16) {
@@ -907,17 +907,17 @@ pub fn computeCallLayout(
                             } };
                             int_count += 2;
                         } else {
-                            const align = try stackArgAlign(arg_ty, struct_store);
+                            const alignment = try stackArgAlign(arg_ty, struct_store);
                             const size = try stackArgSize(arg_ty, struct_store);
-                            stack_offset = alignUp(stack_offset, align);
-                            arg_locs[idx] = .{ .struct_stack = .{ .offset = stack_offset, .size = size, .align = align } };
+                            stack_offset = alignUp(stack_offset, alignment);
+                            arg_locs[idx] = .{ .struct_stack = .{ .offset = stack_offset, .size = size, .alignment = alignment } };
                             stack_offset += size;
                         }
                     } else {
-                        const align = try stackArgAlign(arg_ty, struct_store);
+                        const alignment = try stackArgAlign(arg_ty, struct_store);
                         const size = try stackArgSize(arg_ty, struct_store);
-                        stack_offset = alignUp(stack_offset, align);
-                        arg_locs[idx] = .{ .struct_stack = .{ .offset = stack_offset, .size = size, .align = align } };
+                        stack_offset = alignUp(stack_offset, alignment);
+                        arg_locs[idx] = .{ .struct_stack = .{ .offset = stack_offset, .size = size, .alignment = alignment } };
                         stack_offset += size;
                     }
                 },
@@ -926,10 +926,10 @@ pub fn computeCallLayout(
                         arg_locs[idx] = .{ .struct_indirect_reg = int_count };
                         int_count += 1;
                     } else {
-                        const align: u32 = 8;
+                        const alignment: u32 = 8;
                         const size: u32 = 8;
-                        stack_offset = alignUp(stack_offset, align);
-                        arg_locs[idx] = .{ .struct_indirect_stack = .{ .offset = stack_offset, .size = size, .align = align } };
+                        stack_offset = alignUp(stack_offset, alignment);
+                        arg_locs[idx] = .{ .struct_indirect_stack = .{ .offset = stack_offset, .size = size, .alignment = alignment } };
                         stack_offset += size;
                     }
                 },
@@ -944,10 +944,10 @@ pub fn computeCallLayout(
                 arg_locs[idx] = .{ .fp_reg = fp_count };
                 fp_count += 1;
             } else {
-                const align = try stackArgAlign(arg_ty, struct_store);
+                const alignment = try stackArgAlign(arg_ty, struct_store);
                 const size = try stackArgSize(arg_ty, struct_store);
-                stack_offset = alignUp(stack_offset, align);
-                arg_locs[idx] = .{ .stack = .{ .offset = stack_offset, .size = size, .align = align } };
+                stack_offset = alignUp(stack_offset, alignment);
+                arg_locs[idx] = .{ .stack = .{ .offset = stack_offset, .size = size, .alignment = alignment } };
                 stack_offset += size;
             }
         } else {
@@ -955,10 +955,10 @@ pub fn computeCallLayout(
                 arg_locs[idx] = .{ .int_reg = int_count };
                 int_count += 1;
             } else {
-                const align = try stackArgAlign(arg_ty, struct_store);
+                const alignment = try stackArgAlign(arg_ty, struct_store);
                 const size = try stackArgSize(arg_ty, struct_store);
-                stack_offset = alignUp(stack_offset, align);
-                arg_locs[idx] = .{ .stack = .{ .offset = stack_offset, .size = size, .align = align } };
+                stack_offset = alignUp(stack_offset, alignment);
+                arg_locs[idx] = .{ .stack = .{ .offset = stack_offset, .size = size, .alignment = alignment } };
                 stack_offset += size;
             }
         }
@@ -4462,4 +4462,88 @@ test "preserveAll calling convention saves all non-arg registers" {
 
     // Verify V31 is the last callee-save
     try testing.expectEqual(PReg.new(.float, 31), preserve_abi.callee_saves[46]);
+}
+
+test "call layout: stack offsets for int args" {
+    var store = types.StructStore.init(testing.allocator);
+    defer store.deinit();
+
+    const args = [_]Type{ Type.I64, Type.I64, Type.I64, Type.I64, Type.I64, Type.I64, Type.I64, Type.I64, Type.I64, Type.I64 };
+    var layout = try computeCallLayout(testing.allocator, &args, null, .system_v, &store);
+    defer layout.deinit(testing.allocator);
+
+    switch (layout.arg_locs[8]) {
+        .stack => |loc| {
+            try testing.expectEqual(@as(u32, 0), loc.offset);
+            try testing.expectEqual(@as(u32, 8), loc.size);
+            try testing.expectEqual(@as(u32, 8), loc.alignment);
+        },
+        else => try testing.expect(false),
+    }
+
+    switch (layout.arg_locs[9]) {
+        .stack => |loc| {
+            try testing.expectEqual(@as(u32, 8), loc.offset);
+            try testing.expectEqual(@as(u32, 8), loc.size);
+            try testing.expectEqual(@as(u32, 8), loc.alignment);
+        },
+        else => try testing.expect(false),
+    }
+
+    try testing.expectEqual(@as(u32, 16), layout.stack_size);
+}
+
+test "call layout: hfa struct in registers" {
+    var store = types.StructStore.init(testing.allocator);
+    defer store.deinit();
+
+    const fields = [_]types.StructField{
+        .{ .ty = Type.F64, .offset = 0 },
+        .{ .ty = Type.F64, .offset = 8 },
+    };
+    const id = try store.intern(&fields, 16);
+    const struct_ty = Type.fromStructId(id);
+
+    const args = [_]Type{struct_ty};
+    var layout = try computeCallLayout(testing.allocator, &args, null, .system_v, &store);
+    defer layout.deinit(testing.allocator);
+
+    switch (layout.arg_locs[0]) {
+        .struct_fp => |loc| {
+            try testing.expectEqual(@as(u8, 0), loc.start);
+            try testing.expectEqual(@as(u8, 2), loc.count);
+            try testing.expect(loc.elem_ty.eql(Type.F64));
+        },
+        else => try testing.expect(false),
+    }
+}
+
+test "call layout: struct spills to stack when regs full" {
+    var store = types.StructStore.init(testing.allocator);
+    defer store.deinit();
+
+    const fields = [_]types.StructField{
+        .{ .ty = Type.I64, .offset = 0 },
+        .{ .ty = Type.I64, .offset = 8 },
+    };
+    const id = try store.intern(&fields, 16);
+    const struct_ty = Type.fromStructId(id);
+
+    const args = [_]Type{
+        Type.I64, Type.I64, Type.I64, Type.I64,
+        Type.I64, Type.I64, Type.I64, Type.I64,
+        struct_ty,
+    };
+    var layout = try computeCallLayout(testing.allocator, &args, null, .system_v, &store);
+    defer layout.deinit(testing.allocator);
+
+    switch (layout.arg_locs[8]) {
+        .struct_stack => |loc| {
+            try testing.expectEqual(@as(u32, 0), loc.offset);
+            try testing.expectEqual(@as(u32, 16), loc.size);
+            try testing.expectEqual(@as(u32, 8), loc.alignment);
+        },
+        else => try testing.expect(false),
+    }
+    try testing.expectEqual(@as(u32, 16), layout.stack_size);
 }
