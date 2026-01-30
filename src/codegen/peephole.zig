@@ -122,10 +122,96 @@ pub fn PeepholeOptimizer(comptime MachInst: type) type {
         /// Pattern: MOV Ra, Ra
         /// Rewrite: (delete)
         fn eliminateDeadMoves(self: *Self, insts: *std.ArrayList(MachInst)) !bool {
-            _ = self;
-            _ = insts;
-            // TODO: Implement dead move elimination
-            return false;
+            var changed = false;
+            var i: usize = 0;
+
+            while (i < insts.items.len) {
+                const inst = &insts.items[i];
+                var remove = false;
+
+                if (@hasField(MachInst, "mov_rr")) {
+                    if (inst.* == .mov_rr) {
+                        const mov = inst.mov_rr;
+                        if (std.meta.eql(mov.dst.toReg(), mov.src)) {
+                            remove = true;
+                        }
+                    }
+                }
+
+                if (!remove and @hasField(MachInst, "fmov")) {
+                    if (inst.* == .fmov) {
+                        const mov = inst.fmov;
+                        if (std.meta.eql(mov.dst.toReg(), mov.src)) {
+                            remove = true;
+                        }
+                    }
+                }
+
+                if (!remove and @hasField(MachInst, "movss_rr")) {
+                    if (inst.* == .movss_rr) {
+                        const mov = inst.movss_rr;
+                        if (std.meta.eql(mov.dst.toReg(), mov.src)) {
+                            remove = true;
+                        }
+                    }
+                }
+
+                if (!remove and @hasField(MachInst, "movsd_rr")) {
+                    if (inst.* == .movsd_rr) {
+                        const mov = inst.movsd_rr;
+                        if (std.meta.eql(mov.dst.toReg(), mov.src)) {
+                            remove = true;
+                        }
+                    }
+                }
+
+                if (!remove and @hasField(MachInst, "movdqa_rr")) {
+                    if (inst.* == .movdqa_rr) {
+                        const mov = inst.movdqa_rr;
+                        if (std.meta.eql(mov.dst.toReg(), mov.src)) {
+                            remove = true;
+                        }
+                    }
+                }
+
+                if (!remove and @hasField(MachInst, "movdqu_rr")) {
+                    if (inst.* == .movdqu_rr) {
+                        const mov = inst.movdqu_rr;
+                        if (std.meta.eql(mov.dst.toReg(), mov.src)) {
+                            remove = true;
+                        }
+                    }
+                }
+
+                if (!remove and @hasField(MachInst, "movups_rr")) {
+                    if (inst.* == .movups_rr) {
+                        const mov = inst.movups_rr;
+                        if (std.meta.eql(mov.dst.toReg(), mov.src)) {
+                            remove = true;
+                        }
+                    }
+                }
+
+                if (!remove and @hasField(MachInst, "movupd_rr")) {
+                    if (inst.* == .movupd_rr) {
+                        const mov = inst.movupd_rr;
+                        if (std.meta.eql(mov.dst.toReg(), mov.src)) {
+                            remove = true;
+                        }
+                    }
+                }
+
+                if (remove) {
+                    _ = insts.orderedRemove(i);
+                    self.stats.dead_moves_eliminated += 1;
+                    changed = true;
+                    continue;
+                }
+
+                i += 1;
+            }
+
+            return changed;
         }
 
         /// Eliminate redundant loads from the same address.
@@ -217,6 +303,51 @@ test "canFormPair" {
 
     // Invalid: base offset out of range
     try testing.expect(!canFormPair(512, 520)); // base 512 too large (> 504)
+}
+
+test "eliminateDeadMoves removes self-moves" {
+    const testing = std.testing;
+
+    const TestReg = struct {
+        bits: u8,
+    };
+
+    const TestWritableReg = struct {
+        reg: TestReg,
+
+        pub fn toReg(self: @This()) TestReg {
+            return self.reg;
+        }
+    };
+
+    const TestInst = union(enum) {
+        mov_rr: struct { dst: TestWritableReg, src: TestReg },
+        add_rr: struct { dst: TestWritableReg, src: TestReg },
+    };
+
+    var optimizer = PeepholeOptimizer(TestInst).init(testing.allocator);
+
+    const r0 = TestReg{ .bits = 0 };
+    const r1 = TestReg{ .bits = 1 };
+
+    var insts: std.ArrayList(TestInst) = .{};
+    defer insts.deinit(testing.allocator);
+
+    try insts.append(testing.allocator, .{ .mov_rr = .{
+        .dst = .{ .reg = r0 },
+        .src = r0,
+    } });
+    try insts.append(testing.allocator, .{ .add_rr = .{
+        .dst = .{ .reg = r0 },
+        .src = r1,
+    } });
+
+    const changed = try optimizer.eliminateDeadMoves(&insts);
+
+    try testing.expect(changed);
+    try testing.expectEqual(@as(usize, 1), insts.items.len);
+    try testing.expect(insts.items[0] == .add_rr);
+    try testing.expectEqual(@as(u32, 1), optimizer.stats.dead_moves_eliminated);
 }
 
 // ============================================================================
