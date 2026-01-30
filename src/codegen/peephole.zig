@@ -317,12 +317,48 @@ pub fn PeepholeOptimizer(comptime MachInst: type) type {
         /// Rewrite: LDR Ra, [Rb, #off]; ... no writes ...; (delete second LDR)
         ///
         /// Requires: Alias analysis to prove no intervening writes
-        fn eliminateRedundantLoads(self: *Self, insts: *std.ArrayList(MachInst)) !bool {
-            _ = self;
-            _ = insts;
-            // TODO: Implement redundant load elimination
-            // Requires alias analysis infrastructure
-            return false;
+        pub fn eliminateRedundantLoads(self: *Self, insts: *std.ArrayList(MachInst)) !bool {
+            if (!@hasField(MachInst, "ldr")) {
+                return false;
+            }
+
+            var changed = false;
+            var i: usize = 0;
+
+            while (i + 1 < insts.items.len) {
+                const inst1 = &insts.items[i];
+                const inst2 = &insts.items[i + 1];
+
+                if (inst1.* != .ldr or inst2.* != .ldr) {
+                    i += 1;
+                    continue;
+                }
+
+                const ldr1 = inst1.ldr;
+                const ldr2 = inst2.ldr;
+
+                if (!std.meta.eql(ldr1.base, ldr2.base)) {
+                    i += 1;
+                    continue;
+                }
+
+                if (ldr1.offset != ldr2.offset or ldr1.size != ldr2.size) {
+                    i += 1;
+                    continue;
+                }
+
+                if (!std.meta.eql(ldr1.dst.toReg(), ldr2.dst.toReg())) {
+                    i += 1;
+                    continue;
+                }
+
+                _ = insts.orderedRemove(i + 1);
+                self.stats.redundant_loads_eliminated += 1;
+                changed = true;
+                i += 1;
+            }
+
+            return changed;
         }
 
         /// Get optimization statistics.
@@ -446,6 +482,56 @@ test "eliminateDeadMoves removes self-moves" {
     try testing.expectEqual(@as(usize, 1), insts.items.len);
     try testing.expect(insts.items[0] == .add_rr);
     try testing.expectEqual(@as(u32, 1), optimizer.stats.dead_moves_eliminated);
+}
+
+test "eliminateRedundantLoads removes adjacent duplicate load" {
+    const testing = std.testing;
+
+    const TestReg = struct {
+        bits: u8,
+    };
+
+    const TestWritableReg = struct {
+        reg: TestReg,
+
+        pub fn toReg(self: @This()) TestReg {
+            return self.reg;
+        }
+    };
+
+    const TestSize = enum { size32, size64 };
+
+    const TestInst = union(enum) {
+        ldr: struct { dst: TestWritableReg, base: TestReg, offset: i32, size: TestSize },
+        nop: void,
+    };
+
+    var optimizer = PeepholeOptimizer(TestInst).init(testing.allocator);
+
+    const r0 = TestReg{ .bits = 0 };
+    const r1 = TestReg{ .bits = 1 };
+
+    var insts: std.ArrayList(TestInst) = .{};
+    defer insts.deinit(testing.allocator);
+
+    try insts.append(testing.allocator, .{ .ldr = .{
+        .dst = .{ .reg = r0 },
+        .base = r1,
+        .offset = 16,
+        .size = .size64,
+    } });
+    try insts.append(testing.allocator, .{ .ldr = .{
+        .dst = .{ .reg = r0 },
+        .base = r1,
+        .offset = 16,
+        .size = .size64,
+    } });
+
+    const changed = try optimizer.eliminateRedundantLoads(&insts);
+
+    try testing.expect(changed);
+    try testing.expectEqual(@as(usize, 1), insts.items.len);
+    try testing.expectEqual(@as(u32, 1), optimizer.stats.redundant_loads_eliminated);
 }
 
 // ============================================================================

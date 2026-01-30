@@ -47,6 +47,15 @@ pub fn eliminateDeadMoves(
     return optimizer.eliminateDeadMoves(insts);
 }
 
+/// AArch64-specific redundant load elimination.
+/// Removes adjacent duplicate loads from the same address into the same register.
+pub fn eliminateRedundantLoads(
+    optimizer: *AArch64PeepholeOptimizer,
+    insts: *std.ArrayList(Inst),
+) !bool {
+    return optimizer.eliminateRedundantLoads(insts);
+}
+
 test "combineLoadPairs: adjacent loads with consecutive offsets" {
     const testing = std.testing;
     const allocator = testing.allocator;

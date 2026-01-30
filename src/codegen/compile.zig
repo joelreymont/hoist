@@ -1705,6 +1705,7 @@ fn emitAArch64WithAllocation(
             if (try peephole_mod.combineLoadPairs(&peephole, &block_insts)) changed = true;
             if (try peephole_mod.combineStorePairs(&peephole, &block_insts)) changed = true;
             if (try peephole_mod.eliminateDeadMoves(&peephole, &block_insts)) changed = true;
+            if (try peephole_mod.eliminateRedundantLoads(&peephole, &block_insts)) changed = true;
         }
 
         // Emit optimized instructions
