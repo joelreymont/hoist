@@ -58,7 +58,7 @@
 - Direct calls (BL with relocation)
 - Indirect calls (BLR through register)
 - Argument marshaling (registers + stack)
-- Basic return value handling (single X0)
+- Return value handling (AArch64 multi-return for int/float; other backends limited)
 - Signature validation infrastructure
 
 ### Floating-Point Constants ✅
@@ -102,7 +102,6 @@ Note: Spill/reload emission and linear scan are integrated. Peephole optimizer h
 ### High Complexity (1-2 weeks each)
 - Full rematerialization for binary ops (requires tracking operand pregs through spill)
 - Reload hoisting emit (requires persisting pregs across instructions in spill pass)
-- Multi-return values (for some language interop)
 
 ## Comparison with Cranelift
 
@@ -143,9 +142,9 @@ If performance optimization is needed:
 3. **Rematerialization** (high complexity, medium impact)
 
 If feature completeness is needed:
-1. **Multi-return values** (for some language interop)
-2. **Exception handling** (for languages requiring it)
-3. **Additional backends** (x86-64, RISC-V)
+1. **Exception handling** (for languages requiring it)
+2. **Additional backends** (x86-64, RISC-V)
+3. **Varargs IR/callsite integration** (wire variadic signatures)
 
 ## Conclusion
 
@@ -163,5 +162,6 @@ The compiler can currently:
 - Perform shifted bitwise operations (AND/OR/XOR with LSL/LSR/ASR)
 - Feature flags and parsing; runtime detection stubbed
 - Support vector operations including shuffles (dot product patterns pending)
+- Support multi-return values in IR and AArch64 lowering
 
 **Status**: ✅ Production-ready compiler with excellent foundation for future enhancements.
