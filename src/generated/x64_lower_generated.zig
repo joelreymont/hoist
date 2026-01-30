@@ -27,9 +27,11 @@ pub fn lower(
         .unary_imm => |data| {
             if (data.opcode == .iconst) {
                 const imm = data.imm.value;
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const result_value = ctx.func.dfg.firstResult(ir_inst) orelse return false;
+                const ty = ctx.getValueType(result_value);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
-                const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+                const dst_vreg = try ctx.getValueReg(result_value, .int);
+                const dst = WritableReg.fromVReg(dst_vreg);
 
                 try ctx.emit(Inst{ .mov_imm = .{
                     .dst = dst,
@@ -44,12 +46,14 @@ pub fn lower(
         .binary => |data| {
             const lhs = data.args[0];
             const rhs = data.args[1];
-            const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+            const result_value = ctx.func.dfg.firstResult(ir_inst) orelse return false;
+            const ty = ctx.getValueType(result_value);
             const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
             const lhs_reg = try ctx.getValueReg(lhs, .int);
             const rhs_reg = try ctx.getValueReg(rhs, .int);
-            const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+            const dst_vreg = try ctx.getValueReg(result_value, .int);
+            const dst = WritableReg.fromVReg(dst_vreg);
 
             // x64 ALU instructions modify first operand, so copy lhs to dst first
             try ctx.emit(Inst{ .mov_rr = .{
@@ -113,11 +117,13 @@ pub fn lower(
         .binary_imm64 => |data| {
             const lhs = data.arg;
             const imm = data.imm.value;
-            const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+            const result_value = ctx.func.dfg.firstResult(ir_inst) orelse return false;
+            const ty = ctx.getValueType(result_value);
             const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
             const lhs_reg = try ctx.getValueReg(lhs, .int);
-            const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
+            const dst_vreg = try ctx.getValueReg(result_value, .int);
+            const dst = WritableReg.fromVReg(dst_vreg);
 
             // Copy lhs to dst
             try ctx.emit(Inst{ .mov_rr = .{
@@ -291,4 +297,57 @@ test "x64 lower multi-return i64 pair" {
     try testing.expect(saw_rax);
     try testing.expect(saw_rdx);
     try testing.expect(saw_ret);
+}
+
+test "x64 lower return uses value vreg" {
+    const testing = std.testing;
+
+    var sig = root.signature.Signature.init(testing.allocator, .system_v);
+    try sig.returns.append(testing.allocator, root.signature.AbiParam.new(Type.I64));
+
+    var func = try root.function.Function.init(testing.allocator, "ret_single", sig);
+    defer func.deinit();
+
+    var builder = try root.builder.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+    const val = try builder.iconst(Type.I64, 7);
+    try builder.retValues(&.{val});
+    try builder.sealBlock(block);
+
+    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    _ = try ctx.startBlock(block);
+    var inst_iter = func.layout.blockInsts(block);
+    while (inst_iter.next()) |ir_inst| {
+        const handled = try lower(&ctx, ir_inst);
+        try testing.expect(handled);
+    }
+    ctx.endBlock();
+
+    const rax = Reg.fromPReg(PReg.new(.int, 0));
+    var mov_imm_dst: ?Reg = null;
+    var mov_ret_src: ?Reg = null;
+
+    for (vcode.insns.items) |inst| {
+        switch (inst) {
+            .mov_imm => |mov| mov_imm_dst = mov.dst.toReg(),
+            .mov_rr => |mov| {
+                if (mov.dst.toReg().bits == rax.bits) {
+                    mov_ret_src = mov.src;
+                }
+            },
+            else => {},
+        }
+    }
+
+    try testing.expect(mov_imm_dst != null);
+    try testing.expect(mov_ret_src != null);
+    try testing.expectEqual(mov_imm_dst.?.bits, mov_ret_src.?.bits);
 }
