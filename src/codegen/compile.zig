@@ -1569,11 +1569,12 @@ fn emitAArch64WithAllocation(
     // Map IR calling convention to ABI calling convention
     const abi_call_conv = try abiCallConv(ctx.func.sig.call_conv);
 
-    const abi_sig = machinst_abi.ABISignature.init(
+    var abi_sig = machinst_abi.ABISignature.init(
         arg_types.items,
         ret_types.items,
         abi_call_conv,
     );
+    abi_sig.is_varargs = ctx.func.sig.is_varargs;
 
     // Create minimal ABI callee for prologue/epilogue generation
     var abi_callee = abi_mod.Aarch64ABICallee.init(ctx.allocator, abi_sig);

@@ -1221,11 +1221,8 @@ pub const Aarch64ABICallee = struct {
         const fp_w = WritableReg.fromReg(fp);
         const sp_w = WritableReg.fromReg(sp);
 
-        // Recalculate frame size to ensure alignment
-        self.frame_size = calculateFrameSize(
-            self.locals_size,
-            @intCast(self.clobbered_callee_saves.items.len),
-        );
+        // Recalculate frame size to ensure alignment and varargs handling.
+        self.setLocalsSize(self.locals_size);
 
         // STP with offset has 7-bit signed immediate scaled by 8 bytes
         // Max negative offset: -64 * 8 = -512 bytes
@@ -1763,6 +1760,33 @@ test "Aarch64ABICallee with callee-saves" {
 
     // Should save/restore X19
     try testing.expect(buffer.data.items.len >= 20);
+}
+
+test "Aarch64ABICallee varargs prologue" {
+    const args = [_]abi_mod.Type{.i64};
+    var sig = abi_mod.ABISignature.init(&args, &.{.i64}, .aapcs64);
+
+    var baseline = Aarch64ABICallee.init(testing.allocator, sig);
+    defer baseline.deinit();
+
+    var baseline_buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer baseline_buffer.deinit();
+
+    try baseline.emitPrologue(&baseline_buffer);
+    const baseline_len = baseline_buffer.data.items.len;
+
+    sig.is_varargs = true;
+    var varargs = Aarch64ABICallee.init(testing.allocator, sig);
+    defer varargs.deinit();
+
+    var varargs_buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer varargs_buffer.deinit();
+
+    try varargs.emitPrologue(&varargs_buffer);
+
+    // Varargs prologue should include register save area.
+    try testing.expect(varargs_buffer.data.items.len > baseline_len);
+    try testing.expectEqual(baseline_len + 32, varargs_buffer.data.items.len);
 }
 
 test "AAPCS64 ABI" {
