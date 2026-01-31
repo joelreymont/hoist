@@ -3,6 +3,7 @@
 //! overflow check elimination, comparison simplification.
 
 const std = @import("std");
+const testing = std.testing;
 const Type = @import("types.zig").Type;
 
 /// Range of possible values for an SSA value.
@@ -174,6 +175,9 @@ pub const ValueRange = struct {
     /// Minimum bound for bit width and signedness.
     fn minBound(self: ValueRange) i64 {
         if (self.signed) {
+            if (self.bits == 64) {
+                return std.math.minInt(i64);
+            }
             return -(@as(i64, 1) << @intCast(self.bits - 1));
         } else {
             return 0;
@@ -183,8 +187,14 @@ pub const ValueRange = struct {
     /// Maximum bound for bit width and signedness.
     fn maxBound(self: ValueRange) i64 {
         if (self.signed) {
+            if (self.bits == 64) {
+                return std.math.maxInt(i64);
+            }
             return (@as(i64, 1) << @intCast(self.bits - 1)) - 1;
         } else {
+            if (self.bits == 64) {
+                return std.math.maxInt(i64);
+            }
             return (@as(i64, 1) << @intCast(self.bits)) - 1;
         }
     }
@@ -198,8 +208,13 @@ pub const ValueRange = struct {
             return empty(self.bits, self.signed);
         }
 
-        const min_sum = self.min + other.min;
-        const max_sum = self.max + other.max;
+        const min_sum_res = @addWithOverflow(self.min, other.min);
+        const max_sum_res = @addWithOverflow(self.max, other.max);
+        if (min_sum_res[1] != 0 or max_sum_res[1] != 0) {
+            return full(self.bits, self.signed);
+        }
+        const min_sum = min_sum_res[0];
+        const max_sum = max_sum_res[0];
 
         // Check for overflow
         const min_bound = self.minBound();
@@ -227,8 +242,13 @@ pub const ValueRange = struct {
             return empty(self.bits, self.signed);
         }
 
-        const min_diff = self.min - other.max;
-        const max_diff = self.max - other.min;
+        const min_diff_res = @subWithOverflow(self.min, other.max);
+        const max_diff_res = @subWithOverflow(self.max, other.min);
+        if (min_diff_res[1] != 0 or max_diff_res[1] != 0) {
+            return full(self.bits, self.signed);
+        }
+        const min_diff = min_diff_res[0];
+        const max_diff = max_diff_res[0];
 
         // Check for overflow
         const min_bound = self.minBound();
@@ -255,13 +275,16 @@ pub const ValueRange = struct {
             return empty(self.bits, self.signed);
         }
 
+        const p0 = @mulWithOverflow(self.min, other.min);
+        const p1 = @mulWithOverflow(self.min, other.max);
+        const p2 = @mulWithOverflow(self.max, other.min);
+        const p3 = @mulWithOverflow(self.max, other.max);
+        if (p0[1] != 0 or p1[1] != 0 or p2[1] != 0 or p3[1] != 0) {
+            return full(self.bits, self.signed);
+        }
+
         // All four combinations of endpoints
-        const products = [_]i64{
-            self.min * other.min,
-            self.min * other.max,
-            self.max * other.min,
-            self.max * other.max,
-        };
+        const products = [_]i64{ p0[0], p1[0], p2[0], p3[0] };
 
         var min_prod: i64 = products[0];
         var max_prod: i64 = products[0];
@@ -597,3 +620,30 @@ pub const RangeAnalysis = struct {
         return a.min == b.min and a.max == b.max and a.bits == b.bits and a.signed == b.signed;
     }
 };
+
+test "ValueRange overflow returns full range" {
+    const full64 = ValueRange.full(64, true);
+    try testing.expectEqual(std.math.minInt(i64), full64.min);
+    try testing.expectEqual(std.math.maxInt(i64), full64.max);
+
+    const add_over = ValueRange.constant(std.math.maxInt(i64), 64, true)
+        .add(ValueRange.constant(1, 64, true));
+    try testing.expectEqual(full64.min, add_over.min);
+    try testing.expectEqual(full64.max, add_over.max);
+    try testing.expectEqual(full64.bits, add_over.bits);
+    try testing.expectEqual(full64.signed, add_over.signed);
+
+    const sub_over = ValueRange.constant(std.math.minInt(i64), 64, true)
+        .sub(ValueRange.constant(1, 64, true));
+    try testing.expectEqual(full64.min, sub_over.min);
+    try testing.expectEqual(full64.max, sub_over.max);
+    try testing.expectEqual(full64.bits, sub_over.bits);
+    try testing.expectEqual(full64.signed, sub_over.signed);
+
+    const mul_over = ValueRange.constant(std.math.maxInt(i64), 64, true)
+        .mul(ValueRange.constant(2, 64, true));
+    try testing.expectEqual(full64.min, mul_over.min);
+    try testing.expectEqual(full64.max, mul_over.max);
+    try testing.expectEqual(full64.bits, mul_over.bits);
+    try testing.expectEqual(full64.signed, mul_over.signed);
+}
