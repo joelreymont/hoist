@@ -239,6 +239,8 @@ pub const DataFlowGraph = struct {
     values: SecondaryMap(Value, ValueData),
     blocks: PrimaryMap(Block, BlockData),
     value_lists: ValueListPool,
+    deleted_insts: SecondaryMap(Inst, bool),
+    deleted_inst_count: usize,
 
     const Self = @This();
 
@@ -249,6 +251,8 @@ pub const DataFlowGraph = struct {
             .values = SecondaryMap(Value, ValueData).init(allocator),
             .blocks = PrimaryMap(Block, BlockData).init(allocator),
             .value_lists = ValueListPool.init(allocator),
+            .deleted_insts = SecondaryMap(Inst, bool).init(allocator),
+            .deleted_inst_count = 0,
         };
     }
 
@@ -258,6 +262,7 @@ pub const DataFlowGraph = struct {
         self.values.deinit();
         self.blocks.deinit();
         self.value_lists.deinit();
+        self.deleted_insts.deinit();
     }
 
     pub fn makeInst(self: *Self, data: InstructionData) !Inst {
@@ -306,6 +311,17 @@ pub const DataFlowGraph = struct {
         value_data.* = ValueData.inst(ty, num, inst);
         try self.value_lists.push(results_list, val);
         return val;
+    }
+
+    pub fn isInstDeleted(self: *const Self, inst: Inst) bool {
+        if (self.deleted_insts.get(inst)) |flag| {
+            return flag.*;
+        }
+        return false;
+    }
+
+    pub fn liveInstCount(self: *const Self) usize {
+        return self.insts.elems.items.len - self.deleted_inst_count;
     }
 
     pub fn instResults(self: *const Self, inst: Inst) []const Value {
@@ -473,6 +489,14 @@ pub const DataFlowGraph = struct {
     /// Remove an instruction that produces no results.
     pub fn removeInst(self: *Self, inst: Inst) !void {
         if (self.numResults(inst) != 0) return error.InstHasResults;
+        try self.deleteInst(inst);
+    }
+
+    /// Delete an instruction from the DFG, clearing operands and results.
+    /// The caller must ensure all uses of its results are removed.
+    pub fn deleteInst(self: *Self, inst: Inst) !void {
+        if (!self.insts.isValid(inst)) return error.InstNotFound;
+        if (self.isInstDeleted(inst)) return error.InstAlreadyDeleted;
 
         if (self.insts.getMut(inst)) |inst_data| {
             inst_data.* = InstructionData{ .nullary = .{ .opcode = .nop } };
@@ -481,6 +505,9 @@ pub const DataFlowGraph = struct {
         if (self.results.getMut(inst)) |list| {
             try self.value_lists.truncate(list, 0);
         }
+
+        try self.deleted_insts.set(inst, true);
+        self.deleted_inst_count += 1;
     }
 };
 
@@ -520,4 +547,19 @@ test "DataFlowGraph removeInst" {
     const inst2 = try dfg.makeInst(.{ .binary = instruction_data.BinaryData.init(.iadd, Value.new(1), Value.new(2)) });
     _ = try dfg.appendInstResult(inst2, Type.I32);
     try testing.expectError(error.InstHasResults, dfg.removeInst(inst2));
+}
+
+test "DataFlowGraph deleteInst clears results" {
+    var dfg = DataFlowGraph.init(testing.allocator);
+    defer dfg.deinit();
+
+    const inst = try dfg.makeInst(.{ .binary = instruction_data.BinaryData.init(.iadd, Value.new(1), Value.new(2)) });
+    _ = try dfg.appendInstResult(inst, Type.I32);
+
+    try dfg.deleteInst(inst);
+
+    try testing.expect(dfg.isInstDeleted(inst));
+    try testing.expectEqual(@as(usize, 0), dfg.instResults(inst).len);
+    try testing.expectEqual(@as(usize, 0), dfg.numResults(inst));
+    try testing.expectEqual(dfg.liveInstCount(), dfg.insts.elems.items.len - 1);
 }

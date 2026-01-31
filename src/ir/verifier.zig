@@ -111,17 +111,24 @@ pub const Verifier = struct {
         while (block_iter2.next()) |block| {
             var inst_iter = self.func.layout.blockInsts(block);
             while (inst_iter.next()) |inst| {
-                _ = inst;
+                if (self.func.dfg.isInstDeleted(inst)) {
+                    const msg = try std.fmt.allocPrint(
+                        self.allocator,
+                        "Deleted instruction {d} is still in layout",
+                        .{ inst.index },
+                    );
+                    try self.errors.append(self.allocator, msg);
+                }
                 inst_count += 1;
             }
         }
 
         // Should match total instruction count in DFG
-        if (inst_count != self.func.dfg.insts.elems.items.len) {
+        if (inst_count != self.func.dfg.liveInstCount()) {
             const msg = try std.fmt.allocPrint(
                 self.allocator,
                 "Instruction count mismatch: layout={d}, dfg={d}",
-                .{ inst_count, self.func.dfg.insts.elems.items.len },
+                .{ inst_count, self.func.dfg.liveInstCount() },
             );
             try self.errors.append(self.allocator, msg);
         }

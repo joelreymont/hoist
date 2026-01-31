@@ -1045,6 +1045,7 @@ fn runRangeOptimization(ctx: *Context) CodegenError!bool {
     return opt.optimize() catch |err| {
         return switch (err) {
             error.OutOfMemory => CodegenError.OutOfMemory,
+            error.InstNotFound, error.InstAlreadyDeleted => CodegenError.OptimizationFailed,
         };
     };
 }
@@ -1193,7 +1194,12 @@ fn eliminateUnreachableCode(ctx: *Context) CodegenError!bool {
     var block_iter2 = ctx.func.layout.blockIter();
     while (block_iter2.next()) |block| {
         if (!reachable.contains(block)) {
-            ctx.func.layout.removeBlock(block);
+            ctx.func.deleteBlock(block) catch |err| {
+                return switch (err) {
+                    error.OutOfMemory => CodegenError.OutOfMemory,
+                    error.InstNotFound, error.InstAlreadyDeleted => CodegenError.OptimizationFailed,
+                };
+            };
             changed = true;
         }
     }

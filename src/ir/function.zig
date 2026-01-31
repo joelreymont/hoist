@@ -19,6 +19,7 @@ const Signature = signature.Signature;
 const DataFlowGraph = dfg_mod.DataFlowGraph;
 const Layout = layout_mod.Layout;
 const Block = entities.Block;
+const Inst = entities.Inst;
 const StackSlot = entities.StackSlot;
 const GlobalValue = entities.GlobalValue;
 const JumpTable = entities.JumpTable;
@@ -129,11 +130,35 @@ pub const Function = struct {
         return true;
     }
 
+    /// Delete an instruction from the layout and DFG.
+    /// Caller must ensure all uses of its results are removed.
+    pub fn deleteInst(self: *Self, inst: Inst) !void {
+        self.layout.removeInst(inst);
+        try self.dfg.deleteInst(inst);
+    }
+
+    /// Delete a block and all instructions within it.
+    pub fn deleteBlock(self: *Self, block: Block) !void {
+        var insts = std.ArrayList(Inst){};
+        defer insts.deinit(self.allocator);
+
+        var inst_iter = self.layout.blockInsts(block);
+        while (inst_iter.next()) |inst| {
+            try insts.append(self.allocator, inst);
+        }
+
+        for (insts.items) |inst| {
+            try self.deleteInst(inst);
+        }
+
+        self.layout.removeBlock(block);
+    }
+
     pub fn format(self: Self, writer: anytype) !void {
         try writer.print("function \"{}\" {{\n", .{self.name});
         try writer.print("  signature: {}\n", .{self.sig});
         try writer.print("  blocks: {}\n", .{self.layout.blocks.elems.items.len});
-        try writer.print("  insts: {}\n", .{self.dfg.insts.elems.items.len});
+        try writer.print("  insts: {}\n", .{self.dfg.liveInstCount()});
         try writer.print("  stack_slots: {}\n", .{self.stack_slots.elems.items.len});
         try writer.print("  global_values: {}\n", .{self.global_values.elems.items.len});
         try writer.print("  jump_tables: {}\n", .{self.jump_tables.elems.items.len});

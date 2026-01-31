@@ -99,7 +99,7 @@ pub const UCE = struct {
 
         // Remove unreachable blocks from layout
         for (dead_blocks.items) |block| {
-            func.layout.removeBlock(block);
+            try func.deleteBlock(block);
             removed = true;
         }
 
@@ -134,7 +134,7 @@ pub const UCE = struct {
 
         // Remove dead instructions
         for (dead_insts.items) |inst| {
-            func.layout.removeInst(inst);
+            try func.deleteInst(inst);
             removed = true;
         }
 

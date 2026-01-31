@@ -191,7 +191,7 @@ pub const RangeOptimizer = struct {
     /// Remove dead instructions.
     fn removeDeadInsts(self: *RangeOptimizer) !void {
         for (self.dead_insts.items) |inst| {
-            self.function.layout.removeInst(inst);
+            try self.function.deleteInst(inst);
         }
         self.dead_insts.clearRetainingCapacity();
     }

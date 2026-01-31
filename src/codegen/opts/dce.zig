@@ -173,7 +173,7 @@ pub const DCE = struct {
 
         // Remove dead instructions from layout
         for (dead_insts.items) |inst| {
-            func.layout.removeInst(inst);
+            try func.deleteInst(inst);
             removed = true;
         }
 

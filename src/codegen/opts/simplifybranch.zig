@@ -72,8 +72,7 @@ pub const SimplifyBranch = struct {
         if (block_node.next_block) |next| {
             if (next.index == jump_data.destination.index) {
                 // Jump to next block - can be eliminated (becomes fall-through)
-                func.layout.removeInst(inst);
-                try func.dfg.removeInst(inst);
+                try func.deleteInst(inst);
                 self.changed = true;
             }
         }
@@ -189,4 +188,5 @@ test "SimplifyBranch: remove fallthrough jump" {
     const inst_data = func.dfg.insts.get(jump_inst) orelse return error.MissingInst;
     try testing.expect(inst_data.* == .nullary);
     try testing.expectEqual(@import("../../ir/opcodes.zig").Opcode.nop, inst_data.nullary.opcode);
+    try testing.expect(func.dfg.isInstDeleted(jump_inst));
 }
