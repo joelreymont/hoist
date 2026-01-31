@@ -185,12 +185,12 @@ test "PrimaryMap basic" {
     try testing.expectEqual(0, map.len());
 
     const k1 = try map.push(42);
-    try testing.expectEqual(TestEntity.new(0), k1);
+    try testing.expectEqual(TestEntity.new(0).toIndex(), k1.toIndex());
     try testing.expectEqual(1, map.len());
     try testing.expect(map.isValid(k1));
 
     const k2 = try map.push(100);
-    try testing.expectEqual(TestEntity.new(1), k2);
+    try testing.expectEqual(TestEntity.new(1).toIndex(), k2.toIndex());
     try testing.expectEqual(2, map.len());
 
     try testing.expectEqual(42, map.get(k1).?.*);
@@ -202,10 +202,10 @@ test "PrimaryMap nextKey" {
     defer map.deinit();
 
     const next = map.nextKey();
-    try testing.expectEqual(TestEntity.new(0), next);
+    try testing.expectEqual(TestEntity.new(0).toIndex(), next.toIndex());
 
     _ = try map.push(1);
-    try testing.expectEqual(TestEntity.new(1), map.nextKey());
+    try testing.expectEqual(TestEntity.new(1).toIndex(), map.nextKey().toIndex());
 }
 
 test "PrimaryMap last" {
@@ -218,7 +218,7 @@ test "PrimaryMap last" {
     _ = try map.push(20);
 
     const last = map.last().?;
-    try testing.expectEqual(TestEntity.new(1), last[0]);
+    try testing.expectEqual(TestEntity.new(1).toIndex(), last[0].toIndex());
     try testing.expectEqual(20, last[1].*);
 }
 

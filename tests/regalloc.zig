@@ -59,14 +59,14 @@ test "spilling: allocation tracks spills separately" {
     try allocation.addSpill(v2, s2);
 
     // Verify correct lookups
-    try testing.expectEqual(p0, allocation.getReg(v0).?);
+    try testing.expectEqual(p0.index(), allocation.getReg(v0).?.index());
     try testing.expect(allocation.getSpill(v0) == null);
 
     try testing.expect(allocation.getReg(v1) == null);
-    try testing.expectEqual(s1, allocation.getSpill(v1).?);
+    try testing.expectEqual(s1.index, allocation.getSpill(v1).?.index);
 
     try testing.expect(allocation.getReg(v2) == null);
-    try testing.expectEqual(s2, allocation.getSpill(v2).?);
+    try testing.expectEqual(s2.index, allocation.getSpill(v2).?.index);
 }
 
 test "spilling: different spill slots for each vreg" {
@@ -119,7 +119,7 @@ test "spilling: reload after free allows reuse" {
 
     // Now v1 can allocate and should get the same physical register
     const p1 = try alloc.allocate(v1);
-    try testing.expectEqual(p0, p1);
+    try testing.expectEqual(p0.index(), p1.index());
 }
 
 test "spilling: vector registers separate from int registers" {
@@ -271,7 +271,7 @@ test "pressure: sequential allocation and deallocation" {
         const p = try alloc.allocate(v);
 
         // Should always get the same physical register
-        try testing.expectEqual(PReg.new(.int, 0), p);
+        try testing.expectEqual(PReg.new(.int, 0).index(), p.index());
 
         // Free immediately (end of live range)
         try alloc.free(v);
@@ -296,5 +296,5 @@ test "pressure: maximum vregs with minimal pregs" {
     }
 
     // Original allocation still valid
-    try testing.expectEqual(p0, alloc.getAllocation(v0).?);
+    try testing.expectEqual(p0.index(), alloc.getAllocation(v0).?.index());
 }

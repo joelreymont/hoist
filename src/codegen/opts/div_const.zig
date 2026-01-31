@@ -236,125 +236,147 @@ pub fn magicS64(d: i64) MagicS64 {
 // Tests (ported from Cranelift)
 const testing = std.testing;
 
+fn expectMagicU32(expected: MagicU32, actual: MagicU32) !void {
+    try testing.expectEqual(expected.mul_by, actual.mul_by);
+    try testing.expectEqual(expected.do_add, actual.do_add);
+    try testing.expectEqual(expected.shift_by, actual.shift_by);
+}
+
+fn expectMagicU64(expected: MagicU64, actual: MagicU64) !void {
+    try testing.expectEqual(expected.mul_by, actual.mul_by);
+    try testing.expectEqual(expected.do_add, actual.do_add);
+    try testing.expectEqual(expected.shift_by, actual.shift_by);
+}
+
+fn expectMagicS32(expected: MagicS32, actual: MagicS32) !void {
+    try testing.expectEqual(expected.mul_by, actual.mul_by);
+    try testing.expectEqual(expected.shift_by, actual.shift_by);
+}
+
+fn expectMagicS64(expected: MagicS64, actual: MagicS64) !void {
+    try testing.expectEqual(expected.mul_by, actual.mul_by);
+    try testing.expectEqual(expected.shift_by, actual.shift_by);
+}
+
 test "magicU32 comprehensive" {
     // Test vectors from Cranelift's div_const.rs test suite
-    try testing.expectEqual(MagicU32{ .mul_by = 0x80000000, .do_add = false, .shift_by = 0 }, magicU32(2));
-    try testing.expectEqual(MagicU32{ .mul_by = 0xaaaaaaab, .do_add = false, .shift_by = 1 }, magicU32(3));
-    try testing.expectEqual(MagicU32{ .mul_by = 0x40000000, .do_add = false, .shift_by = 0 }, magicU32(4));
-    try testing.expectEqual(MagicU32{ .mul_by = 0xcccccccd, .do_add = false, .shift_by = 2 }, magicU32(5));
-    try testing.expectEqual(MagicU32{ .mul_by = 0xaaaaaaab, .do_add = false, .shift_by = 2 }, magicU32(6));
-    try testing.expectEqual(MagicU32{ .mul_by = 0x24924925, .do_add = true, .shift_by = 3 }, magicU32(7));
-    try testing.expectEqual(MagicU32{ .mul_by = 0x38e38e39, .do_add = false, .shift_by = 1 }, magicU32(9));
-    try testing.expectEqual(MagicU32{ .mul_by = 0xcccccccd, .do_add = false, .shift_by = 3 }, magicU32(10));
-    try testing.expectEqual(MagicU32{ .mul_by = 0xba2e8ba3, .do_add = false, .shift_by = 3 }, magicU32(11));
-    try testing.expectEqual(MagicU32{ .mul_by = 0xaaaaaaab, .do_add = false, .shift_by = 3 }, magicU32(12));
-    try testing.expectEqual(MagicU32{ .mul_by = 0x51eb851f, .do_add = false, .shift_by = 3 }, magicU32(25));
-    try testing.expectEqual(MagicU32{ .mul_by = 0x10624dd3, .do_add = false, .shift_by = 3 }, magicU32(125));
-    try testing.expectEqual(MagicU32{ .mul_by = 0xd1b71759, .do_add = false, .shift_by = 9 }, magicU32(625));
-    try testing.expectEqual(MagicU32{ .mul_by = 0x88233b2b, .do_add = true, .shift_by = 11 }, magicU32(1337));
-    try testing.expectEqual(MagicU32{ .mul_by = 0x80008001, .do_add = false, .shift_by = 15 }, magicU32(65535));
-    try testing.expectEqual(MagicU32{ .mul_by = 0x00010000, .do_add = false, .shift_by = 0 }, magicU32(65536));
-    try testing.expectEqual(MagicU32{ .mul_by = 0xffff0001, .do_add = false, .shift_by = 16 }, magicU32(65537));
-    try testing.expectEqual(MagicU32{ .mul_by = 0x445b4553, .do_add = false, .shift_by = 23 }, magicU32(31415927));
-    try testing.expectEqual(MagicU32{ .mul_by = 0x93275ab3, .do_add = false, .shift_by = 31 }, magicU32(0xdeadbeef));
-    try testing.expectEqual(MagicU32{ .mul_by = 0x40000001, .do_add = false, .shift_by = 30 }, magicU32(0xfffffffd));
-    try testing.expectEqual(MagicU32{ .mul_by = 0x00000003, .do_add = true, .shift_by = 32 }, magicU32(0xfffffffe));
-    try testing.expectEqual(MagicU32{ .mul_by = 0x80000001, .do_add = false, .shift_by = 31 }, magicU32(0xffffffff));
+    try expectMagicU32(MagicU32{ .mul_by = 0x80000000, .do_add = false, .shift_by = 0 }, magicU32(2));
+    try expectMagicU32(MagicU32{ .mul_by = 0xaaaaaaab, .do_add = false, .shift_by = 1 }, magicU32(3));
+    try expectMagicU32(MagicU32{ .mul_by = 0x40000000, .do_add = false, .shift_by = 0 }, magicU32(4));
+    try expectMagicU32(MagicU32{ .mul_by = 0xcccccccd, .do_add = false, .shift_by = 2 }, magicU32(5));
+    try expectMagicU32(MagicU32{ .mul_by = 0xaaaaaaab, .do_add = false, .shift_by = 2 }, magicU32(6));
+    try expectMagicU32(MagicU32{ .mul_by = 0x24924925, .do_add = true, .shift_by = 3 }, magicU32(7));
+    try expectMagicU32(MagicU32{ .mul_by = 0x38e38e39, .do_add = false, .shift_by = 1 }, magicU32(9));
+    try expectMagicU32(MagicU32{ .mul_by = 0xcccccccd, .do_add = false, .shift_by = 3 }, magicU32(10));
+    try expectMagicU32(MagicU32{ .mul_by = 0xba2e8ba3, .do_add = false, .shift_by = 3 }, magicU32(11));
+    try expectMagicU32(MagicU32{ .mul_by = 0xaaaaaaab, .do_add = false, .shift_by = 3 }, magicU32(12));
+    try expectMagicU32(MagicU32{ .mul_by = 0x51eb851f, .do_add = false, .shift_by = 3 }, magicU32(25));
+    try expectMagicU32(MagicU32{ .mul_by = 0x10624dd3, .do_add = false, .shift_by = 3 }, magicU32(125));
+    try expectMagicU32(MagicU32{ .mul_by = 0xd1b71759, .do_add = false, .shift_by = 9 }, magicU32(625));
+    try expectMagicU32(MagicU32{ .mul_by = 0x88233b2b, .do_add = true, .shift_by = 11 }, magicU32(1337));
+    try expectMagicU32(MagicU32{ .mul_by = 0x80008001, .do_add = false, .shift_by = 15 }, magicU32(65535));
+    try expectMagicU32(MagicU32{ .mul_by = 0x00010000, .do_add = false, .shift_by = 0 }, magicU32(65536));
+    try expectMagicU32(MagicU32{ .mul_by = 0xffff0001, .do_add = false, .shift_by = 16 }, magicU32(65537));
+    try expectMagicU32(MagicU32{ .mul_by = 0x445b4553, .do_add = false, .shift_by = 23 }, magicU32(31415927));
+    try expectMagicU32(MagicU32{ .mul_by = 0x93275ab3, .do_add = false, .shift_by = 31 }, magicU32(0xdeadbeef));
+    try expectMagicU32(MagicU32{ .mul_by = 0x40000001, .do_add = false, .shift_by = 30 }, magicU32(0xfffffffd));
+    try expectMagicU32(MagicU32{ .mul_by = 0x00000003, .do_add = true, .shift_by = 32 }, magicU32(0xfffffffe));
+    try expectMagicU32(MagicU32{ .mul_by = 0x80000001, .do_add = false, .shift_by = 31 }, magicU32(0xffffffff));
 }
 
 test "magicU64 comprehensive" {
     // Test vectors from Cranelift's div_const.rs test suite
-    try testing.expectEqual(MagicU64{ .mul_by = 0x8000000000000000, .do_add = false, .shift_by = 0 }, magicU64(2));
-    try testing.expectEqual(MagicU64{ .mul_by = 0xaaaaaaaaaaaaaaab, .do_add = false, .shift_by = 1 }, magicU64(3));
-    try testing.expectEqual(MagicU64{ .mul_by = 0x4000000000000000, .do_add = false, .shift_by = 0 }, magicU64(4));
-    try testing.expectEqual(MagicU64{ .mul_by = 0xcccccccccccccccd, .do_add = false, .shift_by = 2 }, magicU64(5));
-    try testing.expectEqual(MagicU64{ .mul_by = 0xaaaaaaaaaaaaaaab, .do_add = false, .shift_by = 2 }, magicU64(6));
-    try testing.expectEqual(MagicU64{ .mul_by = 0x2492492492492493, .do_add = true, .shift_by = 3 }, magicU64(7));
-    try testing.expectEqual(MagicU64{ .mul_by = 0xe38e38e38e38e38f, .do_add = false, .shift_by = 3 }, magicU64(9));
-    try testing.expectEqual(MagicU64{ .mul_by = 0xcccccccccccccccd, .do_add = false, .shift_by = 3 }, magicU64(10));
-    try testing.expectEqual(MagicU64{ .mul_by = 0x2e8ba2e8ba2e8ba3, .do_add = false, .shift_by = 1 }, magicU64(11));
-    try testing.expectEqual(MagicU64{ .mul_by = 0xaaaaaaaaaaaaaaab, .do_add = false, .shift_by = 3 }, magicU64(12));
-    try testing.expectEqual(MagicU64{ .mul_by = 0x47ae147ae147ae15, .do_add = true, .shift_by = 5 }, magicU64(25));
-    try testing.expectEqual(MagicU64{ .mul_by = 0x0624dd2f1a9fbe77, .do_add = true, .shift_by = 7 }, magicU64(125));
-    try testing.expectEqual(MagicU64{ .mul_by = 0x346dc5d63886594b, .do_add = false, .shift_by = 7 }, magicU64(625));
-    try testing.expectEqual(MagicU64{ .mul_by = 0xc4119d952866a139, .do_add = false, .shift_by = 10 }, magicU64(1337));
-    try testing.expectEqual(MagicU64{ .mul_by = 0x116d154b9c3d2f85, .do_add = true, .shift_by = 25 }, magicU64(31415927));
-    try testing.expectEqual(MagicU64{ .mul_by = 0x93275ab2dfc9094b, .do_add = false, .shift_by = 31 }, magicU64(0x00000000deadbeef));
-    try testing.expectEqual(MagicU64{ .mul_by = 0x8000000180000005, .do_add = false, .shift_by = 31 }, magicU64(0x00000000fffffffd));
-    try testing.expectEqual(MagicU64{ .mul_by = 0x0000000200000005, .do_add = true, .shift_by = 32 }, magicU64(0x00000000fffffffe));
+    try expectMagicU64(MagicU64{ .mul_by = 0x8000000000000000, .do_add = false, .shift_by = 0 }, magicU64(2));
+    try expectMagicU64(MagicU64{ .mul_by = 0xaaaaaaaaaaaaaaab, .do_add = false, .shift_by = 1 }, magicU64(3));
+    try expectMagicU64(MagicU64{ .mul_by = 0x4000000000000000, .do_add = false, .shift_by = 0 }, magicU64(4));
+    try expectMagicU64(MagicU64{ .mul_by = 0xcccccccccccccccd, .do_add = false, .shift_by = 2 }, magicU64(5));
+    try expectMagicU64(MagicU64{ .mul_by = 0xaaaaaaaaaaaaaaab, .do_add = false, .shift_by = 2 }, magicU64(6));
+    try expectMagicU64(MagicU64{ .mul_by = 0x2492492492492493, .do_add = true, .shift_by = 3 }, magicU64(7));
+    try expectMagicU64(MagicU64{ .mul_by = 0xe38e38e38e38e38f, .do_add = false, .shift_by = 3 }, magicU64(9));
+    try expectMagicU64(MagicU64{ .mul_by = 0xcccccccccccccccd, .do_add = false, .shift_by = 3 }, magicU64(10));
+    try expectMagicU64(MagicU64{ .mul_by = 0x2e8ba2e8ba2e8ba3, .do_add = false, .shift_by = 1 }, magicU64(11));
+    try expectMagicU64(MagicU64{ .mul_by = 0xaaaaaaaaaaaaaaab, .do_add = false, .shift_by = 3 }, magicU64(12));
+    try expectMagicU64(MagicU64{ .mul_by = 0x47ae147ae147ae15, .do_add = true, .shift_by = 5 }, magicU64(25));
+    try expectMagicU64(MagicU64{ .mul_by = 0x0624dd2f1a9fbe77, .do_add = true, .shift_by = 7 }, magicU64(125));
+    try expectMagicU64(MagicU64{ .mul_by = 0x346dc5d63886594b, .do_add = false, .shift_by = 7 }, magicU64(625));
+    try expectMagicU64(MagicU64{ .mul_by = 0xc4119d952866a139, .do_add = false, .shift_by = 10 }, magicU64(1337));
+    try expectMagicU64(MagicU64{ .mul_by = 0x116d154b9c3d2f85, .do_add = true, .shift_by = 25 }, magicU64(31415927));
+    try expectMagicU64(MagicU64{ .mul_by = 0x93275ab2dfc9094b, .do_add = false, .shift_by = 31 }, magicU64(0x00000000deadbeef));
+    try expectMagicU64(MagicU64{ .mul_by = 0x8000000180000005, .do_add = false, .shift_by = 31 }, magicU64(0x00000000fffffffd));
+    try expectMagicU64(MagicU64{ .mul_by = 0x0000000200000005, .do_add = true, .shift_by = 32 }, magicU64(0x00000000fffffffe));
 }
 
 test "magicS32 comprehensive" {
     // Test vectors from Cranelift div_const.rs
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x7fffffff)), .shift_by = 30 }, magicS32(-0x80000000));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0xbfffffff)), .shift_by = 29 }, magicS32(-0x7FFFFFFF));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x7ffffffd)), .shift_by = 30 }, magicS32(-0x7FFFFFFE));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0xbba4baad)), .shift_by = 23 }, magicS32(-31415927));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x9df73135)), .shift_by = 9 }, magicS32(-1337));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x7fffffff)), .shift_by = 7 }, magicS32(-256));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x99999999)), .shift_by = 1 }, magicS32(-5));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x55555555)), .shift_by = 1 }, magicS32(-3));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x7fffffff)), .shift_by = 0 }, magicS32(-2));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x80000001)), .shift_by = 0 }, magicS32(2));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x55555556)), .shift_by = 0 }, magicS32(3));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x80000001)), .shift_by = 1 }, magicS32(4));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x66666667)), .shift_by = 1 }, magicS32(5));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x2aaaaaab)), .shift_by = 0 }, magicS32(6));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x92492493)), .shift_by = 2 }, magicS32(7));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x38e38e39)), .shift_by = 1 }, magicS32(9));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x66666667)), .shift_by = 2 }, magicS32(10));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x2e8ba2e9)), .shift_by = 1 }, magicS32(11));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x2aaaaaab)), .shift_by = 1 }, magicS32(12));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x51eb851f)), .shift_by = 3 }, magicS32(25));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x10624dd3)), .shift_by = 3 }, magicS32(125));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x68db8bad)), .shift_by = 8 }, magicS32(625));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x6208cecb)), .shift_by = 9 }, magicS32(1337));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x445b4553)), .shift_by = 23 }, magicS32(31415927));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x80000003)), .shift_by = 30 }, magicS32(0x7ffffffe));
-    try testing.expectEqual(MagicS32{ .mul_by = @bitCast(@as(u32, 0x40000001)), .shift_by = 29 }, magicS32(0x7fffffff));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x7fffffff)), .shift_by = 30 }, magicS32(-0x80000000));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0xbfffffff)), .shift_by = 29 }, magicS32(-0x7FFFFFFF));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x7ffffffd)), .shift_by = 30 }, magicS32(-0x7FFFFFFE));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0xbba4baad)), .shift_by = 23 }, magicS32(-31415927));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x9df73135)), .shift_by = 9 }, magicS32(-1337));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x7fffffff)), .shift_by = 7 }, magicS32(-256));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x99999999)), .shift_by = 1 }, magicS32(-5));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x55555555)), .shift_by = 1 }, magicS32(-3));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x7fffffff)), .shift_by = 0 }, magicS32(-2));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x80000001)), .shift_by = 0 }, magicS32(2));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x55555556)), .shift_by = 0 }, magicS32(3));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x80000001)), .shift_by = 1 }, magicS32(4));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x66666667)), .shift_by = 1 }, magicS32(5));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x2aaaaaab)), .shift_by = 0 }, magicS32(6));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x92492493)), .shift_by = 2 }, magicS32(7));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x38e38e39)), .shift_by = 1 }, magicS32(9));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x66666667)), .shift_by = 2 }, magicS32(10));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x2e8ba2e9)), .shift_by = 1 }, magicS32(11));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x2aaaaaab)), .shift_by = 1 }, magicS32(12));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x51eb851f)), .shift_by = 3 }, magicS32(25));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x10624dd3)), .shift_by = 3 }, magicS32(125));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x68db8bad)), .shift_by = 8 }, magicS32(625));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x6208cecb)), .shift_by = 9 }, magicS32(1337));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x445b4553)), .shift_by = 23 }, magicS32(31415927));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x80000003)), .shift_by = 30 }, magicS32(0x7ffffffe));
+    try expectMagicS32(MagicS32{ .mul_by = @bitCast(@as(u32, 0x40000001)), .shift_by = 29 }, magicS32(0x7fffffff));
 }
 
 test "magicS64 comprehensive" {
     // Test vectors from Cranelift div_const.rs
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffffffffffff)), .shift_by = 62 }, magicS64(-0x8000000000000000));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0xbfffffffffffffff)), .shift_by = 61 }, magicS64(-0x7FFFFFFFFFFFFFFF));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7ffffffffffffffd)), .shift_by = 62 }, magicS64(-0x7FFFFFFFFFFFFFFE));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x6c3b8b1635a4412f)), .shift_by = 59 }, magicS64(-0x0ddc0ffeebadf00d));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x800000007fffffff)), .shift_by = 31 }, magicS64(-0x100000001));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffffffffffff)), .shift_by = 31 }, magicS64(-0x100000000));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffff7fffffff)), .shift_by = 31 }, magicS64(-0xFFFFFFFF));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7ffffffefffffffd)), .shift_by = 31 }, magicS64(-0xFFFFFFFE));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7ffffffe7ffffffb)), .shift_by = 31 }, magicS64(-0xFFFFFFFD));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x6cd8a54d2036f6b5)), .shift_by = 31 }, magicS64(-0xDeadBeef));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7749755a31e1683d)), .shift_by = 24 }, magicS64(-31415927));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x9df731356bccaf63)), .shift_by = 9 }, magicS64(-1337));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffffffffffff)), .shift_by = 7 }, magicS64(-256));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x9999999999999999)), .shift_by = 1 }, magicS64(-5));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x5555555555555555)), .shift_by = 1 }, magicS64(-3));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffffffffffff)), .shift_by = 0 }, magicS64(-2));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000000000001)), .shift_by = 0 }, magicS64(2));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x5555555555555556)), .shift_by = 0 }, magicS64(3));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000000000001)), .shift_by = 1 }, magicS64(4));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x6666666666666667)), .shift_by = 1 }, magicS64(5));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x2aaaaaaaaaaaaaab)), .shift_by = 0 }, magicS64(6));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x4924924924924925)), .shift_by = 1 }, magicS64(7));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x1c71c71c71c71c72)), .shift_by = 0 }, magicS64(9));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x6666666666666667)), .shift_by = 2 }, magicS64(10));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x2e8ba2e8ba2e8ba3)), .shift_by = 1 }, magicS64(11));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x2aaaaaaaaaaaaaab)), .shift_by = 1 }, magicS64(12));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0xa3d70a3d70a3d70b)), .shift_by = 4 }, magicS64(25));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x20c49ba5e353f7cf)), .shift_by = 4 }, magicS64(125));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x346dc5d63886594b)), .shift_by = 7 }, magicS64(625));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x6208ceca9433509d)), .shift_by = 9 }, magicS64(1337));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x88b68aa5ce1e97c3)), .shift_by = 24 }, magicS64(31415927));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x93275ab2dfc9094b)), .shift_by = 31 }, magicS64(0x00000000deadbeef));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000180000005)), .shift_by = 31 }, magicS64(0x00000000fffffffd));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000100000003)), .shift_by = 31 }, magicS64(0x00000000fffffffe));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000080000001)), .shift_by = 31 }, magicS64(0x00000000ffffffff));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000000000001)), .shift_by = 31 }, magicS64(0x0000000100000000));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffff80000001)), .shift_by = 31 }, magicS64(0x0000000100000001));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x93c474e9ca5bbed1)), .shift_by = 59 }, magicS64(0x0ddc0ffeebadf00d));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x2000000000000001)), .shift_by = 60 }, magicS64(0x7ffffffffffffffd));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000000000003)), .shift_by = 62 }, magicS64(0x7ffffffffffffffe));
-    try testing.expectEqual(MagicS64{ .mul_by = @bitCast(@as(u64, 0x4000000000000001)), .shift_by = 61 }, magicS64(0x7fffffffffffffff));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffffffffffff)), .shift_by = 62 }, magicS64(-0x8000000000000000));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0xbfffffffffffffff)), .shift_by = 61 }, magicS64(-0x7FFFFFFFFFFFFFFF));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7ffffffffffffffd)), .shift_by = 62 }, magicS64(-0x7FFFFFFFFFFFFFFE));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x6c3b8b1635a4412f)), .shift_by = 59 }, magicS64(-0x0ddc0ffeebadf00d));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x800000007fffffff)), .shift_by = 31 }, magicS64(-0x100000001));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffffffffffff)), .shift_by = 31 }, magicS64(-0x100000000));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffff7fffffff)), .shift_by = 31 }, magicS64(-0xFFFFFFFF));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7ffffffefffffffd)), .shift_by = 31 }, magicS64(-0xFFFFFFFE));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7ffffffe7ffffffb)), .shift_by = 31 }, magicS64(-0xFFFFFFFD));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x6cd8a54d2036f6b5)), .shift_by = 31 }, magicS64(-0xDeadBeef));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7749755a31e1683d)), .shift_by = 24 }, magicS64(-31415927));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x9df731356bccaf63)), .shift_by = 9 }, magicS64(-1337));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffffffffffff)), .shift_by = 7 }, magicS64(-256));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x9999999999999999)), .shift_by = 1 }, magicS64(-5));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x5555555555555555)), .shift_by = 1 }, magicS64(-3));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffffffffffff)), .shift_by = 0 }, magicS64(-2));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000000000001)), .shift_by = 0 }, magicS64(2));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x5555555555555556)), .shift_by = 0 }, magicS64(3));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000000000001)), .shift_by = 1 }, magicS64(4));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x6666666666666667)), .shift_by = 1 }, magicS64(5));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x2aaaaaaaaaaaaaab)), .shift_by = 0 }, magicS64(6));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x4924924924924925)), .shift_by = 1 }, magicS64(7));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x1c71c71c71c71c72)), .shift_by = 0 }, magicS64(9));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x6666666666666667)), .shift_by = 2 }, magicS64(10));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x2e8ba2e8ba2e8ba3)), .shift_by = 1 }, magicS64(11));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x2aaaaaaaaaaaaaab)), .shift_by = 1 }, magicS64(12));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0xa3d70a3d70a3d70b)), .shift_by = 4 }, magicS64(25));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x20c49ba5e353f7cf)), .shift_by = 4 }, magicS64(125));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x346dc5d63886594b)), .shift_by = 7 }, magicS64(625));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x6208ceca9433509d)), .shift_by = 9 }, magicS64(1337));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x88b68aa5ce1e97c3)), .shift_by = 24 }, magicS64(31415927));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x93275ab2dfc9094b)), .shift_by = 31 }, magicS64(0x00000000deadbeef));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000180000005)), .shift_by = 31 }, magicS64(0x00000000fffffffd));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000100000003)), .shift_by = 31 }, magicS64(0x00000000fffffffe));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000080000001)), .shift_by = 31 }, magicS64(0x00000000ffffffff));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000000000001)), .shift_by = 31 }, magicS64(0x0000000100000000));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x7fffffff80000001)), .shift_by = 31 }, magicS64(0x0000000100000001));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x93c474e9ca5bbed1)), .shift_by = 59 }, magicS64(0x0ddc0ffeebadf00d));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x2000000000000001)), .shift_by = 60 }, magicS64(0x7ffffffffffffffd));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x8000000000000003)), .shift_by = 62 }, magicS64(0x7ffffffffffffffe));
+    try expectMagicS64(MagicS64{ .mul_by = @bitCast(@as(u64, 0x4000000000000001)), .shift_by = 61 }, magicS64(0x7fffffffffffffff));
 }

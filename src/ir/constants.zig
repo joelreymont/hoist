@@ -102,7 +102,7 @@ test "ConstantPool addInt" {
     const v2 = try pool.addInt(42, Type.I32); // Same constant
 
     // Should return same value for same constant
-    try testing.expectEqual(v1, v2);
+    try testing.expectEqual(v1.toIndex(), v2.toIndex());
     try testing.expectEqual(@as(usize, 1), pool.constants.items.len);
 }
 
@@ -134,7 +134,7 @@ test "ConstantPool deduplication" {
     const v2 = try pool.addInt(100, Type.I64);
     const v3 = try pool.addInt(200, Type.I64);
 
-    try testing.expectEqual(v1, v2);
+    try testing.expectEqual(v1.toIndex(), v2.toIndex());
     try testing.expect(!std.meta.eql(v1, v3));
     try testing.expectEqual(@as(usize, 2), pool.constants.items.len);
 }

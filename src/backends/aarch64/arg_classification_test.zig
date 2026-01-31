@@ -115,10 +115,10 @@ test "arg classification: int arg register mapping" {
     defer mock.deinit();
 
     // X0-X7 mapping
-    try testing.expectEqual(PReg.new(.int, 0), mock.getIntArgReg(0).?);
-    try testing.expectEqual(PReg.new(.int, 1), mock.getIntArgReg(1).?);
-    try testing.expectEqual(PReg.new(.int, 2), mock.getIntArgReg(2).?);
-    try testing.expectEqual(PReg.new(.int, 7), mock.getIntArgReg(7).?);
+    try testing.expectEqual(PReg.new(.int, 0).index(), mock.getIntArgReg(0).?.index());
+    try testing.expectEqual(PReg.new(.int, 1).index(), mock.getIntArgReg(1).?.index());
+    try testing.expectEqual(PReg.new(.int, 2).index(), mock.getIntArgReg(2).?.index());
+    try testing.expectEqual(PReg.new(.int, 7).index(), mock.getIntArgReg(7).?.index());
 
     // X8+ on stack
     try testing.expectEqual(@as(?PReg, null), mock.getIntArgReg(8));
@@ -129,10 +129,10 @@ test "arg classification: float arg register mapping" {
     defer mock.deinit();
 
     // V0-V7 mapping
-    try testing.expectEqual(PReg.new(.float, 0), mock.getFloatArgReg(0).?);
-    try testing.expectEqual(PReg.new(.float, 1), mock.getFloatArgReg(1).?);
-    try testing.expectEqual(PReg.new(.float, 2), mock.getFloatArgReg(2).?);
-    try testing.expectEqual(PReg.new(.float, 7), mock.getFloatArgReg(7).?);
+    try testing.expectEqual(PReg.new(.float, 0).index(), mock.getFloatArgReg(0).?.index());
+    try testing.expectEqual(PReg.new(.float, 1).index(), mock.getFloatArgReg(1).?.index());
+    try testing.expectEqual(PReg.new(.float, 2).index(), mock.getFloatArgReg(2).?.index());
+    try testing.expectEqual(PReg.new(.float, 7).index(), mock.getFloatArgReg(7).?.index());
 
     // V8+ on stack
     try testing.expectEqual(@as(?PReg, null), mock.getFloatArgReg(8));
@@ -176,7 +176,7 @@ test "arg classification: single int arg" {
     try testing.expectEqual(@as(u32, 1), mock.register_args);
     try testing.expectEqual(@as(u32, 0), mock.stack_args);
 
-    try testing.expectEqual(PReg.new(.int, 0), mock.getIntArgReg(0).?);
+    try testing.expectEqual(PReg.new(.int, 0).index(), mock.getIntArgReg(0).?.index());
 }
 
 test "arg classification: single float arg" {
@@ -188,5 +188,5 @@ test "arg classification: single float arg" {
     try testing.expectEqual(@as(u32, 1), mock.register_args);
     try testing.expectEqual(@as(u32, 0), mock.stack_args);
 
-    try testing.expectEqual(PReg.new(.float, 0), mock.getFloatArgReg(0).?);
+    try testing.expectEqual(PReg.new(.float, 0).index(), mock.getFloatArgReg(0).?.index());
 }

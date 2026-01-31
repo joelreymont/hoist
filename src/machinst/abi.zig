@@ -674,15 +674,15 @@ test "ABIMachineSpec arg allocation" {
     // First arg in RDI
     try testing.expectEqual(@as(usize, 1), arg_locs[0].slots.len);
     try testing.expect(arg_locs[0].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.int, 7), arg_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.int, 7).index(), arg_locs[0].slots[0].reg.preg.index());
 
     // Second arg in RSI
     try testing.expect(arg_locs[1].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.int, 6), arg_locs[1].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.int, 6).index(), arg_locs[1].slots[0].reg.preg.index());
 
     // Third arg in RDX
     try testing.expect(arg_locs[2].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.int, 2), arg_locs[2].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.int, 2).index(), arg_locs[2].slots[0].reg.preg.index());
 }
 
 test "ABIMachineSpec stack spillover" {
@@ -728,11 +728,11 @@ test "ABIMachineSpec return values" {
 
     // First return in RAX
     try testing.expect(ret_locs[0].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.int, 0), ret_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.int, 0).index(), ret_locs[0].slots[0].reg.preg.index());
 
     // Second return in RDX
     try testing.expect(ret_locs[1].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.int, 2), ret_locs[1].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.int, 2).index(), ret_locs[1].slots[0].reg.preg.index());
 }
 
 test "vector type v64 properties" {
@@ -839,14 +839,14 @@ test "vector argument allocation in float registers" {
 
     // All should be in float registers (XMM0, XMM1, XMM2)
     try testing.expect(arg_locs[0].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.float, 0), arg_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.float, 0).index(), arg_locs[0].slots[0].reg.preg.index());
 
     try testing.expect(arg_locs[1].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.float, 1), arg_locs[1].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.float, 1).index(), arg_locs[1].slots[0].reg.preg.index());
     try testing.expectEqual(RegClass.vector, arg_locs[1].slots[0].reg.ty.regClass());
 
     try testing.expect(arg_locs[2].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.float, 2), arg_locs[2].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.float, 2).index(), arg_locs[2].slots[0].reg.preg.index());
 }
 
 test "vector return value allocation in float registers" {
@@ -868,7 +868,7 @@ test "vector return value allocation in float registers" {
 
     // Vector return in XMM0
     try testing.expect(ret_locs[0].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.float, 0), ret_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.float, 0).index(), ret_locs[0].slots[0].reg.preg.index());
     try testing.expectEqual(RegClass.vector, ret_locs[0].slots[0].reg.ty.regClass());
 }
 // ARM64 AAPCS ABI tests
@@ -892,17 +892,17 @@ test "AAPCS64 float argument allocation" {
 
     // First float arg in V0
     try testing.expect(arg_locs[0].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.float, 0), arg_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.float, 0).index(), arg_locs[0].slots[0].reg.preg.index());
     try testing.expectEqual(Type.f32, arg_locs[0].slots[0].reg.ty);
 
     // Second float arg in V1
     try testing.expect(arg_locs[1].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.float, 1), arg_locs[1].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.float, 1).index(), arg_locs[1].slots[0].reg.preg.index());
     try testing.expectEqual(Type.f64, arg_locs[1].slots[0].reg.ty);
 
     // Third float arg in V2
     try testing.expect(arg_locs[2].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.float, 2), arg_locs[2].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.float, 2).index(), arg_locs[2].slots[0].reg.preg.index());
     try testing.expectEqual(Type.f32, arg_locs[2].slots[0].reg.ty);
 }
 
@@ -926,19 +926,19 @@ test "AAPCS64 mixed int and float arguments" {
 
     // First int arg in X0
     try testing.expect(arg_locs[0].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.int, 0), arg_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.int, 0).index(), arg_locs[0].slots[0].reg.preg.index());
 
     // First float arg in V0
     try testing.expect(arg_locs[1].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.float, 0), arg_locs[1].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.float, 0).index(), arg_locs[1].slots[0].reg.preg.index());
 
     // Second int arg in X1
     try testing.expect(arg_locs[2].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.int, 1), arg_locs[2].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.int, 1).index(), arg_locs[2].slots[0].reg.preg.index());
 
     // Second float arg in V1
     try testing.expect(arg_locs[3].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.float, 1), arg_locs[3].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.float, 1).index(), arg_locs[3].slots[0].reg.preg.index());
 }
 
 test "AAPCS64 float register exhaustion" {
@@ -962,7 +962,7 @@ test "AAPCS64 float register exhaustion" {
     // First 8 in float registers
     for (0..8) |i| {
         try testing.expect(arg_locs[i].slots[0] == .reg);
-        try testing.expectEqual(PReg.new(.float, @intCast(i)), arg_locs[i].slots[0].reg.preg);
+        try testing.expectEqual(PReg.new(.float, @intCast(i)).index(), arg_locs[i].slots[0].reg.preg.index());
     }
 
     // 9th on stack
@@ -989,12 +989,12 @@ test "AAPCS64 float return values" {
 
     // First return in V0
     try testing.expect(ret_locs[0].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.float, 0), ret_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.float, 0).index(), ret_locs[0].slots[0].reg.preg.index());
     try testing.expectEqual(Type.f32, ret_locs[0].slots[0].reg.ty);
 
     // Second return in V1
     try testing.expect(ret_locs[1].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.float, 1), ret_locs[1].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.float, 1).index(), ret_locs[1].slots[0].reg.preg.index());
     try testing.expectEqual(Type.f64, ret_locs[1].slots[0].reg.ty);
 }
 
@@ -1018,15 +1018,15 @@ test "AAPCS64 vector arguments in float registers" {
 
     // All should be in float registers (V0, V1, V2)
     try testing.expect(arg_locs[0].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.float, 0), arg_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.float, 0).index(), arg_locs[0].slots[0].reg.preg.index());
     try testing.expectEqual(RegClass.vector, arg_locs[0].slots[0].reg.ty.regClass());
 
     try testing.expect(arg_locs[1].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.float, 1), arg_locs[1].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.float, 1).index(), arg_locs[1].slots[0].reg.preg.index());
     try testing.expectEqual(RegClass.float, arg_locs[1].slots[0].reg.ty.regClass());
 
     try testing.expect(arg_locs[2].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.float, 2), arg_locs[2].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.float, 2).index(), arg_locs[2].slots[0].reg.preg.index());
     try testing.expectEqual(RegClass.vector, arg_locs[2].slots[0].reg.ty.regClass());
 }
 
@@ -1054,12 +1054,12 @@ test "AAPCS64 i128 return in register pair" {
 
     // First slot in X0
     try testing.expect(ret_locs[0].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.int, 0), ret_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.int, 0).index(), ret_locs[0].slots[0].reg.preg.index());
     try testing.expectEqual(Type.i64, ret_locs[0].slots[0].reg.ty);
 
     // Second slot in X1
     try testing.expect(ret_locs[0].slots[1] == .reg);
-    try testing.expectEqual(PReg.new(.int, 1), ret_locs[0].slots[1].reg.preg);
+    try testing.expectEqual(PReg.new(.int, 1).index(), ret_locs[0].slots[1].reg.preg.index());
     try testing.expectEqual(Type.i64, ret_locs[0].slots[1].reg.ty);
 }
 
@@ -1086,11 +1086,11 @@ test "AAPCS64 i128 argument in register pair" {
 
     // First slot in X0
     try testing.expect(arg_locs[0].slots[0] == .reg);
-    try testing.expectEqual(PReg.new(.int, 0), arg_locs[0].slots[0].reg.preg);
+    try testing.expectEqual(PReg.new(.int, 0).index(), arg_locs[0].slots[0].reg.preg.index());
     try testing.expectEqual(Type.i64, arg_locs[0].slots[0].reg.ty);
 
     // Second slot in X1
     try testing.expect(arg_locs[0].slots[1] == .reg);
-    try testing.expectEqual(PReg.new(.int, 1), arg_locs[0].slots[1].reg.preg);
+    try testing.expectEqual(PReg.new(.int, 1).index(), arg_locs[0].slots[1].reg.preg.index());
     try testing.expectEqual(Type.i64, arg_locs[0].slots[1].reg.ty);
 }

@@ -112,7 +112,7 @@ test "FuncMetadataTable: register and get" {
     // Get metadata
     const meta = table.getMetadata(func_ref);
     try testing.expect(meta != null);
-    try testing.expectEqual(SigRef.new(0), meta.?.sig_ref);
+    try testing.expectEqual(SigRef.new(0).toIndex(), meta.?.sig_ref.toIndex());
     try testing.expectEqual(FuncMetadata.Linkage.import, meta.?.linkage);
 }
 
@@ -139,11 +139,11 @@ test "FuncMetadataTable: multiple functions" {
     try testing.expectEqual(@as(u32, 2), func3.index);
 
     const meta1 = table.getMetadata(func1).?;
-    try testing.expectEqual(SigRef.new(0), meta1.sig_ref);
+    try testing.expectEqual(SigRef.new(0).toIndex(), meta1.sig_ref.toIndex());
     try testing.expectEqual(FuncMetadata.Linkage.import, meta1.linkage);
 
     const meta2 = table.getMetadata(func2).?;
-    try testing.expectEqual(SigRef.new(1), meta2.sig_ref);
+    try testing.expectEqual(SigRef.new(1).toIndex(), meta2.sig_ref.toIndex());
     try testing.expectEqual(FuncMetadata.Linkage.@"export", meta2.linkage);
 }
 

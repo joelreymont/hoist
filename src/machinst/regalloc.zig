@@ -172,7 +172,7 @@ test "LinearScanAllocator basic" {
 
     // Same vreg should return same preg
     const p0_again = try alloc.allocate(v0);
-    try testing.expectEqual(p0, p0_again);
+    try testing.expectEqual(p0.index(), p0_again.index());
 
     // Free and reallocate
     try alloc.free(v0);
@@ -180,7 +180,7 @@ test "LinearScanAllocator basic" {
     const p2 = try alloc.allocate(v2);
 
     // Should reuse freed register
-    try testing.expectEqual(p0, p2);
+    try testing.expectEqual(p0.index(), p2.index());
 }
 
 test "Allocation" {
@@ -191,13 +191,13 @@ test "Allocation" {
     const p0 = PReg.new(.int, 0);
 
     try allocation.addReg(v0, p0);
-    try testing.expectEqual(p0, allocation.getReg(v0).?);
+    try testing.expectEqual(p0.index(), allocation.getReg(v0).?.index());
     try testing.expect(allocation.getSpill(v0) == null);
 
     const v1 = VReg.new(1, .int);
     const s1 = reg_mod.SpillSlot.new(0);
 
     try allocation.addSpill(v1, s1);
-    try testing.expectEqual(s1, allocation.getSpill(v1).?);
+    try testing.expectEqual(s1.index, allocation.getSpill(v1).?.index);
     try testing.expect(allocation.getReg(v1) == null);
 }

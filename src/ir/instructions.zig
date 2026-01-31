@@ -267,7 +267,7 @@ test "BlockArg encoding" {
     const decoded = BlockArg.decodeFromValue(encoded);
 
     try testing.expectEqual(BlockArg.value, @as(std.meta.Tag(BlockArg), decoded));
-    try testing.expectEqual(v42, decoded.value);
+    try testing.expectEqual(v42.toIndex(), decoded.value.toIndex());
 
     const arg2 = BlockArg{ .try_call_ret = 5 };
     const encoded2 = arg2.encodeAsValue();
@@ -292,12 +292,12 @@ test "BlockCall basic" {
     };
 
     var bc = try BlockCall.init(block0, &args_slice, &pool);
-    try testing.expectEqual(block0, bc.block(&pool));
+    try testing.expectEqual(block0.toIndex(), bc.block(&pool).toIndex());
     try testing.expectEqual(@as(usize, 2), bc.len(&pool));
 
     const decoded_args = try bc.args(&pool, allocator);
     defer allocator.free(decoded_args);
     try testing.expectEqual(@as(usize, 2), decoded_args.len);
-    try testing.expectEqual(v1, decoded_args[0].value);
-    try testing.expectEqual(v2, decoded_args[1].value);
+    try testing.expectEqual(v1.toIndex(), decoded_args[0].value.toIndex());
+    try testing.expectEqual(v2.toIndex(), decoded_args[1].value.toIndex());
 }

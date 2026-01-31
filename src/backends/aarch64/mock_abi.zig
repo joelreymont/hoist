@@ -265,13 +265,13 @@ test "MockABICallee: argument register mapping" {
     defer mock.deinit();
 
     // Int args: X0-X7
-    try testing.expectEqual(PReg.new(.int, 0), mock.getIntArgReg(0).?);
-    try testing.expectEqual(PReg.new(.int, 7), mock.getIntArgReg(7).?);
+    try testing.expectEqual(PReg.new(.int, 0).index(), mock.getIntArgReg(0).?.index());
+    try testing.expectEqual(PReg.new(.int, 7).index(), mock.getIntArgReg(7).?.index());
     try testing.expectEqual(@as(?PReg, null), mock.getIntArgReg(8));
 
     // Float args: V0-V7
-    try testing.expectEqual(PReg.new(.float, 0), mock.getFloatArgReg(0).?);
-    try testing.expectEqual(PReg.new(.float, 7), mock.getFloatArgReg(7).?);
+    try testing.expectEqual(PReg.new(.float, 0).index(), mock.getFloatArgReg(0).?.index());
+    try testing.expectEqual(PReg.new(.float, 7).index(), mock.getFloatArgReg(7).?.index());
     try testing.expectEqual(@as(?PReg, null), mock.getFloatArgReg(8));
 }
 

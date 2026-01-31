@@ -260,10 +260,10 @@ test "Windows fastcall ABI" {
     }
 
     // First 4 in RCX, RDX, R8, R9
-    try testing.expectEqual(PReg.new(.int, 1), arg_locs[0].slots[0].reg.preg); // RCX
-    try testing.expectEqual(PReg.new(.int, 2), arg_locs[1].slots[0].reg.preg); // RDX
-    try testing.expectEqual(PReg.new(.int, 8), arg_locs[2].slots[0].reg.preg); // R8
-    try testing.expectEqual(PReg.new(.int, 9), arg_locs[3].slots[0].reg.preg); // R9
+    try testing.expectEqual(PReg.new(.int, 1).index(), arg_locs[0].slots[0].reg.preg.index()); // RCX
+    try testing.expectEqual(PReg.new(.int, 2).index(), arg_locs[1].slots[0].reg.preg.index()); // RDX
+    try testing.expectEqual(PReg.new(.int, 8).index(), arg_locs[2].slots[0].reg.preg.index()); // R8
+    try testing.expectEqual(PReg.new(.int, 9).index(), arg_locs[3].slots[0].reg.preg.index()); // R9
 
     // 5th on stack
     try testing.expect(arg_locs[4].slots[0] == .stack);
@@ -309,6 +309,6 @@ test "needsStructReturn" {
 }
 
 test "sretReg" {
-    try testing.expectEqual(PReg.new(.int, 7), sretReg(.system_v)); // RDI
-    try testing.expectEqual(PReg.new(.int, 1), sretReg(.windows_fastcall)); // RCX
+    try testing.expectEqual(PReg.new(.int, 7).index(), sretReg(.system_v).index()); // RDI
+    try testing.expectEqual(PReg.new(.int, 1).index(), sretReg(.windows_fastcall).index()); // RCX
 }

@@ -74,7 +74,7 @@ test "StackMap init" {
     var stackmap = StackMap.init(testing.allocator, inst);
     defer stackmap.deinit();
 
-    try testing.expectEqual(inst, stackmap.inst);
+    try testing.expectEqual(inst.toIndex(), stackmap.inst.toIndex());
     try testing.expectEqual(@as(usize, 0), stackmap.entries.items.len);
 }
 
@@ -87,7 +87,7 @@ test "StackMap addRegister" {
     try stackmap.addRegister(val, 5);
 
     try testing.expectEqual(@as(usize, 1), stackmap.entries.items.len);
-    try testing.expectEqual(val, stackmap.entries.items[0].value);
+    try testing.expectEqual(val.toIndex(), stackmap.entries.items[0].value.toIndex());
     try testing.expectEqual(@as(u8, 5), stackmap.entries.items[0].location.register);
 }
 
@@ -100,7 +100,7 @@ test "StackMap addStack" {
     try stackmap.addStack(val, -16);
 
     try testing.expectEqual(@as(usize, 1), stackmap.entries.items.len);
-    try testing.expectEqual(val, stackmap.entries.items[0].value);
+    try testing.expectEqual(val.toIndex(), stackmap.entries.items[0].value.toIndex());
     try testing.expectEqual(@as(i32, -16), stackmap.entries.items[0].location.stack);
 }
 
@@ -113,6 +113,6 @@ test "StackMap addConstant" {
     try stackmap.addConstant(val, 42);
 
     try testing.expectEqual(@as(usize, 1), stackmap.entries.items.len);
-    try testing.expectEqual(val, stackmap.entries.items[0].value);
+    try testing.expectEqual(val.toIndex(), stackmap.entries.items[0].value.toIndex());
     try testing.expectEqual(@as(i64, 42), stackmap.entries.items[0].location.constant);
 }

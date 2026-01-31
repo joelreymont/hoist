@@ -2068,7 +2068,7 @@ test "AAPCS64 ABI" {
     // First 8 in X0-X7
     for (0..8) |i| {
         try testing.expect(arg_locs[i].slots[0] == .reg);
-        try testing.expectEqual(PReg.new(.int, @intCast(i)), arg_locs[i].slots[0].reg.preg);
+        try testing.expectEqual(PReg.new(.int, @intCast(i)).index(), arg_locs[i].slots[0].reg.preg.index());
     }
 
     // 9th on stack
@@ -4244,18 +4244,18 @@ test "classifyReturn - integer types" {
     // i32 -> X0
     const i32_ret = classifyReturn(Type.I32, null);
     try testing.expect(i32_ret == .single_reg);
-    try testing.expectEqual(PReg.new(.int, 0), i32_ret.single_reg);
+    try testing.expectEqual(PReg.new(.int, 0).index(), i32_ret.single_reg.index());
 
     // i64 -> X0
     const i64_ret = classifyReturn(Type.I64, null);
     try testing.expect(i64_ret == .single_reg);
-    try testing.expectEqual(PReg.new(.int, 0), i64_ret.single_reg);
+    try testing.expectEqual(PReg.new(.int, 0).index(), i64_ret.single_reg.index());
 
     // i128 -> X0+X1
     const i128_ret = classifyReturn(Type.I128, null);
     try testing.expect(i128_ret == .reg_pair);
-    try testing.expectEqual(PReg.new(.int, 0), i128_ret.reg_pair.lo);
-    try testing.expectEqual(PReg.new(.int, 1), i128_ret.reg_pair.hi);
+    try testing.expectEqual(PReg.new(.int, 0).index(), i128_ret.reg_pair.lo.index());
+    try testing.expectEqual(PReg.new(.int, 1).index(), i128_ret.reg_pair.hi.index());
 }
 
 test "classifyReturn - float types" {
@@ -4263,12 +4263,12 @@ test "classifyReturn - float types" {
     // f32 -> V0
     const f32_ret = classifyReturn(Type.F32, null);
     try testing.expect(f32_ret == .single_reg);
-    try testing.expectEqual(PReg.new(.float, 0), f32_ret.single_reg);
+    try testing.expectEqual(PReg.new(.float, 0).index(), f32_ret.single_reg.index());
 
     // f64 -> V0
     const f64_ret = classifyReturn(Type.F64, null);
     try testing.expect(f64_ret == .single_reg);
-    try testing.expectEqual(PReg.new(.float, 0), f64_ret.single_reg);
+    try testing.expectEqual(PReg.new(.float, 0).index(), f64_ret.single_reg.index());
 }
 
 test "classifyReturn - struct HFA/HVA" {
@@ -4376,11 +4376,11 @@ test "dynamic stack pointer tracking" {
 
     // Should have allocated X19 as dynamic SP register
     const dyn_sp = callee.getDynStackPointer().?;
-    try testing.expectEqual(PReg.new(.int, 19), dyn_sp);
+    try testing.expectEqual(PReg.new(.int, 19).index(), dyn_sp.index());
 
     // Enabling again should be idempotent
     callee.enableDynamicAlloc();
-    try testing.expectEqual(PReg.new(.int, 19), callee.getDynStackPointer().?);
+    try testing.expectEqual(PReg.new(.int, 19).index(), callee.getDynStackPointer().?.index());
 }
 
 test "cold calling convention sets is_cold flag" {
@@ -4434,10 +4434,10 @@ test "fast calling convention uses extended registers" {
     try testing.expectEqual(@as(usize, 8), standard_abi.float_arg_regs.len);
 
     // Verify X17 is the last int arg register in fast convention
-    try testing.expectEqual(PReg.new(.int, 17), fast_abi.int_arg_regs[17]);
+    try testing.expectEqual(PReg.new(.int, 17).index(), fast_abi.int_arg_regs[17].index());
 
     // Verify V15 is the last float arg register in fast convention
-    try testing.expectEqual(PReg.new(.float, 15), fast_abi.float_arg_regs[15]);
+    try testing.expectEqual(PReg.new(.float, 15).index(), fast_abi.float_arg_regs[15].index());
 }
 
 test "preserveAll calling convention saves all non-arg registers" {
@@ -4454,14 +4454,14 @@ test "preserveAll calling convention saves all non-arg registers" {
     try testing.expectEqual(@as(usize, 20), standard_abi.callee_saves.len);
 
     // Verify X8 is saved (caller-saved in standard ABI, callee-saved in PreserveAll)
-    try testing.expectEqual(PReg.new(.int, 8), preserve_abi.callee_saves[0]);
+    try testing.expectEqual(PReg.new(.int, 8).index(), preserve_abi.callee_saves[0].index());
 
     // Verify V16 is saved (caller-saved in standard ABI, callee-saved in PreserveAll)
     // V16 is at position: 23 GPRs (X8-X30) + 8 FPRs (V8-V15) = index 31
-    try testing.expectEqual(PReg.new(.float, 16), preserve_abi.callee_saves[31]);
+    try testing.expectEqual(PReg.new(.float, 16).index(), preserve_abi.callee_saves[31].index());
 
     // Verify V31 is the last callee-save
-    try testing.expectEqual(PReg.new(.float, 31), preserve_abi.callee_saves[46]);
+    try testing.expectEqual(PReg.new(.float, 31).index(), preserve_abi.callee_saves[46].index());
 }
 
 test "call layout: stack offsets for int args" {

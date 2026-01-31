@@ -21,10 +21,10 @@ test "fast calling convention: extended int arg registers" {
     try testing.expectEqual(@as(usize, 8), standard_abi.int_arg_regs.len);
 
     // Verify 9th arg (index 8) is in register in fast convention
-    try testing.expectEqual(PReg.new(.int, 8), fast_abi.int_arg_regs[8]);
+    try testing.expectEqual(PReg.new(.int, 8).index(), fast_abi.int_arg_regs[8].index());
 
     // Verify 18th arg (index 17) is in register in fast convention
-    try testing.expectEqual(PReg.new(.int, 17), fast_abi.int_arg_regs[17]);
+    try testing.expectEqual(PReg.new(.int, 17).index(), fast_abi.int_arg_regs[17].index());
 }
 
 test "fast calling convention: extended float arg registers" {
@@ -36,10 +36,10 @@ test "fast calling convention: extended float arg registers" {
     try testing.expectEqual(@as(usize, 8), standard_abi.float_arg_regs.len);
 
     // Verify 9th float arg (index 8) is in register in fast convention
-    try testing.expectEqual(PReg.new(.float, 8), fast_abi.float_arg_regs[8]);
+    try testing.expectEqual(PReg.new(.float, 8).index(), fast_abi.float_arg_regs[8].index());
 
     // Verify 16th float arg (index 15) is in register in fast convention
-    try testing.expectEqual(PReg.new(.float, 15), fast_abi.float_arg_regs[15]);
+    try testing.expectEqual(PReg.new(.float, 15).index(), fast_abi.float_arg_regs[15].index());
 }
 
 test "preserveAll calling convention: all GPRs saved except args" {
@@ -66,7 +66,7 @@ test "preserveAll calling convention: all GPRs saved except args" {
     try testing.expectEqual(preserve_gpr_saves, preserve_gprs);
 
     // Verify X8 is saved (caller-saved in standard, callee-saved in PreserveAll)
-    try testing.expectEqual(PReg.new(.int, 8), preserve_abi.callee_saves[0]);
+    try testing.expectEqual(PReg.new(.int, 8).index(), preserve_abi.callee_saves[0].index());
 }
 
 test "preserveAll calling convention: all FPRs saved except args" {
@@ -94,7 +94,7 @@ test "preserveAll calling convention: all FPRs saved except args" {
 
     // Verify V16 is saved (caller-saved in standard, callee-saved in PreserveAll)
     // V16 is after 23 GPRs and 8 FPRs (V8-V15) = index 31
-    try testing.expectEqual(PReg.new(.float, 16), preserve_abi.callee_saves[31]);
+    try testing.expectEqual(PReg.new(.float, 16).index(), preserve_abi.callee_saves[31].index());
 }
 
 test "cold calling convention: same ABI as standard" {
@@ -163,7 +163,7 @@ test "calling convention: return registers same across conventions" {
     try testing.expectEqual(@as(usize, 8), preserve.float_ret_regs.len);
 
     // X0 is first return register in all conventions
-    try testing.expectEqual(PReg.new(.int, 0), standard.int_ret_regs[0]);
-    try testing.expectEqual(PReg.new(.int, 0), fast_cc.int_ret_regs[0]);
-    try testing.expectEqual(PReg.new(.int, 0), preserve.int_ret_regs[0]);
+    try testing.expectEqual(PReg.new(.int, 0).index(), standard.int_ret_regs[0].index());
+    try testing.expectEqual(PReg.new(.int, 0).index(), fast_cc.int_ret_regs[0].index());
+    try testing.expectEqual(PReg.new(.int, 0).index(), preserve.int_ret_regs[0].index());
 }

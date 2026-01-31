@@ -813,7 +813,7 @@ test "landing pad with exception edge" {
         if (inst_data.* == .nullary and inst_data.nullary.opcode == .landingpad) {
             found_landingpad = true;
             // landingpad returns exception value (conceptually from X0)
-            try testing.expectEqual(v1, func.dfg.firstResult(inst).?);
+            try testing.expectEqual(v1.toIndex(), func.dfg.firstResult(inst).?.toIndex());
         }
     }
     try testing.expect(found_landingpad);

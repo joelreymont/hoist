@@ -497,7 +497,7 @@ test "planArgForwarding simple" {
     }
 
     try testing.expectEqual(@as(usize, 1), plan.moves.items.len);
-    try testing.expectEqual(PReg.new(.int, 0), plan.moves.items[0].dst.reg);
+    try testing.expectEqual(PReg.new(.int, 0).index(), plan.moves.items[0].dst.reg.index());
 }
 
 test "planArgForwarding cycle uses scratch" {
@@ -537,7 +537,7 @@ test "planArgForwarding cycle uses scratch" {
     }
 
     try testing.expectEqual(@as(usize, 3), plan.moves.items.len);
-    try testing.expectEqual(PReg.new(.int, 2), plan.moves.items[0].dst.reg);
-    try testing.expectEqual(PReg.new(.int, 0), plan.moves.items[1].dst.reg);
-    try testing.expectEqual(PReg.new(.int, 1), plan.moves.items[2].dst.reg);
+    try testing.expectEqual(PReg.new(.int, 2).index(), plan.moves.items[0].dst.reg.index());
+    try testing.expectEqual(PReg.new(.int, 0).index(), plan.moves.items[1].dst.reg.index());
+    try testing.expectEqual(PReg.new(.int, 1).index(), plan.moves.items[2].dst.reg.index());
 }

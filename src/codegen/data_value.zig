@@ -160,7 +160,10 @@ const testing = std.testing;
 
 test "DataValue fromInteger" {
     const dv = try DataValue.fromInteger(42, Type.I32);
-    try testing.expectEqual(DataValue{ .i32 = 42 }, dv);
+    switch (dv) {
+        .i32 => |val| try testing.expectEqual(@as(i32, 42), val),
+        else => try testing.expect(false),
+    }
 }
 
 test "DataValue getType" {

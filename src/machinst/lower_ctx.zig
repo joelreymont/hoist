@@ -145,10 +145,10 @@ test "LowerCtx value mapping" {
     try testing.expectEqual(RegClass.float, v2.class());
 
     // Get them back.
-    try testing.expectEqual(v1, ctx.getVReg(val1).?);
-    try testing.expectEqual(v2, ctx.getVReg(val2).?);
+    try testing.expectEqual(v1.bits, ctx.getVReg(val1).?.bits);
+    try testing.expectEqual(v2.bits, ctx.getVReg(val2).?.bits);
 
     // Ensure idempotent.
     const v1_again = try ctx.ensureVReg(val1, .int);
-    try testing.expectEqual(v1, v1_again);
+    try testing.expectEqual(v1.bits, v1_again.bits);
 }

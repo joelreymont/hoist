@@ -301,12 +301,12 @@ test "ISLE lowering: VReg renaming" {
     try testing.expect(!rename_map.isRenamed(v2));
 
     const renamed = rename_map.getRename(v1);
-    try testing.expectEqual(v2, renamed);
+    try testing.expectEqual(v2.bits, renamed.bits);
 
     // Unrenamed value returns itself
     const v3 = VReg.new(3, .int);
     const not_renamed = rename_map.getRename(v3);
-    try testing.expectEqual(v3, not_renamed);
+    try testing.expectEqual(v3.bits, not_renamed.bits);
 }
 
 // Test iconcat lowering: concatenate two I64 into I128

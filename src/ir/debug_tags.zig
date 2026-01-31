@@ -135,7 +135,10 @@ test "DebugTags basic" {
 
     const retrieved = tags.get(inst1);
     try testing.expectEqual(@as(usize, 2), retrieved.len);
-    try testing.expectEqual(DebugTag{ .user = 42 }, retrieved[0]);
+    switch (retrieved[0]) {
+        .user => |value| try testing.expectEqual(@as(u32, 42), value),
+        else => try testing.expect(false),
+    }
 
     try tags.cloneTags(testing.allocator, inst1, inst2);
     try testing.expect(tags.has(inst2));

@@ -187,7 +187,7 @@ test "ValueData inst" {
     const data = ValueData.inst(Type.I32, 0, Inst.new(42));
     try testing.expectEqual(Type.I32, data.getType());
     const def = data.toDef();
-    try testing.expectEqual(Inst.new(42), def.result.inst);
+    try testing.expectEqual(Inst.new(42).toIndex(), def.result.inst.toIndex());
     try testing.expectEqual(0, def.result.index);
 }
 
@@ -195,21 +195,21 @@ test "ValueData param" {
     const data = ValueData.param(Type.I64, 1, Block.new(10));
     try testing.expectEqual(Type.I64, data.getType());
     const def = data.toDef();
-    try testing.expectEqual(Block.new(10), def.param.block);
+    try testing.expectEqual(Block.new(10).toIndex(), def.param.block.toIndex());
     try testing.expectEqual(1, def.param.index);
 }
 
 test "ValueData alias" {
     const data = ValueData.alias(Type.I32, Value.new(100));
     try testing.expect(data.isAlias());
-    try testing.expectEqual(Value.new(100), data.aliasOriginal().?);
+    try testing.expectEqual(Value.new(100).toIndex(), data.aliasOriginal().?.toIndex());
 }
 
 test "ValueData union" {
     const data = ValueData.@"union"(Type.I32, Value.new(1), Value.new(2));
     const def = data.toDef();
-    try testing.expectEqual(Value.new(1), def.@"union".x);
-    try testing.expectEqual(Value.new(2), def.@"union".y);
+    try testing.expectEqual(Value.new(1).toIndex(), def.@"union".x.toIndex());
+    try testing.expectEqual(Value.new(2).toIndex(), def.@"union".y.toIndex());
 }
 
 test "BlockData" {
@@ -222,14 +222,14 @@ test "BlockData" {
 
     const params = block.getParams(&pool);
     try testing.expectEqual(2, params.len);
-    try testing.expectEqual(Value.new(1), params[0]);
-    try testing.expectEqual(Value.new(2), params[1]);
+    try testing.expectEqual(Value.new(1).toIndex(), params[0].toIndex());
+    try testing.expectEqual(Value.new(2).toIndex(), params[1].toIndex());
 }
 
 test "ValueDef unwrapInst" {
     const def = ValueDef{ .result = .{ .inst = Inst.new(42), .index = 0 } };
-    try testing.expectEqual(Inst.new(42), def.unwrapInst());
-    try testing.expectEqual(Inst.new(42), def.inst().?);
+    try testing.expectEqual(Inst.new(42).toIndex(), def.unwrapInst().toIndex());
+    try testing.expectEqual(Inst.new(42).toIndex(), def.inst().?.toIndex());
 }
 
 /// Data flow graph - SSA value definitions and instructions.
@@ -517,7 +517,7 @@ test "DataFlowGraph makeInst" {
 
     const data = instruction_data.BinaryData.init(.iadd, Value.new(1), Value.new(2));
     const inst = try dfg.makeInst(.{ .binary = data });
-    try testing.expectEqual(Inst.new(0), inst);
+    try testing.expectEqual(Inst.new(0).toIndex(), inst.toIndex());
 }
 
 test "DataFlowGraph append result" {
@@ -528,9 +528,9 @@ test "DataFlowGraph append result" {
     const inst = try dfg.makeInst(.{ .binary = data });
 
     const result = try dfg.appendInstResult(inst, Type.I32);
-    try testing.expectEqual(Value.new(0), result);
+    try testing.expectEqual(Value.new(0).toIndex(), result.toIndex());
     try testing.expectEqual(@as(usize, 1), dfg.numResults(inst));
-    try testing.expectEqual(result, dfg.firstResult(inst).?);
+    try testing.expectEqual(result.toIndex(), dfg.firstResult(inst).?.toIndex());
 }
 
 test "DataFlowGraph removeInst" {

@@ -91,7 +91,10 @@ pub const GlobalValueData = union(enum) {
 
 test "GlobalValueData vmctx" {
     const data = GlobalValueData{ .vmctx = {} };
-    try testing.expectEqual(GlobalValueData.vmctx, data);
+    switch (data) {
+        .vmctx => {},
+        else => try testing.expect(false),
+    }
 }
 
 test "GlobalValueData load" {
@@ -102,7 +105,7 @@ test "GlobalValueData load" {
         MemFlags.default(),
     );
     const data = GlobalValueData{ .load = load };
-    try testing.expectEqual(GlobalValue.new(0), data.load.base);
+    try testing.expectEqual(GlobalValue.new(0).toIndex(), data.load.base.toIndex());
     try testing.expectEqual(@as(i32, 16), data.load.offset.value);
     try testing.expectEqual(Type.I64, data.load.global_type);
 }
@@ -114,7 +117,7 @@ test "GlobalValueData iadd_imm" {
         Type.I64,
     );
     const data = GlobalValueData{ .iadd_imm = iadd };
-    try testing.expectEqual(GlobalValue.new(1), data.iadd_imm.base);
+    try testing.expectEqual(GlobalValue.new(1).toIndex(), data.iadd_imm.base.toIndex());
     try testing.expectEqual(@as(i64, 42), data.iadd_imm.offset.value);
     try testing.expectEqual(Type.I64, data.iadd_imm.global_type);
 }

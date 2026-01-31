@@ -716,14 +716,14 @@ test "NullaryData" {
 test "UnaryData" {
     const data = UnaryData.init(.iadd, Value.new(42));
     try testing.expectEqual(Opcode.iadd, data.opcode);
-    try testing.expectEqual(Value.new(42), data.arg);
+    try testing.expectEqual(Value.new(42).toIndex(), data.arg.toIndex());
 }
 
 test "BinaryData" {
     const data = BinaryData.init(.iadd, Value.new(1), Value.new(2));
     try testing.expectEqual(Opcode.iadd, data.opcode);
-    try testing.expectEqual(Value.new(1), data.args[0]);
-    try testing.expectEqual(Value.new(2), data.args[1]);
+    try testing.expectEqual(Value.new(1).toIndex(), data.args[0].toIndex());
+    try testing.expectEqual(Value.new(2).toIndex(), data.args[1].toIndex());
 }
 
 test "IntCompareData" {
@@ -741,28 +741,28 @@ test "FloatCompareData" {
 test "JumpData" {
     const data = JumpData.init(.jump, entities.Block.new(0));
     try testing.expectEqual(Opcode.jump, data.opcode);
-    try testing.expectEqual(entities.Block.new(0), data.destination);
+    try testing.expectEqual(entities.Block.new(0).toIndex(), data.destination.toIndex());
 }
 
 test "BranchTableData" {
     const data = BranchTableData.init(.br_table, Value.new(1), entities.JumpTable.new(0));
     try testing.expectEqual(Opcode.br_table, data.opcode);
-    try testing.expectEqual(Value.new(1), data.arg);
+    try testing.expectEqual(Value.new(1).toIndex(), data.arg.toIndex());
 }
 
 test "LoadData" {
     const flags = MemFlags.default();
     const data = LoadData.init(.load, flags, Value.new(10), 0);
     try testing.expectEqual(Opcode.load, data.opcode);
-    try testing.expectEqual(Value.new(10), data.arg);
+    try testing.expectEqual(Value.new(10).toIndex(), data.arg.toIndex());
 }
 
 test "StoreData" {
     const flags = MemFlags.default();
     const data = StoreData.init(.store, flags, Value.new(10), Value.new(20), 8);
     try testing.expectEqual(Opcode.store, data.opcode);
-    try testing.expectEqual(Value.new(10), data.args[0]);
-    try testing.expectEqual(Value.new(20), data.args[1]);
+    try testing.expectEqual(Value.new(10).toIndex(), data.args[0].toIndex());
+    try testing.expectEqual(Value.new(20).toIndex(), data.args[1].toIndex());
     try testing.expectEqual(@as(i32, 8), data.offset);
 }
 

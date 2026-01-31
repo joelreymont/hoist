@@ -296,11 +296,11 @@ test "ValueListPool basic operations" {
 
     try pool.push(&list, Value.new(1));
     try testing.expectEqual(1, pool.len(list));
-    try testing.expectEqual(Value.new(1), pool.first(list).?);
+    try testing.expectEqual(Value.new(1).toIndex(), pool.first(list).?.toIndex());
 
     try pool.push(&list, Value.new(2));
     try testing.expectEqual(2, pool.len(list));
-    try testing.expectEqual(Value.new(2), pool.get(list, 1).?);
+    try testing.expectEqual(Value.new(2).toIndex(), pool.get(list, 1).?.toIndex());
 }
 
 test "ValueListPool extend" {
@@ -312,9 +312,9 @@ test "ValueListPool extend" {
     try pool.extend(&list, &values);
 
     try testing.expectEqual(3, pool.len(list));
-    try testing.expectEqual(Value.new(10), pool.get(list, 0).?);
-    try testing.expectEqual(Value.new(20), pool.get(list, 1).?);
-    try testing.expectEqual(Value.new(30), pool.get(list, 2).?);
+    try testing.expectEqual(Value.new(10).toIndex(), pool.get(list, 0).?.toIndex());
+    try testing.expectEqual(Value.new(20).toIndex(), pool.get(list, 1).?.toIndex());
+    try testing.expectEqual(Value.new(30).toIndex(), pool.get(list, 2).?.toIndex());
 }
 
 test "ValueListPool remove" {
@@ -327,8 +327,8 @@ test "ValueListPool remove" {
 
     try pool.remove(&list, 1);
     try testing.expectEqual(2, pool.len(list));
-    try testing.expectEqual(Value.new(1), pool.get(list, 0).?);
-    try testing.expectEqual(Value.new(3), pool.get(list, 1).?);
+    try testing.expectEqual(Value.new(1).toIndex(), pool.get(list, 0).?.toIndex());
+    try testing.expectEqual(Value.new(3).toIndex(), pool.get(list, 1).?.toIndex());
 }
 
 test "ValueListPool truncate" {
@@ -341,8 +341,8 @@ test "ValueListPool truncate" {
 
     try pool.truncate(&list, 2);
     try testing.expectEqual(2, pool.len(list));
-    try testing.expectEqual(Value.new(1), pool.get(list, 0).?);
-    try testing.expectEqual(Value.new(2), pool.get(list, 1).?);
+    try testing.expectEqual(Value.new(1).toIndex(), pool.get(list, 0).?.toIndex());
+    try testing.expectEqual(Value.new(2).toIndex(), pool.get(list, 1).?.toIndex());
 }
 
 test "ValueListPool deep clone" {
@@ -355,6 +355,6 @@ test "ValueListPool deep clone" {
 
     const list2 = try pool.deepClone(list1);
     try testing.expectEqual(pool.len(list1), pool.len(list2));
-    try testing.expectEqual(pool.get(list1, 0).?, pool.get(list2, 0).?);
-    try testing.expectEqual(pool.get(list1, 1).?, pool.get(list2, 1).?);
+    try testing.expectEqual(pool.get(list1, 0).?.toIndex(), pool.get(list2, 0).?.toIndex());
+    try testing.expectEqual(pool.get(list1, 1).?.toIndex(), pool.get(list2, 1).?.toIndex());
 }

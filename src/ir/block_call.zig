@@ -186,7 +186,7 @@ test "BlockArg encoding" {
     const decoded = BlockArg.decodeFromValue(encoded, &decoded_v, &decoded_idx);
 
     try testing.expectEqual(BlockArg.value, decoded);
-    try testing.expectEqual(v, decoded_v);
+    try testing.expectEqual(v.toIndex(), decoded_v.toIndex());
 }
 
 test "BlockArg try_call_ret" {
@@ -209,10 +209,10 @@ test "BlockCall basic" {
     const args = [_]Value{ Value.new(1), Value.new(2) };
     var call = try BlockCall.new(b, &args, &pool);
 
-    try testing.expectEqual(b, call.block(&pool));
+    try testing.expectEqual(b.toIndex(), call.block(&pool).toIndex());
     try testing.expectEqual(@as(usize, 2), call.len(&pool));
-    try testing.expectEqual(Value.new(1), call.getArg(&pool, 0).?);
-    try testing.expectEqual(Value.new(2), call.getArg(&pool, 1).?);
+    try testing.expectEqual(Value.new(1).toIndex(), call.getArg(&pool, 0).?.toIndex());
+    try testing.expectEqual(Value.new(2).toIndex(), call.getArg(&pool, 1).?.toIndex());
 }
 
 test "BlockCall append" {
@@ -224,7 +224,7 @@ test "BlockCall append" {
 
     try call.appendArg(Value.new(100), &pool);
     try testing.expectEqual(@as(usize, 1), call.len(&pool));
-    try testing.expectEqual(Value.new(100), call.getArg(&pool, 0).?);
+    try testing.expectEqual(Value.new(100).toIndex(), call.getArg(&pool, 0).?.toIndex());
 }
 
 test "BlockCall clear" {
@@ -237,5 +237,5 @@ test "BlockCall clear" {
 
     try call.clear(&pool);
     try testing.expectEqual(@as(usize, 0), call.len(&pool));
-    try testing.expectEqual(b, call.block(&pool));
+    try testing.expectEqual(b.toIndex(), call.block(&pool).toIndex());
 }
