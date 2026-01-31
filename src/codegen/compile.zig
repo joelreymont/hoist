@@ -47,6 +47,22 @@ const machinst_abi = @import("../machinst/abi.zig");
 const unwind = @import("../backends/aarch64/unwind.zig");
 const pipeline_state = @import("pipeline_state.zig");
 
+fn vecElemSizeFromType(ty: ir.Type) ?a64_inst.VecElemSize {
+    return switch (ty.raw) {
+        ir.Type.I8X8.raw => .size8x8,
+        ir.Type.I8X16.raw => .size8x16,
+        ir.Type.I16X4.raw => .size16x4,
+        ir.Type.I16X8.raw => .size16x8,
+        ir.Type.I32X2.raw => .size32x2,
+        ir.Type.I32X4.raw => .size32x4,
+        ir.Type.I64X2.raw => .size64x2,
+        ir.Type.F32X2.raw => .size32x2,
+        ir.Type.F32X4.raw => .size32x4,
+        ir.Type.F64X2.raw => .size64x2,
+        else => null,
+    };
+}
+
 /// Compilation error with context.
 pub const CompileError = struct {
     inner: CodegenError,
@@ -1574,22 +1590,33 @@ fn emitReturnMovesAArch64(
 
     for (values) |val| {
         const value_type = ctx.func.dfg.valueType(val) orelse return error.LoweringFailed;
-        if (value_type.isFloat()) {
+        if (value_type.isFloat() or value_type.isVector()) {
             if (fp_idx >= 8) return error.LoweringFailed;
             const fp_hw: u6 = @intCast(fp_idx);
-            const src_vreg = VReg.new(@intCast(val.index + Reg.PINNED_VREGS), RegClass.float);
+            const reg_class: RegClass = if (value_type.isVector()) .vector else .float;
+            const src_vreg = VReg.new(@intCast(val.index + Reg.PINNED_VREGS), reg_class);
             const src = Reg.fromVReg(src_vreg);
-            const dst_reg = Reg.fromPReg(PReg.new(.float, fp_hw));
+            const dst_reg = Reg.fromPReg(PReg.new(reg_class, fp_hw));
             const dst = WritableReg.fromReg(dst_reg);
-            const size: FpuOperandSize = if (value_type.bits() == 64) .size64 else .size32;
-            try builder.emit(Inst{ .fmov = .{
-                .dst = dst,
-                .src = src,
-                .size = size,
-            } });
+
+            if (value_type.isVector()) {
+                const size: FpuOperandSize = if (value_type.bits() <= 64) .size64 else .size128;
+                try builder.emit(Inst{ .vec_orr = .{
+                    .dst = dst,
+                    .src1 = src,
+                    .src2 = src,
+                    .size = size,
+                } });
+            } else {
+                const size: FpuOperandSize = if (value_type.bits() == 64) .size64 else .size32;
+                try builder.emit(Inst{ .fmov = .{
+                    .dst = dst,
+                    .src = src,
+                    .size = size,
+                } });
+            }
             fp_idx += 1;
         } else {
-            if (value_type.isVector()) return error.LoweringFailed;
             if (int_idx >= 8) return error.LoweringFailed;
             const int_hw: u6 = @intCast(int_idx);
             const src_vreg = VReg.new(@intCast(val.index + Reg.PINNED_VREGS), RegClass.int);
@@ -2040,35 +2067,55 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
 
                 // Map IR values to virtual registers
                 // Offset by PINNED_VREGS to avoid collision with physical registers
-                const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
-                const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
                 const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
-                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
 
-                const src1 = Reg.fromVReg(arg0_vreg);
-                const src2 = Reg.fromVReg(arg1_vreg);
-                const dst = WritableReg.fromVReg(result_vreg);
+                if (value_type.isVector()) {
+                    const vec_size = vecElemSizeFromType(value_type) orelse return error.LoweringFailed;
 
-                // Get size from result type
-                const value_type = ctx.func.dfg.valueType(ctx.func.dfg.firstResult(inst).?) orelse return error.LoweringFailed;
+                    const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.vector);
+                    const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.vector);
+                    const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.vector);
 
-                const size: OperandSize = if (value_type.bits() == 64)
-                    .size64
-                else
-                    .size32;
+                    const src1 = Reg.fromVReg(arg0_vreg);
+                    const src2 = Reg.fromVReg(arg1_vreg);
+                    const dst = WritableReg.fromVReg(result_vreg);
 
-                // Emit ADD instruction
-                try builder.emit(Inst{
-                    .add_rr = .{
+                    try builder.emit(Inst{ .vec_add = .{
                         .dst = dst,
                         .src1 = src1,
                         .src2 = src2,
-                        .size = size,
-                    },
-                });
+                        .size = vec_size,
+                    } });
 
-                // Track origin for rematerialization
-                try vreg_origins.put(result_vreg, VRegOrigin.forBinop(.iadd, arg0_vreg, arg1_vreg));
+                    try vreg_origins.put(result_vreg, VRegOrigin.forBinop(.iadd, arg0_vreg, arg1_vreg));
+                } else {
+                    const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                    const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
+                    const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+
+                    const src1 = Reg.fromVReg(arg0_vreg);
+                    const src2 = Reg.fromVReg(arg1_vreg);
+                    const dst = WritableReg.fromVReg(result_vreg);
+
+                    const size: OperandSize = if (value_type.bits() == 64)
+                        .size64
+                    else
+                        .size32;
+
+                    // Emit ADD instruction
+                    try builder.emit(Inst{
+                        .add_rr = .{
+                            .dst = dst,
+                            .src1 = src1,
+                            .src2 = src2,
+                            .size = size,
+                        },
+                    });
+
+                    // Track origin for rematerialization
+                    try vreg_origins.put(result_vreg, VRegOrigin.forBinop(.iadd, arg0_vreg, arg1_vreg));
+                }
             } else if (data.opcode == .isub) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
@@ -2108,34 +2155,56 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
                 const RegClass = @import("../machinst/reg.zig").RegClass;
                 const Reg = @import("../machinst/reg.zig").Reg;
 
-                // Map IR values to virtual registers
-                // Offset by PINNED_VREGS to avoid collision with physical registers
-                const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
-                const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
                 const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
-                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
 
-                const src1 = Reg.fromVReg(arg0_vreg);
-                const src2 = Reg.fromVReg(arg1_vreg);
-                const dst = WritableReg.fromVReg(result_vreg);
+                if (value_type.isVector()) {
+                    const vec_size = vecElemSizeFromType(value_type) orelse return error.LoweringFailed;
 
-                // Get size from result type
-                const value_type = ctx.func.dfg.valueType(ctx.func.dfg.firstResult(inst).?) orelse return error.LoweringFailed;
+                    const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.vector);
+                    const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.vector);
+                    const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.vector);
 
-                const size: OperandSize = if (value_type.bits() == 64)
-                    .size64
-                else
-                    .size32;
+                    const src1 = Reg.fromVReg(arg0_vreg);
+                    const src2 = Reg.fromVReg(arg1_vreg);
+                    const dst = WritableReg.fromVReg(result_vreg);
 
-                // Emit MUL instruction
-                try builder.emit(Inst{
-                    .mul_rr = .{
+                    try builder.emit(Inst{ .vec_mul = .{
                         .dst = dst,
                         .src1 = src1,
                         .src2 = src2,
-                        .size = size,
-                    },
-                });
+                        .size = vec_size,
+                    } });
+
+                    try vreg_origins.put(result_vreg, VRegOrigin.forBinop(.imul, arg0_vreg, arg1_vreg));
+                } else {
+                    // Map IR values to virtual registers
+                    // Offset by PINNED_VREGS to avoid collision with physical registers
+                    const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                    const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
+                    const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+
+                    const src1 = Reg.fromVReg(arg0_vreg);
+                    const src2 = Reg.fromVReg(arg1_vreg);
+                    const dst = WritableReg.fromVReg(result_vreg);
+
+                    const size: OperandSize = if (value_type.bits() == 64)
+                        .size64
+                    else
+                        .size32;
+
+                    // Emit MUL instruction
+                    try builder.emit(Inst{
+                        .mul_rr = .{
+                            .dst = dst,
+                            .src1 = src1,
+                            .src2 = src2,
+                            .size = size,
+                        },
+                    });
+
+                    try vreg_origins.put(result_vreg, VRegOrigin.forBinop(.imul, arg0_vreg, arg1_vreg));
+                }
             } else if (data.opcode == .smulhi or data.opcode == .umulhi) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
@@ -2645,49 +2714,6 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
                         .size = size,
                     },
                 });
-            } else {
-                return error.LoweringFailed;
-            }
-        },
-        .ternary => |data| {
-            if (data.opcode == .select) {
-                const VReg = @import("../machinst/reg.zig").VReg;
-                const WritableReg = @import("../machinst/reg.zig").WritableReg;
-                const RegClass = @import("../machinst/reg.zig").RegClass;
-                const Reg = @import("../machinst/reg.zig").Reg;
-                const PReg = @import("../machinst/reg.zig").PReg;
-                const CondCode = @import("../backends/aarch64/inst.zig").CondCode;
-
-                const cond_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
-                const true_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
-                const false_vreg = VReg.new(@intCast(data.args[2].index + Reg.PINNED_VREGS), RegClass.int);
-
-                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
-                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
-                const dst = WritableReg.fromVReg(result_vreg);
-
-                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
-                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
-
-                const zero = Reg.fromPReg(PReg.new(RegClass.int, 31));
-
-                try builder.emit(Inst{
-                    .cmp_rr = .{
-                        .src1 = Reg.fromVReg(cond_vreg),
-                        .src2 = zero,
-                        .size = .size32,
-                    },
-                });
-
-                try builder.emit(Inst{
-                    .csel = .{
-                        .dst = dst,
-                        .src1 = Reg.fromVReg(true_vreg),
-                        .src2 = Reg.fromVReg(false_vreg),
-                        .cond = CondCode.ne,
-                        .size = size,
-                    },
-                });
             } else if (data.opcode == .smin or data.opcode == .smax or data.opcode == .umin or data.opcode == .umax) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
@@ -2695,41 +2721,62 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
                 const Reg = @import("../machinst/reg.zig").Reg;
                 const CondCode = @import("../backends/aarch64/inst.zig").CondCode;
 
-                const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
-                const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
-
                 const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
-                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
-                const dst = WritableReg.fromVReg(result_vreg);
-
                 const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
-                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
 
-                try builder.emit(Inst{
-                    .cmp_rr = .{
-                        .src1 = Reg.fromVReg(arg0_vreg),
-                        .src2 = Reg.fromVReg(arg1_vreg),
-                        .size = size,
-                    },
-                });
+                if (value_type.isVector()) {
+                    const vec_size = vecElemSizeFromType(value_type) orelse return error.LoweringFailed;
 
-                const cond: CondCode = switch (data.opcode) {
-                    .smin => .lt,
-                    .smax => .gt,
-                    .umin => .cc,
-                    .umax => .hi,
-                    else => unreachable,
-                };
+                    const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.vector);
+                    const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.vector);
+                    const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.vector);
+                    const dst = WritableReg.fromVReg(result_vreg);
 
-                try builder.emit(Inst{
-                    .csel = .{
-                        .dst = dst,
-                        .src1 = Reg.fromVReg(arg0_vreg),
-                        .src2 = Reg.fromVReg(arg1_vreg),
-                        .cond = cond,
-                        .size = size,
-                    },
-                });
+                    const inst_vec = switch (data.opcode) {
+                        .smin => Inst{ .vec_smin = .{ .dst = dst, .src1 = Reg.fromVReg(arg0_vreg), .src2 = Reg.fromVReg(arg1_vreg), .size = vec_size } },
+                        .smax => Inst{ .vec_smax = .{ .dst = dst, .src1 = Reg.fromVReg(arg0_vreg), .src2 = Reg.fromVReg(arg1_vreg), .size = vec_size } },
+                        .umin => Inst{ .vec_umin = .{ .dst = dst, .src1 = Reg.fromVReg(arg0_vreg), .src2 = Reg.fromVReg(arg1_vreg), .size = vec_size } },
+                        .umax => Inst{ .vec_umax = .{ .dst = dst, .src1 = Reg.fromVReg(arg0_vreg), .src2 = Reg.fromVReg(arg1_vreg), .size = vec_size } },
+                        else => unreachable,
+                    };
+                    try builder.emit(inst_vec);
+
+                    try vreg_origins.put(result_vreg, VRegOrigin.forBinop(data.opcode, arg0_vreg, arg1_vreg));
+                } else {
+                    const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                    const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
+
+                    const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                    const dst = WritableReg.fromVReg(result_vreg);
+
+                    const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                    try builder.emit(Inst{
+                        .cmp_rr = .{
+                            .src1 = Reg.fromVReg(arg0_vreg),
+                            .src2 = Reg.fromVReg(arg1_vreg),
+                            .size = size,
+                        },
+                    });
+
+                    const cond: CondCode = switch (data.opcode) {
+                        .smin => .lt,
+                        .smax => .gt,
+                        .umin => .cc,
+                        .umax => .hi,
+                        else => unreachable,
+                    };
+
+                    try builder.emit(Inst{
+                        .csel = .{
+                            .dst = dst,
+                            .src1 = Reg.fromVReg(arg0_vreg),
+                            .src2 = Reg.fromVReg(arg1_vreg),
+                            .cond = cond,
+                            .size = size,
+                        },
+                    });
+                }
             } else if (data.opcode == .uadd_overflow or data.opcode == .sadd_overflow) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
@@ -2947,6 +2994,49 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
                         },
                     });
                 }
+            } else {
+                return error.LoweringFailed;
+            }
+        },
+        .ternary => |data| {
+            if (data.opcode == .select) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+                const PReg = @import("../machinst/reg.zig").PReg;
+                const CondCode = @import("../backends/aarch64/inst.zig").CondCode;
+
+                const cond_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const true_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
+                const false_vreg = VReg.new(@intCast(data.args[2].index + Reg.PINNED_VREGS), RegClass.int);
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(result_vreg);
+
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+
+                const zero = Reg.fromPReg(PReg.new(RegClass.int, 31));
+
+                try builder.emit(Inst{
+                    .cmp_rr = .{
+                        .src1 = Reg.fromVReg(cond_vreg),
+                        .src2 = zero,
+                        .size = .size32,
+                    },
+                });
+
+                try builder.emit(Inst{
+                    .csel = .{
+                        .dst = dst,
+                        .src1 = Reg.fromVReg(true_vreg),
+                        .src2 = Reg.fromVReg(false_vreg),
+                        .cond = CondCode.ne,
+                        .size = size,
+                    },
+                });
             } else if (data.opcode == .fma) {
                 // Fused multiply-add: result = args[0] * args[1] + args[2]
                 const VReg = @import("../machinst/reg.zig").VReg;
@@ -5697,6 +5787,42 @@ test "compile: emits prologue and epilogue" {
     try testing.expectEqualSlices(u8, &[_]u8{ 0xfd, 0x7b, 0xbf, 0xa9 }, result.code.items[0..4]);
     try testing.expectEqualSlices(u8, &[_]u8{ 0xfd, 0x7b, 0xc1, 0xa8 }, result.code.items[result.code.items.len - 8 .. result.code.items.len - 4]);
     try testing.expectEqualSlices(u8, &[_]u8{ 0xc0, 0x03, 0x5f, 0xd6 }, result.code.items[result.code.items.len - 4 .. result.code.items.len]);
+}
+
+test "compile: vector iadd lowers on aarch64" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I32X4));
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I32X4));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I32X4));
+
+    var func = try Function.init(testing.allocator, "vec_add", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const a = try builder.appendBlockParam(block, ir.Type.I32X4);
+    const b = try builder.appendBlockParam(block, ir.Type.I32X4);
+
+    const add_inst = try func.dfg.makeInst(.{ .binary = .{ .opcode = .iadd, .args = .{ a, b } } });
+    const add_val = try func.dfg.appendInstResult(add_inst, ir.Type.I32X4);
+    try func.layout.appendInst(add_inst, block);
+
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{ .opcode = .@"return", .arg = add_val } });
+    try func.layout.appendInst(ret_inst, block);
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+
+    const result = try compile(&ctx, &func, &target);
+
+    try testing.expect(result.code.items.len > 0);
 }
 
 // Comprehensive IRBuilder tests
