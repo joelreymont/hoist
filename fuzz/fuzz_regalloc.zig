@@ -1,11 +1,11 @@
 const std = @import("std");
-const root = @import("root");
+const hoist = @import("hoist");
 
-const VCode = root.vcode.VCode;
-const VReg = root.reg.VReg;
-const PReg = root.reg.PReg;
-const RegClass = root.reg.RegClass;
-const LinearScanAllocator = root.regalloc.LinearScanAllocator;
+const VCode = hoist.vcode.VCode;
+const VReg = hoist.reg.VReg;
+const PReg = hoist.reg.PReg;
+const RegClass = hoist.reg.RegClass;
+const LinearScanAllocator = hoist.regalloc.LinearScanAllocator;
 
 /// Fuzzer for register allocation.
 /// Generates random VCode with virtual registers and tests allocator.

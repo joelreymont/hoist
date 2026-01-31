@@ -1,12 +1,12 @@
 const std = @import("std");
-const root = @import("root");
+const hoist = @import("hoist");
 
-const Function = root.function.Function;
-const Signature = root.signature.Signature;
-const Type = root.types.Type;
-const InstructionData = root.instruction_data.InstructionData;
-const Opcode = root.opcodes.Opcode;
-const ContextBuilder = root.context.ContextBuilder;
+const Function = hoist.function.Function;
+const Signature = hoist.signature.Signature;
+const Type = hoist.types.Type;
+const InstructionData = hoist.instruction_data.InstructionData;
+const Opcode = hoist.opcodes.Opcode;
+const ContextBuilder = hoist.context.ContextBuilder;
 
 /// Fuzzer for compilation pipeline.
 /// Generates random valid IR and attempts to compile it.
@@ -101,7 +101,7 @@ fn generateRandomFunction(allocator: std.mem.Allocator, rand: std.rand.Random) !
     // Generate random instructions
     const num_insts = rand.uintAtMost(u8, 10) + 1;
 
-    var values = std.ArrayList(root.entities.Value).init(allocator);
+    var values = std.ArrayList(hoist.entities.Value).init(allocator);
     defer values.deinit();
 
     // Add parameters as available values
@@ -136,8 +136,8 @@ fn generateRandomInstruction(
     allocator: std.mem.Allocator,
     func: *Function,
     rand: std.rand.Random,
-    available_values: []root.entities.Value,
-) !root.entities.Inst {
+    available_values: []hoist.entities.Value,
+) !hoist.entities.Inst {
     _ = allocator;
 
     const opcode_choices = [_]Opcode{
@@ -195,9 +195,9 @@ fn generateRandomInstruction(
 fn generateReturnInstruction(
     func: *Function,
     rand: std.rand.Random,
-    available_values: []root.entities.Value,
+    available_values: []hoist.entities.Value,
     return_types: []const Type,
-) !root.entities.Inst {
+) !hoist.entities.Inst {
     if (return_types.len == 0) {
         // Void return
         const inst_data = InstructionData{

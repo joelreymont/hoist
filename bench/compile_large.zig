@@ -1,11 +1,14 @@
 const std = @import("std");
-const root = @import("root");
+const hoist = @import("hoist");
 
-const Function = root.function.Function;
-const Signature = root.signature.Signature;
-const Type = root.types.Type;
-const InstructionData = root.instruction_data.InstructionData;
-const ContextBuilder = root.context.ContextBuilder;
+const Function = hoist.function.Function;
+const Signature = hoist.signature.Signature;
+const AbiParam = hoist.signature.AbiParam;
+const Type = hoist.types.Type;
+const InstructionData = hoist.instruction_data.InstructionData;
+const UnaryImmData = hoist.instruction_data.UnaryImmData;
+const Imm64 = hoist.immediates.Imm64;
+const ContextBuilder = hoist.context.ContextBuilder;
 
 /// Benchmark compilation of large functions.
 /// Tests scalability with many basic blocks and instructions.
@@ -18,46 +21,44 @@ pub fn main() !void {
 
     std.debug.print("Benchmarking large function compilation...\n", .{});
 
+    var builder = ContextBuilder.init(allocator);
+    var ctx = (try builder.targetNative())
+        .optLevel(.none)
+        .optimization(false)
+        .build();
+
     for (sizes) |size| {
         var timer = try std.time.Timer.start();
 
         const start = timer.read();
         var func = try createLargeFunction(allocator, size);
+        defer func.deinit();
         const ir_time = timer.read() - start;
 
-        var ctx = ContextBuilder.init(allocator)
-            .target(.x86_64, .linux)
-            .optLevel(.none)
-            .optimize(false)
-            .build();
-
         const compile_start = timer.read();
-        const code = ctx.compileFunction(&func) catch |err| {
+        var code = ctx.compileFunction(&func) catch |err| {
             std.debug.print("Size {d}: compilation failed - {}\n", .{ size, err });
-            func.deinit();
             continue;
         };
+        defer code.deinit();
         const compile_time = timer.read() - compile_start;
 
         std.debug.print("Size {d:>5} insts: IR {d:>6}us, compile {d:>6}us, code {d:>5} bytes\n", .{
             size,
             ir_time / 1000,
             compile_time / 1000,
-            code.buffer.len,
+            code.code.items.len,
         });
-
-        code.deinit(allocator);
-        func.deinit();
     }
 }
 
 /// Create large function with many sequential arithmetic operations.
 fn createLargeFunction(allocator: std.mem.Allocator, num_ops: usize) !Function {
-    var sig = try Signature.init(allocator);
-    errdefer sig.deinit(allocator);
+    var sig = Signature.init(allocator, .system_v);
+    errdefer sig.deinit();
 
-    try sig.params.append(allocator, Type{ .int = .{ .width = 64 } });
-    try sig.returns.append(allocator, Type{ .int = .{ .width = 64 } });
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.returns.append(allocator, AbiParam.new(Type.I64));
 
     var func = try Function.init(allocator, "large", sig);
     errdefer func.deinit();
@@ -65,18 +66,17 @@ fn createLargeFunction(allocator: std.mem.Allocator, num_ops: usize) !Function {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
+    try func.dfg.setBlockParams(entry, &.{Type.I64});
+
     var current_val = func.dfg.blockParams(entry)[0];
 
     // Chain of operations: x + 1 + 2 + 3 + ...
     for (0..num_ops) |i| {
         const const_data = InstructionData{
-            .nullary = .{
-                .opcode = .iconst,
-                .imm = @intCast(i),
-            },
+            .unary_imm = UnaryImmData.init(.iconst, Imm64.new(@intCast(i))),
         };
         const const_inst = try func.dfg.makeInst(const_data);
-        const const_val = try func.dfg.appendInstResult(const_inst, Type{ .int = .{ .width = 64 } });
+        const const_val = try func.dfg.appendInstResult(const_inst, Type.I64);
         try func.layout.appendInst(const_inst, entry);
 
         const add_data = InstructionData{
@@ -86,7 +86,7 @@ fn createLargeFunction(allocator: std.mem.Allocator, num_ops: usize) !Function {
             },
         };
         const add_inst = try func.dfg.makeInst(add_data);
-        const add_result = try func.dfg.appendInstResult(add_inst, Type{ .int = .{ .width = 64 } });
+        const add_result = try func.dfg.appendInstResult(add_inst, Type.I64);
         try func.layout.appendInst(add_inst, entry);
 
         current_val = add_result;

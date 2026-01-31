@@ -1,11 +1,17 @@
 const std = @import("std");
-const root = @import("root");
+const hoist = @import("hoist");
 
-const Function = root.function.Function;
-const Signature = root.signature.Signature;
-const Type = root.types.Type;
-const InstructionData = root.instruction_data.InstructionData;
-const ContextBuilder = root.context.ContextBuilder;
+const Function = hoist.function.Function;
+const Signature = hoist.signature.Signature;
+const AbiParam = hoist.signature.AbiParam;
+const Type = hoist.types.Type;
+const InstructionData = hoist.instruction_data.InstructionData;
+const UnaryImmData = hoist.instruction_data.UnaryImmData;
+const IntCompareData = hoist.instruction_data.IntCompareData;
+const BranchData = hoist.instruction_data.BranchData;
+const Imm64 = hoist.immediates.Imm64;
+const IntCC = hoist.condcodes.IntCC;
+const ContextBuilder = hoist.context.ContextBuilder;
 
 /// Benchmark compilation of Fibonacci function.
 /// Measures IR construction and compilation time.
@@ -24,29 +30,28 @@ pub fn main() !void {
     var total_compile_time: u64 = 0;
     var total_code_size: usize = 0;
 
+    var builder = ContextBuilder.init(allocator);
+    var ctx = (try builder.targetNative())
+        .optLevel(.aggressive)
+        .optimization(true)
+        .build();
+
     for (0..iterations) |_| {
         // Measure IR construction time
         const ir_start = timer.read();
         var func = try createFibFunction(allocator);
+        defer func.deinit();
         const ir_end = timer.read();
         total_ir_time += ir_end - ir_start;
 
         // Measure compilation time
-        var ctx = ContextBuilder.init(allocator)
-            .target(.x86_64, .linux)
-            .optLevel(.speed)
-            .optimize(true)
-            .build();
-
         const compile_start = timer.read();
-        const code = try ctx.compileFunction(&func);
+        var code = try ctx.compileFunction(&func);
+        defer code.deinit();
         const compile_end = timer.read();
         total_compile_time += compile_end - compile_start;
 
-        total_code_size += code.buffer.len;
-
-        code.deinit(allocator);
-        func.deinit();
+        total_code_size += code.code.items.len;
     }
 
     const avg_ir_ns = total_ir_time / iterations;
@@ -66,11 +71,11 @@ pub fn main() !void {
 ///     return fib(n-1) + fib(n-2);
 /// }
 fn createFibFunction(allocator: std.mem.Allocator) !Function {
-    var sig = try Signature.init(allocator);
-    errdefer sig.deinit(allocator);
+    var sig = Signature.init(allocator, .system_v);
+    errdefer sig.deinit();
 
-    try sig.params.append(allocator, Type{ .int = .{ .width = 32 } });
-    try sig.returns.append(allocator, Type{ .int = .{ .width = 32 } });
+    try sig.params.append(allocator, AbiParam.new(Type.I32));
+    try sig.returns.append(allocator, AbiParam.new(Type.I32));
 
     var func = try Function.init(allocator, "fib", sig);
     errdefer func.deinit();
@@ -84,35 +89,27 @@ fn createFibFunction(allocator: std.mem.Allocator) !Function {
     try func.layout.appendBlock(base_case);
     try func.layout.appendBlock(recursive_case);
 
+    try func.dfg.setBlockParams(entry, &.{Type.I32});
+
     const n = func.dfg.blockParams(entry)[0];
 
     // Entry: if n <= 1 goto base_case else recursive_case
     const one_data = InstructionData{
-        .nullary = .{
-            .opcode = .iconst,
-            .imm = 1,
-        },
+        .unary_imm = UnaryImmData.init(.iconst, Imm64.new(1)),
     };
     const one_inst = try func.dfg.makeInst(one_data);
-    const one_val = try func.dfg.appendInstResult(one_inst, Type{ .int = .{ .width = 32 } });
+    const one_val = try func.dfg.appendInstResult(one_inst, Type.I32);
     try func.layout.appendInst(one_inst, entry);
 
     const cmp_data = InstructionData{
-        .binary = .{
-            .opcode = .icmp,
-            .args = .{ n, one_val },
-        },
+        .int_compare = IntCompareData.init(.icmp, IntCC.sle, n, one_val),
     };
     const cmp_inst = try func.dfg.makeInst(cmp_data);
-    const cmp_result = try func.dfg.appendInstResult(cmp_inst, Type{ .int = .{ .width = 1 } });
+    const cmp_result = try func.dfg.appendInstResult(cmp_inst, Type.I8);
     try func.layout.appendInst(cmp_inst, entry);
 
     const brif_data = InstructionData{
-        .brif = .{
-            .condition = cmp_result,
-            .then_dest = base_case,
-            .else_dest = recursive_case,
-        },
+        .branch = BranchData.init(.brif, cmp_result, base_case, recursive_case),
     };
     const brif_inst = try func.dfg.makeInst(brif_data);
     try func.layout.appendInst(brif_inst, entry);
@@ -136,17 +133,14 @@ fn createFibFunction(allocator: std.mem.Allocator) !Function {
         },
     };
     const nm1_inst = try func.dfg.makeInst(nm1_data);
-    const nm1_val = try func.dfg.appendInstResult(nm1_inst, Type{ .int = .{ .width = 32 } });
+    const nm1_val = try func.dfg.appendInstResult(nm1_inst, Type.I32);
     try func.layout.appendInst(nm1_inst, recursive_case);
 
     const two_data = InstructionData{
-        .nullary = .{
-            .opcode = .iconst,
-            .imm = 2,
-        },
+        .unary_imm = UnaryImmData.init(.iconst, Imm64.new(2)),
     };
     const two_inst = try func.dfg.makeInst(two_data);
-    const two_val = try func.dfg.appendInstResult(two_inst, Type{ .int = .{ .width = 32 } });
+    const two_val = try func.dfg.appendInstResult(two_inst, Type.I32);
     try func.layout.appendInst(two_inst, recursive_case);
 
     const nm2_data = InstructionData{
@@ -156,7 +150,7 @@ fn createFibFunction(allocator: std.mem.Allocator) !Function {
         },
     };
     const nm2_inst = try func.dfg.makeInst(nm2_data);
-    const nm2_val = try func.dfg.appendInstResult(nm2_inst, Type{ .int = .{ .width = 32 } });
+    const nm2_val = try func.dfg.appendInstResult(nm2_inst, Type.I32);
     try func.layout.appendInst(nm2_inst, recursive_case);
 
     // Simplified: return (n-1) + (n-2) instead of actual recursion
@@ -167,7 +161,7 @@ fn createFibFunction(allocator: std.mem.Allocator) !Function {
         },
     };
     const add_inst = try func.dfg.makeInst(add_data);
-    const add_result = try func.dfg.appendInstResult(add_inst, Type{ .int = .{ .width = 32 } });
+    const add_result = try func.dfg.appendInstResult(add_inst, Type.I32);
     try func.layout.appendInst(add_inst, recursive_case);
 
     const ret_rec_data = InstructionData{

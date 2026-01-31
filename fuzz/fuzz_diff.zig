@@ -1,14 +1,14 @@
 const std = @import("std");
-const root = @import("root");
+const hoist = @import("hoist");
 
-const Function = root.function.Function;
-const Signature = root.signature.Signature;
-const AbiParam = root.signature.AbiParam;
-const Type = root.types.Type;
-const IntCC = root.condcodes.IntCC;
-const Interpreter = root.interpreter.Interpreter;
-const DataValue = root.interpreter.DataValue;
-const FunctionBuilder = root.builder.FunctionBuilder;
+const Function = hoist.function.Function;
+const Signature = hoist.signature.Signature;
+const AbiParam = hoist.signature.AbiParam;
+const Type = hoist.types.Type;
+const IntCC = hoist.condcodes.IntCC;
+const Interpreter = hoist.interpreter.Interpreter;
+const DataValue = hoist.interpreter.DataValue;
+const FunctionBuilder = hoist.builder.FunctionBuilder;
 
 /// Differential fuzzer: compares interpreter vs JIT execution.
 /// Both should produce identical results for the same inputs.

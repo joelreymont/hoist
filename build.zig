@@ -491,7 +491,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    bench_fib.root_module.addImport("root", lib.root_module);
+    bench_fib.root_module.addImport("hoist", lib.root_module);
     applyFlags(bench_fib, enable_lto, debug_info, strip_debug, pic, single_threaded);
 
     const bench_large = b.addExecutable(.{
@@ -502,7 +502,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    bench_large.root_module.addImport("root", lib.root_module);
+    bench_large.root_module.addImport("hoist", lib.root_module);
     applyFlags(bench_large, enable_lto, debug_info, strip_debug, pic, single_threaded);
 
     const bench_aarch64 = b.addExecutable(.{
@@ -513,7 +513,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    bench_aarch64.root_module.addImport("root", lib.root_module);
+    bench_aarch64.root_module.addImport("hoist", lib.root_module);
     applyFlags(bench_aarch64, enable_lto, debug_info, strip_debug, pic, single_threaded);
 
     const bench_step = b.step("bench", "Run benchmarks");
@@ -533,7 +533,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    fuzz_compile.root_module.addImport("root", lib.root_module);
+    fuzz_compile.root_module.addImport("hoist", lib.root_module);
     applyFlags(fuzz_compile, enable_lto, debug_info, strip_debug, pic, single_threaded);
 
     const fuzz_regalloc = b.addExecutable(.{
@@ -544,7 +544,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    fuzz_regalloc.root_module.addImport("root", lib.root_module);
+    fuzz_regalloc.root_module.addImport("hoist", lib.root_module);
     applyFlags(fuzz_regalloc, enable_lto, debug_info, strip_debug, pic, single_threaded);
 
     const fuzz_step = b.step("fuzz", "Run fuzzers");

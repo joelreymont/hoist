@@ -1,12 +1,15 @@
 const std = @import("std");
-const root = @import("root");
+const hoist = @import("hoist");
 
-const Function = root.function.Function;
-const Signature = root.signature.Signature;
-const Type = root.types.Type;
-const InstructionData = root.instruction_data.InstructionData;
-const ContextBuilder = root.context.ContextBuilder;
-const Opcode = root.opcodes.Opcode;
+const Function = hoist.function.Function;
+const Signature = hoist.signature.Signature;
+const AbiParam = hoist.signature.AbiParam;
+const Type = hoist.types.Type;
+const InstructionData = hoist.instruction_data.InstructionData;
+const LoadData = hoist.instruction_data.LoadData;
+const StoreData = hoist.instruction_data.StoreData;
+const ContextBuilder = hoist.context.ContextBuilder;
+const MemFlags = hoist.memflags.MemFlags;
 
 /// Performance benchmark for aarch64 backend.
 /// Measures compile time, code size, and instruction throughput.
@@ -24,6 +27,18 @@ pub fn main() !void {
     try benchmarkMixedWorkload(allocator);
 }
 
+fn countInsts(func: *const Function) usize {
+    var count: usize = 0;
+    var block_iter = func.layout.blockIter();
+    while (block_iter.next()) |blk| {
+        var inst_iter = func.layout.blockInsts(blk);
+        while (inst_iter.next()) |_| {
+            count += 1;
+        }
+    }
+    return count;
+}
+
 fn benchmarkIntArithmetic(allocator: std.mem.Allocator) !void {
     const iterations = 1000;
     std.debug.print("Integer Arithmetic Benchmark ({d} iterations)\n", .{iterations});
@@ -33,27 +48,27 @@ fn benchmarkIntArithmetic(allocator: std.mem.Allocator) !void {
     var total_size: usize = 0;
     var total_insts: usize = 0;
 
+    var builder = ContextBuilder.init(allocator);
+    var ctx = (try builder.targetNative())
+        .optLevel(.aggressive)
+        .optimization(true)
+        .build();
+
     for (0..iterations) |_| {
         var func = try createIntArithmeticFunction(allocator);
         defer func.deinit();
 
-        const inst_count = func.layout.instCount();
+        const inst_count = countInsts(&func);
         total_insts += inst_count;
 
-        var ctx = ContextBuilder.init(allocator)
-            .target(.aarch64, .linux)
-            .optLevel(.speed)
-            .optimize(true)
-            .build();
-
         const start = timer.read();
-        const code = try ctx.compileFunction(&func);
+        var code = try ctx.compileFunction(&func);
         const end = timer.read();
 
         total_time += end - start;
-        total_size += code.buffer.len;
+        total_size += code.code.items.len;
 
-        code.deinit(allocator);
+        code.deinit();
     }
 
     const avg_time_us = (total_time / iterations) / 1000;
@@ -77,27 +92,27 @@ fn benchmarkVectorOps(allocator: std.mem.Allocator) !void {
     var total_size: usize = 0;
     var total_insts: usize = 0;
 
+    var builder = ContextBuilder.init(allocator);
+    var ctx = (try builder.targetNative())
+        .optLevel(.aggressive)
+        .optimization(true)
+        .build();
+
     for (0..iterations) |_| {
         var func = try createVectorFunction(allocator);
         defer func.deinit();
 
-        const inst_count = func.layout.instCount();
+        const inst_count = countInsts(&func);
         total_insts += inst_count;
 
-        var ctx = ContextBuilder.init(allocator)
-            .target(.aarch64, .linux)
-            .optLevel(.speed)
-            .optimize(true)
-            .build();
-
         const start = timer.read();
-        const code = try ctx.compileFunction(&func);
+        var code = try ctx.compileFunction(&func);
         const end = timer.read();
 
         total_time += end - start;
-        total_size += code.buffer.len;
+        total_size += code.code.items.len;
 
-        code.deinit(allocator);
+        code.deinit();
     }
 
     const avg_time_us = (total_time / iterations) / 1000;
@@ -121,27 +136,27 @@ fn benchmarkMemoryOps(allocator: std.mem.Allocator) !void {
     var total_size: usize = 0;
     var total_insts: usize = 0;
 
+    var builder = ContextBuilder.init(allocator);
+    var ctx = (try builder.targetNative())
+        .optLevel(.aggressive)
+        .optimization(true)
+        .build();
+
     for (0..iterations) |_| {
         var func = try createMemoryFunction(allocator);
         defer func.deinit();
 
-        const inst_count = func.layout.instCount();
+        const inst_count = countInsts(&func);
         total_insts += inst_count;
 
-        var ctx = ContextBuilder.init(allocator)
-            .target(.aarch64, .linux)
-            .optLevel(.speed)
-            .optimize(true)
-            .build();
-
         const start = timer.read();
-        const code = try ctx.compileFunction(&func);
+        var code = try ctx.compileFunction(&func);
         const end = timer.read();
 
         total_time += end - start;
-        total_size += code.buffer.len;
+        total_size += code.code.items.len;
 
-        code.deinit(allocator);
+        code.deinit();
     }
 
     const avg_time_us = (total_time / iterations) / 1000;
@@ -165,27 +180,27 @@ fn benchmarkMixedWorkload(allocator: std.mem.Allocator) !void {
     var total_size: usize = 0;
     var total_insts: usize = 0;
 
+    var builder = ContextBuilder.init(allocator);
+    var ctx = (try builder.targetNative())
+        .optLevel(.aggressive)
+        .optimization(true)
+        .build();
+
     for (0..iterations) |_| {
         var func = try createMixedFunction(allocator);
         defer func.deinit();
 
-        const inst_count = func.layout.instCount();
+        const inst_count = countInsts(&func);
         total_insts += inst_count;
 
-        var ctx = ContextBuilder.init(allocator)
-            .target(.aarch64, .linux)
-            .optLevel(.speed)
-            .optimize(true)
-            .build();
-
         const start = timer.read();
-        const code = try ctx.compileFunction(&func);
+        var code = try ctx.compileFunction(&func);
         const end = timer.read();
 
         total_time += end - start;
-        total_size += code.buffer.len;
+        total_size += code.code.items.len;
 
-        code.deinit(allocator);
+        code.deinit();
     }
 
     const avg_time_us = (total_time / iterations) / 1000;
@@ -210,20 +225,22 @@ fn benchmarkMixedWorkload(allocator: std.mem.Allocator) !void {
 ///     return h;
 /// }
 fn createIntArithmeticFunction(allocator: std.mem.Allocator) !Function {
-    var sig = try Signature.init(allocator);
-    errdefer sig.deinit(allocator);
+    var sig = Signature.init(allocator, .system_v);
+    errdefer sig.deinit();
 
-    const i64_ty = Type{ .int = .{ .width = 64 } };
-    try sig.params.append(allocator, i64_ty);
-    try sig.params.append(allocator, i64_ty);
-    try sig.params.append(allocator, i64_ty);
-    try sig.returns.append(allocator, i64_ty);
+    const i64_ty = Type.I64;
+    try sig.params.append(allocator, AbiParam.new(i64_ty));
+    try sig.params.append(allocator, AbiParam.new(i64_ty));
+    try sig.params.append(allocator, AbiParam.new(i64_ty));
+    try sig.returns.append(allocator, AbiParam.new(i64_ty));
 
     var func = try Function.init(allocator, "test_int", sig);
     errdefer func.deinit();
 
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
+
+    try func.dfg.setBlockParams(entry, &.{ i64_ty, i64_ty, i64_ty });
 
     const params = func.dfg.blockParams(entry);
     const a = params[0];
@@ -277,14 +294,14 @@ fn createIntArithmeticFunction(allocator: std.mem.Allocator) !Function {
 ///     return g;
 /// }
 fn createVectorFunction(allocator: std.mem.Allocator) !Function {
-    var sig = try Signature.init(allocator);
-    errdefer sig.deinit(allocator);
+    var sig = Signature.init(allocator, .system_v);
+    errdefer sig.deinit();
 
-    const v128_ty = Type{ .vec = .{ .width = 128, .element = .{ .int = .{ .width = 32 } } } };
-    try sig.params.append(allocator, v128_ty);
-    try sig.params.append(allocator, v128_ty);
-    try sig.params.append(allocator, v128_ty);
-    try sig.returns.append(allocator, v128_ty);
+    const v128_ty = Type.I32X4;
+    try sig.params.append(allocator, AbiParam.new(v128_ty));
+    try sig.params.append(allocator, AbiParam.new(v128_ty));
+    try sig.params.append(allocator, AbiParam.new(v128_ty));
+    try sig.returns.append(allocator, AbiParam.new(v128_ty));
 
     var func = try Function.init(allocator, "test_vec", sig);
     errdefer func.deinit();
@@ -292,31 +309,33 @@ fn createVectorFunction(allocator: std.mem.Allocator) !Function {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
+    try func.dfg.setBlockParams(entry, &.{ v128_ty, v128_ty, v128_ty });
+
     const params = func.dfg.blockParams(entry);
     const a = params[0];
     const b = params[1];
     const c = params[2];
 
     // d = a + b
-    const add_data = InstructionData{ .binary = .{ .opcode = .vec_add, .args = .{ a, b } } };
+    const add_data = InstructionData{ .binary = .{ .opcode = .iadd, .args = .{ a, b } } };
     const add_inst = try func.dfg.makeInst(add_data);
     const d = try func.dfg.appendInstResult(add_inst, v128_ty);
     try func.layout.appendInst(add_inst, entry);
 
     // e = d * c
-    const mul_data = InstructionData{ .binary = .{ .opcode = .vec_mul, .args = .{ d, c } } };
+    const mul_data = InstructionData{ .binary = .{ .opcode = .imul, .args = .{ d, c } } };
     const mul_inst = try func.dfg.makeInst(mul_data);
     const e = try func.dfg.appendInstResult(mul_inst, v128_ty);
     try func.layout.appendInst(mul_inst, entry);
 
     // f = min(e, a)
-    const min_data = InstructionData{ .binary = .{ .opcode = .vec_min, .args = .{ e, a } } };
+    const min_data = InstructionData{ .binary = .{ .opcode = .smin, .args = .{ e, a } } };
     const min_inst = try func.dfg.makeInst(min_data);
     const f = try func.dfg.appendInstResult(min_inst, v128_ty);
     try func.layout.appendInst(min_inst, entry);
 
     // g = max(f, b)
-    const max_data = InstructionData{ .binary = .{ .opcode = .vec_max, .args = .{ f, b } } };
+    const max_data = InstructionData{ .binary = .{ .opcode = .smax, .args = .{ f, b } } };
     const max_inst = try func.dfg.makeInst(max_data);
     const g = try func.dfg.appendInstResult(max_inst, v128_ty);
     try func.layout.appendInst(max_inst, entry);
@@ -338,14 +357,14 @@ fn createVectorFunction(allocator: std.mem.Allocator) !Function {
 ///     return c;
 /// }
 fn createMemoryFunction(allocator: std.mem.Allocator) !Function {
-    var sig = try Signature.init(allocator);
-    errdefer sig.deinit(allocator);
+    var sig = Signature.init(allocator, .system_v);
+    errdefer sig.deinit();
 
-    const ptr_ty = Type{ .pointer = .{ .pointee = 0 } };
-    const i64_ty = Type{ .int = .{ .width = 64 } };
+    const ptr_ty = Type.I64;
+    const i64_ty = Type.I64;
 
-    try sig.params.append(allocator, ptr_ty);
-    try sig.returns.append(allocator, i64_ty);
+    try sig.params.append(allocator, AbiParam.new(ptr_ty));
+    try sig.returns.append(allocator, AbiParam.new(i64_ty));
 
     var func = try Function.init(allocator, "test_mem", sig);
     errdefer func.deinit();
@@ -353,29 +372,19 @@ fn createMemoryFunction(allocator: std.mem.Allocator) !Function {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
+    try func.dfg.setBlockParams(entry, &.{ ptr_ty });
+
     const params = func.dfg.blockParams(entry);
     const ptr = params[0];
 
-    // offset0 = 0
-    const off0_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 0 } };
-    const off0_inst = try func.dfg.makeInst(off0_data);
-    const off0 = try func.dfg.appendInstResult(off0_inst, i64_ty);
-    try func.layout.appendInst(off0_inst, entry);
-
     // a = load(ptr, 0)
-    const load0_data = InstructionData{ .load = .{ .addr = ptr, .offset = off0 } };
+    const load0_data = InstructionData{ .load = LoadData.init(.load, MemFlags.default(), ptr, 0) };
     const load0_inst = try func.dfg.makeInst(load0_data);
     const a = try func.dfg.appendInstResult(load0_inst, i64_ty);
     try func.layout.appendInst(load0_inst, entry);
 
-    // offset8 = 8
-    const off8_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 8 } };
-    const off8_inst = try func.dfg.makeInst(off8_data);
-    const off8 = try func.dfg.appendInstResult(off8_inst, i64_ty);
-    try func.layout.appendInst(off8_inst, entry);
-
     // b = load(ptr, 8)
-    const load8_data = InstructionData{ .load = .{ .addr = ptr, .offset = off8 } };
+    const load8_data = InstructionData{ .load = LoadData.init(.load, MemFlags.default(), ptr, 8) };
     const load8_inst = try func.dfg.makeInst(load8_data);
     const b = try func.dfg.appendInstResult(load8_inst, i64_ty);
     try func.layout.appendInst(load8_inst, entry);
@@ -386,14 +395,8 @@ fn createMemoryFunction(allocator: std.mem.Allocator) !Function {
     const c = try func.dfg.appendInstResult(add_inst, i64_ty);
     try func.layout.appendInst(add_inst, entry);
 
-    // offset16 = 16
-    const off16_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 16 } };
-    const off16_inst = try func.dfg.makeInst(off16_data);
-    const off16 = try func.dfg.appendInstResult(off16_inst, i64_ty);
-    try func.layout.appendInst(off16_inst, entry);
-
     // store(ptr, 16, c)
-    const store_data = InstructionData{ .store = .{ .addr = ptr, .offset = off16, .value = c } };
+    const store_data = InstructionData{ .store = StoreData.init(.store, MemFlags.default(), ptr, c, 16) };
     const store_inst = try func.dfg.makeInst(store_data);
     try func.layout.appendInst(store_inst, entry);
 
@@ -407,22 +410,24 @@ fn createMemoryFunction(allocator: std.mem.Allocator) !Function {
 
 /// Create function with mixed operations
 fn createMixedFunction(allocator: std.mem.Allocator) !Function {
-    var sig = try Signature.init(allocator);
-    errdefer sig.deinit(allocator);
+    var sig = Signature.init(allocator, .system_v);
+    errdefer sig.deinit();
 
-    const i64_ty = Type{ .int = .{ .width = 64 } };
-    const ptr_ty = Type{ .pointer = .{ .pointee = 0 } };
+    const i64_ty = Type.I64;
+    const ptr_ty = Type.I64;
 
-    try sig.params.append(allocator, i64_ty);
-    try sig.params.append(allocator, i64_ty);
-    try sig.params.append(allocator, ptr_ty);
-    try sig.returns.append(allocator, i64_ty);
+    try sig.params.append(allocator, AbiParam.new(i64_ty));
+    try sig.params.append(allocator, AbiParam.new(i64_ty));
+    try sig.params.append(allocator, AbiParam.new(ptr_ty));
+    try sig.returns.append(allocator, AbiParam.new(i64_ty));
 
     var func = try Function.init(allocator, "test_mixed", sig);
     errdefer func.deinit();
 
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
+
+    try func.dfg.setBlockParams(entry, &.{ i64_ty, i64_ty, ptr_ty });
 
     const params = func.dfg.blockParams(entry);
     const a = params[0];
@@ -435,14 +440,8 @@ fn createMixedFunction(allocator: std.mem.Allocator) !Function {
     const c = try func.dfg.appendInstResult(mul_inst, i64_ty);
     try func.layout.appendInst(mul_inst, entry);
 
-    // off = 0
-    const off_data = InstructionData{ .nullary = .{ .opcode = .iconst, .imm = 0 } };
-    const off_inst = try func.dfg.makeInst(off_data);
-    const off = try func.dfg.appendInstResult(off_inst, i64_ty);
-    try func.layout.appendInst(off_inst, entry);
-
     // d = load(ptr, 0)
-    const load_data = InstructionData{ .load = .{ .addr = ptr, .offset = off } };
+    const load_data = InstructionData{ .load = LoadData.init(.load, MemFlags.default(), ptr, 0) };
     const load_inst = try func.dfg.makeInst(load_data);
     const d = try func.dfg.appendInstResult(load_inst, i64_ty);
     try func.layout.appendInst(load_inst, entry);
@@ -454,7 +453,7 @@ fn createMixedFunction(allocator: std.mem.Allocator) !Function {
     try func.layout.appendInst(add_inst, entry);
 
     // store(ptr, 0, e)
-    const store_data = InstructionData{ .store = .{ .addr = ptr, .offset = off, .value = e } };
+    const store_data = InstructionData{ .store = StoreData.init(.store, MemFlags.default(), ptr, e, 0) };
     const store_inst = try func.dfg.makeInst(store_data);
     try func.layout.appendInst(store_inst, entry);
 
