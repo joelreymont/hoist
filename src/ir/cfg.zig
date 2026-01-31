@@ -242,11 +242,32 @@ pub const ControlFlowGraph = struct {
         return self.succIter(block);
     }
 
+    /// Iterator over exception successors.
+    pub fn exceptionSuccIter(self: *const ControlFlowGraph, block: Block) ExceptionSuccIterator {
+        std.debug.assert(self.valid);
+        const block_idx = block.toIndex();
+        return ExceptionSuccIterator{
+            .inner = self.data.items[block_idx].exception_successors.keyIterator(),
+        };
+    }
+
+    /// Iterator over exception successors (alias for exceptionSuccIter).
+    pub fn exceptionSuccessors(self: *const ControlFlowGraph, block: Block) ExceptionSuccIterator {
+        return self.exceptionSuccIter(block);
+    }
+
     /// Get count of successors for a block.
     pub fn successorCount(self: *const ControlFlowGraph, block: Block) usize {
         std.debug.assert(self.valid);
         const block_idx = block.toIndex();
         return self.data.items[block_idx].successors.count();
+    }
+
+    /// Get count of exception successors for a block.
+    pub fn exceptionSuccessorCount(self: *const ControlFlowGraph, block: Block) usize {
+        std.debug.assert(self.valid);
+        const block_idx = block.toIndex();
+        return self.data.items[block_idx].exception_successors.count();
     }
 
     pub fn isValid(self: *const ControlFlowGraph) bool {
@@ -398,6 +419,14 @@ pub const SuccIterator = struct {
     inner: std.AutoHashMap(Block, void).KeyIterator,
 
     pub fn next(self: *SuccIterator) ?Block {
+        return if (self.inner.next()) |key| key.* else null;
+    }
+};
+
+pub const ExceptionSuccIterator = struct {
+    inner: std.AutoHashMap(Block, void).KeyIterator,
+
+    pub fn next(self: *ExceptionSuccIterator) ?Block {
         return if (self.inner.next()) |key| key.* else null;
     }
 };

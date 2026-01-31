@@ -1479,6 +1479,14 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
             try succs.append(ctx.allocator, succ_idx);
         }
 
+        var exc_iter = ctx.cfg.exceptionSuccIter(block);
+        while (exc_iter.next()) |succ_block| {
+            const succ_idx = block_index_map.get(succ_block) orelse return error.LoweringFailed;
+            if (std.mem.indexOfScalar(BlockIndex, succs.items, succ_idx) == null) {
+                try succs.append(ctx.allocator, succ_idx);
+            }
+        }
+
         try builder.finishBlock(succs.items);
     }
 
@@ -1989,6 +1997,29 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
             } else if (data.opcode == .nop) {
                 // No operation
                 try builder.emit(Inst.nop);
+            } else if (data.opcode == .landingpad) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                const dst_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
+                const dst = WritableReg.fromVReg(dst_vreg);
+
+                const size: OperandSize = if (value_type.bits() <= 32)
+                    .size32
+                else
+                    .size64;
+
+                try builder.emit(Inst{
+                    .mov_rr = .{
+                        .dst = dst,
+                        .src = Reg.gpr(0),
+                        .size = size,
+                    },
+                });
             } else {
                 return error.LoweringFailed;
             }
