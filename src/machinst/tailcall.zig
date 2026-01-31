@@ -171,27 +171,22 @@ pub fn planArgForwarding(
     allocator: Allocator,
     caller_args: []const ABIArg,
     callee_args: []const ABIArg,
-    arg_values: []const Reg,
+    arg_locs: []const ArgForwardingPlan.ArgLocation,
     scratch: ?ArgForwardingPlan.ArgLocation,
 ) !ArgForwardingPlan {
     var plan = ArgForwardingPlan.init(allocator);
     errdefer plan.deinit();
 
-    std.debug.assert(callee_args.len == arg_values.len);
+    std.debug.assert(callee_args.len == arg_locs.len);
 
     // Build forwarding moves.
     // For each callee argument, we need to move from current location to target.
-    for (callee_args, arg_values) |callee_arg, src_reg| {
+    for (callee_args, arg_locs) |callee_arg, src_loc| {
         // Get destination location from callee ABI
         for (callee_arg.slots) |slot| {
             const dst_loc = switch (slot) {
                 .reg => |r| ArgForwardingPlan.ArgLocation{ .reg = r.preg },
                 .stack => |s| ArgForwardingPlan.ArgLocation{ .stack = s.offset },
-            };
-
-            // For simplicity, assume src_reg is the source
-            const src_loc = ArgForwardingPlan.ArgLocation{
-                .reg = src_reg.toPReg() orelse unreachable,
             };
 
             const ty = getType(slot);
@@ -302,11 +297,41 @@ fn pickStackScratch(
     if (caller_max <= callee_max) return null;
     if (caller_max < 0 or callee_max < 0) return null;
 
-    const aligned = std.mem.alignForward(u64, @intCast(callee_max), 8);
-    const end = aligned + max_size;
-    if (end > @as(u64, @intCast(caller_max))) return null;
+    const caller_limit: u64 = @intCast(caller_max);
+    var candidate: u64 = std.mem.alignForward(u64, @intCast(callee_max), 8);
+    while (candidate + max_size <= caller_limit) : (candidate += 8) {
+        if (!stackOverlapsMoves(candidate, max_size, moves)) {
+            return .{ .stack = @intCast(candidate) };
+        }
+    }
 
-    return .{ .stack = @intCast(aligned) };
+    return null;
+}
+
+fn stackOverlapsMoves(offset: u64, size: u64, moves: []const ArgForwardingPlan.ArgMove) bool {
+    for (moves) |move| {
+        const move_size: u64 = @intCast(move.ty.bytes());
+        if (move_size == 0) continue;
+        switch (move.src) {
+            .stack => |src_off| {
+                if (src_off < 0) return true;
+                if (rangesOverlap(offset, offset + size, @intCast(src_off), @intCast(src_off) + move_size)) return true;
+            },
+            else => {},
+        }
+        switch (move.dst) {
+            .stack => |dst_off| {
+                if (dst_off < 0) return true;
+                if (rangesOverlap(offset, offset + size, @intCast(dst_off), @intCast(dst_off) + move_size)) return true;
+            },
+            else => {},
+        }
+    }
+    return false;
+}
+
+fn rangesOverlap(a_start: u64, a_end: u64, b_start: u64, b_end: u64) bool {
+    return a_start < b_end and b_start < a_end;
 }
 
 fn stackExtent(args: []const ABIArg) i64 {
@@ -465,7 +490,7 @@ test "ArgForwardingPlan basic" {
 
     try plan.moves.append(plan.alloc, move);
     try testing.expectEqual(@as(usize, 1), plan.moves.items.len);
-    try testing.expectEqual(move.src.reg, plan.moves.items[0].src.reg);
+    try testing.expectEqual(move.src.reg.index(), plan.moves.items[0].src.reg.index());
 }
 
 test "planArgForwarding simple" {
@@ -482,13 +507,15 @@ test "planArgForwarding simple" {
 
     var callee_args = [_]ABIArg{.{ .slots = &callee_slots }};
 
-    var src_regs = [_]Reg{Reg.fromPReg(PReg.new(.int, 5))};
+    var src_locs = [_]ArgForwardingPlan.ArgLocation{
+        .{ .reg = PReg.new(.int, 5) },
+    };
 
     const plan = try planArgForwarding(
         allocator,
         &[_]ABIArg{}, // caller args (not used in simple case)
         &callee_args,
-        &src_regs,
+        &src_locs,
         null,
     );
     defer {
@@ -519,16 +546,16 @@ test "planArgForwarding cycle uses scratch" {
     }};
     var callee_args = [_]ABIArg{ .{ .slots = &callee_slots0 }, .{ .slots = &callee_slots1 } };
 
-    var src_regs = [_]Reg{
-        Reg.fromPReg(PReg.new(.int, 1)),
-        Reg.fromPReg(PReg.new(.int, 0)),
+    var src_locs = [_]ArgForwardingPlan.ArgLocation{
+        .{ .reg = PReg.new(.int, 1) },
+        .{ .reg = PReg.new(.int, 0) },
     };
 
     const plan = try planArgForwarding(
         allocator,
         &[_]ABIArg{},
         &callee_args,
-        &src_regs,
+        &src_locs,
         .{ .reg = PReg.new(.int, 2) },
     );
     defer {
@@ -540,4 +567,61 @@ test "planArgForwarding cycle uses scratch" {
     try testing.expectEqual(PReg.new(.int, 2).index(), plan.moves.items[0].dst.reg.index());
     try testing.expectEqual(PReg.new(.int, 0).index(), plan.moves.items[1].dst.reg.index());
     try testing.expectEqual(PReg.new(.int, 1).index(), plan.moves.items[2].dst.reg.index());
+}
+
+test "planArgForwarding stack args" {
+    const allocator = testing.allocator;
+
+    var callee_slots0 = [_]ABIArgSlot{.{
+        .stack = .{
+            .offset = 0,
+            .ty = .i64,
+            .extension = .none,
+        },
+    }};
+    var callee_slots1 = [_]ABIArgSlot{.{
+        .stack = .{
+            .offset = 8,
+            .ty = .i64,
+            .extension = .none,
+        },
+    }};
+    var callee_args = [_]ABIArg{ .{ .slots = &callee_slots0 }, .{ .slots = &callee_slots1 } };
+
+    var caller_slots0 = [_]ABIArgSlot{.{
+        .stack = .{
+            .offset = 16,
+            .ty = .i64,
+            .extension = .none,
+        },
+    }};
+    var caller_slots1 = [_]ABIArgSlot{.{
+        .stack = .{
+            .offset = 24,
+            .ty = .i64,
+            .extension = .none,
+        },
+    }};
+    var caller_args = [_]ABIArg{ .{ .slots = &caller_slots0 }, .{ .slots = &caller_slots1 } };
+
+    var src_locs = [_]ArgForwardingPlan.ArgLocation{
+        .{ .stack = 16 },
+        .{ .stack = 24 },
+    };
+
+    const plan = try planArgForwarding(
+        allocator,
+        &caller_args,
+        &callee_args,
+        &src_locs,
+        null,
+    );
+    defer {
+        var mut_plan = plan;
+        mut_plan.deinit();
+    }
+
+    try testing.expectEqual(@as(usize, 2), plan.moves.items.len);
+    try testing.expectEqual(@as(i64, 0), plan.moves.items[0].dst.stack);
+    try testing.expectEqual(@as(i64, 8), plan.moves.items[1].dst.stack);
 }
