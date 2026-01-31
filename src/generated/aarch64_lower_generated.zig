@@ -1794,8 +1794,10 @@ pub fn lower(
                 const cond_reg = Reg.fromVReg(try ctx.getValueReg(cond_val, .int));
 
                 // Get target labels
-                const then_label = try ctx.getBlockLabel(data.then_dest.?);
-                const else_label = try ctx.getBlockLabel(data.else_dest.?);
+                const then_block = data.then_dest orelse return error.MissingBranchTarget;
+                const else_block = data.else_dest orelse return error.MissingBranchTarget;
+                const then_label = try ctx.getBlockLabel(then_block);
+                const else_label = try ctx.getBlockLabel(else_block);
 
                 // Compare condition to zero
                 try ctx.emit(Inst{ .cmp_imm = .{
