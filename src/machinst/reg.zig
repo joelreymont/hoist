@@ -27,16 +27,18 @@ pub const RegClass = enum(u8) {
 };
 
 /// Physical register - actual hardware register.
-/// Encoded as: [class:2][hw_enc:6]
+/// Encoded as: [class:3][hw_enc:5]
 pub const PReg = struct {
     bits: u8,
 
-    const CLASS_SHIFT = 6;
-    const HW_ENC_MASK = 0x3F;
+    const CLASS_SHIFT = 5;
+    const HW_ENC_MASK = 0x1F;
 
     pub fn new(reg_class: RegClass, hw_enc: u6) PReg {
+        std.debug.assert(reg_class.index() <= 0x7);
+        std.debug.assert(hw_enc <= HW_ENC_MASK);
         return .{
-            .bits = (@as(u8, reg_class.index()) << CLASS_SHIFT) | hw_enc,
+            .bits = (@as(u8, reg_class.index()) << CLASS_SHIFT) | @as(u8, @intCast(hw_enc)),
         };
     }
 
@@ -62,12 +64,12 @@ pub const PReg = struct {
 };
 
 /// Virtual register - SSA value before register allocation.
-/// Encoded as: [class:2][index:30]
+/// Encoded as: [class:3][index:29]
 pub const VReg = struct {
     bits: u32,
 
-    const CLASS_SHIFT = 30;
-    const INDEX_MASK = 0x3FFF_FFFF;
+    const CLASS_SHIFT = 29;
+    const INDEX_MASK = 0x1FFF_FFFF;
 
     pub fn new(vreg_index: u32, reg_class: RegClass) VReg {
         std.debug.assert(vreg_index <= INDEX_MASK);
@@ -99,8 +101,7 @@ pub const VReg = struct {
 pub const Reg = struct {
     bits: u32,
 
-    const SPILLSLOT_BIT: u32 = 0x8000_0000;
-    const SPILLSLOT_MASK: u32 = ~SPILLSLOT_BIT;
+    const SPILLSLOT_TAG: u32 = 0x7;
     const INVALID_BITS: u32 = 0xFFFF_FFFF;
     pub const PINNED_VREGS: usize = 192; // 64 int, 64 float, 64 vec
 
@@ -135,7 +136,8 @@ pub const Reg = struct {
     }
 
     pub fn fromSpillSlot(slot: SpillSlot) Reg {
-        return .{ .bits = SPILLSLOT_BIT | @as(u32, slot.index) };
+        std.debug.assert(slot.index <= VReg.INDEX_MASK);
+        return .{ .bits = (SPILLSLOT_TAG << VReg.CLASS_SHIFT) | @as(u32, slot.index) };
     }
 
     pub fn toVReg(self: Reg) ?VReg {
@@ -156,13 +158,13 @@ pub const Reg = struct {
 
     pub fn toSpillSlot(self: Reg) ?SpillSlot {
         if (self.isSpillSlot()) {
-            return SpillSlot{ .index = self.bits & SPILLSLOT_MASK };
+            return SpillSlot{ .index = self.bits & VReg.INDEX_MASK };
         }
         return null;
     }
 
     pub fn isSpillSlot(self: Reg) bool {
-        return (self.bits & SPILLSLOT_BIT) != 0;
+        return (self.bits >> VReg.CLASS_SHIFT) == SPILLSLOT_TAG;
     }
 
     pub fn isVirtual(self: Reg) bool {
