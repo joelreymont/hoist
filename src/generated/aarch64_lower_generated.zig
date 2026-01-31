@@ -21,6 +21,63 @@ const Type = root.types.Type;
 const IntCC = root.condcodes.IntCC;
 const FloatCC = root.condcodes.FloatCC;
 
+fn emitCallResults(
+    ctx: *lower_mod.LowerCtx(Inst),
+    ir_inst: lower_mod.Inst,
+    ret_regs: lower_mod.ValueRegs,
+) !void {
+    const results = ctx.func.dfg.instResults(ir_inst);
+    if (results.len == 0) return;
+    if (ret_regs.len() < results.len) return error.ReturnRegCountMismatch;
+
+    for (results, 0..) |result_value, idx| {
+        const src = ret_regs.get(idx) orelse return error.ReturnRegMissing;
+        const ty = ctx.getValueType(result_value);
+        const class: lower_mod.RegClass = if (ty.isInt() or ty.isRef())
+            .int
+        else if (ty.isFloat() or ty.isVector())
+            .float
+        else
+            return error.UnsupportedReturnType;
+        const dst_vreg = try ctx.getValueReg(result_value, class);
+        const dst = WritableReg.fromVReg(dst_vreg);
+
+        if (ty.isFloat()) {
+            const size: FpuOperandSize = switch (ty.bits()) {
+                32 => .size32,
+                64 => .size64,
+                else => return error.UnsupportedReturnType,
+            };
+            try ctx.emit(Inst{ .fmov = .{
+                .dst = dst,
+                .src = src,
+                .size = size,
+            } });
+        } else if (ty.isVector()) {
+            const size: FpuOperandSize = switch (ty.bits()) {
+                32 => .size32,
+                64 => .size64,
+                128 => .size128,
+                else => return error.UnsupportedReturnType,
+            };
+            try ctx.emit(Inst{ .vec_orr = .{
+                .dst = dst,
+                .src1 = src,
+                .src2 = src,
+                .size = size,
+            } });
+        } else {
+            const bits = ty.bits();
+            const size: OperandSize = if (bits != 0 and bits <= 32) .size32 else .size64;
+            try ctx.emit(Inst{ .mov_rr = .{
+                .dst = dst,
+                .src = src,
+                .size = size,
+            } });
+        }
+    }
+}
+
 // Manual lowering function until ISLE compiler is fully functional
 pub fn lower(
     ctx: *lower_mod.LowerCtx(Inst),
@@ -2685,56 +2742,27 @@ pub fn lower(
             const name = metadata.name;
 
             const ret_regs = try isle_helpers.aarch64_try_call(sig_ref, name, args_slice, ctx);
-            const results = ctx.func.dfg.instResults(ir_inst);
-            if (results.len == 0) return true;
-            if (ret_regs.len() < results.len) return error.ReturnRegCountMismatch;
+            try emitCallResults(ctx, ir_inst, ret_regs);
 
-            for (results, 0..) |result_value, idx| {
-                const src = ret_regs.get(idx) orelse return error.ReturnRegMissing;
-                const ty = ctx.getValueType(result_value);
-                const class: lower_mod.RegClass = if (ty.isInt() or ty.isRef())
-                    .int
-                else if (ty.isFloat() or ty.isVector())
-                    .float
-                else
-                    return error.UnsupportedReturnType;
-                const dst_vreg = try ctx.getValueReg(result_value, class);
-                const dst = WritableReg.fromVReg(dst_vreg);
+            const normal_label = try ctx.getBlockLabel(data.normal_successor);
+            try ctx.emit(Inst{ .b = .{ .target = .{ .label = normal_label } } });
 
-                if (ty.isFloat()) {
-                    const size: FpuOperandSize = switch (ty.bits()) {
-                        32 => .size32,
-                        64 => .size64,
-                        else => return error.UnsupportedReturnType,
-                    };
-                    try ctx.emit(Inst{ .fmov = .{
-                        .dst = dst,
-                        .src = src,
-                        .size = size,
-                    } });
-                } else if (ty.isVector()) {
-                    const size: FpuOperandSize = switch (ty.bits()) {
-                        32 => .size32,
-                        64 => .size64,
-                        128 => .size128,
-                        else => return error.UnsupportedReturnType,
-                    };
-                    try ctx.emit(Inst{ .vec_orr = .{
-                        .dst = dst,
-                        .src1 = src,
-                        .src2 = src,
-                        .size = size,
-                    } });
-                } else {
-                    const bits = ty.bits();
-                    const size: OperandSize = if (bits != 0 and bits <= 32) .size32 else .size64;
-                    try ctx.emit(Inst{ .mov_rr = .{
-                        .dst = dst,
-                        .src = src,
-                        .size = size,
-                    } });
-                }
-            }
+            return true;
+        },
+        .try_call_indirect => |data| {
+            // try_call_indirect: Indirect call with exception handling (DWARF unwinding).
+            // Emit the call and materialize return values; exceptions are handled by LSDA/unwinder.
+            const args_list = data.args;
+            const args_all = ctx.func.dfg.value_lists.asSlice(args_list);
+            if (args_all.len == 0) return error.MissingCallee;
+
+            const ptr = args_all[0];
+            const args_slice = args_all[1..];
+            const ret_regs = try isle_helpers.aarch64_try_call_indirect(data.sig_ref, ptr, args_slice, ctx);
+            try emitCallResults(ctx, ir_inst, ret_regs);
+
+            const normal_label = try ctx.getBlockLabel(data.normal_successor);
+            try ctx.emit(Inst{ .b = .{ .target = .{ .label = normal_label } } });
 
             return true;
         },

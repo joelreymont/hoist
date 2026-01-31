@@ -4077,8 +4077,9 @@ pub fn aarch64_try_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.Val
 pub fn aarch64_try_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
     recordRule("aarch64_try_call_indirect");
     // Indirect call with exception handling support
-    // For now, uses same ABI marshaling as regular indirect call
-    // TODO: Wire exception edge to landing pad block when available
+    // Uses same ABI marshaling as regular indirect call; control-flow edges
+    // are emitted in aarch64_lower_generated.zig (normal successor), while
+    // the exception successor is handled via LSDA/unwinder.
 
     // Delegate to regular indirect call implementation
     return aarch64_call_indirect(sig_ref, ptr, args, ctx);

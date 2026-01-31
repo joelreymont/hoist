@@ -277,6 +277,64 @@ test "lower try_call direct" {
     try testing.expectEqual(@as(usize, 3), vcode.blocks.items.len);
 }
 
+test "lower try_call indirect" {
+    var sig = Signature.init(testing.allocator, .fast);
+    try sig.returns.append(testing.allocator, AbiParam.new(Type.I64));
+    var func = try Function.init(testing.allocator, "test_try_call_indirect", sig);
+    defer func.deinit();
+
+    var builder = try root.builder.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+
+    const block0 = try builder.createBlock();
+    const block1 = try builder.createBlock();
+    const block2 = try builder.createBlock();
+    try builder.appendBlock(block0);
+    try builder.appendBlock(block1);
+    try builder.appendBlock(block2);
+
+    var callee_sig = Signature.init(testing.allocator, .fast);
+    try callee_sig.returns.append(testing.allocator, AbiParam.new(Type.I64));
+    const sig_ref = root.entities.SigRef.new(0);
+    try func.signatures.set(func.allocator, sig_ref, callee_sig);
+
+    builder.switchToBlock(block0);
+    const callee_ptr = try builder.iconst(Type.I64, 0);
+    const args_list = try builder.buildValueList(&.{ callee_ptr });
+
+    const inst_data = InstructionData{ .try_call_indirect = .{
+        .opcode = .try_call_indirect,
+        .sig_ref = sig_ref,
+        .args = args_list,
+        .normal_successor = block1,
+        .exception_successor = block2,
+    } };
+    const inst = try func.dfg.makeInst(inst_data);
+    try func.layout.appendInst(inst, block0);
+    const call_res = try func.dfg.appendInstResult(inst, Type.I64);
+    try builder.sealBlock(block0);
+
+    builder.switchToBlock(block1);
+    try builder.retValues(&.{ call_res });
+    try builder.sealBlock(block1);
+
+    builder.switchToBlock(block2);
+    const zero = try builder.iconst(Type.I64, 0);
+    try builder.retValues(&.{ zero });
+    try builder.sealBlock(block2);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+
+    var vcode = try lower_mod.lowerFunction(Inst, testing.allocator, &func, backend);
+    defer vcode.deinit();
+
+    try testing.expect(vcode.insns.items.len > 0);
+    try testing.expectEqual(@as(usize, 3), vcode.blocks.items.len);
+}
+
 // Helper wrappers to call generated lowering functions
 fn lowerInst(ctx: *lower_mod.LowerCtx(Inst), inst: lower_mod.Inst) !bool {
     return try aarch64_lower.lower(ctx, inst);

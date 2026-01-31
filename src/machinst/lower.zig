@@ -409,6 +409,10 @@ fn dfsPostorder(
                 try dfsPostorder(func, inst_data.try_call.normal_successor, visited, postorder, allocator);
                 try dfsPostorder(func, inst_data.try_call.exception_successor, visited, postorder, allocator);
             },
+            .try_call_indirect => {
+                try dfsPostorder(func, inst_data.try_call_indirect.normal_successor, visited, postorder, allocator);
+                try dfsPostorder(func, inst_data.try_call_indirect.exception_successor, visited, postorder, allocator);
+            },
             .br_table => {
                 if (func.jump_tables.get(inst_data.branch_table.destination)) |jt| {
                     if (jt.defaultBlock()) |default_call| {
