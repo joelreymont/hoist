@@ -4535,11 +4535,10 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
             const BranchTarget = inst_module.BranchTarget;
 
             // Emit B instruction with block label
-            // For now, use the block index as the label
-            // TODO: Proper label resolution when block layout is implemented
+            const target_label = block_map.get(data.destination) orelse return error.LoweringFailed;
             try builder.emit(Inst{
                 .b = .{
-                    .target = BranchTarget{ .label = data.destination.index },
+                    .target = BranchTarget{ .label = target_label },
                 },
             });
         },
@@ -4558,10 +4557,11 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
             // Optimize: Use CBNZ (compare and branch if non-zero) instead of CMP+B.ne
             // This is more efficient for the common case of branching on a boolean condition
             if (data.then_dest) |then_block| {
+                const then_label = block_map.get(then_block) orelse return error.LoweringFailed;
                 try builder.emit(Inst{
                     .cbnz = .{
                         .reg = cond_reg,
-                        .target = BranchTarget{ .label = then_block.index },
+                        .target = BranchTarget{ .label = then_label },
                         .size = .size32,
                     },
                 });
@@ -4569,9 +4569,10 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
 
             // Fall through or jump to else_dest
             if (data.else_dest) |else_block| {
+                const else_label = block_map.get(else_block) orelse return error.LoweringFailed;
                 try builder.emit(Inst{
                     .b = .{
-                        .target = BranchTarget{ .label = else_block.index },
+                        .target = BranchTarget{ .label = else_label },
                     },
                 });
             }
