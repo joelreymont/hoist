@@ -10,6 +10,8 @@ const inst_mod = @import("inst.zig");
 const emit_mod = @import("emit.zig");
 const buffer_mod = @import("../../machinst/buffer.zig");
 const abi_mod = @import("abi.zig");
+const jit_mem = @import("../../jit/memory.zig");
+const parallel_copy = @import("../../machinst/parallel_copy.zig");
 
 const Inst = inst_mod.Inst;
 const Reg = inst_mod.Reg;
@@ -247,6 +249,41 @@ test "property: stack slot alignment is power of 2" {
     }.prop, .{ .iterations = 50 });
 }
 
+// Property: JIT memory alloc returns aligned, non-overlapping slices.
+test "property: jit mem alloc alignment and monotonicity" {
+    try zc.check(struct {
+        fn prop(args: struct {
+            size1: u8,
+            size2: u8,
+            align1_shift: u3,
+            align2_shift: u3,
+        }) bool {
+            const allocator = testing.allocator;
+            const buf = allocator.alignedAlloc(
+                u8,
+                std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+                4096,
+            ) catch return false;
+            defer allocator.free(buf);
+
+            var mem = jit_mem.Mem.initFromSlice(buf, allocator);
+            const align1 = @as(usize, 1) << @as(u5, args.align1_shift);
+            const align2 = @as(usize, 1) << @as(u5, args.align2_shift);
+            const size1 = @as(usize, args.size1);
+            const size2 = @as(usize, args.size2);
+
+            const a = mem.alloc(size1, align1) catch return false;
+            const b = mem.alloc(size2, align2) catch return false;
+
+            if (@intFromPtr(a.ptr) % align1 != 0) return false;
+            if (@intFromPtr(b.ptr) % align2 != 0) return false;
+            if (@intFromPtr(b.ptr) < @intFromPtr(a.ptr) + a.len) return false;
+
+            return true;
+        }
+    }.prop, .{ .iterations = 200 });
+}
+
 // ============================================================================
 // Immediate Encoding Properties
 // ============================================================================
@@ -346,4 +383,65 @@ test "property: operand size enum coverage" {
             };
         }
     }.prop, .{ .iterations = 100 });
+}
+
+// Property: Tailcall move ordering preserves source values.
+// Validates parallel_copy resolution used by tailcall argument forwarding.
+test "property: tailcall moves preserve values" {
+    try zc.check(struct {
+        fn prop(args: struct {
+            src: [4]u3,
+            dst: [4]u3,
+        }) bool {
+            const allocator = testing.allocator;
+
+            var dst_seen: [8]bool = [_]bool{false} ** 8;
+            var moves_buf: [4]parallel_copy.Move = undefined;
+            var move_len: usize = 0;
+
+            for (0..4) |i| {
+                const src_reg: u8 = @intCast(args.src[i] % 6);
+                const dst_reg: u8 = @intCast(args.dst[i] % 6);
+                if (src_reg == dst_reg) continue;
+                if (dst_seen[dst_reg]) return true;
+                dst_seen[dst_reg] = true;
+                moves_buf[move_len] = .{
+                    .src = .{ .reg = src_reg },
+                    .dst = .{ .reg = dst_reg },
+                    .origin = move_len,
+                };
+                move_len += 1;
+            }
+
+            if (move_len == 0) return true;
+
+            var resolved = parallel_copy.resolve(
+                allocator,
+                moves_buf[0..move_len],
+                .{ .reg = 7 },
+            ) catch return false;
+            defer resolved.deinit(allocator);
+
+            var vals: [8]u8 = .{ 0, 1, 2, 3, 4, 5, 6, 7 };
+            const orig = vals;
+
+            for (resolved.items) |mv| {
+                const src_reg = switch (mv.src) {
+                    .reg => |r| r,
+                    .stack => return false,
+                };
+                const dst_reg = switch (mv.dst) {
+                    .reg => |r| r,
+                    .stack => return false,
+                };
+                vals[dst_reg] = vals[src_reg];
+            }
+
+            for (moves_buf[0..move_len]) |mv| {
+                if (vals[mv.dst.reg] != orig[mv.src.reg]) return false;
+            }
+
+            return true;
+        }
+    }.prop, .{ .iterations = 200 });
 }
