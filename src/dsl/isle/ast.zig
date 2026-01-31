@@ -287,11 +287,23 @@ test "Ident" {
 }
 
 test "Pattern wildcard" {
+    const OhSnap = @import("ohsnap");
+    const oh = OhSnap{};
     const pat = Pattern{ .wildcard = .{ .pos = Pos.new(0, 0) } };
-    try testing.expectEqual(Pos.new(0, 0), pat.getPos());
+    try oh.snap(
+        @src(),
+        \\0:1:1
+        \\
+    ).expectEqualFmt(pat.getPos());
 }
 
 test "Expr var" {
+    const OhSnap = @import("ohsnap");
+    const oh = OhSnap{};
     const expr = Expr{ .var_expr = .{ .name = Ident.init("x", Pos.new(0, 0)), .pos = Pos.new(0, 0) } };
-    try testing.expectEqual(Pos.new(0, 0), expr.getPos());
+    try oh.snap(
+        @src(),
+        \\0:1:1
+        \\
+    ).expectEqualFmt(expr.getPos());
 }
