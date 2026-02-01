@@ -142,6 +142,6 @@ test "JumpTableData mutability" {
     const def_mut = jt.defaultBlockMut().?;
     def_mut.setBlock(Block.new(99), &pool);
 
-    const new_default = jt.defaultBlock().?.block(&pool).asU32();
+    const new_default = (try jt.defaultBlock().?.block(&pool)).asU32();
     try testing.expectEqual(@as(u32, 99), new_default);
 }

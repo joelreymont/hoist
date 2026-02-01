@@ -181,8 +181,8 @@ pub fn LowerCtx(comptime MachInst: type) type {
         }
 
         /// Get the type of an IR value.
-        pub fn getValueType(self: *const Self, value: Value) root.types.Type {
-            return self.func.dfg.valueType(value) orelse unreachable; // Value must have type
+        pub fn getValueType(self: *const Self, value: Value) !root.types.Type {
+            return self.func.dfg.valueType(value) orelse return error.MissingValueType;
         }
 
         /// Get a signature from the function's signature table.
@@ -416,11 +416,11 @@ fn dfsPostorder(
             .br_table => {
                 if (func.jump_tables.get(inst_data.branch_table.destination)) |jt| {
                     if (jt.defaultBlock()) |default_call| {
-                        const default_block = default_call.block(&func.dfg.value_lists);
+                        const default_block = try default_call.block(&func.dfg.value_lists);
                         try dfsPostorder(func, default_block, visited, postorder, allocator);
                     }
                     for (jt.asSlice()) |entry| {
-                        const target_block = entry.block(&func.dfg.value_lists);
+                        const target_block = try entry.block(&func.dfg.value_lists);
                         try dfsPostorder(func, target_block, visited, postorder, allocator);
                     }
                 }

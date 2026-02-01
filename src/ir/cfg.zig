@@ -138,9 +138,11 @@ pub const ControlFlowGraph = struct {
                 .br_table => {
                     const jt = func.jump_tables.get(inst_data.branch_table.destination) orelse continue;
                     const default_bc = jt.defaultBlock() orelse continue;
-                    try self.addEdge(block, inst, default_bc.block(&func.dfg.value_lists));
+                    const default_block = try default_bc.block(&func.dfg.value_lists);
+                    try self.addEdge(block, inst, default_block);
                     for (jt.asSlice()) |bc| {
-                        try self.addEdge(block, inst, bc.block(&func.dfg.value_lists));
+                        const target_block = try bc.block(&func.dfg.value_lists);
+                        try self.addEdge(block, inst, target_block);
                     }
                 },
                 else => {}, // Non-branching instruction
@@ -360,7 +362,7 @@ pub const ControlFlowGraph = struct {
                 // Validate all jump table targets
                 if (func.jump_tables.get(inst_data.branch_table.destination)) |jt| {
                     for (jt.allBranches()) |bc| {
-                        const target = bc.block(&func.dfg.value_lists);
+                        const target = try bc.block(&func.dfg.value_lists);
                         try self.validateEdge(block, last_inst, target);
                     }
                 }

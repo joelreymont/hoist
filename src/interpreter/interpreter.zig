@@ -458,7 +458,7 @@ pub const Interpreter = struct {
     /// Execute a function with the given arguments.
     pub fn call(self: *Interpreter, func: *const Function, args: []const DataValue) InterpError![]const DataValue {
         self.frame = Frame.init(self.alloc, func);
-        self.memory = Memory.init(self.alloc) catch return error.OutOfMemory;
+        self.memory = try Memory.init(self.alloc);
         errdefer if (self.frame) |*f| f.deinit();
 
         // Get entry block
@@ -903,7 +903,7 @@ pub const Interpreter = struct {
             else => return error.TypeMismatch,
         };
 
-        const val = self.memory.?.load(addr, size) catch return error.OutOfBounds;
+        const val = try self.memory.?.load(addr, size);
         try self.frame.?.set(result, val);
         return .cont;
     }
@@ -913,7 +913,7 @@ pub const Interpreter = struct {
         const addr = addr_val.toU64() + data.offset;
         const val = self.frame.?.get(data.value) orelse return error.UnknownValue;
 
-        self.memory.?.store(addr, val) catch return error.OutOfBounds;
+        try self.memory.?.store(addr, val);
         return .cont;
     }
 

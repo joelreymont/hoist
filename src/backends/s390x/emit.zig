@@ -69,8 +69,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
     }
 }
 
-fn regEnc(r: Reg) u4 {
-    const rreg = r.toRealReg() orelse unreachable;
+fn regEnc(r: Reg) !u4 {
+    const rreg = r.toRealReg() orelse return error.InvalidReg;
     return @truncate(rreg.hwEnc());
 }
 
@@ -84,8 +84,8 @@ fn zeroReg() Reg {
 
 // RR format (2 bytes): opcode[8] r1[4] r2[4]
 fn emitRR(opcode: u8, r1: Reg, r2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const enc1 = regEnc(r1);
-    const enc2 = regEnc(r2);
+    const enc1 = try regEnc(r1);
+    const enc2 = try regEnc(r2);
     const bytes = [_]u8{
         opcode,
         (@as(u8, enc1) << 4) | enc2,
@@ -95,8 +95,8 @@ fn emitRR(opcode: u8, r1: Reg, r2: Reg, buffer: *buffer_mod.MachBuffer) !void {
 
 // RRE format (4 bytes): opcode[16] pad[8] r1[4] r2[4]
 fn emitRRE(opcode: u16, r1: Reg, r2: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    const enc1 = regEnc(r1);
-    const enc2 = regEnc(r2);
+    const enc1 = try regEnc(r1);
+    const enc2 = try regEnc(r2);
     const bytes = [_]u8{
         @truncate(opcode >> 8),
         @truncate(opcode),
@@ -108,7 +108,7 @@ fn emitRRE(opcode: u16, r1: Reg, r2: Reg, buffer: *buffer_mod.MachBuffer) !void 
 
 // RI format (4 bytes): opcode[8] r1[4] op2[4] imm[16]
 fn emitRI(opcode: u8, op2: u4, r1: Reg, imm: u16, buffer: *buffer_mod.MachBuffer) !void {
-    const enc1 = regEnc(r1);
+    const enc1 = try regEnc(r1);
     const bytes = [_]u8{
         opcode,
         (@as(u8, enc1) << 4) | op2,
@@ -120,7 +120,7 @@ fn emitRI(opcode: u8, op2: u4, r1: Reg, imm: u16, buffer: *buffer_mod.MachBuffer
 
 // RIL format (6 bytes): opcode[8] r1[4] op2[4] imm[32]
 fn emitRIL(opcode: u8, op2: u4, r1: Reg, imm: u32, buffer: *buffer_mod.MachBuffer) !void {
-    const enc1 = regEnc(r1);
+    const enc1 = try regEnc(r1);
     const bytes = [_]u8{
         opcode,
         (@as(u8, enc1) << 4) | op2,
@@ -134,8 +134,8 @@ fn emitRIL(opcode: u8, op2: u4, r1: Reg, imm: u32, buffer: *buffer_mod.MachBuffe
 
 // RX format (4 bytes): opcode[8] r1[4] x2[4] b2[4] d2[12]
 fn emitRX(opcode: u8, r1: Reg, b2: Reg, x2: u4, d2: i12, buffer: *buffer_mod.MachBuffer) !void {
-    const enc1 = regEnc(r1);
-    const enc_b2 = regEnc(b2);
+    const enc1 = try regEnc(r1);
+    const enc_b2 = try regEnc(b2);
     const disp: u12 = @bitCast(d2);
     const bytes = [_]u8{
         opcode,
@@ -148,8 +148,8 @@ fn emitRX(opcode: u8, r1: Reg, b2: Reg, x2: u4, d2: i12, buffer: *buffer_mod.Mac
 
 // RXY format (6 bytes): opcode[8] r1[4] x2[4] b2[4] dl2[12] dh2[8] op2[8]
 fn emitRXY(opcode: u8, op2: u8, r1: Reg, b2: Reg, x2: u4, d2: i20, buffer: *buffer_mod.MachBuffer) !void {
-    const enc1 = regEnc(r1);
-    const enc_b2 = regEnc(b2);
+    const enc1 = try regEnc(r1);
+    const enc_b2 = try regEnc(b2);
     const disp: u20 = @bitCast(d2);
     const dl: u12 = @truncate(disp);
     const dh: u8 = @truncate(disp >> 12);
@@ -166,8 +166,8 @@ fn emitRXY(opcode: u8, op2: u8, r1: Reg, b2: Reg, x2: u4, d2: i20, buffer: *buff
 
 // RSY format (6 bytes): opcode[8] r1[4] r3[4] b2[4] d2[12] dh2[8] op2[8]
 fn emitRSY(opcode: u8, op2: u8, r1: Reg, r3: Reg, b2: u4, d2: i20, buffer: *buffer_mod.MachBuffer) !void {
-    const enc1 = regEnc(r1);
-    const enc3 = regEnc(r3);
+    const enc1 = try regEnc(r1);
+    const enc3 = try regEnc(r3);
     const disp: u20 = @bitCast(d2);
     const dl: u12 = @truncate(disp);
     const dh: u8 = @truncate(disp >> 12);

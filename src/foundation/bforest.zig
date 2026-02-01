@@ -706,7 +706,7 @@ pub fn Path(comptime K: type, comptime V: type, comptime LEAF_SIZE: usize) type 
             }
 
             // Split root
-            const rhs_node = ins_node orelse unreachable;
+            const rhs_node = ins_node orelse return error.MissingSplitNode;
             const root = try pool.alloc(ND.makeInner(orig_root, key, rhs_node));
             const e: u8 = if (self.node[0].index == rhs_node.index) 1 else 0;
             self.size += 1;

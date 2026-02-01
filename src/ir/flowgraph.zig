@@ -48,7 +48,7 @@ fn analyzeBlock(cfg: *CFG, func: *const Function, block: Block) !void {
                 if (func.jump_tables.get(brt.destination)) |jt| {
                     // Add edges to all branch targets (including default at index 0)
                     for (jt.allBranches()) |bc| {
-                        const target = bc.block(&func.dfg.value_lists);
+                        const target = try bc.block(&func.dfg.value_lists);
                         try cfg.addEdge(block, target);
                     }
                 }

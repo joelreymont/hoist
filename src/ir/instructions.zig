@@ -292,7 +292,7 @@ test "BlockCall basic" {
     };
 
     var bc = try BlockCall.init(block0, &args_slice, &pool);
-    try testing.expectEqual(block0.toIndex(), bc.block(&pool).toIndex());
+    try testing.expectEqual(block0.toIndex(), (try bc.block(&pool)).toIndex());
     try testing.expectEqual(@as(usize, 2), bc.len(&pool));
 
     const decoded_args = try bc.args(&pool, allocator);

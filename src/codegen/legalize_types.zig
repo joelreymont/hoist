@@ -262,7 +262,9 @@ pub fn narrowInt(ty: Type, target_width: u32) ?Type {
 pub fn nextPow2Width(ty: Type) ?Type {
     if (!ty.isInt()) return null;
     const width = ty.bits();
-    const next = std.math.ceilPowerOfTwo(u32, width + 1) catch return null;
+    const target = width + 1;
+    var next: u32 = 1;
+    while (next < target) : (next <<= 1) {}
     if (next > 65535) return null;
     return Type.int(@intCast(next));
 }
@@ -283,7 +285,8 @@ pub fn splitVectorHalf(ty: Type) ?Type {
 pub fn widenVector(ty: Type) ?Type {
     if (!ty.isVector()) return null;
     const lanes = ty.laneCount();
-    const double_lanes = std.math.mul(u32, lanes, 2) catch return null;
+    if (lanes > (std.math.maxInt(u32) / 2)) return null;
+    const double_lanes = lanes * 2;
     if (double_lanes > 256) return null; // Max lanes
     return Type.vector(ty.laneType(), double_lanes);
 }

@@ -32,7 +32,7 @@ fn emitCallResults(
 
     for (results, 0..) |result_value, idx| {
         const src = ret_regs.get(idx) orelse return error.ReturnRegMissing;
-        const ty = ctx.getValueType(result_value);
+        const ty = try ctx.getValueType(result_value);
         const class: lower_mod.RegClass = if (ty.isInt() or ty.isRef())
             .int
         else if (ty.isFloat() or ty.isVector())
@@ -90,7 +90,7 @@ pub fn lower(
             if (data.opcode == .iconst) {
                 // Get immediate value
                 const imm = data.imm.value;
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
 
                 // Determine operand size from type
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
@@ -179,7 +179,7 @@ pub fn lower(
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
                 // Get type for size
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Emit add instruction
@@ -204,7 +204,7 @@ pub fn lower(
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
                 // Get type for size
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Emit sub instruction
@@ -229,7 +229,7 @@ pub fn lower(
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
                 // Get type for size
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Emit mul instruction
@@ -250,7 +250,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .udiv = .{
@@ -270,7 +270,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .sdiv = .{
@@ -290,7 +290,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // quotient = udiv(lhs, rhs)
@@ -321,7 +321,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // quotient = sdiv(lhs, rhs)
@@ -352,7 +352,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .and_rr = .{
@@ -372,7 +372,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .orr_rr = .{
@@ -392,7 +392,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .eor_rr = .{
@@ -412,7 +412,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .lsl_rr = .{
@@ -432,7 +432,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .lsr_rr = .{
@@ -452,7 +452,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .asr_rr = .{
@@ -472,7 +472,7 @@ pub fn lower(
                 const shift_reg = Reg.fromVReg(try ctx.getValueReg(shift, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .ror_rr = .{
@@ -491,7 +491,7 @@ pub fn lower(
                 const shift_reg = Reg.fromVReg(try ctx.getValueReg(shift, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Negate shift amount
@@ -519,7 +519,7 @@ pub fn lower(
                 const src2_reg = Reg.fromVReg(try ctx.getValueReg(src2, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .bic_rr = .{
@@ -538,7 +538,7 @@ pub fn lower(
                 const src2_reg = Reg.fromVReg(try ctx.getValueReg(src2, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .orn_rr = .{
@@ -557,7 +557,7 @@ pub fn lower(
                 const src2_reg = Reg.fromVReg(try ctx.getValueReg(src2, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .eon_rr = .{
@@ -577,7 +577,7 @@ pub fn lower(
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
                 const overflow = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Emit adds to get result and set flags
@@ -608,7 +608,7 @@ pub fn lower(
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
                 const overflow = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Emit adds to get result and set flags
@@ -639,7 +639,7 @@ pub fn lower(
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
                 const overflow = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Emit subs to get result and set flags
@@ -670,7 +670,7 @@ pub fn lower(
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
                 const overflow = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Emit subs to get result and set flags
@@ -700,7 +700,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(inst_mod.aarch64_fadd(dst, lhs_reg, rhs_reg, size));
@@ -714,7 +714,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(inst_mod.aarch64_fsub(dst, lhs_reg, rhs_reg, size));
@@ -728,7 +728,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(inst_mod.aarch64_fmul(dst, lhs_reg, rhs_reg, size));
@@ -742,7 +742,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(inst_mod.aarch64_fdiv(dst, lhs_reg, rhs_reg, size));
@@ -756,7 +756,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .fmin = .{
@@ -775,7 +775,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .fmax = .{
@@ -794,7 +794,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 // Use bitwise operations to copy sign bit
@@ -907,7 +907,7 @@ pub fn lower(
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
                 // Get type for size
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Emit load instruction with zero offset
@@ -926,7 +926,7 @@ pub fn lower(
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
                 // Result type determines destination size
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .ldrb = .{
@@ -943,7 +943,7 @@ pub fn lower(
                 const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .ldrsb = .{
@@ -960,7 +960,7 @@ pub fn lower(
                 const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .ldrh = .{
@@ -977,7 +977,7 @@ pub fn lower(
                 const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .ldrsh = .{
@@ -1029,7 +1029,7 @@ pub fn lower(
                 const addr_reg = Reg.fromVReg(try ctx.getValueReg(addr, .int));
 
                 // Get type for size
-                const ty = ctx.getValueType(value);
+                const ty = try ctx.getValueType(value);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Emit store instruction with offset from StoreData
@@ -1100,7 +1100,7 @@ pub fn lower(
                 const dst_x0 = WritableReg.fromReg(x0);
 
                 // Get type for size
-                const ty = ctx.getValueType(ret_val);
+                const ty = try ctx.getValueType(ret_val);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Emit mov to X0 if not already there
@@ -1120,7 +1120,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .mvn_rr = .{
@@ -1136,8 +1136,8 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const src_ty = ctx.getValueType(src);
-                const dst_ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const src_ty = try ctx.getValueType(src);
+                const dst_ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
 
                 const src_bits = src_ty.bits();
                 const dst_bits = dst_ty.bits();
@@ -1182,8 +1182,8 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const src_ty = ctx.getValueType(src);
-                const dst_ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const src_ty = try ctx.getValueType(src);
+                const dst_ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
 
                 const src_bits = src_ty.bits();
                 const dst_bits = dst_ty.bits();
@@ -1229,7 +1229,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const dst_ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const dst_ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const dst_bits = dst_ty.bits();
 
                 // Determine size for move
@@ -1250,7 +1250,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .clz = .{
@@ -1265,7 +1265,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .ctz = .{
@@ -1280,7 +1280,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .popcnt = .{
@@ -1295,7 +1295,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .rbit = .{
@@ -1310,7 +1310,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
 
                 // Choose rev instruction based on type width
                 if (ty.bits() == 16) {
@@ -1340,7 +1340,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(inst_mod.aarch64_fabs(dst, src_reg, size));
@@ -1351,7 +1351,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(inst_mod.aarch64_fneg(dst, src_reg, size));
@@ -1362,7 +1362,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(inst_mod.aarch64_fsqrt(dst, src_reg, size));
@@ -1373,7 +1373,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .frintp = .{
@@ -1388,7 +1388,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .frintm = .{
@@ -1403,7 +1403,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .frintz = .{
@@ -1418,7 +1418,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .frintn = .{
@@ -1434,11 +1434,11 @@ pub fn lower(
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
                 // Get source float type
-                const src_ty = ctx.getValueType(src);
+                const src_ty = try ctx.getValueType(src);
                 const src_size: FpuOperandSize = if (src_ty.bits() == 32) .size32 else .size64;
 
                 // Get destination integer type
-                const dst_ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const dst_ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const dst_size: OperandSize = if (dst_ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .fcvtzs = .{
@@ -1455,11 +1455,11 @@ pub fn lower(
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
                 // Get source float type
-                const src_ty = ctx.getValueType(src);
+                const src_ty = try ctx.getValueType(src);
                 const src_size: FpuOperandSize = if (src_ty.bits() == 32) .size32 else .size64;
 
                 // Get destination integer type
-                const dst_ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const dst_ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const dst_size: OperandSize = if (dst_ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .fcvtzu = .{
@@ -1476,11 +1476,11 @@ pub fn lower(
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
                 // Get source integer type
-                const src_ty = ctx.getValueType(src);
+                const src_ty = try ctx.getValueType(src);
                 const src_size: OperandSize = if (src_ty.bits() <= 32) .size32 else .size64;
 
                 // Get destination float type
-                const dst_ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const dst_ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const dst_size: FpuOperandSize = if (dst_ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .scvtf = .{
@@ -1497,11 +1497,11 @@ pub fn lower(
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
                 // Get source integer type
-                const src_ty = ctx.getValueType(src);
+                const src_ty = try ctx.getValueType(src);
                 const src_size: OperandSize = if (src_ty.bits() <= 32) .size32 else .size64;
 
                 // Get destination float type
-                const dst_ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const dst_ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const dst_size: FpuOperandSize = if (dst_ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .ucvtf = .{
@@ -1517,11 +1517,11 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
 
                 // Get source float type
-                const src_ty = ctx.getValueType(src);
+                const src_ty = try ctx.getValueType(src);
                 const src_size: FpuOperandSize = if (src_ty.bits() == 32) .size32 else .size64;
 
                 // Get destination integer type
-                const dst_ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const dst_ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const dst_size: OperandSize = if (dst_ty.bits() <= 32) .size32 else .size64;
 
                 // Do initial conversion
@@ -1604,11 +1604,11 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .float));
 
                 // Get source float type
-                const src_ty = ctx.getValueType(src);
+                const src_ty = try ctx.getValueType(src);
                 const src_size: FpuOperandSize = if (src_ty.bits() == 32) .size32 else .size64;
 
                 // Get destination integer type
-                const dst_ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const dst_ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const dst_size: OperandSize = if (dst_ty.bits() <= 32) .size32 else .size64;
 
                 // Do initial conversion
@@ -1689,7 +1689,7 @@ pub fn lower(
             var fp_idx: u8 = 0;
 
             for (args) |arg| {
-                const ty = ctx.getValueType(arg);
+                const ty = try ctx.getValueType(arg);
                 if (ty.isFloat()) {
                     if (fp_idx >= 8) return false;
                     const fp_hw: u6 = @intCast(fp_idx);
@@ -1830,7 +1830,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Map IntCC to ARM64 CondCode
@@ -1873,7 +1873,7 @@ pub fn lower(
                 const lhs_reg = Reg.fromVReg(try ctx.getValueReg(lhs, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Map IntCC to ARM64 CondCode
@@ -1985,7 +1985,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Check if immediate fits in 12-bit encoding (0-4095)
@@ -2075,7 +2075,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Check if immediate fits in 12-bit encoding (0-4095)
@@ -2165,7 +2165,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Try to use and_imm with logical immediate encoding
@@ -2249,7 +2249,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 const imm_u64 = @as(u64, @bitCast(imm));
@@ -2332,7 +2332,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 const imm_u64 = @as(u64, @bitCast(imm));
@@ -2415,7 +2415,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(inst_mod.aarch64_lsl(dst, src_reg, shift, size));
@@ -2428,7 +2428,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(inst_mod.aarch64_lsr(dst, src_reg, shift, size));
@@ -2441,7 +2441,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(inst_mod.aarch64_asr(dst, src_reg, shift, size));
@@ -2457,7 +2457,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 try ctx.emit(inst_mod.aarch64_ror(dst, src_reg, shift, size));
@@ -2470,7 +2470,7 @@ pub fn lower(
                 const src_reg = Reg.fromVReg(try ctx.getValueReg(src, .int));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Convert left shift to right shift: ror by (width - shift)
@@ -2495,7 +2495,7 @@ pub fn lower(
                 // TODO: This needs frame layout to compute actual offset
                 const fp_offset = offset;
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
@@ -2559,7 +2559,7 @@ pub fn lower(
                 // Calculate FP-relative offset
                 const fp_offset = offset;
 
-                const ty = ctx.getValueType(value);
+                const ty = try ctx.getValueType(value);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 const value_reg = Reg.fromVReg(try ctx.getValueReg(value, .int));
@@ -2593,7 +2593,7 @@ pub fn lower(
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
                 // Determine operand size from result type
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Test condition against zero
@@ -2626,7 +2626,7 @@ pub fn lower(
                 const b_reg = Reg.fromVReg(try ctx.getValueReg(b, .int));
                 const c_reg = Reg.fromVReg(try ctx.getValueReg(c, .int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
                 // Emit (a & c) | (b & ~c) sequence
@@ -2669,7 +2669,7 @@ pub fn lower(
                 const addend_reg = Reg.fromVReg(try ctx.getValueReg(addend, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.float));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 try ctx.emit(Inst{ .fmadd = .{
@@ -2692,7 +2692,7 @@ pub fn lower(
                 const rhs_reg = Reg.fromVReg(try ctx.getValueReg(rhs, .float));
                 const dst = WritableReg.fromVReg(ctx.allocVReg(.int));
 
-                const ty = ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
+                const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
 
                 // Map FloatCC to ARM64 CondCode

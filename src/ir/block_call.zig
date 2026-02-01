@@ -110,8 +110,8 @@ pub const BlockCall = struct {
     }
 
     /// Get block for this call.
-    pub fn block(self: BlockCall, pool: *const ValueListPool) Block {
-        const v = pool.first(self.values) orelse unreachable;
+    pub fn block(self: BlockCall, pool: *const ValueListPool) !Block {
+        const v = pool.first(self.values) orelse return error.EmptyBlockCall;
         return valueToBlock(v);
     }
 
@@ -160,7 +160,7 @@ pub const BlockCall = struct {
     }
 
     pub fn format(self: BlockCall, writer: anytype, pool: *const ValueListPool) !void {
-        try writer.print("{f}", .{self.block(pool)});
+        try writer.print("{f}", .{try self.block(pool)});
         const arg_count = self.len(pool);
         if (arg_count > 0) {
             try writer.writeAll("(");
@@ -209,7 +209,7 @@ test "BlockCall basic" {
     const args = [_]Value{ Value.new(1), Value.new(2) };
     var call = try BlockCall.new(b, &args, &pool);
 
-    try testing.expectEqual(b.toIndex(), call.block(&pool).toIndex());
+    try testing.expectEqual(b.toIndex(), (try call.block(&pool)).toIndex());
     try testing.expectEqual(@as(usize, 2), call.len(&pool));
     try testing.expectEqual(Value.new(1).toIndex(), call.getArg(&pool, 0).?.toIndex());
     try testing.expectEqual(Value.new(2).toIndex(), call.getArg(&pool, 1).?.toIndex());
@@ -237,5 +237,5 @@ test "BlockCall clear" {
 
     try call.clear(&pool);
     try testing.expectEqual(@as(usize, 0), call.len(&pool));
-    try testing.expectEqual(b.toIndex(), call.block(&pool).toIndex());
+    try testing.expectEqual(b.toIndex(), (try call.block(&pool)).toIndex());
 }

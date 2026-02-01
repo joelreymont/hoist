@@ -331,7 +331,7 @@ pub const EGraph = struct {
     /// Implements egg's rebuilding algorithm for congruence closure.
     pub fn rebuild(self: *EGraph) !void {
         while (self.worklist.items.len > 0) {
-            const id = self.worklist.pop() orelse unreachable;
+            const id = self.worklist.pop() orelse return error.EmptyWorklist;
             const canon_id = self.uf.find(id);
 
             const eclass = self.classes.getPtr(canon_id) orelse continue;

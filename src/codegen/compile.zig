@@ -114,6 +114,8 @@ pub const CodegenError = error{
     OutOfMemory,
     /// IR building failed.
     IRBuildFailed,
+    /// Block call missing block entry.
+    EmptyBlockCall,
     /// Offset out of range for instruction encoding.
     OffsetOutOfRange,
     /// Offset is not aligned to required boundary.
@@ -148,7 +150,7 @@ pub const CodegenError = error{
     InvalidShift,
     /// Unsupported floating-point immediate encoding.
     UnsupportedFPImmediate,
-};
+} || std.fs.Dir.MakeError || std.fs.Dir.StatFileError || std.fs.File.OpenError || std.fs.File.WriteError;
 
 /// Compilation result type.
 pub const CompileResult = CodegenError!*const CompiledCode;
@@ -818,7 +820,7 @@ fn dumpIrStage(ctx: *Context, stage: []const u8) CodegenError!void {
     if (!ctx.debug.dump_ir) return;
     const dir = ctx.debug.dump_dir orelse return error.EmissionFailed;
 
-    std.fs.cwd().makePath(dir) catch return error.EmissionFailed;
+    try std.fs.cwd().makePath(dir);
 
     const file_path = std.fmt.allocPrint(ctx.allocator, "{s}/{s}.{s}.ir", .{
         dir,
@@ -831,13 +833,13 @@ fn dumpIrStage(ctx: *Context, stage: []const u8) CodegenError!void {
     };
     defer ctx.allocator.free(file_path);
 
-    var file = std.fs.cwd().createFile(file_path, .{ .truncate = true }) catch return error.EmissionFailed;
+    var file = try std.fs.cwd().createFile(file_path, .{ .truncate = true });
     defer file.close();
 
     var buffer = std.ArrayList(u8){};
     defer buffer.deinit(ctx.allocator);
     try ir_print.writeFunction(buffer.writer(ctx.allocator), ctx.func, .{});
-    file.writeAll(buffer.items) catch return error.EmissionFailed;
+    try file.writeAll(buffer.items);
 }
 
 /// Verify function if verification is enabled.
@@ -990,7 +992,8 @@ fn removeConstantPhis(ctx: *Context) CodegenError!bool {
                     .branch_table => |data| {
                         const table = ctx.func.jump_tables.get(data.destination) orelse return error.OptimizationFailed;
                         for (table.allBranches()) |bc| {
-                            if (!std.meta.eql(bc.block(&ctx.func.dfg.value_lists), block)) continue;
+                            const target_block = try bc.block(&ctx.func.dfg.value_lists);
+                            if (!std.meta.eql(target_block, block)) continue;
                             const arg_count = bc.len(&ctx.func.dfg.value_lists);
                             if (arg_count == 0) continue;
                             if (arg_count != params.len) return error.OptimizationFailed;
@@ -1097,6 +1100,7 @@ fn runEGraphOptimization(ctx: *Context) CodegenError!bool {
     const iterations = saturation.saturate(rules.rules.items) catch |err| {
         return switch (err) {
             error.OutOfMemory => CodegenError.OutOfMemory,
+            error.EmptyWorklist => CodegenError.OptimizationFailed,
         };
     };
 
@@ -1121,7 +1125,14 @@ fn runEGraphOptimization(ctx: *Context) CodegenError!bool {
             const eclass_id = builder.value_map.get(result_val) orelse continue;
 
             // Extract best e-node
-            const best_node = extractor.extractBest(eclass_id) catch continue;
+            const best_node = extractor.extractBest(eclass_id) catch |err| switch (err) {
+                error.OutOfMemory => return CodegenError.OutOfMemory,
+                error.EClassNotFound,
+                error.EmptyEClass,
+                error.CostNotFound,
+                error.CycleDetected,
+                => return CodegenError.OptimizationFailed,
+            };
 
             // Check if extracted e-node differs from original
             const inst_data = ctx.func.dfg.insts.get(inst) orelse continue;
@@ -1129,9 +1140,8 @@ fn runEGraphOptimization(ctx: *Context) CodegenError!bool {
 
             if (best_node.op != orig_op) {
                 // Rewrite instruction with optimized operation
-                if (rebuildInstFromENode(ctx, inst, best_node, &builder)) {
-                    changed = true;
-                } else |_| {}
+                try rebuildInstFromENode(ctx, inst, best_node, &builder);
+                changed = true;
             }
         }
     }
@@ -1145,7 +1155,7 @@ fn rebuildInstFromENode(
     inst: ir.Inst,
     enode: @import("../ir/egraph.zig").ENode,
     builder: *@import("../ir/egraph.zig").EGraphBuilder,
-) !void {
+) CodegenError!void {
     // Get operand values by extracting e-classes
     var operands = try ctx.allocator.alloc(ir.Value, @intCast(enode.child_len));
     defer ctx.allocator.free(operands);
@@ -1163,7 +1173,7 @@ fn rebuildInstFromENode(
                 break;
             }
         }
-        if (!found) return error.ValueNotFound;
+        if (!found) return error.OptimizationFailed;
     }
 
     // Build new instruction data
@@ -1172,7 +1182,7 @@ fn rebuildInstFromENode(
         1 => .{ .unary = .{ .opcode = enode.op, .arg = operands[0] } },
         2 => .{ .binary = .{ .opcode = enode.op, .args = .{ operands[0], operands[1] } } },
         3 => .{ .ternary = .{ .opcode = enode.op, .args = .{ operands[0], operands[1], operands[2] } } },
-        else => return error.TooManyOperands,
+        else => return error.OptimizationFailed,
     };
 
     // Replace instruction
@@ -1297,13 +1307,16 @@ pub fn buildIR(allocator: std.mem.Allocator, func: *Function) CodegenError!void 
     var ir_builder = IRBuilder.init(allocator, func);
 
     // Create entry block
-    const entry = ir_builder.createBlock() catch return error.IRBuildFailed;
-    ir_builder.appendBlock(entry) catch return error.IRBuildFailed;
+    const entry = try ir_builder.createBlock();
+    try ir_builder.appendBlock(entry);
     ir_builder.switchToBlock(entry);
 
     // TODO: Convert frontend AST/input to IR instructions
     // For now, just emit a return instruction
-    ir_builder.emitReturn() catch return error.IRBuildFailed;
+    ir_builder.emitReturn() catch |err| switch (err) {
+        error.OutOfMemory => return CodegenError.OutOfMemory,
+        error.NoCurrentBlock => return CodegenError.IRBuildFailed,
+    };
 }
 
 /// Legalize IR for target.
@@ -5102,7 +5115,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
 
             const jt = ctx.func.jump_tables.get(data.destination) orelse return error.LoweringFailed;
             const default_bc = jt.defaultBlock() orelse return error.LoweringFailed;
-            const default_block = default_bc.block(&ctx.func.dfg.value_lists);
+            const default_block = try default_bc.block(&ctx.func.dfg.value_lists);
             const default_label = block_map.get(default_block) orelse return error.LoweringFailed;
 
             const cases = jt.asSlice();
@@ -5111,7 +5124,7 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
             const CondCode = @import("../backends/aarch64/inst.zig").CondCode;
 
             for (cases, 0..) |bc, idx| {
-                const target_block = bc.block(&ctx.func.dfg.value_lists);
+                const target_block = try bc.block(&ctx.func.dfg.value_lists);
                 const target_label = block_map.get(target_block) orelse return error.LoweringFailed;
 
                 try builder.emit(Inst{
