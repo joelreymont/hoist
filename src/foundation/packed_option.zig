@@ -48,13 +48,18 @@ pub fn PackedOption(comptime T: type) type {
             return self.value;
         }
 
+        pub const Error = error{
+            ReservedValue,
+            UnwrapNone,
+        };
+
         /// Unwrap a packed Some value or return an error.
-        pub fn unwrap(self: Self) !T {
+        pub fn unwrap(self: Self) Error!T {
             return self.expand() orelse error.UnwrapNone;
         }
 
         /// Unwrap a packed Some value or return an error.
-        pub fn expect(self: Self, msg: []const u8) !T {
+        pub fn expect(self: Self, msg: []const u8) Error!T {
             _ = msg;
             return self.expand() orelse error.UnwrapNone;
         }
@@ -72,14 +77,14 @@ pub fn PackedOption(comptime T: type) type {
         }
 
         /// Create a Some value.
-        pub fn some(value: T) Self {
-            std.debug.assert(!T.isReservedValue(value));
+        pub fn some(value: T) Error!Self {
+            if (T.isReservedValue(value)) return error.ReservedValue;
             return .{ .value = value };
         }
 
         /// Create from optional.
-        pub fn fromOptional(opt: ?T) Self {
-            return if (opt) |v| Self.some(v) else Self.none();
+        pub fn fromOptional(opt: ?T) Error!Self {
+            return if (opt) |v| try Self.some(v) else Self.none();
         }
     };
 }
@@ -117,7 +122,7 @@ test "PackedOption basic" {
     try testing.expect(none_val.isNone());
     try testing.expect(!none_val.isSome());
 
-    const some_val = Opt.some(TestEntity.fromIndex(42));
+    const some_val = try Opt.some(TestEntity.fromIndex(42));
     try testing.expect(some_val.isSome());
     try testing.expect(!some_val.isNone());
 
@@ -128,11 +133,11 @@ test "PackedOption basic" {
 test "PackedOption from optional" {
     const Opt = PackedOption(TestEntity);
 
-    const from_null = Opt.fromOptional(null);
+    const from_null = try Opt.fromOptional(null);
     try testing.expect(from_null.isNone());
     try testing.expectError(error.UnwrapNone, from_null.unwrap());
 
-    const from_some = Opt.fromOptional(TestEntity.fromIndex(10));
+    const from_some = try Opt.fromOptional(TestEntity.fromIndex(10));
     try testing.expect(from_some.isSome());
     try testing.expect((try from_some.unwrap()).eql(TestEntity.fromIndex(10)));
 }
@@ -140,7 +145,7 @@ test "PackedOption from optional" {
 test "PackedOption take" {
     const Opt = PackedOption(TestEntity);
 
-    var opt = Opt.some(TestEntity.fromIndex(5));
+    var opt = try Opt.some(TestEntity.fromIndex(5));
     const taken = opt.take().?;
     try testing.expect(taken.eql(TestEntity.fromIndex(5)));
     try testing.expect(opt.isNone());
