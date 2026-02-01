@@ -38,7 +38,7 @@ test "compile function with call" {
     var func = try Function.init(testing.allocator, "test_caller", caller_sig);
     defer func.deinit();
 
-    const entry = func.dfg.makeBlock() catch unreachable;
+    const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
     const param0 = func.dfg.blockParams(entry)[0];
@@ -103,7 +103,7 @@ test "compile function with multiple calls" {
     var func = try Function.init(testing.allocator, "test_multi_call", sig);
     defer func.deinit();
 
-    const entry = func.dfg.makeBlock() catch unreachable;
+    const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
     const param0 = func.dfg.blockParams(entry)[0];
@@ -176,7 +176,7 @@ test "compile function with nullary call" {
     var func = try Function.init(testing.allocator, "test_nullary_call", sig);
     defer func.deinit();
 
-    const entry = func.dfg.makeBlock() catch unreachable;
+    const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
     const callee = FuncRef.new(0);
@@ -231,7 +231,7 @@ test "compile aarch64 function with call" {
     var func = try Function.init(testing.allocator, "test_aarch64_call", sig);
     defer func.deinit();
 
-    const entry = func.dfg.makeBlock() catch unreachable;
+    const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
     const param0 = func.dfg.blockParams(entry)[0];
@@ -293,7 +293,7 @@ test "compile aarch64 preserve_all callconv" {
     var func = try Function.init(testing.allocator, "test_aarch64_preserve_all", sig);
     defer func.deinit();
 
-    const entry = func.dfg.makeBlock() catch unreachable;
+    const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
     const param0 = func.dfg.blockParams(entry)[0];

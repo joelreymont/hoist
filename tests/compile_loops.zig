@@ -21,9 +21,9 @@ test "compile conditional branch" {
     defer func.deinit();
 
     // Create blocks
-    const entry = func.dfg.makeBlock() catch unreachable;
-    const then_block = func.dfg.makeBlock() catch unreachable;
-    const else_block = func.dfg.makeBlock() catch unreachable;
+    const entry = try func.dfg.makeBlock();
+    const then_block = try func.dfg.makeBlock();
+    const else_block = try func.dfg.makeBlock();
 
     try func.layout.appendBlock(entry);
     try func.layout.appendBlock(then_block);
@@ -109,10 +109,10 @@ test "compile simple loop" {
     defer func.deinit();
 
     // Blocks: entry -> loop_header -> loop_body -> loop_exit
-    const entry = func.dfg.makeBlock() catch unreachable;
-    const loop_header = func.dfg.makeBlock() catch unreachable;
-    const loop_body = func.dfg.makeBlock() catch unreachable;
-    const loop_exit = func.dfg.makeBlock() catch unreachable;
+    const entry = try func.dfg.makeBlock();
+    const loop_header = try func.dfg.makeBlock();
+    const loop_body = try func.dfg.makeBlock();
+    const loop_exit = try func.dfg.makeBlock();
 
     try func.layout.appendBlock(entry);
     try func.layout.appendBlock(loop_header);
@@ -226,10 +226,10 @@ test "compile jump table" {
     var func = try Function.init(testing.allocator, "switch_test", sig);
     defer func.deinit();
 
-    const entry = func.dfg.makeBlock() catch unreachable;
-    const case0 = func.dfg.makeBlock() catch unreachable;
-    const case1 = func.dfg.makeBlock() catch unreachable;
-    const default = func.dfg.makeBlock() catch unreachable;
+    const entry = try func.dfg.makeBlock();
+    const case0 = try func.dfg.makeBlock();
+    const case1 = try func.dfg.makeBlock();
+    const default = try func.dfg.makeBlock();
 
     try func.layout.appendBlock(entry);
     try func.layout.appendBlock(case0);
