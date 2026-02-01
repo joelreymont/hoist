@@ -48,11 +48,19 @@ pub fn create(
         else
             basename;
 
-        const output_filename = std.fmt.allocPrint(
-            owner.allocator,
-            "{s}_generated.zig",
-            .{name_without_ext},
-        ) catch @panic("OOM");
+        const backend = getBackendFromPath(source_path);
+        const output_filename = if (std.mem.eql(u8, backend, "generic"))
+            std.fmt.allocPrint(
+                owner.allocator,
+                "{s}_generated.zig",
+                .{name_without_ext},
+            ) catch @panic("OOM")
+        else
+            std.fmt.allocPrint(
+                owner.allocator,
+                "{s}_{s}_generated.zig",
+                .{ backend, name_without_ext },
+            ) catch @panic("OOM");
 
         const output_path = owner.pathJoin(&.{ output_dir_path, output_filename });
 

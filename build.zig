@@ -573,21 +573,21 @@ pub fn build(b: *std.Build) void {
     isle_compiler.root_module.addImport("isle", isle_module);
 
     // ISLE compilation (.isle -> .zig generation)
-    // Temporarily disabled due to parser issues - using pre-generated files
-    // const IsleCompileStep = @import("build/IsleCompileStep.zig");
-    // const isle_step = IsleCompileStep.create(
-    //     b,
-    //     isle_compiler,
-    //     &.{
-    //         "src/backends/aarch64/lower.isle",
-    //         "src/backends/x64/lower.isle",
-    //         "src/dsl/isle/opts.isle",
-    //     },
-    //     "src/generated",
-    // );
+    const IsleCompileStep = @import("build/IsleCompileStep.zig");
+    const isle_step = IsleCompileStep.create(
+        b,
+        isle_compiler,
+        &.{
+            "src/backends/aarch64/lower.isle",
+            "src/backends/x64/lower.isle",
+            "src/backends/riscv64/lower.isle",
+            "src/dsl/isle/opts.isle",
+        },
+        "src/generated",
+    );
 
     // Make library depend on ISLE code generation
-    // lib.step.dependOn(&isle_step.step);
+    lib.step.dependOn(&isle_step.step);
 
     // CLIF tool
     const clif = b.addExecutable(.{
