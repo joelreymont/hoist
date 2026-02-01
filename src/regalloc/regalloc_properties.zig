@@ -9,49 +9,15 @@
 
 const std = @import("std");
 const testing = std.testing;
-const zc = @import("zcheck");
 const trivial = @import("trivial.zig");
 const reg_mod = @import("../machinst/reg.zig");
+const zcheck_fallible = @import("../testing/zcheck_fallible.zig");
 
 const TrivialAllocator = trivial.TrivialAllocator;
 const VReg = trivial.VReg;
 const PReg = trivial.PReg;
 const RegClass = trivial.RegClass;
 const Allocation = trivial.Allocation;
-
-fn checkFallible(comptime Args: type, comptime property: anytype, config: zc.Config) !void {
-    var seed: u64 = config.seed;
-    var prng: std.Random.DefaultPrng = undefined;
-    var random: std.Random = undefined;
-
-    if (config.random) |external| {
-        random = external;
-    } else {
-        if (seed == 0) {
-            seed = @as(u64, @intCast(std.time.timestamp()));
-        }
-        prng = std.Random.DefaultPrng.init(seed);
-        random = prng.random();
-    }
-
-    var i: usize = 0;
-    while (i < config.iterations) : (i += 1) {
-        const args = zc.generateWithConfig(Args, random, .{ .use_default_values = config.use_default_values });
-        if (property(args)) |_| {} else |err| {
-            if (config.expect_failure) return;
-            if (config.print_failures) {
-                std.debug.print("\n=== Property failed ===\n", .{});
-                std.debug.print("Seed: {}\n", .{seed});
-                std.debug.print("Iteration: {}\n", .{i});
-                std.debug.print("Args: {any}\n", .{args});
-                std.debug.print("Error: {s}\n", .{@errorName(err)});
-            }
-            return err;
-        }
-    }
-
-    if (config.expect_failure) return error.ExpectedFailure;
-}
 
 // ============================================================================
 // Live Range Properties
@@ -65,7 +31,7 @@ test "property: live ranges have valid start and end positions" {
         end: u16,
     };
 
-    try checkFallible(Args, struct {
+    try zcheck_fallible.checkFallible(Args, struct {
         fn prop(args: Args) !void {
             const allocator = testing.allocator;
             var alloc = TrivialAllocator.init(allocator);
@@ -101,7 +67,7 @@ test "property: overlapping vregs get different pregs or spills" {
         vreg2_len: u4,
     };
 
-    try checkFallible(Args, struct {
+    try zcheck_fallible.checkFallible(Args, struct {
         fn prop(args: Args) !void {
             const allocator = testing.allocator;
             var alloc = TrivialAllocator.init(allocator);
@@ -156,7 +122,7 @@ test "property: allocated vregs always have allocation" {
         length: u4,
     };
 
-    try checkFallible(Args, struct {
+    try zcheck_fallible.checkFallible(Args, struct {
         fn prop(args: Args) !void {
             const allocator = testing.allocator;
             var alloc = TrivialAllocator.init(allocator);
@@ -195,7 +161,7 @@ test "property: int vregs never allocated to float pregs" {
         len: u4,
     };
 
-    try checkFallible(Args, struct {
+    try zcheck_fallible.checkFallible(Args, struct {
         fn prop(args: Args) !void {
             const allocator = testing.allocator;
             var alloc = TrivialAllocator.init(allocator);
@@ -230,7 +196,7 @@ test "property: float vregs never allocated to int pregs" {
         len: u4,
     };
 
-    try checkFallible(Args, struct {
+    try zcheck_fallible.checkFallible(Args, struct {
         fn prop(args: Args) !void {
             const allocator = testing.allocator;
             var alloc = TrivialAllocator.init(allocator);
@@ -268,7 +234,7 @@ test "property: excessive pressure triggers spilling" {
         extra_vregs: u4, // 0-15 extra vregs beyond available
     };
 
-    try checkFallible(Args, struct {
+    try zcheck_fallible.checkFallible(Args, struct {
         fn prop(args: Args) !void {
             const allocator = testing.allocator;
             var alloc = TrivialAllocator.init(allocator);
@@ -320,7 +286,7 @@ test "property: spill slots are unique for live vregs" {
         spill_count: u4, // 1-16 spilled vregs
     };
 
-    try checkFallible(Args, struct {
+    try zcheck_fallible.checkFallible(Args, struct {
         fn prop(args: Args) !void {
             if (args.spill_count == 0) return;
 
@@ -386,7 +352,7 @@ test "property: registers reused after live range ends" {
         gap_size: u8, // Gap between vreg1 end and vreg2 start
     };
 
-    try checkFallible(Args, struct {
+    try zcheck_fallible.checkFallible(Args, struct {
         fn prop(args: Args) !void {
             const allocator = testing.allocator;
             var alloc = TrivialAllocator.init(allocator);
