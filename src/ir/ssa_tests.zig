@@ -154,7 +154,7 @@ test "SSA: block parameters represent phi nodes" {
     try func.layout.appendInst(jump_b3_from_b2_inst, b2);
 
     // Block b3 with parameter v4 (phi node)
-    var b3_data = func.dfg.blocks.getMut(b3) orelse unreachable;
+    var b3_data = func.dfg.blocks.getMut(b3) orelse return error.MissingBlock;
     const v4_index = func.dfg.values.elems.items.len;
     const v4 = Value.new(v4_index);
     const v4_data = try func.dfg.values.getOrDefault(v4);
@@ -401,7 +401,7 @@ test "SSA: constant phi removal optimization" {
     try func.layout.appendInst(jump_b3_from_b2_inst, b2);
 
     // b3 with parameter v1
-    var b3_data = func.dfg.blocks.getMut(b3) orelse unreachable;
+    var b3_data = func.dfg.blocks.getMut(b3) orelse return error.MissingBlock;
     const v1_index = func.dfg.values.elems.items.len;
     const v1 = Value.new(v1_index);
     const v1_data = try func.dfg.values.getOrDefault(v1);
@@ -480,7 +480,7 @@ test "SSA: multiple block parameters in same block" {
     try func.layout.appendInst(jump_b2_from_b1_inst, b1);
 
     // b2 with two parameters
-    var b2_data = func.dfg.blocks.getMut(b2) orelse unreachable;
+    var b2_data = func.dfg.blocks.getMut(b2) orelse return error.MissingBlock;
 
     const v4_index = func.dfg.values.elems.items.len;
     const v4 = Value.new(v4_index);
