@@ -245,6 +245,31 @@ pub const ZigEmitter = struct {
                 }
                 try writer.writeByte(')');
             },
+            .iterator => |it| {
+                const src_binding = self.ruleset.bindings.items[it.source.index()];
+                try self.emitBinding(writer, src_binding);
+                try writer.writeAll(".next()");
+            },
+            .make_variant => |mv| {
+                const ty = self.typeenv.getType(mv.ty);
+                if (ty == .enum_type) {
+                    const variant = ty.enum_type.variants[mv.variant.index()];
+                    const variant_name = self.typeenv.symName(variant.name);
+                    try writer.print(".{{ .{s} = .{{ ", .{variant_name});
+                    for (mv.fields, 0..) |field_id, i| {
+                        if (i > 0) try writer.writeAll(", ");
+                        const field_binding = self.ruleset.bindings.items[field_id.index()];
+                        try self.emitBinding(writer, field_binding);
+                    }
+                    try writer.writeAll(" } }");
+                } else {
+                    try writer.writeAll("undefined");
+                }
+            },
+            .make_some => |ms| {
+                const inner_binding = self.ruleset.bindings.items[ms.inner.index()];
+                try self.emitBinding(writer, inner_binding);
+            },
             .extractor => |ext| {
                 const term = self.termenv.getTerm(ext.term);
                 const name = self.typeenv.symName(term.name);
@@ -415,4 +440,105 @@ test "ZigEmitter context trait generation" {
     // Verify context trait is generated
     try testing.expect(std.mem.indexOf(u8, code, "pub const Context") != null);
     try testing.expect(std.mem.indexOf(u8, code, "allocator: Allocator") != null);
+}
+
+test "ZigEmitter emitBinding make_variant" {
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
+    defer typeenv.deinit();
+
+    var termenv = sema.TermEnv.init(testing.allocator);
+    defer termenv.deinit();
+
+    var ruleset = trie.RuleSet.init(testing.allocator);
+    defer ruleset.deinit();
+
+    const i32_sym = try typeenv.internSym("i32");
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
+
+    const enum_sym = try typeenv.internSym("MyEnum");
+    const variant_sym = try typeenv.internSym("Pair");
+    const field_a = try typeenv.internSym("a");
+    const field_b = try typeenv.internSym("b");
+
+    const fields = try testing.allocator.dupe(sema.Field, &[_]sema.Field{
+        .{ .name = field_a, .ty = i32_ty },
+        .{ .name = field_b, .ty = i32_ty },
+    });
+    defer testing.allocator.free(fields);
+
+    const variants = try testing.allocator.dupe(sema.Variant, &[_]sema.Variant{
+        .{ .name = variant_sym, .fields = fields },
+    });
+    defer testing.allocator.free(variants);
+
+    const enum_ty = try typeenv.addType(.{ .enum_type = .{
+        .name = enum_sym,
+        .id = sema.TypeId.new(0),
+        .is_extern = false,
+        .variants = variants,
+        .pos = sema.Pos.new(0, 0),
+    } });
+
+    const b0 = try ruleset.internBinding(.{ .const_int = .{
+        .val = 1,
+        .ty = i32_ty,
+    } });
+    const b1 = try ruleset.internBinding(.{ .const_int = .{
+        .val = 2,
+        .ty = i32_ty,
+    } });
+
+    const mv_fields = try testing.allocator.dupe(trie.BindingId, &[_]trie.BindingId{ b0, b1 });
+    defer testing.allocator.free(mv_fields);
+
+    const binding = trie.Binding{
+        .make_variant = .{
+            .ty = enum_ty,
+            .variant = sema.VariantId.new(enum_ty, 0),
+            .fields = mv_fields,
+        },
+    };
+
+    var emitter = ZigEmitter.init(testing.allocator, &typeenv, &termenv, &ruleset);
+    defer emitter.deinit();
+
+    var out = std.ArrayList(u8){};
+    defer out.deinit(testing.allocator);
+
+    try emitter.emitBinding(out.writer(testing.allocator), binding);
+
+    try testing.expect(std.mem.indexOf(u8, out.items, ".Pair") != null);
+    try testing.expect(std.mem.indexOf(u8, out.items, "1") != null);
+    try testing.expect(std.mem.indexOf(u8, out.items, "2") != null);
+}
+
+test "ZigEmitter emitBinding iterator" {
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
+    defer typeenv.deinit();
+
+    var termenv = sema.TermEnv.init(testing.allocator);
+    defer termenv.deinit();
+
+    var ruleset = trie.RuleSet.init(testing.allocator);
+    defer ruleset.deinit();
+
+    const i32_sym = try typeenv.internSym("i32");
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
+
+    const src = try ruleset.internBinding(.{ .const_int = .{
+        .val = 7,
+        .ty = i32_ty,
+    } });
+
+    const binding = trie.Binding{ .iterator = .{ .source = src } };
+
+    var emitter = ZigEmitter.init(testing.allocator, &typeenv, &termenv, &ruleset);
+    defer emitter.deinit();
+
+    var out = std.ArrayList(u8){};
+    defer out.deinit(testing.allocator);
+
+    try emitter.emitBinding(out.writer(testing.allocator), binding);
+
+    try testing.expect(std.mem.indexOf(u8, out.items, ".next()") != null);
 }
