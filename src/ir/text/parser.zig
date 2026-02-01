@@ -33,6 +33,8 @@ pub const ParseError = error{
     InvalidBlock,
     InvalidOpcode,
     InvalidCondCode,
+    InvalidCharacter,
+    Overflow,
     OutOfMemory,
     NoCurrentBlock,
 };
@@ -116,7 +118,7 @@ pub const Parser = struct {
         const tok = try self.expect(.integer);
         const base: u8 = if (tok.lexeme.len > 2 and tok.lexeme[0] == '0' and (tok.lexeme[1] == 'x' or tok.lexeme[1] == 'X')) 16 else 10;
         const start: usize = if (base == 16) 2 else 0;
-        const val = std.fmt.parseInt(i64, tok.lexeme[start..], base) catch return error.UnexpectedToken;
+        const val = try std.fmt.parseInt(i64, tok.lexeme[start..], base);
         return if (is_neg) -val else val;
     }
 
@@ -491,4 +493,22 @@ test "parse fib function" {
     try testing.expectEqualStrings("fib", func.name);
     try testing.expectEqual(@as(usize, 1), func.sig.params.items.len);
     try testing.expectEqual(@as(usize, 1), func.sig.returns.items.len);
+}
+
+test "parse invalid integer literal" {
+    const src =
+        \\function "bad" (i32) -> i32 {
+        \\  block0(v0: i32):
+        \\    v1 = iconst 0xG
+        \\    return v0
+        \\}
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser.init(arena.allocator(), src);
+    defer parser.deinit();
+
+    try testing.expectError(error.InvalidCharacter, parser.parseFunction());
 }
