@@ -6,6 +6,7 @@
 (type Type (primitive Type))
 (type Value (primitive Value))
 (type Inst (primitive Inst))
+(type Immediate (primitive u128))
 
 ;; Relocation distance for calls/symbols
 (type RelocDistance extern (enum (Near) (Far)))

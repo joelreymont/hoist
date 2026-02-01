@@ -2082,9 +2082,31 @@ pub fn ty_bits(ty: types.Type) u8 {
 
 /// Extractor: Match vector type, return (lane_bits, lane_count)
 /// Returns null for scalar types
-pub fn multi_lane(ty: types.Type) ?struct { u32, u32 } {
+pub fn multi_lane(ty: types.Type) ?struct { field0: u32, field1: u32 } {
     if (!ty.isVector()) return null;
-    return .{ ty.laneBits(), ty.laneCount() };
+    return .{ .field0 = ty.laneBits(), .field1 = ty.laneCount() };
+}
+
+test "multi_lane returns bits and lanes" {
+    const OhSnap = @import("ohsnap");
+    const testing = std.testing;
+    const oh = OhSnap{};
+
+    const got = multi_lane(types.Type.I8X16);
+    try testing.expect(got != null);
+
+    const Fmt = struct {
+        lane: @TypeOf(got.?),
+
+        pub fn format(self: @This(), writer: anytype) !void {
+            try writer.print("{d}:{d}", .{ self.lane.field0, self.lane.field1 });
+        }
+    };
+
+    try oh.snap(
+        @src(),
+        \\8:16
+    ).expectEqualFmt(Fmt{ .lane = got.? });
 }
 
 /// Extractor: Check if type fits in 64-bit register

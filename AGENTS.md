@@ -3,7 +3,7 @@
 - Parity plan: `~/.claude/plans/fuzzy-sniffing-shamir.md` (261 dots)
 - Status: `docs/COMPLETION_STATUS.md`
 - Zig docs (global): `~/.agents/docs/zig.md` (update with new Zig API info)
-- Dot tasks: use `dot` CLI/skill for `.dots/*.md` (no manual edits)
+- Dot tasks: use `dot` CLI/skill (dot skill) for `.dots/*.md` (no manual edits)
 
 ### Tests
 2050+ tests (435 integration, 1618 unit). Key: `tests/e2e_jit.zig`, `tests/aarch64_tls.zig`, `tests/fp_special_values.zig`
