@@ -207,7 +207,7 @@ pub const Coalescer = struct {
         self: *Coalescer,
         candidate: CoalesceCandidate,
         interferes_fn: *const fn (Value, Value) bool,
-    ) CoalesceResult {
+    ) !CoalesceResult {
         // Check if already coalesced
         if (self.coalesced.sameSet(candidate.src, candidate.dst)) {
             return .already_coalesced;
@@ -220,7 +220,7 @@ pub const Coalescer = struct {
         }
 
         // Perform coalescing
-        self.coalesced.unite(candidate.src, candidate.dst) catch return .pressure;
+        try self.coalesced.unite(candidate.src, candidate.dst);
         self.stats.coalesced += 1;
 
         return .success;
@@ -236,7 +236,7 @@ pub const Coalescer = struct {
 
         var coalesced_count: u32 = 0;
         for (self.candidates.items) |candidate| {
-            const result = self.tryCoalesce(candidate, interferes_fn);
+            const result = try self.tryCoalesce(candidate, interferes_fn);
             if (result == .success) {
                 coalesced_count += 1;
             }
@@ -313,4 +313,28 @@ test "Coalescer init" {
     defer coalescer.deinit();
 
     try testing.expectEqual(@as(u32, 0), coalescer.stats.coalesced);
+}
+
+test "Coalescer propagates OOM from unite" {
+    const testing = std.testing;
+
+    var failing = testing.FailingAllocator.init(testing.allocator, .{ .fail_index = 0 });
+    var coalescer = Coalescer.init(failing.allocator());
+    defer coalescer.deinit();
+
+    const candidate = CoalesceCandidate{
+        .src = Value.fromU32(1),
+        .dst = Value.fromU32(2),
+        .move_inst = Inst.new(0),
+        .priority = 0,
+        .is_phi = false,
+    };
+
+    const no_interfere = struct {
+        fn f(_: Value, _: Value) bool {
+            return false;
+        }
+    }.f;
+
+    try testing.expectError(error.OutOfMemory, coalescer.tryCoalesce(candidate, no_interfere));
 }
