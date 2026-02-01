@@ -81,7 +81,7 @@ pub const Mem = struct {
     pub fn alloc(self: *Mem, size: usize, alignment: usize) ![]u8 {
         if (alignment == 0 or !std.math.isPowerOfTwo(alignment)) return error.InvalidAlignment;
         const start = std.mem.alignForward(usize, self.used, alignment);
-        const end = std.math.add(usize, start, size) catch return error.OutOfMemory;
+        const end = try std.math.add(usize, start, size);
         if (end > self.len) return error.OutOfMemory;
         self.used = end;
         return self.ptr[start..end];
@@ -175,4 +175,5 @@ test "Mem alloc alignment and overflow" {
     const remaining = mem.len - mem.used;
     try std.testing.expectError(error.OutOfMemory, mem.alloc(remaining + 1, 8));
     try std.testing.expectError(error.InvalidAlignment, mem.alloc(8, 3));
+    try std.testing.expectError(error.Overflow, mem.alloc(std.math.maxInt(usize), 1));
 }
