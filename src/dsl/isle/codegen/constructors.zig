@@ -407,6 +407,7 @@ pub const ConstructorGen = struct {
             .make_some => |s| try writer.print("v{d}", .{s.inner.index()}),
             .match_some => |m| try writer.print("v{d}.?", .{m.source.index()}),
             .match_tuple => |t| try writer.print("v{d}.field{d}", .{ t.source.index(), t.field.value() }),
+            .match_extractor => |m| try writer.print("v{d}.arg{d}", .{ m.source.index(), m.field.value() }),
         }
 
         try writer.writeAll(";\n");
@@ -464,6 +465,10 @@ pub const ConstructorGen = struct {
             .match_tuple => |t| {
                 const source_binding = &ruleset.bindings.items[t.source.index()];
                 try self.emitBindingRecursive(ruleset, t.source, source_binding, scope_emitted);
+            },
+            .match_extractor => |m| {
+                const source_binding = &ruleset.bindings.items[m.source.index()];
+                try self.emitBindingRecursive(ruleset, m.source, source_binding, scope_emitted);
             },
             else => {},
         }
@@ -906,6 +911,29 @@ test "ConstructorGen: match_tuple field access" {
     try gen.emitBinding(trie.BindingId.new(1), &binding);
 
     try testing.expect(std.mem.indexOf(u8, gen.output.items, ".field1") != null);
+}
+
+test "ConstructorGen: match_extractor field access" {
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
+    defer typeenv.deinit();
+
+    var termenv = sema.TermEnv.init(testing.allocator);
+    defer termenv.deinit();
+
+    var gen = try ConstructorGen.init(testing.allocator, &typeenv, &termenv);
+    defer gen.deinit();
+    gen.output.clearRetainingCapacity();
+
+    const binding = trie.Binding{
+        .match_extractor = .{
+            .source = trie.BindingId.new(0),
+            .field = trie.TupleIndex.new(1),
+        },
+    };
+
+    try gen.emitBinding(trie.BindingId.new(1), &binding);
+
+    try testing.expect(std.mem.indexOf(u8, gen.output.items, ".arg1") != null);
 }
 
 test "ConstructorGen: argument validation for ref types" {

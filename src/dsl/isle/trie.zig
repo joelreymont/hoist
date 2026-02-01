@@ -92,6 +92,11 @@ pub const Binding = union(enum) {
         source: BindingId,
         field: TupleIndex,
     },
+    /// Pattern-match extractor output field.
+    match_extractor: struct {
+        source: BindingId,
+        field: TupleIndex,
+    },
 };
 
 /// Pattern matching constraints that can fail.
@@ -360,6 +365,7 @@ fn bindingsEqual(a: *const Binding, b: *const Binding) bool {
         .make_some => |as| std.meta.eql(as, b.make_some),
         .match_some => |as| std.meta.eql(as, b.match_some),
         .match_tuple => |at| std.meta.eql(at, b.match_tuple),
+        .match_extractor => |ae| std.meta.eql(ae, b.match_extractor),
     };
 }
 

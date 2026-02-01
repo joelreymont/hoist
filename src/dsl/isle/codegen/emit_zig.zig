@@ -245,6 +245,17 @@ pub const ZigEmitter = struct {
                 }
                 try writer.writeByte(')');
             },
+            .extractor => |ext| {
+                const term = self.termenv.getTerm(ext.term);
+                const name = self.typeenv.symName(term.name);
+                try writer.print("extractor_{s}(ctx", .{name});
+                for (ext.parameters) |param_id| {
+                    try writer.writeAll(", ");
+                    const param = self.ruleset.bindings.items[param_id.index()];
+                    try self.emitBinding(writer, param);
+                }
+                try writer.writeByte(')');
+            },
             .match_variant => |mv| {
                 const src_binding = self.ruleset.bindings.items[mv.source.index()];
                 try self.emitBinding(writer, src_binding);
@@ -262,6 +273,16 @@ pub const ZigEmitter = struct {
                 const src_binding = self.ruleset.bindings.items[ms.source.index()];
                 try self.emitBinding(writer, src_binding);
                 try writer.writeAll(".?");
+            },
+            .match_tuple => |mt| {
+                const src_binding = self.ruleset.bindings.items[mt.source.index()];
+                try self.emitBinding(writer, src_binding);
+                try writer.print(".field{d}", .{mt.field.value()});
+            },
+            .match_extractor => |me| {
+                const src_binding = self.ruleset.bindings.items[me.source.index()];
+                try self.emitBinding(writer, src_binding);
+                try writer.print(".arg{d}", .{me.field.value()});
             },
             else => {
                 try writer.writeAll("@compileError(\"unsupported binding type\")");

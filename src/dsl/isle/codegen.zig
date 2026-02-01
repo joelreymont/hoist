@@ -3,6 +3,7 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
 const sema = @import("sema.zig");
+const ast = @import("ast.zig");
 const trie = @import("trie.zig");
 const match_compiler = @import("codegen/match.zig");
 const constructors = @import("codegen/constructors.zig");
@@ -99,17 +100,30 @@ pub const Codegen = struct {
             const func_name = self.typeenv.symName(ext.func);
             const sig = self.getTermSignature(term);
 
-            try writer.print("    pub fn {s}(\n", .{func_name});
-            try writer.writeAll("        self: *Context,\n");
-            for (sig.params, 0..) |arg_ty, i| {
-                const ty_name = try self.getTypeName(arg_ty);
-                try writer.print("        arg{d}: {s},\n", .{ i, ty_name });
+            switch (ext.kind) {
+                .constructor => {
+                    try writer.print("    pub fn {s}(\n", .{func_name});
+                    try writer.writeAll("        self: *Context,\n");
+                    for (sig.params, 0..) |arg_ty, i| {
+                        const ty_name = try self.getTypeName(arg_ty);
+                        try writer.print("        arg{d}: {s},\n", .{ i, ty_name });
+                    }
+                    const ret_ty_name = try self.getTypeName(sig.ret_ty);
+                    const is_partial = term.kind == .decl and term.kind.decl.partial;
+                    const ret_prefix = if (is_partial) "!?" else "!";
+                    try writer.print("    ) {s}{s} {{\n", .{ ret_prefix, ret_ty_name });
+                },
+                .extractor => {
+                    const input_ty = try self.getTypeName(sig.ret_ty);
+                    try writer.print("    pub fn {s}(\n", .{func_name});
+                    try writer.writeAll("        self: *Context,\n");
+                    try writer.print("        input: {s},\n", .{input_ty});
+                    try writer.writeAll("    ) !?");
+                    try self.emitExtractorOutType(writer, sig.params, sig.ret_ty);
+                    try writer.writeAll(" {\n");
+                },
             }
-            const ret_ty_name = try self.getTypeName(sig.ret_ty);
-            const is_partial = term.kind == .decl and term.kind.decl.partial;
-            const needs_optional = ext.kind == .extractor or is_partial;
-            const ret_prefix = if (needs_optional) "!?" else "!";
-            try writer.print("    ) {s}{s} {{\n", .{ ret_prefix, ret_ty_name });
+
             try writer.writeAll("        _ = self;\n");
             try writer.writeAll("        return error.Unimplemented;\n");
             try writer.writeAll("    }\n\n");
@@ -147,20 +161,14 @@ pub const Codegen = struct {
                     try writer.writeAll(");\n}\n");
                 },
                 .extractor => {
-                    const ret_ty_name = try self.getTypeName(sig.ret_ty);
                     try writer.print("\npub fn extractor_{s}(\n", .{term_name});
                     try writer.writeAll("    ctx: *Context,\n");
-                    for (sig.params, 0..) |arg_ty, i| {
-                        const ty_name = try self.getTypeName(arg_ty);
-                        try writer.print("    arg{d}: {s},\n", .{ i, ty_name });
-                    }
-                    try writer.print(") !?{s} {{\n", .{ret_ty_name});
-                    try writer.print("    return ctx.{s}(", .{func_name});
-                    for (sig.params, 0..) |_, i| {
-                        if (i > 0) try writer.writeAll(", ");
-                        try writer.print("arg{d}", .{i});
-                    }
-                    try writer.writeAll(");\n}\n");
+                    const input_ty = try self.getTypeName(sig.ret_ty);
+                    try writer.print("    input: {s},\n", .{input_ty});
+                    try writer.writeAll(") !?");
+                    try self.emitExtractorOutType(writer, sig.params, sig.ret_ty);
+                    try writer.writeAll(" {\n");
+                    try writer.print("    return ctx.{s}(input);\n}\n", .{func_name});
                 },
             }
         }
@@ -633,6 +641,25 @@ pub const Codegen = struct {
             else => "Value",
         };
     }
+
+    fn emitExtractorOutType(
+        self: *const Self,
+        writer: anytype,
+        arg_tys: []const sema.TypeId,
+        ret_ty: sema.TypeId,
+    ) !void {
+        if (arg_tys.len == 0) {
+            try writer.writeAll(try self.getTypeName(ret_ty));
+            return;
+        }
+
+        try writer.writeAll("struct { ");
+        for (arg_tys, 0..) |arg_ty, i| {
+            if (i > 0) try writer.writeAll(", ");
+            try writer.print("arg{d}: {s}", .{ i, try self.getTypeName(arg_ty) });
+        }
+        try writer.writeAll(" }");
+    }
 };
 
 test "Codegen basic structure" {
@@ -754,4 +781,47 @@ test "Codegen emits tuple types" {
     try testing.expect(std.mem.indexOf(u8, code, "pub const tuple_test") != null);
     try testing.expect(std.mem.indexOf(u8, code, "field0: i32") != null);
     try testing.expect(std.mem.indexOf(u8, code, "field1: i32") != null);
+}
+
+test "Codegen extern extractor wrapper signature" {
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
+    defer typeenv.deinit();
+
+    var termenv = sema.TermEnv.init(testing.allocator);
+    defer termenv.deinit();
+
+    const i32_sym = try typeenv.internSym("i32");
+    const i64_sym = try typeenv.internSym("i64");
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
+    const i64_ty = typeenv.lookupType(i64_sym) orelse return error.UndefinedType;
+
+    const term_sym = try typeenv.internSym("ext_term");
+    const term = sema.Term{
+        .name = term_sym,
+        .id = sema.TermId.new(0),
+        .kind = .{ .decl = .{
+            .arg_tys = @constCast(&[_]sema.TypeId{ i32_ty, i64_ty }),
+            .ret_ty = i32_ty,
+            .pure = true,
+            .partial = false,
+        } },
+        .pos = sema.Pos.new(0, 0),
+    };
+    const term_id = try termenv.addTerm(term);
+
+    const func_sym = try typeenv.internSym("ext_impl");
+    try termenv.setExtern(term_id, .{
+        .kind = ast.ExternKind.extractor,
+        .func = func_sym,
+    });
+
+    var gen = Codegen.init(testing.allocator, &typeenv, &termenv, &[_]sema.Rule{});
+    defer gen.deinit();
+
+    const code = try gen.generate(.{});
+
+    try testing.expect(std.mem.indexOf(u8, code, "pub fn ext_impl") != null);
+    try testing.expect(std.mem.indexOf(u8, code, "input: i32") != null);
+    try testing.expect(std.mem.indexOf(u8, code, "!?struct { arg0: i32, arg1: i64 }") != null);
+    try testing.expect(std.mem.indexOf(u8, code, "pub fn extractor_ext_term") != null);
 }

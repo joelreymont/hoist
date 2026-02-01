@@ -376,10 +376,6 @@ pub const MatchCompiler = struct {
             else => return error.UnsupportedExtractorPattern,
         };
 
-        if (decl.arg_tys.len != 1) {
-            return error.UnsupportedExtractorPattern;
-        }
-
         const params = try self.allocator.alloc(trie.BindingId, 1);
         params[0] = source_id;
         const binding = trie.Binding{
@@ -403,26 +399,21 @@ pub const MatchCompiler = struct {
         if (term_pat.args.len == 0) {
             return some_id;
         }
+        if (term_pat.args.len != decl.arg_tys.len) return error.ConflictingConstraints;
+        if (decl.arg_tys.len == 1) {
+            _ = try self.compilePatternWithSource(ruleset, rule, term_pat.args[0], some_id);
+            return some_id;
+        }
 
-        const ret_ty = self.typeenv.getType(decl.ret_ty);
-        switch (ret_ty) {
-            .tuple => |t| {
-                if (term_pat.args.len != t.fields.len) return error.ConflictingConstraints;
-                for (term_pat.args, 0..) |arg_pat, i| {
-                    const field_binding = trie.Binding{
-                        .match_tuple = .{
-                            .source = some_id,
-                            .field = trie.TupleIndex.new(@intCast(i)),
-                        },
-                    };
-                    const field_id = try ruleset.internBinding(field_binding);
-                    _ = try self.compilePatternWithSource(ruleset, rule, arg_pat, field_id);
-                }
-            },
-            else => {
-                if (term_pat.args.len != 1) return error.ConflictingConstraints;
-                _ = try self.compilePatternWithSource(ruleset, rule, term_pat.args[0], some_id);
-            },
+        for (term_pat.args, 0..) |arg_pat, i| {
+            const field_binding = trie.Binding{
+                .match_extractor = .{
+                    .source = some_id,
+                    .field = trie.TupleIndex.new(@intCast(i)),
+                },
+            };
+            const field_id = try ruleset.internBinding(field_binding);
+            _ = try self.compilePatternWithSource(ruleset, rule, arg_pat, field_id);
         }
 
         return some_id;
