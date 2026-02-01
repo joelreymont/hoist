@@ -195,7 +195,7 @@ pub const Lexer = struct {
             s = buf[0..i];
         }
 
-        const num = std.fmt.parseInt(u128, s, radix) catch return error.InvalidInteger;
+        const num = try std.fmt.parseInt(u128, s, radix);
         const result: i128 = if (neg) -@as(i128, @intCast(num)) else @intCast(num);
 
         return .{ start_pos, Token{ .int = result } };
@@ -242,6 +242,13 @@ test "Lexer integer" {
 
     const tok4 = (try lexer.next()).?;
     try testing.expectEqual(@as(i128, 10), tok4[1].int);
+}
+
+test "Lexer invalid integer" {
+    const src = "0xG";
+    var lexer = Lexer.init(testing.allocator, 0, src);
+
+    try testing.expectError(error.InvalidCharacter, lexer.next());
 }
 
 test "Lexer S-expression" {
