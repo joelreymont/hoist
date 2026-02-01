@@ -652,7 +652,7 @@ pub const ConstructorGen = struct {
 };
 
 test "ConstructorGen: basic initialization" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
@@ -663,7 +663,7 @@ test "ConstructorGen: basic initialization" {
 }
 
 test "ConstructorGen: simple constructor signature" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
@@ -671,11 +671,7 @@ test "ConstructorGen: simple constructor signature" {
 
     // Create a simple type
     const i32_sym = try typeenv.internSym("i32");
-    const i32_ty = try typeenv.addType(.{ .primitive = .{
-        .id = sema.TypeId.new(0),
-        .name = i32_sym,
-        .pos = sema.Pos.new(0, 0),
-    } });
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
 
     // Create a term: iadd(i32, i32) -> i32
     const iadd_sym = try typeenv.internSym("iadd");
@@ -710,18 +706,14 @@ test "ConstructorGen: simple constructor signature" {
 }
 
 test "ConstructorGen: partial constructor" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
     defer termenv.deinit();
 
     const i32_sym = try typeenv.internSym("i32");
-    const i32_ty = try typeenv.addType(.{ .primitive = .{
-        .id = sema.TypeId.new(0),
-        .name = i32_sym,
-        .pos = sema.Pos.new(0, 0),
-    } });
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
 
     const partial_sym = try typeenv.internSym("partial_op");
     const arg_tys = try testing.allocator.alloc(sema.TypeId, 1);
@@ -753,7 +745,7 @@ test "ConstructorGen: partial constructor" {
 }
 
 test "ConstructorGen: reference type handling" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
@@ -801,18 +793,14 @@ test "ConstructorGen: reference type handling" {
 }
 
 test "ConstructorGen: constructor body generation" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
     defer termenv.deinit();
 
     const i32_sym = try typeenv.internSym("i32");
-    const i32_ty = try typeenv.addType(.{ .primitive = .{
-        .id = sema.TypeId.new(0),
-        .name = i32_sym,
-        .pos = sema.Pos.new(0, 0),
-    } });
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
 
     const term_sym = try typeenv.internSym("test_term");
     const arg_tys = try testing.allocator.alloc(sema.TypeId, 1);
@@ -849,18 +837,14 @@ test "ConstructorGen: constructor body generation" {
 }
 
 test "ConstructorGen: match_variant field access" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
     defer termenv.deinit();
 
     const i32_sym = try typeenv.internSym("i32");
-    const i32_ty = try typeenv.addType(.{ .primitive = .{
-        .id = sema.TypeId.new(0),
-        .name = i32_sym,
-        .pos = sema.Pos.new(0, 0),
-    } });
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
 
     const variant_sym = try typeenv.internSym("Pair");
     const field_a = try typeenv.internSym("a");
@@ -902,7 +886,7 @@ test "ConstructorGen: match_variant field access" {
 }
 
 test "ConstructorGen: match_tuple field access" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
@@ -925,7 +909,7 @@ test "ConstructorGen: match_tuple field access" {
 }
 
 test "ConstructorGen: argument validation for ref types" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);

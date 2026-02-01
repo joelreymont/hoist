@@ -284,8 +284,8 @@ pub const TypeEnv = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: Allocator) Self {
-        return .{
+    pub fn init(allocator: Allocator) !Self {
+        var self = Self{
             .syms = std.ArrayList([]const u8){},
             .sym_map = std.StringHashMap(Sym).init(allocator),
             .types = std.ArrayList(Type){},
@@ -293,6 +293,8 @@ pub const TypeEnv = struct {
             .const_types = std.AutoHashMap(Sym, TypeId).init(allocator),
             .allocator = allocator,
         };
+        try self.addBuiltinTypes();
+        return self;
     }
 
     pub fn deinit(self: *Self) void {
@@ -304,6 +306,44 @@ pub const TypeEnv = struct {
         self.types.deinit(self.allocator);
         self.type_map.deinit();
         self.const_types.deinit();
+    }
+
+    fn addBuiltinTypes(self: *Self) !void {
+        try self.addBuiltinType(.bool, "bool");
+        try self.addBuiltinType(.unit, "unit");
+        try self.addPrimitiveRange('u', 1, 128);
+        try self.addPrimitiveRange('i', 1, 128);
+        try self.addPrimitive("f16");
+        try self.addPrimitive("f32");
+        try self.addPrimitive("f64");
+        try self.addPrimitive("f128");
+    }
+
+    fn addBuiltinType(self: *Self, kind: BuiltinType, name: []const u8) !void {
+        const type_id = TypeId.new(@intCast(self.types.items.len));
+        try self.types.append(self.allocator, .{ .builtin = kind });
+        const sym = try self.internSym(name);
+        try self.type_map.put(sym, type_id);
+    }
+
+    fn addPrimitiveRange(self: *Self, prefix: u8, start: u32, end: u32) !void {
+        var n: u32 = start;
+        while (n <= end) : (n += 1) {
+            const name = try std.fmt.allocPrint(self.allocator, "{c}{d}", .{ prefix, n });
+            defer self.allocator.free(name);
+            try self.addPrimitive(name);
+        }
+    }
+
+    fn addPrimitive(self: *Self, name: []const u8) !void {
+        const sym = try self.internSym(name);
+        const type_id = TypeId.new(@intCast(self.types.items.len));
+        try self.types.append(self.allocator, .{ .primitive = .{
+            .id = type_id,
+            .name = sym,
+            .pos = Pos.new(0, 0),
+        } });
+        try self.type_map.put(sym, type_id);
     }
 
     /// Intern a symbol string.
@@ -327,16 +367,30 @@ pub const TypeEnv = struct {
     /// Add a type definition.
     pub fn addType(self: *Self, ty: Type) !TypeId {
         const type_id = TypeId.new(@intCast(self.types.items.len));
-        try self.types.append(self.allocator, ty);
+        var fixed = ty;
+        switch (fixed) {
+            .primitive => |*p| p.id = type_id,
+            .tuple => |*t| t.id = type_id,
+            .enum_type => |*e| e.id = type_id,
+            .builtin => {},
+        }
 
-        const name_sym = switch (ty) {
-            .builtin => return type_id,
+        const name_sym = switch (fixed) {
+            .builtin => null,
             .primitive => |p| p.name,
             .tuple => |t| t.name,
             .enum_type => |e| e.name,
         };
 
-        try self.type_map.put(name_sym, type_id);
+        if (name_sym) |sym| {
+            if (self.type_map.contains(sym)) return error.DuplicateType;
+        }
+
+        try self.types.append(self.allocator, fixed);
+
+        if (name_sym) |sym| {
+            try self.type_map.put(sym, type_id);
+        }
         return type_id;
     }
 
@@ -407,7 +461,7 @@ pub const TermEnv = struct {
 };
 
 test "TypeEnv symbol interning" {
-    var env = TypeEnv.init(testing.allocator);
+    var env = try TypeEnv.init(testing.allocator);
     defer env.deinit();
 
     const sym1 = try env.internSym("foo");
@@ -421,7 +475,7 @@ test "TypeEnv symbol interning" {
 }
 
 test "TypeEnv type registration" {
-    var env = TypeEnv.init(testing.allocator);
+    var env = try TypeEnv.init(testing.allocator);
     defer env.deinit();
 
     const name = try env.internSym("MyType");
@@ -470,9 +524,9 @@ pub const Compiler = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: Allocator) Self {
+    pub fn init(allocator: Allocator) !Self {
         return .{
-            .type_env = TypeEnv.init(allocator),
+            .type_env = try TypeEnv.init(allocator),
             .term_env = TermEnv.init(allocator),
             .rules = std.ArrayList(Rule){},
             .allocator = allocator,
@@ -516,18 +570,25 @@ pub const Compiler = struct {
     fn registerType(self: *Self, type_def: ast.TypeDef) !void {
         const name_sym = try self.type_env.internSym(type_def.name.name);
 
-        var type_id = TypeId.new(0);
-        const ty = switch (type_def.ty) {
-            .primitive => |prim| blk: {
+        switch (type_def.ty) {
+            .primitive => |prim| {
                 const prim_sym = try self.type_env.internSym(prim.name);
-                type_id = TypeId.new(@intCast(self.type_env.types.items.len));
-                break :blk Type{ .primitive = .{
-                    .id = type_id,
+                if (prim_sym != name_sym) return error.PrimitiveNameMismatch;
+
+                if (self.type_env.lookupType(prim_sym)) |existing_id| {
+                    const existing_ty = self.type_env.getType(existing_id);
+                    if (existing_ty != .primitive) return error.DuplicateType;
+                    return;
+                }
+
+                _ = try self.type_env.addType(.{ .primitive = .{
+                    .id = TypeId.new(0),
                     .name = prim_sym,
                     .pos = type_def.pos,
-                } };
+                } });
+                return;
             },
-            .enum_type => |variants_ast| blk: {
+            .enum_type => |variants_ast| {
                 var variants = std.ArrayList(Variant){};
                 defer variants.deinit(self.allocator);
 
@@ -553,28 +614,28 @@ pub const Compiler = struct {
                     });
                 }
 
-                type_id = TypeId.new(@intCast(self.type_env.types.items.len));
-                break :blk Type{ .enum_type = .{
+                const owned_variants = try variants.toOwnedSlice(self.allocator);
+                errdefer {
+                    for (owned_variants) |variant| self.allocator.free(variant.fields);
+                    self.allocator.free(owned_variants);
+                }
+                const type_id = try self.type_env.addType(.{ .enum_type = .{
                     .name = name_sym,
-                    .id = type_id,
+                    .id = TypeId.new(0),
                     .is_extern = type_def.is_extern,
-                    .variants = try variants.toOwnedSlice(self.allocator),
+                    .variants = owned_variants,
                     .pos = type_def.pos,
-                } };
+                } });
+
+                const type_name = self.type_env.symName(name_sym);
+                for (owned_variants) |variant| {
+                    const variant_name = self.type_env.symName(variant.name);
+                    const qualified = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ type_name, variant_name });
+                    defer self.allocator.free(qualified);
+                    const qualified_sym = try self.type_env.internSym(qualified);
+                    try self.type_env.const_types.put(qualified_sym, type_id);
+                }
             },
-        };
-
-        _ = try self.type_env.addType(ty);
-
-        if (ty == .enum_type) {
-            const type_name = self.type_env.symName(name_sym);
-            for (ty.enum_type.variants) |variant| {
-                const variant_name = self.type_env.symName(variant.name);
-                const qualified = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ type_name, variant_name });
-                defer self.allocator.free(qualified);
-                const qualified_sym = try self.type_env.internSym(qualified);
-                try self.type_env.const_types.put(qualified_sym, type_id);
-            }
         }
     }
 
@@ -1217,7 +1278,7 @@ pub const Compiler = struct {
 };
 
 test "Compiler basic type registration" {
-    var compiler = Compiler.init(testing.allocator);
+    var compiler = try Compiler.init(testing.allocator);
     defer compiler.deinit();
 
     const defs = [_]ast.Def{
@@ -1237,7 +1298,7 @@ test "Compiler basic type registration" {
 }
 
 test "Compiler decl multi-return builds tuple type" {
-    var compiler = Compiler.init(testing.allocator);
+    var compiler = try Compiler.init(testing.allocator);
     defer compiler.deinit();
 
     const defs = [_]ast.Def{

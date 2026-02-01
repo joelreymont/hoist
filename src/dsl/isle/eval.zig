@@ -389,7 +389,7 @@ test "BindingValue equality" {
 }
 
 test "Evaluator match wildcard" {
-    var type_env = TypeEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
     defer type_env.deinit();
 
     var term_env = TermEnv.init(testing.allocator);
@@ -414,7 +414,7 @@ test "Evaluator match wildcard" {
 }
 
 test "Evaluator match variable binding" {
-    var type_env = TypeEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
     defer type_env.deinit();
 
     var term_env = TermEnv.init(testing.allocator);
@@ -444,7 +444,7 @@ test "Evaluator match variable binding" {
 }
 
 test "Evaluator match variable equality check" {
-    var type_env = TypeEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
     defer type_env.deinit();
 
     var term_env = TermEnv.init(testing.allocator);
@@ -477,7 +477,7 @@ test "Evaluator match variable equality check" {
 }
 
 test "Evaluator match const_bool" {
-    var type_env = TypeEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
     defer type_env.deinit();
 
     var term_env = TermEnv.init(testing.allocator);
@@ -509,7 +509,7 @@ test "Evaluator match const_bool" {
 }
 
 test "Evaluator match const_int" {
-    var type_env = TypeEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
     defer type_env.deinit();
 
     var term_env = TermEnv.init(testing.allocator);
@@ -538,7 +538,7 @@ test "Evaluator match const_int" {
 }
 
 test "Evaluator match and pattern" {
-    var type_env = TypeEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
     defer type_env.deinit();
 
     var term_env = TermEnv.init(testing.allocator);

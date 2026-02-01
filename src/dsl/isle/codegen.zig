@@ -636,7 +636,7 @@ pub const Codegen = struct {
 };
 
 test "Codegen basic structure" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
@@ -644,11 +644,7 @@ test "Codegen basic structure" {
 
     // Create a simple type
     const i32_sym = try typeenv.internSym("i32");
-    const i32_ty = try typeenv.addType(.{ .primitive = .{
-        .id = sema.TypeId.new(0),
-        .name = i32_sym,
-        .pos = sema.Pos.new(0, 0),
-    } });
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
 
     // Create a term: iadd(i32, i32) -> i32
     const iadd_sym = try typeenv.internSym("iadd");
@@ -731,18 +727,14 @@ test "Codegen basic structure" {
 }
 
 test "Codegen emits tuple types" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
     defer termenv.deinit();
 
     const i32_sym = try typeenv.internSym("i32");
-    const i32_ty = try typeenv.addType(.{ .primitive = .{
-        .id = sema.TypeId.new(0),
-        .name = i32_sym,
-        .pos = sema.Pos.new(0, 0),
-    } });
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
 
     const tuple_id = sema.TypeId.new(@intCast(typeenv.types.items.len));
     const tuple_sym = try typeenv.internSym("tuple_test");

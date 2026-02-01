@@ -460,14 +460,14 @@ pub const ExtractorCodegen = struct {
 };
 
 test "ExtractorCodegen: simple boolean extractor" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
     defer termenv.deinit();
 
-    // Create bool type
-    const bool_ty = try typeenv.addType(.{ .builtin = .bool });
+    const bool_sym = try typeenv.internSym("bool");
+    const bool_ty = typeenv.lookupType(bool_sym) orelse return error.UndefinedType;
 
     // Create extractor: is_true(input) checks if input == true
     const is_true_sym = try typeenv.internSym("is_true");
@@ -503,7 +503,7 @@ test "ExtractorCodegen: simple boolean extractor" {
 }
 
 test "ExtractorCodegen: integer constant extractor" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
@@ -511,11 +511,7 @@ test "ExtractorCodegen: integer constant extractor" {
 
     // Create i64 type
     const i64_sym = try typeenv.internSym("i64");
-    const i64_ty = try typeenv.addType(.{ .primitive = .{
-        .id = sema.TypeId.new(0),
-        .name = i64_sym,
-        .pos = sema.Pos.new(0, 0),
-    } });
+    const i64_ty = typeenv.lookupType(i64_sym) orelse return error.UndefinedType;
 
     // Create extractor: is_zero(input) checks if input == 0
     const is_zero_sym = try typeenv.internSym("is_zero");
@@ -548,18 +544,14 @@ test "ExtractorCodegen: integer constant extractor" {
 }
 
 test "ExtractorCodegen: wildcard extractor" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
     defer termenv.deinit();
 
     const i32_sym = try typeenv.internSym("i32");
-    const i32_ty = try typeenv.addType(.{ .primitive = .{
-        .id = sema.TypeId.new(0),
-        .name = i32_sym,
-        .pos = sema.Pos.new(0, 0),
-    } });
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
 
     // Wildcard extractor always matches
     const any_sym = try typeenv.internSym("any");
@@ -593,18 +585,14 @@ test "ExtractorCodegen: wildcard extractor" {
 }
 
 test "ExtractorCodegen: extractor args" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
     defer termenv.deinit();
 
     const i32_sym = try typeenv.internSym("i32");
-    const i32_ty = try typeenv.addType(.{ .primitive = .{
-        .id = sema.TypeId.new(0),
-        .name = i32_sym,
-        .pos = sema.Pos.new(0, 0),
-    } });
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
 
     const id_sym = try typeenv.internSym("id");
     const arg_sym = try typeenv.internSym("x");
@@ -640,13 +628,14 @@ test "ExtractorCodegen: extractor args" {
 }
 
 test "ExtractorCodegen: generate all extractors" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
     defer termenv.deinit();
 
-    const bool_ty = try typeenv.addType(.{ .builtin = .bool });
+    const bool_sym = try typeenv.internSym("bool");
+    const bool_ty = typeenv.lookupType(bool_sym) orelse return error.UndefinedType;
 
     // Create two extractors
     const is_true_sym = try typeenv.internSym("is_true");

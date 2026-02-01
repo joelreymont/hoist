@@ -688,7 +688,7 @@ pub fn estimateCost(tree: *const trie.DecisionTree) usize {
 }
 
 test "MatchCompiler initialization" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
@@ -699,7 +699,7 @@ test "MatchCompiler initialization" {
 }
 
 test "MatchCompiler: simple constant pattern" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
@@ -732,7 +732,7 @@ test "MatchCompiler: simple constant pattern" {
 }
 
 test "MatchCompiler: variant field patterns" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
@@ -741,11 +741,7 @@ test "MatchCompiler: variant field patterns" {
     var compiler = MatchCompiler.init(testing.allocator, &typeenv, &termenv);
 
     const i32_sym = try typeenv.internSym("i32");
-    const i32_ty = try typeenv.addType(.{ .primitive = .{
-        .id = sema.TypeId.new(0),
-        .name = i32_sym,
-        .pos = sema.Pos.new(0, 0),
-    } });
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
 
     const pair_sym = try typeenv.internSym("Pair");
     const field_a = try typeenv.internSym("a");
@@ -857,7 +853,7 @@ test "MatchCompiler: variant field patterns" {
 }
 
 test "MatchCompiler: extractor patterns" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
@@ -866,11 +862,7 @@ test "MatchCompiler: extractor patterns" {
     var compiler = MatchCompiler.init(testing.allocator, &typeenv, &termenv);
 
     const i32_sym = try typeenv.internSym("i32");
-    const i32_ty = try typeenv.addType(.{ .primitive = .{
-        .id = sema.TypeId.new(0),
-        .name = i32_sym,
-        .pos = sema.Pos.new(0, 0),
-    } });
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
 
     const ext_sym = try typeenv.internSym("Id");
     const arg_sym = try typeenv.internSym("x");
@@ -926,7 +918,7 @@ test "MatchCompiler: extractor patterns" {
 }
 
 test "MatchCompiler: build decision tree" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
@@ -974,7 +966,7 @@ test "Decision tree cost estimation" {
 }
 
 test "MatchCompiler: wildcard pattern" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
@@ -1006,18 +998,14 @@ test "MatchCompiler: wildcard pattern" {
 }
 
 test "MatchCompiler: impure constructor instances are unique" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
     defer termenv.deinit();
 
     const i32_sym = try typeenv.internSym("i32");
-    const i32_ty = try typeenv.addType(.{ .primitive = .{
-        .id = sema.TypeId.new(0),
-        .name = i32_sym,
-        .pos = sema.Pos.new(0, 0),
-    } });
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
 
     const term_sym = try typeenv.internSym("impure_term");
     const arg_tys = try testing.allocator.alloc(sema.TypeId, 0);

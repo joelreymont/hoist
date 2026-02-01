@@ -106,7 +106,7 @@ pub fn compile(
     }
 
     // Phase 3: Semantic analysis
-    var compiler = Compiler.init(allocator);
+    var compiler = try Compiler.init(allocator);
     defer compiler.deinit();
 
     compiler.compile(defs) catch |err| {
@@ -145,6 +145,18 @@ test "compile type definition" {
     try testing.expect(result.code.len > 0);
 }
 
+test "compile implicit primitive types" {
+    const source = Source{
+        .filename = "prim.isle",
+        .content = "(decl foo (u32 u8) (u64))",
+    };
+
+    var result = try compile(testing.allocator, &[_]Source{source}, .{});
+    defer result.deinit();
+
+    try testing.expect(result.code.len > 0);
+}
+
 test "compile error handling" {
     const source = Source{
         .filename = "bad.isle",
@@ -156,7 +168,7 @@ test "compile error handling" {
 }
 
 test "match tree: basic compilation" {
-    var typeenv = sema_mod.TypeEnv.init(testing.allocator);
+    var typeenv = try sema_mod.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema_mod.TermEnv.init(testing.allocator);
@@ -164,13 +176,7 @@ test "match tree: basic compilation" {
 
     // Create a simple type and term for testing
     const i32_sym = try typeenv.internSym("i32");
-    const i32_ty = try typeenv.addType(.{
-        .primitive = .{
-            .id = sema_mod.TypeId.new(0),
-            .name = i32_sym,
-            .pos = sema_mod.Pos.new(0, 0),
-        },
-    });
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
 
     // Create a simple rule: true => 1
     const rule = sema_mod.Rule{
@@ -213,7 +219,7 @@ test "match tree: basic compilation" {
 }
 
 test "emit_zig: basic code generation" {
-    var typeenv = sema_mod.TypeEnv.init(testing.allocator);
+    var typeenv = try sema_mod.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema_mod.TermEnv.init(testing.allocator);
@@ -221,11 +227,7 @@ test "emit_zig: basic code generation" {
 
     // Create a simple type
     const i32_sym = try typeenv.internSym("i32");
-    const i32_ty = try typeenv.addType(.{ .primitive = .{
-        .id = sema_mod.TypeId.new(0),
-        .name = i32_sym,
-        .pos = sema_mod.Pos.new(0, 0),
-    } });
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
 
     // Create a term: iadd(i32, i32) -> i32
     const add_sym = try typeenv.internSym("iadd");

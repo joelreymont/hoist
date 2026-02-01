@@ -298,7 +298,7 @@ const TermSignature = struct {
 };
 
 test "ZigEmitter basic structure" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
@@ -306,11 +306,7 @@ test "ZigEmitter basic structure" {
 
     // Create a simple type
     const i32_sym = try typeenv.internSym("i32");
-    const i32_ty = try typeenv.addType(.{ .primitive = .{
-        .id = sema.TypeId.new(0),
-        .name = i32_sym,
-        .pos = sema.Pos.new(0, 0),
-    } });
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
 
     // Create a term
     const add_sym = try typeenv.internSym("iadd");
@@ -343,7 +339,7 @@ test "ZigEmitter basic structure" {
 }
 
 test "ZigEmitter type name generation" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
@@ -351,11 +347,7 @@ test "ZigEmitter type name generation" {
 
     // Add a primitive type
     const i32_sym = try typeenv.internSym("i32");
-    const i32_ty = try typeenv.addType(.{ .primitive = .{
-        .id = sema.TypeId.new(0),
-        .name = i32_sym,
-        .pos = sema.Pos.new(0, 0),
-    } });
+    const i32_ty = typeenv.lookupType(i32_sym) orelse return error.UndefinedType;
 
     var ruleset = trie.RuleSet.init(testing.allocator);
     defer ruleset.deinit();
@@ -368,14 +360,15 @@ test "ZigEmitter type name generation" {
 }
 
 test "ZigEmitter context trait generation" {
-    var typeenv = sema.TypeEnv.init(testing.allocator);
+    var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
     defer termenv.deinit();
 
     // Create a void return type
-    const void_ty = try typeenv.addType(.{ .builtin = .unit });
+    const void_sym = try typeenv.internSym("unit");
+    const void_ty = typeenv.lookupType(void_sym) orelse return error.UndefinedType;
 
     // Add an external function
     const ext_sym = try typeenv.internSym("external_fn");

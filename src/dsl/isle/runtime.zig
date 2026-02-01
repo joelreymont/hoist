@@ -360,8 +360,10 @@ pub const Context = struct {
 // ========================================================================
 
 test "Context basic initialization" {
-    const type_env = TypeEnv.init(testing.allocator);
-    const term_env = TermEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
+    defer type_env.deinit();
+    var term_env = TermEnv.init(testing.allocator);
+    defer term_env.deinit();
     var dfg = DataFlowGraph.init(testing.allocator);
     defer dfg.deinit();
 
@@ -370,8 +372,10 @@ test "Context basic initialization" {
 }
 
 test "Context type queries" {
-    const type_env = TypeEnv.init(testing.allocator);
-    const term_env = TermEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
+    defer type_env.deinit();
+    var term_env = TermEnv.init(testing.allocator);
+    defer term_env.deinit();
     var dfg = DataFlowGraph.init(testing.allocator);
     defer dfg.deinit();
 
@@ -390,8 +394,10 @@ test "Context type queries" {
 }
 
 test "Context type mask computation" {
-    const type_env = TypeEnv.init(testing.allocator);
-    const term_env = TermEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
+    defer type_env.deinit();
+    var term_env = TermEnv.init(testing.allocator);
+    defer term_env.deinit();
     var dfg = DataFlowGraph.init(testing.allocator);
     defer dfg.deinit();
 
@@ -407,8 +413,10 @@ test "Context type mask computation" {
 }
 
 test "Context type fits check" {
-    const type_env = TypeEnv.init(testing.allocator);
-    const term_env = TermEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
+    defer type_env.deinit();
+    var term_env = TermEnv.init(testing.allocator);
+    defer term_env.deinit();
     var dfg = DataFlowGraph.init(testing.allocator);
     defer dfg.deinit();
 
@@ -424,8 +432,10 @@ test "Context type fits check" {
 }
 
 test "Context match opcode" {
-    const type_env = TypeEnv.init(testing.allocator);
-    const term_env = TermEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
+    defer type_env.deinit();
+    var term_env = TermEnv.init(testing.allocator);
+    defer term_env.deinit();
     var dfg = DataFlowGraph.init(testing.allocator);
     defer dfg.deinit();
 
@@ -448,8 +458,10 @@ test "Context match opcode" {
 }
 
 test "Context match arity" {
-    const type_env = TypeEnv.init(testing.allocator);
-    const term_env = TermEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
+    defer type_env.deinit();
+    var term_env = TermEnv.init(testing.allocator);
+    defer term_env.deinit();
     var dfg = DataFlowGraph.init(testing.allocator);
     defer dfg.deinit();
 
@@ -473,8 +485,10 @@ test "Context match arity" {
 }
 
 test "Context get operand" {
-    const type_env = TypeEnv.init(testing.allocator);
-    const term_env = TermEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
+    defer type_env.deinit();
+    var term_env = TermEnv.init(testing.allocator);
+    defer term_env.deinit();
     var dfg = DataFlowGraph.init(testing.allocator);
     defer dfg.deinit();
 
@@ -504,8 +518,10 @@ test "Context get operand" {
 }
 
 test "multi_lane extractor" {
-    const type_env = TypeEnv.init(testing.allocator);
-    const term_env = TermEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
+    defer type_env.deinit();
+    var term_env = TermEnv.init(testing.allocator);
+    defer term_env.deinit();
     var dfg = DataFlowGraph.init(testing.allocator);
     defer dfg.deinit();
 
@@ -530,8 +546,10 @@ test "multi_lane extractor" {
 }
 
 test "ty_vec128 extractor" {
-    const type_env = TypeEnv.init(testing.allocator);
-    const term_env = TermEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
+    defer type_env.deinit();
+    var term_env = TermEnv.init(testing.allocator);
+    defer term_env.deinit();
     var dfg = DataFlowGraph.init(testing.allocator);
     defer dfg.deinit();
 
@@ -563,8 +581,10 @@ test "ty_vec128 extractor" {
 }
 
 test "ty_vec128_int extractor" {
-    const type_env = TypeEnv.init(testing.allocator);
-    const term_env = TermEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
+    defer type_env.deinit();
+    var term_env = TermEnv.init(testing.allocator);
+    defer term_env.deinit();
     var dfg = DataFlowGraph.init(testing.allocator);
     defer dfg.deinit();
 
@@ -582,8 +602,10 @@ test "ty_vec128_int extractor" {
 }
 
 test "ty_vec64 extractor" {
-    const type_env = TypeEnv.init(testing.allocator);
-    const term_env = TermEnv.init(testing.allocator);
+    var type_env = try TypeEnv.init(testing.allocator);
+    defer type_env.deinit();
+    var term_env = TermEnv.init(testing.allocator);
+    defer term_env.deinit();
     var dfg = DataFlowGraph.init(testing.allocator);
     defer dfg.deinit();
 
