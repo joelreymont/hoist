@@ -100,6 +100,8 @@ pub const CodegenError = error{
     SpillScratchExhausted,
     /// Spill slot offset out of range.
     SpillOffsetOutOfRange,
+    /// Spill slot free list unexpectedly empty.
+    SpillSlotEmpty,
     /// Unsupported calling convention for target.
     UnsupportedCallConv,
     /// Unsupported register class for target.

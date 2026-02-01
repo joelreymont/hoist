@@ -510,7 +510,7 @@ pub const LinearScanAllocator = struct {
     fn allocateSpillSlot(self: *LinearScanAllocator, reg_class: machinst.RegClass) !SpillSlot {
         const free_slots = self.freeSpillSlots(reg_class);
         if (free_slots.items.len > 0) {
-            const offset = free_slots.pop() orelse unreachable;
+            const offset = free_slots.pop() orelse return error.SpillSlotEmpty;
             return SpillSlot.init(offset);
         }
 
@@ -761,6 +761,21 @@ test "LinearScanAllocator register reuse after expiry" {
 
     // v2 should reuse one of the registers from v0 or v1
     try std.testing.expect(p2.?.index() == p0.?.index() or p2.?.index() == p1.?.index());
+}
+
+test "LinearScanAllocator spill slot reuse" {
+    const allocator = std.testing.allocator;
+
+    var lsa = try LinearScanAllocator.init(allocator, 1, 1, 1);
+    defer lsa.deinit();
+
+    const slot0 = try lsa.allocateSpillSlot(.int);
+    const slot1 = try lsa.allocateSpillSlot(.int);
+    try lsa.freeSpillSlot(slot0, .int);
+
+    const slot2 = try lsa.allocateSpillSlot(.int);
+    try std.testing.expectEqual(slot0.offset, slot2.offset);
+    try std.testing.expect(slot1.offset != slot2.offset);
 }
 
 test "LinearScanAllocator different register classes independent" {
