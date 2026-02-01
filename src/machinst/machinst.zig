@@ -216,12 +216,12 @@ test "OperandVisitor helpers" {
             pos: OperandPos,
         ) void {
             const self: *@This() = @ptrCast(@alignCast(ptr));
-            self.operands.append(std.testing.allocator, .{
+            self.operands.appendAssumeCapacity(.{
                 .reg = reg.*,
                 .constraint = constraint,
                 .kind = kind,
                 .pos = pos,
-            }) catch unreachable;
+            });
         }
 
         fn regClobbersImpl(_: *anyopaque, _: []const PReg) void {}
@@ -239,6 +239,7 @@ test "OperandVisitor helpers" {
 
     var test_vis = TestVisitor.init(testing.allocator);
     defer test_vis.deinit(testing.allocator);
+    try test_vis.operands.ensureTotalCapacity(testing.allocator, 8);
 
     var visitor = test_vis.visitor();
 
