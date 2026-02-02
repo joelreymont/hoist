@@ -240,19 +240,18 @@ pub fn build(b: *std.Build) void {
     // const run_x64_encoding = b.addRunArtifact(x64_encoding);
     // test_step.dependOn(&run_x64_encoding.step);
 
-    // TODO: e2e_tail_calls.zig needs API fixes (iconst, fconst, etc.)
-    // const e2e_tail_calls = b.addTest(.{
-    //     .root_module = b.createModule(.{
-    //         .root_source_file = b.path("tests/e2e_tail_calls.zig"),
-    //         .target = target,
-    //         .optimize = optimize,
-    //     }),
-    // });
-    // e2e_tail_calls.root_module.addImport("hoist", lib.root_module);
-    // e2e_tail_calls.root_module.addImport("zcheck", zcheck.module("zcheck"));
-    // applyFlags(e2e_tail_calls, enable_lto, debug_info, strip_debug, pic, single_threaded);
-    // const run_e2e_tail_calls = b.addRunArtifact(e2e_tail_calls);
-    // test_step.dependOn(&run_e2e_tail_calls.step);
+    const e2e_tail_calls = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/e2e_tail_calls.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    e2e_tail_calls.root_module.addImport("hoist", lib.root_module);
+    e2e_tail_calls.root_module.addImport("zcheck", zcheck.module("zcheck"));
+    applyFlags(e2e_tail_calls, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_e2e_tail_calls = b.addRunArtifact(e2e_tail_calls);
+    test_step.dependOn(&run_e2e_tail_calls.step);
 
     // TODO: aarch64_struct_args.zig needs struct type support in ir/types.zig
     // const aarch64_struct_args = b.addTest(.{

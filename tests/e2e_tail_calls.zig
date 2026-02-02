@@ -4,17 +4,36 @@ const testing = std.testing;
 const hoist = @import("hoist");
 const Function = hoist.function.Function;
 const Signature = hoist.signature.Signature;
-const CallConv = hoist.signature.CallConv;
 const AbiParam = hoist.signature.AbiParam;
 const Type = hoist.types.Type;
 const ContextBuilder = hoist.context.ContextBuilder;
 const InstructionData = hoist.instruction_data.InstructionData;
 const ValueList = hoist.value_list.ValueList;
 const FuncRef = hoist.entities.FuncRef;
-const Opcode = hoist.opcodes.Opcode;
+const SigRef = hoist.entities.SigRef;
+const ExternalName = hoist.extfunc.ExternalName;
+const Imm64 = hoist.immediates.Imm64;
+
+const Allocator = std.mem.Allocator;
+
+fn addSig(func: *Function, allocator: Allocator, sig: *const Signature) !SigRef {
+    const idx = func.signatures.elems.items.len;
+    var copy = Signature.init(allocator, sig.call_conv);
+    try copy.params.appendSlice(allocator, sig.params.items);
+    try copy.returns.appendSlice(allocator, sig.returns.items);
+    try func.signatures.elems.append(allocator, copy);
+    return SigRef.new(@intCast(idx));
+}
+
+fn regExt(func: *Function, allocator: Allocator, name: []const u8, sig: *const Signature) !FuncRef {
+    const sig_ref = try addSig(func, allocator, sig);
+    const ext_name = try ExternalName.fromTestcase(allocator, name);
+    return try func.func_metadata.registerExternalFunc(ext_name, sig_ref, .import);
+}
 
 // Test 1: Simple tail call - function calls itself recursively via return_call
 // Validates: Tail call optimization eliminates stack frame growth
+// Note: This test verifies lowering does not crash and emits code.
 test "tail call: simple recursive countdown" {
     const allocator = testing.allocator;
 
@@ -22,14 +41,12 @@ test "tail call: simple recursive countdown" {
     var sig = Signature.init(allocator, .system_v);
     // Note: sig ownership transfers to func, func.deinit() frees it
 
-    const i32_type = Type.I32;
-    try sig.params.append(allocator, AbiParam.new(i32_type));
-    try sig.returns.append(allocator, AbiParam.new(i32_type));
+    try sig.params.append(allocator, AbiParam.new(Type.I32));
+    try sig.returns.append(allocator, AbiParam.new(Type.I32));
 
     var func = try Function.init(allocator, "countdown", sig);
     defer func.deinit();
 
-    // Create blocks
     const entry = try func.dfg.makeBlock();
     const base_case = try func.dfg.makeBlock();
     const recursive_case = try func.dfg.makeBlock();
@@ -38,122 +55,73 @@ test "tail call: simple recursive countdown" {
     try func.layout.appendBlock(base_case);
     try func.layout.appendBlock(recursive_case);
 
-    // Entry: if n <= 0 goto base_case else goto recursive_case
-    const n = func.dfg.blockParams(entry)[0];
-    const zero = try func.dfg.makeInst(.{
-        .iconst = .{
-            .opcode = .iconst,
-            .ty = i32_type,
-            .imm = hoist.immediates.Imm64.new(0),
-        },
-    });
-    const cond = try func.dfg.makeInst(.{
-        .binary = .{
-            .opcode = .icmp,
-            .args = [2]hoist.value.Value{ n, zero },
-            .imm = hoist.immediates.Imm64.new(@intFromEnum(hoist.IntCC.sle)),
-        },
-    });
-    try func.dfg.attachResult(zero, i32_type);
-    try func.dfg.attachResult(cond, Type.I8);
+    const n = try func.dfg.appendBlockParam(entry, Type.I32);
 
-    const br = try func.dfg.makeInst(.{
-        .branch = .{
-            .opcode = .brif,
-            .destination = base_case,
-            .args_storage = try func.dfg.allocateValueList(&[_]hoist.value.Value{cond}),
-            .data = .{ .branch_data = .{
-                .else_destination = recursive_case,
-            } },
-        },
-    });
+    const zero_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(0) } };
+    const zero_inst = try func.dfg.makeInst(zero_data);
+    const zero_val = try func.dfg.appendInstResult(zero_inst, Type.I32);
+    try func.layout.appendInst(zero_inst, entry);
 
-    try func.dfg.appendInst(entry, zero);
-    try func.dfg.appendInst(entry, cond);
-    try func.dfg.appendInst(entry, br);
+    const cmp_data = InstructionData{ .int_compare = .{ .opcode = .icmp, .cond = .sle, .args = .{ n, zero_val } } };
+    const cmp_inst = try func.dfg.makeInst(cmp_data);
+    const cmp_val = try func.dfg.appendInstResult(cmp_inst, Type.I8);
+    try func.layout.appendInst(cmp_inst, entry);
 
-    // Base case: return 0
-    const ret_zero = try func.dfg.makeInst(.{
-        .@"return" = .{
-            .opcode = .@"return",
-            .args_storage = try func.dfg.allocateValueList(&[_]hoist.value.Value{zero}),
-        },
-    });
-    try func.dfg.appendInst(base_case, ret_zero);
+    const br_data = InstructionData{ .branch = .{ .opcode = .brif, .condition = cmp_val, .then_dest = base_case, .else_dest = recursive_case } };
+    const br_inst = try func.dfg.makeInst(br_data);
+    try func.layout.appendInst(br_inst, entry);
 
-    // Recursive case: return countdown(n - 1)
-    const one = try func.dfg.makeInst(.{
-        .iconst = .{
-            .opcode = .iconst,
-            .ty = i32_type,
-            .imm = hoist.immediates.Imm64.new(1),
-        },
-    });
-    const n_minus_1 = try func.dfg.makeInst(.{
-        .binary = .{
-            .opcode = .isub,
-            .args = [2]hoist.value.Value{ n, one },
-        },
-    });
-    try func.dfg.attachResult(one, i32_type);
-    try func.dfg.attachResult(n_minus_1, i32_type);
+    const ret_zero = InstructionData{ .unary = .{ .opcode = .@"return", .arg = zero_val } };
+    const ret_inst = try func.dfg.makeInst(ret_zero);
+    try func.layout.appendInst(ret_inst, base_case);
 
-    // Tail call to self
-    const self_ref = FuncRef.new(0);
-    const tail_call = try func.dfg.makeInst(.{
-        .call = .{
-            .opcode = .return_call,
-            .func_ref = self_ref,
-            .args_storage = try func.dfg.allocateValueList(&[_]hoist.value.Value{n_minus_1}),
-        },
-    });
+    const one_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(1) } };
+    const one_inst = try func.dfg.makeInst(one_data);
+    const one_val = try func.dfg.appendInstResult(one_inst, Type.I32);
+    try func.layout.appendInst(one_inst, recursive_case);
 
-    try func.dfg.appendInst(recursive_case, one);
-    try func.dfg.appendInst(recursive_case, n_minus_1);
-    try func.dfg.appendInst(recursive_case, tail_call);
+    const sub_data = InstructionData{ .binary = .{ .opcode = .isub, .args = .{ n, one_val } } };
+    const sub_inst = try func.dfg.makeInst(sub_data);
+    const n_minus_1 = try func.dfg.appendInstResult(sub_inst, Type.I32);
+    try func.layout.appendInst(sub_inst, recursive_case);
 
-    // Compile
-    var ctx_builder = ContextBuilder.init(allocator);
-    defer ctx_builder.deinit();
+    const self_ref = try regExt(&func, allocator, "countdown", &func.sig);
+    var call_args = ValueList.default();
+    try func.dfg.value_lists.push(&call_args, n_minus_1);
 
-    // Register the function
-    _ = try ctx_builder.registerFunction("countdown", sig);
+    const tail_call = InstructionData{ .call = .{ .opcode = .return_call, .func_ref = self_ref, .args = call_args } };
+    const tail_inst = try func.dfg.makeInst(tail_call);
+    try func.layout.appendInst(tail_inst, recursive_case);
 
-    var ctx = try ctx_builder.build();
-    defer ctx.deinit();
+    var builder = ContextBuilder.init(allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
-    const result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
-    defer result.code.deinit();
-    defer result.relocs.deinit();
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
 
-    // Verify: code was generated
-    try testing.expect(result.code.items.len > 0);
-
-    // TODO: Verify no BL instruction to self (should be B or BR)
-    // TODO: Verify frame is deallocated before jump
+    try testing.expect(code.code.items.len > 0);
 }
 
 // Test 2: Tail call with different signature (more arguments)
 // Validates: Tail call with different frame sizes works correctly
+// Note: This test verifies lowering does not crash and emits code.
 test "tail call: to function with more arguments" {
     const allocator = testing.allocator;
 
     // Caller signature: fn caller(a: i32) -> i32
     var caller_sig = Signature.init(allocator, .system_v);
-    defer caller_sig.deinit();
-
-    const i32_type = Type.I32;
-    try caller_sig.params.append(allocator, AbiParam.new(i32_type));
-    try caller_sig.returns.append(allocator, AbiParam.new(i32_type));
+    // Note: sig ownership transfers to func
+    try caller_sig.params.append(allocator, AbiParam.new(Type.I32));
+    try caller_sig.returns.append(allocator, AbiParam.new(Type.I32));
 
     // Callee signature: fn callee(a: i32, b: i32, c: i32) -> i32
     var callee_sig = Signature.init(allocator, .system_v);
     defer callee_sig.deinit();
-
-    try callee_sig.params.append(allocator, AbiParam.new(i32_type));
-    try callee_sig.params.append(allocator, AbiParam.new(i32_type));
-    try callee_sig.params.append(allocator, AbiParam.new(i32_type));
-    try callee_sig.returns.append(allocator, AbiParam.new(i32_type));
+    try callee_sig.params.append(allocator, AbiParam.new(Type.I32));
+    try callee_sig.params.append(allocator, AbiParam.new(Type.I32));
+    try callee_sig.params.append(allocator, AbiParam.new(Type.I32));
+    try callee_sig.returns.append(allocator, AbiParam.new(Type.I32));
 
     var func = try Function.init(allocator, "test_caller", caller_sig);
     defer func.deinit();
@@ -161,76 +129,50 @@ test "tail call: to function with more arguments" {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
-    const param_a = func.dfg.blockParams(entry)[0];
+    const param_a = try func.dfg.appendBlockParam(entry, Type.I32);
 
-    // Create constants for b and c
-    const const_b = try func.dfg.makeInst(.{
-        .iconst = .{
-            .opcode = .iconst,
-            .ty = i32_type,
-            .imm = hoist.immediates.Imm64.new(42),
-        },
-    });
-    const const_c = try func.dfg.makeInst(.{
-        .iconst = .{
-            .opcode = .iconst,
-            .ty = i32_type,
-            .imm = hoist.immediates.Imm64.new(99),
-        },
-    });
-    try func.dfg.attachResult(const_b, i32_type);
-    try func.dfg.attachResult(const_c, i32_type);
+    const b_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(42) } };
+    const b_inst = try func.dfg.makeInst(b_data);
+    const b_val = try func.dfg.appendInstResult(b_inst, Type.I32);
+    try func.layout.appendInst(b_inst, entry);
 
-    // Tail call to callee(a, 42, 99)
-    const callee_ref = FuncRef.new(1);
-    const tail_call = try func.dfg.makeInst(.{
-        .call = .{
-            .opcode = .return_call,
-            .func_ref = callee_ref,
-            .args_storage = try func.dfg.allocateValueList(&[_]hoist.value.Value{ param_a, const_b, const_c }),
-        },
-    });
+    const c_data = InstructionData{ .unary_imm = .{ .opcode = .iconst, .imm = Imm64.new(99) } };
+    const c_inst = try func.dfg.makeInst(c_data);
+    const c_val = try func.dfg.appendInstResult(c_inst, Type.I32);
+    try func.layout.appendInst(c_inst, entry);
 
-    try func.dfg.appendInst(entry, const_b);
-    try func.dfg.appendInst(entry, const_c);
-    try func.dfg.appendInst(entry, tail_call);
+    const callee_ref = try regExt(&func, allocator, "callee", &callee_sig);
+    var call_args = ValueList.default();
+    try func.dfg.value_lists.push(&call_args, param_a);
+    try func.dfg.value_lists.push(&call_args, b_val);
+    try func.dfg.value_lists.push(&call_args, c_val);
 
-    // Compile
-    var ctx_builder = ContextBuilder.init(allocator);
-    defer ctx_builder.deinit();
+    const tail_call = InstructionData{ .call = .{ .opcode = .return_call, .func_ref = callee_ref, .args = call_args } };
+    const call_inst = try func.dfg.makeInst(tail_call);
+    try func.layout.appendInst(call_inst, entry);
 
-    _ = try ctx_builder.registerFunction("test_caller", caller_sig);
-    _ = try ctx_builder.registerFunction("callee", callee_sig);
+    var builder = ContextBuilder.init(allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
-    var ctx = try ctx_builder.build();
-    defer ctx.deinit();
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
 
-    const result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
-    defer result.code.deinit();
-    defer result.relocs.deinit();
-
-    // Verify: code was generated
-    try testing.expect(result.code.items.len > 0);
-
-    // TODO: Verify proper argument marshaling to X0, X1, X2
-    // TODO: Verify frame deallocated before jump
+    try testing.expect(code.code.items.len > 0);
 }
 
 // Test 3: Indirect tail call
 // Validates: Tail calls through function pointers work
+// Note: This test verifies lowering does not crash and emits code.
 test "tail call: indirect through function pointer" {
     const allocator = testing.allocator;
 
-    // Signature: fn caller(fn_ptr: *fn(i32) -> i32, arg: i32) -> i32
+    // Signature: fn caller(fn_ptr: i64, arg: i32) -> i32
     var sig = Signature.init(allocator, .system_v);
-    // Note: sig ownership transfers to func, func.deinit() frees it
-
-    const i32_type = Type.I32;
-    const ptr_type = Type{ .ptr = .{ .pointee = 0 } }; // Simplified
-
-    try sig.params.append(allocator, AbiParam.new(ptr_type));
-    try sig.params.append(allocator, AbiParam.new(i32_type));
-    try sig.returns.append(allocator, AbiParam.new(i32_type));
+    // Note: sig ownership transfers to func
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.params.append(allocator, AbiParam.new(Type.I32));
+    try sig.returns.append(allocator, AbiParam.new(Type.I32));
 
     var func = try Function.init(allocator, "indirect_caller", sig);
     defer func.deinit();
@@ -238,69 +180,52 @@ test "tail call: indirect through function pointer" {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
-    const fn_ptr = func.dfg.blockParams(entry)[0];
-    const arg = func.dfg.blockParams(entry)[1];
+    const fn_ptr = try func.dfg.appendBlockParam(entry, Type.I64);
+    const arg = try func.dfg.appendBlockParam(entry, Type.I32);
 
-    // Create target signature for indirect call
     var target_sig = Signature.init(allocator, .system_v);
     defer target_sig.deinit();
-    try target_sig.params.append(allocator, AbiParam.new(i32_type));
-    try target_sig.returns.append(allocator, AbiParam.new(i32_type));
+    try target_sig.params.append(allocator, AbiParam.new(Type.I32));
+    try target_sig.returns.append(allocator, AbiParam.new(Type.I32));
 
-    const sig_ref = try func.dfg.importSignature(target_sig);
+    const sig_ref = try addSig(&func, allocator, &target_sig);
 
-    // Indirect tail call: return fn_ptr(arg)
-    const tail_call = try func.dfg.makeInst(.{
-        .call_indirect = .{
-            .opcode = .return_call_indirect,
-            .sig_ref = sig_ref,
-            .callee = fn_ptr,
-            .args_storage = try func.dfg.allocateValueList(&[_]hoist.value.Value{arg}),
-        },
-    });
+    var args = ValueList.default();
+    try func.dfg.value_lists.push(&args, fn_ptr);
+    try func.dfg.value_lists.push(&args, arg);
 
-    try func.dfg.appendInst(entry, tail_call);
+    const tail_call = InstructionData{ .call_indirect = .{ .opcode = .return_call_indirect, .sig_ref = sig_ref, .args = args } };
+    const call_inst = try func.dfg.makeInst(tail_call);
+    try func.layout.appendInst(call_inst, entry);
 
-    // Compile
-    var ctx_builder = ContextBuilder.init(allocator);
-    defer ctx_builder.deinit();
+    var builder = ContextBuilder.init(allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
-    _ = try ctx_builder.registerFunction("indirect_caller", sig);
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
 
-    var ctx = try ctx_builder.build();
-    defer ctx.deinit();
-
-    const result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
-    defer result.code.deinit();
-    defer result.relocs.deinit();
-
-    // Verify: code was generated
-    try testing.expect(result.code.items.len > 0);
-
-    // TODO: Verify BR (not BLR) is used for tail call
-    // TODO: Verify frame deallocated before jump
+    try testing.expect(code.code.items.len > 0);
 }
 
 // Test 4: Tail call with float arguments
 // Validates: Tail calls handle float ABI correctly
+// Note: This test verifies lowering does not crash and emits code.
 test "tail call: with floating point arguments" {
     const allocator = testing.allocator;
 
     // Signature: fn caller(x: f64) -> f64
     var caller_sig = Signature.init(allocator, .system_v);
-    defer caller_sig.deinit();
-
-    const f64_type = Type.F64;
-    try caller_sig.params.append(allocator, AbiParam.new(f64_type));
-    try caller_sig.returns.append(allocator, AbiParam.new(f64_type));
+    // Note: sig ownership transfers to func
+    try caller_sig.params.append(allocator, AbiParam.new(Type.F64));
+    try caller_sig.returns.append(allocator, AbiParam.new(Type.F64));
 
     // Callee signature: fn callee(a: f64, b: f64) -> f64
     var callee_sig = Signature.init(allocator, .system_v);
     defer callee_sig.deinit();
-
-    try callee_sig.params.append(allocator, AbiParam.new(f64_type));
-    try callee_sig.params.append(allocator, AbiParam.new(f64_type));
-    try callee_sig.returns.append(allocator, AbiParam.new(f64_type));
+    try callee_sig.params.append(allocator, AbiParam.new(Type.F64));
+    try callee_sig.params.append(allocator, AbiParam.new(Type.F64));
+    try callee_sig.returns.append(allocator, AbiParam.new(Type.F64));
 
     var func = try Function.init(allocator, "fp_caller", caller_sig);
     defer func.deinit();
@@ -308,72 +233,53 @@ test "tail call: with floating point arguments" {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
-    const param_x = func.dfg.blockParams(entry)[0];
+    const param_x = try func.dfg.appendBlockParam(entry, Type.F64);
 
-    // Create constant for second argument
-    const const_pi = try func.dfg.makeInst(.{
-        .fconst = .{
-            .opcode = .fconst,
-            .ty = f64_type,
-            .imm = hoist.immediates.Imm64.new(@bitCast(@as(f64, 3.14159))),
-        },
-    });
-    try func.dfg.attachResult(const_pi, f64_type);
+    const pi_bits: u64 = @bitCast(@as(f64, 3.14159));
+    const pi_data = InstructionData{ .unary_imm = .{ .opcode = .f64const, .imm = Imm64.new(@intCast(pi_bits)) } };
+    const pi_inst = try func.dfg.makeInst(pi_data);
+    const pi_val = try func.dfg.appendInstResult(pi_inst, Type.F64);
+    try func.layout.appendInst(pi_inst, entry);
 
-    // Tail call to callee(x, 3.14159)
-    const callee_ref = FuncRef.new(1);
-    const tail_call = try func.dfg.makeInst(.{
-        .call = .{
-            .opcode = .return_call,
-            .func_ref = callee_ref,
-            .args_storage = try func.dfg.allocateValueList(&[_]hoist.value.Value{ param_x, const_pi }),
-        },
-    });
+    const callee_ref = try regExt(&func, allocator, "callee", &callee_sig);
+    var call_args = ValueList.default();
+    try func.dfg.value_lists.push(&call_args, param_x);
+    try func.dfg.value_lists.push(&call_args, pi_val);
 
-    try func.dfg.appendInst(entry, const_pi);
-    try func.dfg.appendInst(entry, tail_call);
+    const tail_call = InstructionData{ .call = .{ .opcode = .return_call, .func_ref = callee_ref, .args = call_args } };
+    const call_inst = try func.dfg.makeInst(tail_call);
+    try func.layout.appendInst(call_inst, entry);
 
-    // Compile
-    var ctx_builder = ContextBuilder.init(allocator);
-    defer ctx_builder.deinit();
+    var builder = ContextBuilder.init(allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
-    _ = try ctx_builder.registerFunction("fp_caller", caller_sig);
-    _ = try ctx_builder.registerFunction("callee", callee_sig);
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
 
-    var ctx = try ctx_builder.build();
-    defer ctx.deinit();
-
-    const result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
-    defer result.code.deinit();
-    defer result.relocs.deinit();
-
-    // Verify: code was generated
-    try testing.expect(result.code.items.len > 0);
-
-    // TODO: Verify V0, V1 used for float arguments
-    // TODO: Verify frame deallocated before jump
+    try testing.expect(code.code.items.len > 0);
 }
 
 // Test 5: Tail call with stack arguments
 // Validates: Tail calls marshal stack arguments correctly
+// Note: This test verifies lowering does not crash and emits code.
 test "tail call: with stack arguments" {
     const allocator = testing.allocator;
 
     var caller_sig = Signature.init(allocator, .system_v);
-    // Note: signature ownership transfers to func
+    // Note: sig ownership transfers to func
 
-    const i64_type = Type.I64;
     for (0..10) |_| {
-        try caller_sig.params.append(allocator, AbiParam.new(i64_type));
+        try caller_sig.params.append(allocator, AbiParam.new(Type.I64));
     }
-    try caller_sig.returns.append(allocator, AbiParam.new(i64_type));
+    try caller_sig.returns.append(allocator, AbiParam.new(Type.I64));
 
     var callee_sig = Signature.init(allocator, .system_v);
     defer callee_sig.deinit();
     for (0..10) |_| {
-        try callee_sig.params.append(allocator, AbiParam.new(i64_type));
+        try callee_sig.params.append(allocator, AbiParam.new(Type.I64));
     }
-    try callee_sig.returns.append(allocator, AbiParam.new(i64_type));
+    try callee_sig.returns.append(allocator, AbiParam.new(Type.I64));
 
     var func = try Function.init(allocator, "stack_arg_caller", caller_sig);
     defer func.deinit();
@@ -381,55 +287,43 @@ test "tail call: with stack arguments" {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
-    const params = func.dfg.blockParams(entry);
-    var arg_vals: [10]hoist.value.Value = undefined;
-    for (params[0..10], 0..) |param, i| {
-        arg_vals[i] = param;
+    var args: [10]hoist.entities.Value = undefined;
+    for (0..10) |i| {
+        args[i] = try func.dfg.appendBlockParam(entry, Type.I64);
     }
 
-    const callee_ref = FuncRef.new(1);
-    const tail_call = try func.dfg.makeInst(.{
-        .call = .{
-            .opcode = .return_call,
-            .func_ref = callee_ref,
-            .args_storage = try func.dfg.allocateValueList(&arg_vals),
-        },
-    });
+    const callee_ref = try regExt(&func, allocator, "stack_arg_callee", &callee_sig);
+    var call_args = ValueList.default();
+    try func.dfg.value_lists.extend(&call_args, &args);
 
-    try func.dfg.appendInst(entry, tail_call);
+    const tail_call = InstructionData{ .call = .{ .opcode = .return_call, .func_ref = callee_ref, .args = call_args } };
+    const call_inst = try func.dfg.makeInst(tail_call);
+    try func.layout.appendInst(call_inst, entry);
 
-    var ctx_builder = ContextBuilder.init(allocator);
-    defer ctx_builder.deinit();
+    var builder = ContextBuilder.init(allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
-    _ = try ctx_builder.registerFunction("stack_arg_caller", caller_sig);
-    _ = try ctx_builder.registerFunction("stack_arg_callee", callee_sig);
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
 
-    var ctx = try ctx_builder.build();
-    defer ctx.deinit();
-
-    const result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
-    defer result.code.deinit();
-    defer result.relocs.deinit();
-
-    try testing.expect(result.code.items.len > 0);
+    try testing.expect(code.code.items.len > 0);
 }
 
 // Test 6: Indirect tail call with stack arguments
 // Validates: Indirect tail calls handle stack args
+// Note: This test verifies lowering does not crash and emits code.
 test "tail call: indirect with stack arguments" {
     const allocator = testing.allocator;
 
     var sig = Signature.init(allocator, .system_v);
-    // Note: signature ownership transfers to func
+    // Note: sig ownership transfers to func
 
-    const i64_type = Type.I64;
-    const ptr_type = Type{ .ptr = .{ .pointee = 0 } };
-
-    try sig.params.append(allocator, AbiParam.new(ptr_type));
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
     for (0..10) |_| {
-        try sig.params.append(allocator, AbiParam.new(i64_type));
+        try sig.params.append(allocator, AbiParam.new(Type.I64));
     }
-    try sig.returns.append(allocator, AbiParam.new(i64_type));
+    try sig.returns.append(allocator, AbiParam.new(Type.I64));
 
     var func = try Function.init(allocator, "indirect_stack_arg_caller", sig);
     defer func.deinit();
@@ -437,61 +331,49 @@ test "tail call: indirect with stack arguments" {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
-    const params = func.dfg.blockParams(entry);
-    const fn_ptr = params[0];
+    var params: [11]hoist.entities.Value = undefined;
+    for (0..11) |i| {
+        params[i] = try func.dfg.appendBlockParam(entry, Type.I64);
+    }
 
     var target_sig = Signature.init(allocator, .system_v);
     defer target_sig.deinit();
     for (0..10) |_| {
-        try target_sig.params.append(allocator, AbiParam.new(i64_type));
+        try target_sig.params.append(allocator, AbiParam.new(Type.I64));
     }
-    try target_sig.returns.append(allocator, AbiParam.new(i64_type));
+    try target_sig.returns.append(allocator, AbiParam.new(Type.I64));
 
-    const sig_ref = try func.dfg.importSignature(target_sig);
+    const sig_ref = try addSig(&func, allocator, &target_sig);
 
-    var arg_vals: [10]hoist.value.Value = undefined;
-    for (params[1..11], 0..) |param, i| {
-        arg_vals[i] = param;
-    }
+    var call_args = ValueList.default();
+    try func.dfg.value_lists.extend(&call_args, &params);
 
-    const tail_call = try func.dfg.makeInst(.{
-        .call_indirect = .{
-            .opcode = .return_call_indirect,
-            .sig_ref = sig_ref,
-            .callee = fn_ptr,
-            .args_storage = try func.dfg.allocateValueList(&arg_vals),
-        },
-    });
+    const tail_call = InstructionData{ .call_indirect = .{ .opcode = .return_call_indirect, .sig_ref = sig_ref, .args = call_args } };
+    const call_inst = try func.dfg.makeInst(tail_call);
+    try func.layout.appendInst(call_inst, entry);
 
-    try func.dfg.appendInst(entry, tail_call);
+    var builder = ContextBuilder.init(allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
-    var ctx_builder = ContextBuilder.init(allocator);
-    defer ctx_builder.deinit();
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
 
-    _ = try ctx_builder.registerFunction("indirect_stack_arg_caller", sig);
-
-    var ctx = try ctx_builder.build();
-    defer ctx.deinit();
-
-    const result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
-    defer result.code.deinit();
-    defer result.relocs.deinit();
-
-    try testing.expect(result.code.items.len > 0);
+    try testing.expect(code.code.items.len > 0);
 }
 
 // Test 7: Non-tail call followed by tail call
 // Validates: Mix of regular and tail calls in same function
+// Note: This test verifies lowering does not crash and emits code.
 test "tail call: mixed with regular calls" {
     const allocator = testing.allocator;
 
     // Signature: fn caller(n: i32) -> i32
     var sig = Signature.init(allocator, .system_v);
-    // Note: sig ownership transfers to func, func.deinit() frees it
+    // Note: sig ownership transfers to func
 
-    const i32_type = Type.I32;
-    try sig.params.append(allocator, AbiParam.new(i32_type));
-    try sig.returns.append(allocator, AbiParam.new(i32_type));
+    try sig.params.append(allocator, AbiParam.new(Type.I32));
+    try sig.returns.append(allocator, AbiParam.new(Type.I32));
 
     var func = try Function.init(allocator, "mixed_caller", sig);
     defer func.deinit();
@@ -499,50 +381,31 @@ test "tail call: mixed with regular calls" {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
-    const n = func.dfg.blockParams(entry)[0];
+    const n = try func.dfg.appendBlockParam(entry, Type.I32);
 
-    // Regular call: temp = helper(n)
-    const helper_ref = FuncRef.new(1);
-    const regular_call = try func.dfg.makeInst(.{
-        .call = .{
-            .opcode = .call,
-            .func_ref = helper_ref,
-            .args_storage = try func.dfg.allocateValueList(&[_]hoist.value.Value{n}),
-        },
-    });
-    try func.dfg.attachResult(regular_call, i32_type);
+    const helper_ref = try regExt(&func, allocator, "helper", &func.sig);
+    var helper_args = ValueList.default();
+    try func.dfg.value_lists.push(&helper_args, n);
 
-    // Tail call: return process(temp)
-    const process_ref = FuncRef.new(2);
-    const tail_call = try func.dfg.makeInst(.{
-        .call = .{
-            .opcode = .return_call,
-            .func_ref = process_ref,
-            .args_storage = try func.dfg.allocateValueList(&[_]hoist.value.Value{regular_call}),
-        },
-    });
+    const helper_call = InstructionData{ .call = .{ .opcode = .call, .func_ref = helper_ref, .args = helper_args } };
+    const helper_inst = try func.dfg.makeInst(helper_call);
+    const helper_val = try func.dfg.appendInstResult(helper_inst, Type.I32);
+    try func.layout.appendInst(helper_inst, entry);
 
-    try func.dfg.appendInst(entry, regular_call);
-    try func.dfg.appendInst(entry, tail_call);
+    const process_ref = try regExt(&func, allocator, "process", &func.sig);
+    var process_args = ValueList.default();
+    try func.dfg.value_lists.push(&process_args, helper_val);
 
-    // Compile
-    var ctx_builder = ContextBuilder.init(allocator);
-    defer ctx_builder.deinit();
+    const tail_call = InstructionData{ .call = .{ .opcode = .return_call, .func_ref = process_ref, .args = process_args } };
+    const tail_inst = try func.dfg.makeInst(tail_call);
+    try func.layout.appendInst(tail_inst, entry);
 
-    _ = try ctx_builder.registerFunction("mixed_caller", sig);
-    _ = try ctx_builder.registerFunction("helper", sig);
-    _ = try ctx_builder.registerFunction("process", sig);
+    var builder = ContextBuilder.init(allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
 
-    var ctx = try ctx_builder.build();
-    defer ctx.deinit();
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
 
-    const result = hoist.codegen.compile.compile(&ctx, &func, &ctx.target);
-    defer result.code.deinit();
-    defer result.relocs.deinit();
-
-    // Verify: code was generated
-    try testing.expect(result.code.items.len > 0);
-
-    // TODO: Verify first call uses BL (link register saved)
-    // TODO: Verify second call uses B (no link, frame deallocated)
+    try testing.expect(code.code.items.len > 0);
 }
