@@ -369,12 +369,80 @@ fn bindingsEqual(a: *const Binding, b: *const Binding) bool {
     };
 }
 
+const BindingHashContext = struct {
+    pub fn hash(_: BindingHashContext, key: Binding) u64 {
+        return hashBinding(&key);
+    }
+
+    pub fn eql(_: BindingHashContext, a: Binding, b: Binding) bool {
+        return bindingsEqual(&a, &b);
+    }
+};
+
+fn hashBinding(binding: *const Binding) u64 {
+    var hasher = std.hash.Wyhash.init(0);
+    const tag = std.meta.activeTag(binding.*);
+    hasher.update(std.mem.asBytes(&tag));
+    switch (binding.*) {
+        .const_bool => |b| {
+            hasher.update(std.mem.asBytes(&b.val));
+            hasher.update(std.mem.asBytes(&b.ty));
+        },
+        .const_int => |i| {
+            hasher.update(std.mem.asBytes(&i.val));
+            hasher.update(std.mem.asBytes(&i.ty));
+        },
+        .const_prim => |p| hasher.update(std.mem.asBytes(&p.val)),
+        .argument => |a| hasher.update(std.mem.asBytes(&a.index)),
+        .extractor => |e| {
+            hasher.update(std.mem.asBytes(&e.term));
+            hashBindingSlice(&hasher, e.parameters);
+        },
+        .constructor => |c| {
+            hasher.update(std.mem.asBytes(&c.term));
+            hasher.update(std.mem.asBytes(&c.instance));
+            hashBindingSlice(&hasher, c.parameters);
+        },
+        .iterator => |it| hasher.update(std.mem.asBytes(&it.source)),
+        .make_variant => |v| {
+            hasher.update(std.mem.asBytes(&v.ty));
+            hasher.update(std.mem.asBytes(&v.variant));
+            hashBindingSlice(&hasher, v.fields);
+        },
+        .match_variant => |m| {
+            hasher.update(std.mem.asBytes(&m.source));
+            hasher.update(std.mem.asBytes(&m.variant));
+            hasher.update(std.mem.asBytes(&m.field));
+        },
+        .make_some => |m| hasher.update(std.mem.asBytes(&m.inner)),
+        .match_some => |m| hasher.update(std.mem.asBytes(&m.source)),
+        .match_tuple => |m| {
+            hasher.update(std.mem.asBytes(&m.source));
+            hasher.update(std.mem.asBytes(&m.field));
+        },
+        .match_extractor => |m| {
+            hasher.update(std.mem.asBytes(&m.source));
+            hasher.update(std.mem.asBytes(&m.field));
+        },
+    }
+    return hasher.final();
+}
+
+fn hashBindingSlice(hasher: *std.hash.Wyhash, slice: []const BindingId) void {
+    const len = slice.len;
+    hasher.update(std.mem.asBytes(&len));
+    for (slice) |id| {
+        hasher.update(std.mem.asBytes(&id));
+    }
+}
+
 /// Collection of compiled rules with hash-consed bindings.
 pub const RuleSet = struct {
     /// Compiled rules for a term.
     rules: std.ArrayList(Rule),
-    /// Hash-consed bindings (linear search for now - contains slices so can't auto-hash).
+    /// Hash-consed bindings.
     bindings: std.ArrayList(Binding),
+    bindings_map: std.HashMap(Binding, BindingId, BindingHashContext, std.hash_map.default_max_load_percentage),
     /// Allocator.
     allocator: Allocator,
 
@@ -382,6 +450,7 @@ pub const RuleSet = struct {
         return .{
             .rules = std.ArrayList(Rule){},
             .bindings = std.ArrayList(Binding){},
+            .bindings_map = std.HashMap(Binding, BindingId, BindingHashContext, std.hash_map.default_max_load_percentage).init(allocator),
             .allocator = allocator,
         };
     }
@@ -402,31 +471,25 @@ pub const RuleSet = struct {
             }
         }
         self.bindings.deinit(self.allocator);
+        self.bindings_map.deinit();
     }
 
     /// Find or create a binding ID for the given binding.
     pub fn internBinding(self: *RuleSet, binding: Binding) !BindingId {
-        // Linear search for existing binding (TODO: implement custom hash function)
-        for (self.bindings.items, 0..) |*existing, i| {
-            if (bindingsEqual(existing, &binding)) {
-                return BindingId.new(@intCast(i));
-            }
+        if (self.bindings_map.get(binding)) |existing| {
+            return existing;
         }
 
         // Not found, add new binding
         const id = BindingId.new(@intCast(self.bindings.items.len));
         try self.bindings.append(self.allocator, binding);
+        try self.bindings_map.put(binding, id);
         return id;
     }
 
     /// Find an existing binding ID, if it exists.
     pub fn findBinding(self: *const RuleSet, binding: *const Binding) ?BindingId {
-        for (self.bindings.items, 0..) |*existing, i| {
-            if (bindingsEqual(existing, binding)) {
-                return BindingId.new(@intCast(i));
-            }
-        }
-        return null;
+        return self.bindings_map.get(binding.*);
     }
 
     /// Add a compiled rule to this set.
