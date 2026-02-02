@@ -14,69 +14,13 @@ const CondCode = inst_mod.CondCode;
 const Imm12 = inst_mod.Imm12;
 const lower_mod = @import("../machinst/lower.zig");
 const isle_helpers = @import("../backends/aarch64/isle_helpers.zig");
+const call_results = @import("../backends/aarch64/call_results.zig");
 
 const Opcode = root.opcodes.Opcode;
 const InstructionData = root.instruction_data.InstructionData;
 const Type = root.types.Type;
 const IntCC = root.condcodes.IntCC;
 const FloatCC = root.condcodes.FloatCC;
-
-fn emitCallResults(
-    ctx: *lower_mod.LowerCtx(Inst),
-    ir_inst: lower_mod.Inst,
-    ret_regs: lower_mod.ValueRegs,
-) !void {
-    const results = ctx.func.dfg.instResults(ir_inst);
-    if (results.len == 0) return;
-    if (ret_regs.len() < results.len) return error.ReturnRegCountMismatch;
-
-    for (results, 0..) |result_value, idx| {
-        const src = ret_regs.get(idx) orelse return error.ReturnRegMissing;
-        const ty = try ctx.getValueType(result_value);
-        const class: lower_mod.RegClass = if (ty.isInt() or ty.isRef())
-            .int
-        else if (ty.isFloat() or ty.isVector())
-            .float
-        else
-            return error.UnsupportedReturnType;
-        const dst_vreg = try ctx.getValueReg(result_value, class);
-        const dst = WritableReg.fromVReg(dst_vreg);
-
-        if (ty.isFloat()) {
-            const size: FpuOperandSize = switch (ty.bits()) {
-                32 => .size32,
-                64 => .size64,
-                else => return error.UnsupportedReturnType,
-            };
-            try ctx.emit(Inst{ .fmov = .{
-                .dst = dst,
-                .src = src,
-                .size = size,
-            } });
-        } else if (ty.isVector()) {
-            const size: FpuOperandSize = switch (ty.bits()) {
-                32 => .size32,
-                64 => .size64,
-                128 => .size128,
-                else => return error.UnsupportedReturnType,
-            };
-            try ctx.emit(Inst{ .vec_orr = .{
-                .dst = dst,
-                .src1 = src,
-                .src2 = src,
-                .size = size,
-            } });
-        } else {
-            const bits = ty.bits();
-            const size: OperandSize = if (bits != 0 and bits <= 32) .size32 else .size64;
-            try ctx.emit(Inst{ .mov_rr = .{
-                .dst = dst,
-                .src = src,
-                .size = size,
-            } });
-        }
-    }
-}
 
 // Manual lowering function until ISLE compiler is fully functional
 pub fn lower(
@@ -2757,6 +2701,55 @@ pub fn lower(
                 return true;
             }
         },
+        .call => |data| {
+            if (data.opcode == .call) {
+                const func_ref = data.func_ref;
+                const args_list = data.args;
+                const args_slice = ctx.func.dfg.value_lists.asSlice(args_list);
+
+                const metadata = ctx.func.func_metadata.getMetadata(func_ref) orelse
+                    return error.FuncRefNotFound;
+                const sig_ref = metadata.sig_ref;
+                const name = metadata.name;
+
+                const ret_regs = try isle_helpers.aarch64_call(sig_ref, name, args_slice, ctx);
+                try call_results.emitCallResults(ctx, ir_inst, ret_regs);
+                return true;
+            } else if (data.opcode == .return_call) {
+                const func_ref = data.func_ref;
+                const args_list = data.args;
+                const args_slice = ctx.func.dfg.value_lists.asSlice(args_list);
+
+                const metadata = ctx.func.func_metadata.getMetadata(func_ref) orelse
+                    return error.FuncRefNotFound;
+                const sig_ref = metadata.sig_ref;
+                const name = metadata.name;
+
+                const term = try isle_helpers.aarch64_return_call(sig_ref, name, args_slice, ctx);
+                try ctx.emit(term);
+                return true;
+            }
+        },
+        .call_indirect => |data| {
+            if (data.opcode == .call_indirect or data.opcode == .return_call_indirect) {
+                const args_list = data.args;
+                const args_all = ctx.func.dfg.value_lists.asSlice(args_list);
+                if (args_all.len == 0) return error.MissingCallee;
+
+                const ptr = args_all[0];
+                const args_slice = args_all[1..];
+
+                if (data.opcode == .call_indirect) {
+                    const ret_regs = try isle_helpers.aarch64_call_indirect(data.sig_ref, ptr, args_slice, ctx);
+                    try call_results.emitCallResults(ctx, ir_inst, ret_regs);
+                    return true;
+                } else {
+                    const term = try isle_helpers.aarch64_return_call_indirect(data.sig_ref, ptr, args_slice, ctx);
+                    try ctx.emit(term);
+                    return true;
+                }
+            }
+        },
         .try_call => |data| {
             // try_call: Function call with exception handling (DWARF unwinding).
             // Emit the call and materialize return values; exceptions are handled by LSDA/unwinder.
@@ -2770,7 +2763,7 @@ pub fn lower(
             const name = metadata.name;
 
             const ret_regs = try isle_helpers.aarch64_try_call(sig_ref, name, args_slice, ctx);
-            try emitCallResults(ctx, ir_inst, ret_regs);
+            try call_results.emitCallResults(ctx, ir_inst, ret_regs);
 
             const normal_label = try ctx.getBlockLabel(data.normal_successor);
             try ctx.emit(Inst{ .b = .{ .target = .{ .label = normal_label } } });
@@ -2787,7 +2780,7 @@ pub fn lower(
             const ptr = args_all[0];
             const args_slice = args_all[1..];
             const ret_regs = try isle_helpers.aarch64_try_call_indirect(data.sig_ref, ptr, args_slice, ctx);
-            try emitCallResults(ctx, ir_inst, ret_regs);
+            try call_results.emitCallResults(ctx, ir_inst, ret_regs);
 
             const normal_label = try ctx.getBlockLabel(data.normal_successor);
             try ctx.emit(Inst{ .b = .{ .target = .{ .label = normal_label } } });

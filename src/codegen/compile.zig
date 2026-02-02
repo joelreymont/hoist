@@ -18,9 +18,14 @@ const RelocKind = @import("context.zig").RelocKind;
 const Function = @import("../ir/function.zig").Function;
 const Block = @import("../ir/entities.zig").Block;
 const reg_mod = @import("../machinst/reg.zig");
+const lower_mod = @import("../machinst/lower.zig");
+const vcode_mod = @import("../machinst/vcode.zig");
 const sig_mod = @import("../ir/signature.zig");
 const a64_inst = @import("../backends/aarch64/inst.zig");
 const a64_abi = @import("../backends/aarch64/abi.zig");
+const a64_isle_helpers = @import("../backends/aarch64/isle_helpers.zig");
+const a64_call_results = @import("../backends/aarch64/call_results.zig");
+const a64_call_layout = @import("../backends/aarch64/call_layout.zig");
 const linear_scan_mod = @import("../regalloc/linear_scan.zig");
 const liveness_mod = @import("../regalloc/liveness.zig");
 const ir_print = @import("../ir/print.zig");
@@ -1382,6 +1387,53 @@ fn lower(ctx: *Context, target: *const Target) CodegenError!void {
     }
 }
 
+fn computeOutStackMaxAArch64(ctx: *Context) CodegenError!u32 {
+    var max_stack: u32 = 0;
+    var block_iter = ctx.func.layout.blockIter();
+    while (block_iter.next()) |block| {
+        var inst_iter = ctx.func.layout.blockInsts(block);
+        while (inst_iter.next()) |inst| {
+            const inst_data_ptr = ctx.func.dfg.insts.get(inst) orelse continue;
+            switch (inst_data_ptr.*) {
+                .call => |data| {
+                    const meta = ctx.func.func_metadata.getMetadata(data.func_ref) orelse return error.LoweringFailed;
+                    const sig = ctx.func.signatures.get(meta.sig_ref) orelse return error.LoweringFailed;
+                    const args_slice = ctx.func.dfg.value_lists.asSlice(data.args);
+                    const stack_size = a64_call_layout.callStackMaxForArgs(ctx.allocator, ctx.func, sig, args_slice) catch
+                        return error.LoweringFailed;
+                    max_stack = @max(max_stack, stack_size);
+                },
+                .call_indirect => |data| {
+                    const sig = ctx.func.signatures.get(data.sig_ref) orelse return error.LoweringFailed;
+                    const args_all = ctx.func.dfg.value_lists.asSlice(data.args);
+                    if (args_all.len == 0) return error.LoweringFailed;
+                    const stack_size = a64_call_layout.callStackMaxForArgs(ctx.allocator, ctx.func, sig, args_all[1..]) catch
+                        return error.LoweringFailed;
+                    max_stack = @max(max_stack, stack_size);
+                },
+                .try_call => |data| {
+                    const meta = ctx.func.func_metadata.getMetadata(data.func_ref) orelse return error.LoweringFailed;
+                    const sig = ctx.func.signatures.get(meta.sig_ref) orelse return error.LoweringFailed;
+                    const args_slice = ctx.func.dfg.value_lists.asSlice(data.args);
+                    const stack_size = a64_call_layout.callStackMaxForArgs(ctx.allocator, ctx.func, sig, args_slice) catch
+                        return error.LoweringFailed;
+                    max_stack = @max(max_stack, stack_size);
+                },
+                .try_call_indirect => |data| {
+                    const sig = ctx.func.signatures.get(data.sig_ref) orelse return error.LoweringFailed;
+                    const args_all = ctx.func.dfg.value_lists.asSlice(data.args);
+                    if (args_all.len == 0) return error.LoweringFailed;
+                    const stack_size = a64_call_layout.callStackMaxForArgs(ctx.allocator, ctx.func, sig, args_all[1..]) catch
+                        return error.LoweringFailed;
+                    max_stack = @max(max_stack, stack_size);
+                },
+                else => {},
+            }
+        }
+    }
+    return max_stack;
+}
+
 /// Lower IR to AArch64 VCode.
 fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
     const Inst = @import("../backends/aarch64/inst.zig").Inst;
@@ -1391,6 +1443,10 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
     // Create VCode builder
     var builder = VCodeBuilder(Inst).init(ctx.allocator, .forward);
     defer builder.deinit();
+
+    const out_stack_max = try computeOutStackMaxAArch64(ctx);
+    builder.vcode.out_stack_max = out_stack_max;
+    var next_tmp_vreg: u32 = @intCast(reg_mod.Reg.PINNED_VREGS + ctx.func.dfg.values.elems.items.len);
 
     // Track vreg origins for rematerialization
     var vreg_origins = std.AutoHashMap(reg_mod.VReg, VRegOrigin).init(ctx.allocator);
@@ -1422,44 +1478,132 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
 
             // For entry block, emit moves from ABI registers to parameter vregs
             const VReg = @import("../machinst/reg.zig").VReg;
-            const PReg = @import("../machinst/reg.zig").PReg;
             const Reg = @import("../machinst/reg.zig").Reg;
             const WritableReg = @import("../machinst/reg.zig").WritableReg;
             const RegClass = @import("../machinst/reg.zig").RegClass;
             const OperandSize = @import("../backends/aarch64/inst.zig").OperandSize;
+            const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
 
             const block_data = ctx.func.dfg.blocks.get(block) orelse return error.LoweringFailed;
             const params = block_data.getParams(&ctx.func.dfg.value_lists);
 
-            // Emit MOV from x0-x7 to parameter vregs
+            const needs_sret = a64_abi.needsStructReturnPointer(ctx.func.sig.returns.items, &ctx.func.struct_store);
+            const arg_locs = try a64_abi.computeArgLocs(ctx.allocator, ctx.func.sig.params.items, needs_sret, &ctx.func.struct_store);
+            defer ctx.allocator.free(arg_locs);
+
+            var stack_base: ?VReg = null;
+
             for (params, 0..) |param, i| {
-                if (i < 8) {
-                    // Source: physical register x0-x7
-                    const preg = PReg.new(RegClass.int, @intCast(i));
-                    const src = Reg.fromPReg(preg);
+                const param_type = ctx.func.dfg.valueType(param) orelse return error.LoweringFailed;
+                const class: RegClass = if (param_type.isInt() or param_type.isRef())
+                    .int
+                else if (param_type.isFloat() or param_type.isVector())
+                    .float
+                else
+                    return error.LoweringFailed;
 
-                    // Destination: virtual register for this parameter
-                    // Offset by PINNED_VREGS to avoid collision with physical registers
-                    const param_vreg = VReg.new(@intCast(param.index + Reg.PINNED_VREGS), RegClass.int);
-                    const dst = WritableReg.fromVReg(param_vreg);
+                const param_vreg = VReg.new(@intCast(param.index + Reg.PINNED_VREGS), class);
+                const dst = WritableReg.fromVReg(param_vreg);
+                const loc = arg_locs[i];
 
-                    // Get parameter type to determine size
-                    const param_type = ctx.func.dfg.valueType(param) orelse return error.LoweringFailed;
-                    const size: OperandSize = if (param_type.bits() == 64)
-                        .size64
-                    else
-                        .size32;
-
-                    // Emit: MOV dst, src
-                    try builder.emit(Inst{
-                        .mov_rr = .{
+                switch (loc) {
+                    .reg => |preg| {
+                        const src = Reg.fromPReg(preg);
+                        if (param_type.isFloat()) {
+                            const size: FpuOperandSize = if (param_type.bits() == 64) .size64 else .size32;
+                            try builder.emit(Inst{ .fmov = .{
+                                .dst = dst,
+                                .src = src,
+                                .size = size,
+                            } });
+                        } else if (param_type.isVector()) {
+                            const size: FpuOperandSize = switch (param_type.bits()) {
+                                32 => .size32,
+                                64 => .size64,
+                                128 => .size128,
+                                else => return error.LoweringFailed,
+                            };
+                            try builder.emit(Inst{ .vec_orr = .{
+                                .dst = dst,
+                                .src1 = src,
+                                .src2 = src,
+                                .size = size,
+                            } });
+                        } else {
+                            const size: OperandSize = if (param_type.bits() == 64) .size64 else .size32;
+                            try builder.emit(Inst{ .mov_rr = .{
+                                .dst = dst,
+                                .src = src,
+                                .size = size,
+                            } });
+                        }
+                    },
+                    .indirect_reg => |preg| {
+                        const src = Reg.fromPReg(preg);
+                        try builder.emit(Inst{ .mov_rr = .{
                             .dst = dst,
                             .src = src,
-                            .size = size,
-                        },
-                    });
-                } else {
-                    return error.LoweringFailed;
+                            .size = .size64,
+                        } });
+                    },
+                    .stack => |offset| {
+                        if (stack_base == null) {
+                            const base_vreg = VReg.new(next_tmp_vreg, .int);
+                            next_tmp_vreg += 1;
+                            const base_dst = WritableReg.fromVReg(base_vreg);
+                            try builder.emit(Inst{ .tailcall_sp = .{ .dst = base_dst } });
+                            stack_base = base_vreg;
+                        }
+
+                        const base_reg = Reg.fromVReg(stack_base.?);
+                        var addr_reg = base_reg;
+
+                        if (offset != 0) {
+                            const off_vreg = VReg.new(next_tmp_vreg, .int);
+                            next_tmp_vreg += 1;
+                            const off_dst = WritableReg.fromVReg(off_vreg);
+                            try builder.emit(Inst{ .mov_imm = .{
+                                .dst = off_dst,
+                                .imm = offset,
+                                .size = .size64,
+                            } });
+
+                            const addr_vreg = VReg.new(next_tmp_vreg, .int);
+                            next_tmp_vreg += 1;
+                            const addr_dst = WritableReg.fromVReg(addr_vreg);
+                            try builder.emit(Inst{ .add_rr = .{
+                                .dst = addr_dst,
+                                .src1 = base_reg,
+                                .src2 = Reg.fromVReg(off_vreg),
+                                .size = .size64,
+                            } });
+                            addr_reg = Reg.fromVReg(addr_vreg);
+                        }
+
+                        if (param_type.isFloat() or param_type.isVector()) {
+                            const size: FpuOperandSize = switch (param_type.bits()) {
+                                32 => .size32,
+                                64 => .size64,
+                                128 => .size128,
+                                else => return error.LoweringFailed,
+                            };
+                            try builder.emit(Inst{ .vldr = .{
+                                .dst = dst,
+                                .base = addr_reg,
+                                .offset = 0,
+                                .size = size,
+                            } });
+                        } else {
+                            const size: OperandSize = if (param_type.bits() == 64) .size64 else .size32;
+                            try builder.emit(Inst{ .ldr = .{
+                                .dst = dst,
+                                .base = addr_reg,
+                                .offset = 0,
+                                .size = size,
+                            } });
+                        }
+                    },
+                    else => return error.LoweringFailed,
                 }
             }
 
@@ -1474,6 +1618,8 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
                 .builder = &builder,
                 .block_map = &block_index_map,
                 .vreg_origins = &vreg_origins,
+                .out_stack_max = out_stack_max,
+                .next_tmp_vreg = &next_tmp_vreg,
             }, inst, target);
 
             // Check if this was a try_call and emit exception handling branch
@@ -1921,8 +2067,39 @@ fn emitMovWideImmediate(
     }
 }
 
+fn mapPinnedVReg(
+    ctx: *Context,
+    lower_ctx: *lower_mod.LowerCtx(a64_inst.Inst),
+    value: ir.Value,
+) CodegenError!void {
+    if (lower_ctx.value_to_reg.get(value) != null) return;
+    const ty = ctx.func.dfg.valueType(value) orelse return error.LoweringFailed;
+    const class: reg_mod.RegClass = if (ty.isInt() or ty.isRef())
+        .int
+    else if (ty.isFloat() or ty.isVector())
+        .float
+    else
+        return error.LoweringFailed;
+    const vreg = reg_mod.VReg.new(@intCast(value.index + reg_mod.Reg.PINNED_VREGS), class);
+    try lower_ctx.value_to_reg.put(value, vreg);
+}
+
+fn appendTmpInsns(builder: anytype, vcode: *vcode_mod.VCode(a64_inst.Inst)) CodegenError!void {
+    for (vcode.insns.items) |inst| {
+        try builder.emit(inst);
+    }
+}
+
 /// Lower a single AArch64 instruction.
-fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block_map: anytype, vreg_origins: *std.AutoHashMap(reg_mod.VReg, VRegOrigin)) CodegenError!void {
+fn lowerInstructionAArch64(
+    ctx: *Context,
+    builder: anytype,
+    inst: ir.Inst,
+    block_map: anytype,
+    vreg_origins: *std.AutoHashMap(reg_mod.VReg, VRegOrigin),
+    out_stack_max: u32,
+    next_tmp_vreg: *u32,
+) CodegenError!void {
     const InstMod = @import("../backends/aarch64/inst.zig");
     const Inst = InstMod.Inst;
     const OperandSize = InstMod.OperandSize;
@@ -4962,35 +5139,144 @@ fn lowerInstructionAArch64(ctx: *Context, builder: anytype, inst: ir.Inst, block
             });
         },
         .call => |data| {
-            // Handle direct function call
-            const CallTarget = @import("../backends/aarch64/inst.zig").CallTarget;
+            const args_slice = ctx.func.dfg.value_lists.asSlice(data.args);
+            const meta = ctx.func.func_metadata.getMetadata(data.func_ref) orelse return error.LoweringFailed;
 
-            // For now, use the func_ref index as label
-            // In a real implementation, we'd resolve the function name or address
-            const target = CallTarget{ .label = data.func_ref.index };
+            var tmp_vcode = vcode_mod.VCode(Inst).init(ctx.allocator);
+            defer tmp_vcode.deinit();
+            var tmp_ctx = lower_mod.LowerCtx(Inst).init(ctx.allocator, ctx.func, &tmp_vcode);
+            defer tmp_ctx.deinit();
 
-            try builder.emit(Inst{
-                .call = .{
-                    .target = target,
-                },
-            });
+            tmp_ctx.setOutStackMax(out_stack_max);
+            tmp_ctx.next_vreg = next_tmp_vreg.*;
+            const tmp_block = try tmp_vcode.startBlock(&.{});
+            tmp_ctx.current_block = tmp_block;
+
+            for (args_slice) |arg| {
+                try mapPinnedVReg(ctx, &tmp_ctx, arg);
+            }
+            const results = ctx.func.dfg.instResults(inst);
+            for (results) |result_val| {
+                try mapPinnedVReg(ctx, &tmp_ctx, result_val);
+            }
+
+            if (data.opcode == .call) {
+                const ret_regs = a64_isle_helpers.aarch64_call(meta.sig_ref, meta.name, args_slice, &tmp_ctx) catch
+                    return error.LoweringFailed;
+                a64_call_results.emitCallResults(&tmp_ctx, inst, ret_regs) catch return error.LoweringFailed;
+            } else if (data.opcode == .return_call) {
+                const term = a64_isle_helpers.aarch64_return_call(meta.sig_ref, meta.name, args_slice, &tmp_ctx) catch
+                    return error.LoweringFailed;
+                tmp_ctx.emit(term) catch return error.LoweringFailed;
+            } else {
+                return error.LoweringFailed;
+            }
+
+            next_tmp_vreg.* = tmp_ctx.next_vreg;
+            try appendTmpInsns(builder, &tmp_vcode);
         },
         .call_indirect => |data| {
-            // Handle indirect function call through register
-            const VReg = @import("../machinst/reg.zig").VReg;
-            const RegClass = @import("../machinst/reg.zig").RegClass;
-            const Reg = @import("../machinst/reg.zig").Reg;
+            const args_all = ctx.func.dfg.value_lists.asSlice(data.args);
+            if (args_all.len == 0) return error.LoweringFailed;
 
-            // First argument is the function pointer (callee)
-            const callee_value = ctx.func.dfg.value_lists.get(data.args, 0) orelse return error.LoweringFailed;
-            const callee_vreg = VReg.new(@intCast(callee_value.index + Reg.PINNED_VREGS), RegClass.int);
-            const target = Reg.fromVReg(callee_vreg);
+            const ptr = args_all[0];
+            const args_slice = args_all[1..];
 
-            try builder.emit(Inst{
-                .call_indirect = .{
-                    .target = target,
-                },
-            });
+            var tmp_vcode = vcode_mod.VCode(Inst).init(ctx.allocator);
+            defer tmp_vcode.deinit();
+            var tmp_ctx = lower_mod.LowerCtx(Inst).init(ctx.allocator, ctx.func, &tmp_vcode);
+            defer tmp_ctx.deinit();
+
+            tmp_ctx.setOutStackMax(out_stack_max);
+            tmp_ctx.next_vreg = next_tmp_vreg.*;
+            const tmp_block = try tmp_vcode.startBlock(&.{});
+            tmp_ctx.current_block = tmp_block;
+
+            try mapPinnedVReg(ctx, &tmp_ctx, ptr);
+            for (args_slice) |arg| {
+                try mapPinnedVReg(ctx, &tmp_ctx, arg);
+            }
+            const results = ctx.func.dfg.instResults(inst);
+            for (results) |result_val| {
+                try mapPinnedVReg(ctx, &tmp_ctx, result_val);
+            }
+
+            if (data.opcode == .call_indirect) {
+                const ret_regs = a64_isle_helpers.aarch64_call_indirect(data.sig_ref, ptr, args_slice, &tmp_ctx) catch
+                    return error.LoweringFailed;
+                a64_call_results.emitCallResults(&tmp_ctx, inst, ret_regs) catch return error.LoweringFailed;
+            } else if (data.opcode == .return_call_indirect) {
+                const term = a64_isle_helpers.aarch64_return_call_indirect(data.sig_ref, ptr, args_slice, &tmp_ctx) catch
+                    return error.LoweringFailed;
+                tmp_ctx.emit(term) catch return error.LoweringFailed;
+            } else {
+                return error.LoweringFailed;
+            }
+
+            next_tmp_vreg.* = tmp_ctx.next_vreg;
+            try appendTmpInsns(builder, &tmp_vcode);
+        },
+        .try_call => |data| {
+            const args_slice = ctx.func.dfg.value_lists.asSlice(data.args);
+            const meta = ctx.func.func_metadata.getMetadata(data.func_ref) orelse return error.LoweringFailed;
+
+            var tmp_vcode = vcode_mod.VCode(Inst).init(ctx.allocator);
+            defer tmp_vcode.deinit();
+            var tmp_ctx = lower_mod.LowerCtx(Inst).init(ctx.allocator, ctx.func, &tmp_vcode);
+            defer tmp_ctx.deinit();
+
+            tmp_ctx.setOutStackMax(out_stack_max);
+            tmp_ctx.next_vreg = next_tmp_vreg.*;
+            const tmp_block = try tmp_vcode.startBlock(&.{});
+            tmp_ctx.current_block = tmp_block;
+
+            for (args_slice) |arg| {
+                try mapPinnedVReg(ctx, &tmp_ctx, arg);
+            }
+            const results = ctx.func.dfg.instResults(inst);
+            for (results) |result_val| {
+                try mapPinnedVReg(ctx, &tmp_ctx, result_val);
+            }
+
+            const ret_regs = a64_isle_helpers.aarch64_try_call(meta.sig_ref, meta.name, args_slice, &tmp_ctx) catch
+                return error.LoweringFailed;
+            a64_call_results.emitCallResults(&tmp_ctx, inst, ret_regs) catch return error.LoweringFailed;
+
+            next_tmp_vreg.* = tmp_ctx.next_vreg;
+            try appendTmpInsns(builder, &tmp_vcode);
+        },
+        .try_call_indirect => |data| {
+            const args_all = ctx.func.dfg.value_lists.asSlice(data.args);
+            if (args_all.len == 0) return error.LoweringFailed;
+
+            const ptr = args_all[0];
+            const args_slice = args_all[1..];
+
+            var tmp_vcode = vcode_mod.VCode(Inst).init(ctx.allocator);
+            defer tmp_vcode.deinit();
+            var tmp_ctx = lower_mod.LowerCtx(Inst).init(ctx.allocator, ctx.func, &tmp_vcode);
+            defer tmp_ctx.deinit();
+
+            tmp_ctx.setOutStackMax(out_stack_max);
+            tmp_ctx.next_vreg = next_tmp_vreg.*;
+            const tmp_block = try tmp_vcode.startBlock(&.{});
+            tmp_ctx.current_block = tmp_block;
+
+            try mapPinnedVReg(ctx, &tmp_ctx, ptr);
+            for (args_slice) |arg| {
+                try mapPinnedVReg(ctx, &tmp_ctx, arg);
+            }
+            const results = ctx.func.dfg.instResults(inst);
+            for (results) |result_val| {
+                try mapPinnedVReg(ctx, &tmp_ctx, result_val);
+            }
+
+            const ret_regs = a64_isle_helpers.aarch64_try_call_indirect(data.sig_ref, ptr, args_slice, &tmp_ctx) catch
+                return error.LoweringFailed;
+            a64_call_results.emitCallResults(&tmp_ctx, inst, ret_regs) catch return error.LoweringFailed;
+
+            next_tmp_vreg.* = tmp_ctx.next_vreg;
+            try appendTmpInsns(builder, &tmp_vcode);
         },
         .extract_lane => |data| {
             const VReg = @import("../machinst/reg.zig").VReg;
@@ -5182,6 +5468,8 @@ fn lowerInstruction(lower_ctx: anytype, inst: ir.Inst, target: *const Target) Co
             inst,
             lower_ctx.block_map,
             lower_ctx.vreg_origins,
+            lower_ctx.out_stack_max,
+            lower_ctx.next_tmp_vreg,
         ),
         else => return error.UnsupportedTarget,
     }

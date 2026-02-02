@@ -10,6 +10,7 @@ const lower_mod = root.lower;
 const LowerCtx = lower_mod.LowerCtx;
 const types = root.types;
 const abi_mod = @import("abi.zig");
+const call_layout = @import("call_layout.zig");
 
 // Import ISLE-generated lowering code
 const isle_lower = @import("../../generated/aarch64_lower_generated.zig");
@@ -59,23 +60,7 @@ pub const Aarch64Lower = struct {
         sig: *const root.signature.Signature,
         args: []const root.entities.Value,
     ) !u32 {
-        var arg_types = try ctx.getAllocator().alloc(types.Type, args.len);
-        defer ctx.getAllocator().free(arg_types);
-
-        for (args, 0..) |arg, idx| {
-            arg_types[idx] = ctx.func.dfg.valueType(arg) orelse return error.MissingValueType;
-        }
-
-        var layout = try abi_mod.computeCallLayout(
-            ctx.getAllocator(),
-            arg_types,
-            sig,
-            sig.call_conv,
-            &ctx.func.struct_store,
-        );
-        defer layout.deinit(ctx.getAllocator());
-
-        return layout.stack_size;
+        return call_layout.callStackMaxForArgs(ctx.getAllocator(), ctx.func, sig, args);
     }
     /// Lower a single IR instruction.
     pub fn lowerInst(
