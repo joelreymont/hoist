@@ -128,6 +128,10 @@ pub const Codegen = struct {
             try writer.writeAll("        return error.Unimplemented;\n");
             try writer.writeAll("    }\n\n");
         }
+        try writer.writeAll("    pub fn recordRule(self: *Context, rule_name: []const u8) void {\n");
+        try writer.writeAll("        _ = self;\n");
+        try writer.writeAll("        _ = rule_name;\n");
+        try writer.writeAll("    }\n\n");
         try writer.writeAll("};\n\n");
     }
 

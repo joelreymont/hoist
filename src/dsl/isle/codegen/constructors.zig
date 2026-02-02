@@ -19,6 +19,7 @@ pub const ConstructorGen = struct {
     arg_tys: ?[]const sema.TypeId,
     prebound: std.AutoHashMap(usize, void),
     emitted: std.AutoHashMap(usize, void),
+    current_term_name: ?[]const u8,
 
     const Self = @This();
 
@@ -36,6 +37,7 @@ pub const ConstructorGen = struct {
             .arg_tys = null,
             .prebound = std.AutoHashMap(usize, void).init(allocator),
             .emitted = std.AutoHashMap(usize, void).init(allocator),
+            .current_term_name = null,
         };
     }
 
@@ -60,6 +62,8 @@ pub const ConstructorGen = struct {
         };
 
         const writer = self.output.writer();
+        self.current_term_name = term_name;
+        defer self.current_term_name = null;
 
         // Function signature
         try writer.print("\n/// Generated constructor for term `{s}`\n", .{term_name});
@@ -164,7 +168,7 @@ pub const ConstructorGen = struct {
             },
             .leaf => |leaf| {
                 const rule = &ruleset.rules.items[leaf.rule_index];
-                try self.emitRuleBody(rule, ruleset);
+                try self.emitRuleBody(rule, ruleset, leaf.rule_index);
             },
             .switch_constraint => |sw| {
                 if (sw.binding.index() < ruleset.bindings.items.len) {
@@ -289,7 +293,12 @@ pub const ConstructorGen = struct {
     }
 
     /// Emit body of a matched rule.
-    fn emitRuleBody(self: *Self, rule: *const trie.Rule, ruleset: *const trie.RuleSet) !void {
+    fn emitRuleBody(
+        self: *Self,
+        rule: *const trie.Rule,
+        ruleset: *const trie.RuleSet,
+        rule_index: usize,
+    ) !void {
         const writer = self.output.writer();
         var scope_emitted = std.ArrayList(usize){};
         defer {
@@ -298,6 +307,8 @@ pub const ConstructorGen = struct {
             }
             scope_emitted.deinit(self.allocator);
         }
+
+        try self.emitRuleRecord(rule_index);
 
         // Emit impure bindings (side effects)
         for (rule.impure.items) |bind_id| {
@@ -316,6 +327,13 @@ pub const ConstructorGen = struct {
         // Emit return expression
         try self.indent(self.indent_level);
         try writer.print("return v{d};\n", .{rule.result.index()});
+    }
+
+    fn emitRuleRecord(self: *Self, rule_index: usize) !void {
+        const term_name = self.current_term_name orelse return;
+        const writer = self.output.writer();
+        try self.indent(self.indent_level);
+        try writer.print("ctx.recordRule(\"{s}:{d}\");\n", .{ term_name, rule_index });
     }
 
     /// Emit a single binding.

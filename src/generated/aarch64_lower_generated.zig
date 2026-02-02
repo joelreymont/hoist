@@ -182,6 +182,8 @@ pub fn lower(
                 const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
+                isle_helpers.recordRule("aarch64_add_rr");
+
                 // Emit add instruction
                 try ctx.emit(Inst{ .add_rr = .{
                     .dst = dst,
@@ -207,6 +209,8 @@ pub fn lower(
                 const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
+                isle_helpers.recordRule("aarch64_sub_rr");
+
                 // Emit sub instruction
                 try ctx.emit(Inst{ .sub_rr = .{
                     .dst = dst,
@@ -231,6 +235,8 @@ pub fn lower(
                 // Get type for size
                 const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                isle_helpers.recordRule("aarch64_mul_rr");
 
                 // Emit mul instruction
                 try ctx.emit(Inst{ .mul_rr = .{
@@ -355,6 +361,8 @@ pub fn lower(
                 const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
+                isle_helpers.recordRule("aarch64_and_rr");
+
                 try ctx.emit(Inst{ .and_rr = .{
                     .dst = dst,
                     .src1 = lhs_reg,
@@ -374,6 +382,8 @@ pub fn lower(
 
                 const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                isle_helpers.recordRule("aarch64_orr_rr");
 
                 try ctx.emit(Inst{ .orr_rr = .{
                     .dst = dst,
@@ -395,6 +405,8 @@ pub fn lower(
                 const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
+                isle_helpers.recordRule("aarch64_eor_rr");
+
                 try ctx.emit(Inst{ .eor_rr = .{
                     .dst = dst,
                     .src1 = lhs_reg,
@@ -414,6 +426,8 @@ pub fn lower(
 
                 const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                isle_helpers.recordRule("aarch64_lsl_rr");
 
                 try ctx.emit(Inst{ .lsl_rr = .{
                     .dst = dst,
@@ -435,6 +449,8 @@ pub fn lower(
                 const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
+                isle_helpers.recordRule("aarch64_lsr_rr");
+
                 try ctx.emit(Inst{ .lsr_rr = .{
                     .dst = dst,
                     .src1 = lhs_reg,
@@ -454,6 +470,8 @@ pub fn lower(
 
                 const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                isle_helpers.recordRule("aarch64_asr_rr");
 
                 try ctx.emit(Inst{ .asr_rr = .{
                     .dst = dst,
@@ -1833,6 +1851,8 @@ pub fn lower(
                 const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
 
+                isle_helpers.recordRule("aarch64_cmp_rr");
+
                 // Map IntCC to ARM64 CondCode
                 const cond: CondCode = switch (data.cond) {
                     .eq => .eq, // equal
@@ -1875,6 +1895,8 @@ pub fn lower(
 
                 const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                isle_helpers.recordRule("aarch64_cmp_imm");
 
                 // Map IntCC to ARM64 CondCode
                 const cond: CondCode = switch (data.cond) {
@@ -1987,6 +2009,8 @@ pub fn lower(
 
                 const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+
+                isle_helpers.recordRule("aarch64_add_imm");
 
                 // Check if immediate fits in 12-bit encoding (0-4095)
                 if (imm >= 0 and imm <= 4095) {
@@ -2694,6 +2718,8 @@ pub fn lower(
 
                 const ty = try ctx.getValueType(ctx.func.dfg.firstResult(ir_inst) orelse return false);
                 const size: FpuOperandSize = if (ty.bits() == 32) .size32 else .size64;
+
+                isle_helpers.recordRule("aarch64_fcmp");
 
                 // Map FloatCC to ARM64 CondCode
                 // ARM64 FCMP sets NZCV flags that we test with conditional codes

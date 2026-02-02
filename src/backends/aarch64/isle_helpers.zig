@@ -64,7 +64,7 @@ pub fn setIsleCoverageTracker(tracker: ?*isle_coverage_mod.IsleRuleCoverage) voi
 }
 
 /// Record an ISLE rule invocation (if coverage tracking is enabled).
-inline fn recordRule(rule_name: []const u8) void {
+pub fn recordRule(rule_name: []const u8) void {
     if (global_isle_coverage) |tracker| {
         tracker.record(rule_name) catch {}; // Ignore errors in coverage tracking
     }

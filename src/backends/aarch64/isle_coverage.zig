@@ -10,9 +10,13 @@
 const std = @import("std");
 
 /// All known ISLE rule constructors (aarch64_* functions).
-/// Generated from isle_helpers.zig - 164 total constructors.
+/// Generated from isle_helpers.zig - 175 total constructors.
 pub const ALL_ISLE_RULES = [_][]const u8{
+    "aarch64_add_imm",
+    "aarch64_add_rr",
     "aarch64_and_imm",
+    "aarch64_and_rr",
+    "aarch64_asr_rr",
     "aarch64_atomic_load_acquire",
     "aarch64_atomic_store_release",
     "aarch64_bitcast_noop",
@@ -36,10 +40,12 @@ pub const ALL_ISLE_RULES = [_][]const u8{
     "aarch64_ctz_64",
     "aarch64_debugtrap",
     "aarch64_eor_imm",
+    "aarch64_eor_rr",
     "aarch64_extractlane",
     "aarch64_f32const",
     "aarch64_f64const",
     "aarch64_fadd",
+    "aarch64_fcmp",
     "aarch64_fcopysign_32",
     "aarch64_fcvtl",
     "aarch64_fcvtn_combined",
@@ -83,9 +89,12 @@ pub const ALL_ISLE_RULES = [_][]const u8{
     "aarch64_ldr_pre",
     "aarch64_ldr_reg",
     "aarch64_ldr_shifted",
+    "aarch64_lsl_rr",
+    "aarch64_lsr_rr",
     "aarch64_mul_rr",
     "aarch64_nearest",
     "aarch64_orr_imm",
+    "aarch64_orr_rr",
     "aarch64_rbit_32",
     "aarch64_rbit_64",
     "aarch64_return_call",
@@ -121,6 +130,8 @@ pub const ALL_ISLE_RULES = [_][]const u8{
     "aarch64_str_pre",
     "aarch64_str_reg",
     "aarch64_str_shifted",
+    "aarch64_sub_imm",
+    "aarch64_sub_rr",
     "aarch64_sxtb",
     "aarch64_sxth",
     "aarch64_sxtw",
