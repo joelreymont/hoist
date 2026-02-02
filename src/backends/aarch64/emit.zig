@@ -204,6 +204,12 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .cbnz => |i| try emitCbnz(i.reg, i.target.label, i.size, buffer),
         .tbz => |i| try emitTbz(i.reg, i.bit, i.target.label, buffer),
         .tbnz => |i| try emitTbnz(i.reg, i.bit, i.target.label, buffer),
+        .call => |i| switch (i.target) {
+            .external_name => |name| try emitBLExternal(name, buffer),
+            .label => |label| try emitBL(label, buffer),
+        },
+        .call_indirect => |i| try emitBLR(i.target, buffer),
+        .ret_call => try emitRet(null, buffer),
         .bl => |i| switch (i.target) {
             .external_name => |name| try emitBLExternal(name, buffer),
             .label => |label| try emitBL(label, buffer),
@@ -3342,8 +3348,10 @@ fn emitB(target: inst_mod.BranchTarget, buffer: *buffer_mod.MachBuffer) !void {
     switch (target) {
         .label => |label| {
             const insn: u32 = (0b00101 << 26);
+            const offset = buffer.curOffset();
             try buffer.put4(insn);
-            try buffer.useLabel(
+            try buffer.useLabelAtOffset(
+                offset,
                 MachLabel.new(label),
                 buffer_mod.LabelUseKind.branch26,
             );
@@ -3362,8 +3370,10 @@ fn emitBCond(cond: u8, target: inst_mod.BranchTarget, buffer: *buffer_mod.MachBu
     switch (target) {
         .label => |label| {
             const insn: u32 = (0b01010100 << 24) | @as(u32, cond);
+            const offset = buffer.curOffset();
             try buffer.put4(insn);
-            try buffer.useLabel(
+            try buffer.useLabelAtOffset(
+                offset,
                 MachLabel.new(label),
                 buffer_mod.LabelUseKind.branch19,
             );
@@ -3397,10 +3407,12 @@ fn emitCbz(reg: Reg, label: u32, size: OperandSize, buffer: *buffer_mod.MachBuff
     const rt = try hwEnc(reg);
     const insn: u32 = (sf_bit << 31) | (0b011010 << 25) | rt;
 
+    const offset = buffer.curOffset();
     try buffer.put4(insn);
 
     // Add label use for fixup
-    try buffer.useLabel(
+    try buffer.useLabelAtOffset(
+        offset,
         MachLabel.new(label),
         buffer_mod.LabelUseKind.branch19,
     );
@@ -3413,10 +3425,12 @@ fn emitCbnz(reg: Reg, label: u32, size: OperandSize, buffer: *buffer_mod.MachBuf
     const rt = try hwEnc(reg);
     const insn: u32 = (sf_bit << 31) | (0b011010 << 25) | (1 << 24) | rt;
 
+    const offset = buffer.curOffset();
     try buffer.put4(insn);
 
     // Add label use for fixup
-    try buffer.useLabel(
+    try buffer.useLabelAtOffset(
+        offset,
         MachLabel.new(label),
         buffer_mod.LabelUseKind.branch19,
     );
@@ -3432,10 +3446,12 @@ fn emitTbz(reg: Reg, bit: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void 
     const rt = try hwEnc(reg);
     const insn: u32 = (b5 << 31) | (0b011011 << 25) | (b40 << 19) | rt;
 
+    const offset = buffer.curOffset();
     try buffer.put4(insn);
 
     // Add label use for fixup (14-bit branch offset)
-    try buffer.useLabel(
+    try buffer.useLabelAtOffset(
+        offset,
         MachLabel.new(label),
         buffer_mod.LabelUseKind.branch19,
     );
@@ -3451,10 +3467,12 @@ fn emitTbnz(reg: Reg, bit: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void
     const rt = try hwEnc(reg);
     const insn: u32 = (b5 << 31) | (0b011011 << 25) | (1 << 24) | (b40 << 19) | rt;
 
+    const offset = buffer.curOffset();
     try buffer.put4(insn);
 
     // Add label use for fixup (14-bit branch offset)
-    try buffer.useLabel(
+    try buffer.useLabelAtOffset(
+        offset,
         MachLabel.new(label),
         buffer_mod.LabelUseKind.branch19,
     );
@@ -3465,10 +3483,12 @@ fn emitBL(label: u32, buffer: *buffer_mod.MachBuffer) !void {
     // BL: 1|00101|imm26
     const insn: u32 = (0b100101 << 26);
 
+    const offset = buffer.curOffset();
     try buffer.put4(insn);
 
     // Add label use for fixup
-    try buffer.useLabel(
+    try buffer.useLabelAtOffset(
+        offset,
         MachLabel.new(label),
         buffer_mod.LabelUseKind.branch26,
     );
@@ -3624,8 +3644,9 @@ fn emitJtSequence(
     // ADR table_base, .LJT<N>
     // ADR: 0|immlo|10000|immhi|Rd
     const adr_insn: u32 = (@as(u32, 0b10000) << 24) | rd;
+    const adr_offset = buffer.curOffset();
     try buffer.put4(adr_insn);
-    try buffer.useLabel(table_label, buffer_mod.LabelUseKind.adr21);
+    try buffer.useLabelAtOffset(adr_offset, table_label, buffer_mod.LabelUseKind.adr21);
 
     // LDR target, [table_base, index, LSL #2]
     // LDR (register): 11|111|0|00|01|1|Rm|opt|S|10|Rn|Rt
@@ -13443,10 +13464,11 @@ pub fn emitLdrLiteral(dst: Reg, label: buffer_mod.MachLabel, size: OperandSize, 
     const opc: u32 = if (size == .size64) 0b01 else 0b00;
     const insn: u32 = (opc << 30) | (0b011 << 27) | (0b00 << 24) | rt;
 
+    const offset = buffer.curOffset();
     try buffer.put4(insn);
 
     // Add fixup for literal offset (will be patched during finalization)
-    try buffer.useLabel(label, .ldr_literal19);
+    try buffer.useLabelAtOffset(offset, label, .ldr_literal19);
 }
 
 /// Emit LDR (literal, SIMD&FP) instruction.
@@ -13457,9 +13479,10 @@ pub fn emitLdrLiteralFp(dst: Reg, label: buffer_mod.MachLabel, fp_size: enum { s
     const opc: u32 = if (fp_size == .d) 0b01 else 0b00;
     const insn: u32 = (opc << 30) | (0b011 << 27) | (0b1 << 26) | (0b00 << 24) | rt;
 
+    const offset = buffer.curOffset();
     try buffer.put4(insn);
 
-    try buffer.useLabel(label, .ldr_literal19);
+    try buffer.useLabelAtOffset(offset, label, .ldr_literal19);
 }
 
 /// Call external function via PLT.
@@ -13903,7 +13926,8 @@ fn emitFploadConst(dst: Reg, bits: u64, fp_size: FpuOperandSize, buffer: *buffer
         (0b1 << 26) | // V=1 for SIMD/FP
         rt;
 
+    const offset = buffer.curOffset();
     try buffer.put4(insn);
     // Register label use for PC-relative offset fixup
-    try buffer.useLabel(const_label, buffer_mod.LabelUseKind.ldr_literal19);
+    try buffer.useLabelAtOffset(offset, const_label, buffer_mod.LabelUseKind.ldr_literal19);
 }
