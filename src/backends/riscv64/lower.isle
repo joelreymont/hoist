@@ -226,6 +226,9 @@
 ;; Constructor terms for riscv64 instructions
 (type Riscv64Inst (enum))
 
+;; Lowering entry point
+(decl lower (Value) Riscv64Inst)
+
 ;; Integer arithmetic
 (decl rv_add (Type Value Value) Riscv64Inst)
 (decl rv_sub (Type Value Value) Riscv64Inst)

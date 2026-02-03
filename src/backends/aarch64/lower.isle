@@ -2553,6 +2553,9 @@
 
 (type Aarch64Inst (enum))
 
+;; Lowering entry point
+(decl lower (Value) Aarch64Inst)
+
 ;; Arithmetic
 (decl aarch64_add_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_add_imm (Type Value i64) Aarch64Inst)

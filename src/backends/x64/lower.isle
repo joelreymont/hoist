@@ -125,6 +125,9 @@
 
 (type X64Inst (enum))
 
+;; Lowering entry point
+(decl lower (Value) X64Inst)
+
 ;; Arithmetic
 (decl x64_add_rr (Type Value Value) X64Inst)
 (decl x64_add_imm (Type Value i64) X64Inst)
