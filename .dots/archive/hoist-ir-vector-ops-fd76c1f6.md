@@ -1,9 +1,11 @@
 ---
 title: IR vector ops
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-02-02T23:54:27.985818+01:00"
+created-at: "\"\\\"2026-02-02T23:54:27.985818+01:00\\\"\""
+closed-at: "2026-02-03T10:49:49.717218+01:00"
+close-reason: Declared SIMD IR terms and vec enums in ir_prelude.isle
 blocks:
   - hoist-ir-mem-ctrl-3e1d4454
 ---

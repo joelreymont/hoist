@@ -14,6 +14,7 @@
 (type Offset32 (primitive Offset32))
 (type MemFlags (primitive MemFlags))
 (type TrapCode (primitive TrapCode))
+(type Immediate (primitive u128))
 
 ;; Condition codes
 (type IntCC (enum
@@ -68,6 +69,94 @@
   min
   umax
   umin
+))
+
+;; Vector helper enums (used by SIMD lowering, esp. AArch64)
+
+(type VecALUOp (enum
+  Sqadd
+  Uqadd
+  Sqsub
+  Uqsub
+  Cmeq
+  Cmge
+  Cmgt
+  Cmhs
+  Cmhi
+  Fcmeq
+  Fcmgt
+  Fcmge
+  And
+  Bic
+  Orr
+  Orn
+  Eor
+  Add
+  Sub
+  Mul
+  Sshl
+  Ushl
+  Umin
+  Smin
+  Umax
+  Smax
+  Umaxp
+  Urhadd
+  Fadd
+  Fsub
+  Fdiv
+  Fmax
+  Fmin
+  Fmul
+  Addp
+  Zip1
+  Zip2
+  Uzp1
+  Uzp2
+  Trn1
+  Trn2
+  Sqrdmulh
+))
+
+(type VecElemSize (enum
+  Size8x8
+  Size8x16
+  Size16x4
+  Size16x8
+  Size32x2
+  Size32x4
+  Size64x2
+))
+
+(type VecMisc2 (enum
+  Not
+  Neg
+  Abs
+  Fabs
+  Fneg
+  Fsqrt
+  Rev16
+  Rev32
+  Rev64
+  Fcvtzs
+  Fcvtzu
+  Scvtf
+  Ucvtf
+  Frintn
+  Frintz
+  Frintm
+  Frintp
+  Cnt
+  Cmeq0
+  Cmge0
+  Cmgt0
+  Cmle0
+  Cmlt0
+  Fcmeq0
+  Fcmge0
+  Fcmgt0
+  Fcmle0
+  Fcmlt0
 ))
 
 ;; Integer / bitwise operations
@@ -322,3 +411,29 @@
 (decl global_value (GlobalValue) Value)
 (extern constructor global_value global_value_ctor)
 (extern extractor global_value global_value_ext)
+
+;; SIMD / vector operations
+
+(decl vconst (Immediate) Value)
+(extern constructor vconst vconst_ctor)
+(extern extractor vconst vconst_ext)
+
+(decl shuffle (Value Value Immediate) Value)
+(extern constructor shuffle shuffle_ctor)
+(extern extractor shuffle shuffle_ext)
+
+(decl splat (Value) Value)
+(extern constructor splat splat_ctor)
+(extern extractor splat splat_ext)
+
+(decl swizzle (Value Value) Value)
+(extern constructor swizzle swizzle_ctor)
+(extern extractor swizzle swizzle_ext)
+
+(decl extractlane (Type Value u32) Value)
+(extern constructor extractlane extractlane_ctor)
+(extern extractor extractlane extractlane_ext)
+
+(decl insertlane (Type Value Value u32) Value)
+(extern constructor insertlane insertlane_ctor)
+(extern extractor insertlane insertlane_ext)
