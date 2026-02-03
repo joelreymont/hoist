@@ -280,7 +280,7 @@
 ;; Integer arithmetic lowering
 
 ;; Vector iadd: Add vector elements
-(rule 1 (lower (has_type (ty_vec ty) (iadd x y)))
+(rule 1 (lower (has_type (ty_vec ty) (iadd ty x y)))
       (aarch64_vec_add (vector_size ty) x y))
 
 ;; iadd: Add two integers (default, lowest priority)
@@ -383,7 +383,7 @@
 
 ;; iadd: I128 addition using register pairs (ADDS + ADC)
 ;; Priority -3 to match before vector and scalar rules
-(rule -3 (lower (has_type $I128 (iadd x y)))
+(rule -3 (lower (iadd $I128 x y))
       (let (;; Get the high/low registers for x
             (x_regs ValueRegs x)
             (x_lo Reg (value_regs_get x_regs 0))
@@ -398,12 +398,12 @@
           (adc_paired $I64 x_hi y_hi))))
 
 ;; iadd: Vector integer addition (type-parameterized via multi_lane)
-(rule 1 (lower (has_type ty @ (multi_lane _ _) (iadd x y)))
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (iadd ty x y)))
       (add_vec x y (vector_size ty)))
 
 ;; isub: I128 subtraction using register pairs (SUBS + SBC)
 ;; Priority -3 to match before vector and scalar rules
-(rule -3 (lower (has_type $I128 (isub x y)))
+(rule -3 (lower (isub $I128 x y))
       (let (;; Get the high/low registers for x
             (x_regs ValueRegs x)
             (x_lo Reg (value_regs_get x_regs 0))
@@ -418,7 +418,7 @@
           (sbc_paired $I64 x_hi y_hi))))
 
 ;; Vector isub: Subtract vector elements
-(rule 1 (lower (has_type (ty_vec ty) (isub x y)))
+(rule 1 (lower (has_type (ty_vec ty) (isub ty x y)))
       (aarch64_vec_sub (vector_size ty) x y))
 
 ;; isub: Subtract integers (scalar)
@@ -477,7 +477,7 @@
       (aarch64_sub_extended ty x y ExtendOp.uxth))
 
 ;; isub: Vector integer subtraction (type-parameterized via multi_lane)
-(rule 1 (lower (has_type ty @ (multi_lane _ _) (isub x y)))
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (isub ty x y)))
       (sub_vec x y (vector_size ty)))
 
 ;; Saturating arithmetic for 128-bit vectors
@@ -501,7 +501,7 @@
 ;;   dst_hi = madd(x_lo, y_hi, dst_hi)
 ;;   dst_hi = madd(x_hi, y_lo, dst_hi)
 ;;   dst_lo = madd(x_lo, y_lo, 0)
-(rule -1 (lower (has_type $I128 (imul x y)))
+(rule -1 (lower (imul $I128 x y))
       (let ((x_regs ValueRegs x)
             (x_lo Reg (value_regs_get x_regs 0))
             (x_hi Reg (value_regs_get x_regs 1))
@@ -518,7 +518,7 @@
         (value_regs dst_lo dst_hi)))
 
 ;; Vector imul: Multiply vector elements
-(rule 1 (lower (has_type (ty_vec ty) (imul x y)))
+(rule 1 (lower (has_type (ty_vec ty) (imul ty x y)))
       (aarch64_vec_mul (vector_size ty) x y))
 
 ;; imul_imm: Multiply with immediate operand (no direct encoding, lower as register multiply)
@@ -531,11 +531,11 @@
 
 ;; imul: Vector integer multiplication for 128-bit vectors (not I64X2)
 ;; I64X2 needs special handling with 32-bit operations
-(rule -2 (lower (has_type (ty_vec128 (not_i64x2 ty)) (imul x y)))
+(rule -2 (lower (has_type (ty_vec128 (not_i64x2 ty)) (imul ty x y)))
       (mul_vec x y (vector_size ty)))
 
 ;; imul: Vector integer multiplication (type-parameterized via multi_lane)
-(rule 1 (lower (has_type ty @ (multi_lane _ _) (imul x y)))
+(rule 1 (lower (has_type ty @ (multi_lane _ _) (imul ty x y)))
       (mul_vec x y (vector_size ty)))
 
 ;; imin: Vector signed integer minimum (type-parameterized via multi_lane)
