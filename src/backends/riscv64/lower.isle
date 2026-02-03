@@ -222,3 +222,94 @@
 
 (rule (lower (fence _ordering))
       (rv_fence))
+
+;; Constructor terms for riscv64 instructions
+(type Riscv64Inst (enum))
+
+;; Integer arithmetic
+(decl rv_add (Type Value Value) Riscv64Inst)
+(decl rv_sub (Type Value Value) Riscv64Inst)
+(decl rv_mul (Type Value Value) Riscv64Inst)
+(decl rv_div (Type Value Value) Riscv64Inst)
+(decl rv_divu (Type Value Value) Riscv64Inst)
+(decl rv_rem (Type Value Value) Riscv64Inst)
+(decl rv_remu (Type Value Value) Riscv64Inst)
+
+;; Integer arithmetic (immediates)
+(decl rv_addi (Type Value i64) Riscv64Inst)
+
+;; Bitwise ops
+(decl rv_and (Type Value Value) Riscv64Inst)
+(decl rv_or (Type Value Value) Riscv64Inst)
+(decl rv_xor (Type Value Value) Riscv64Inst)
+(decl rv_andi (Type Value i64) Riscv64Inst)
+(decl rv_ori (Type Value i64) Riscv64Inst)
+(decl rv_xori (Type Value i64) Riscv64Inst)
+
+;; Shifts
+(decl rv_sll (Type Value Value) Riscv64Inst)
+(decl rv_srl (Type Value Value) Riscv64Inst)
+(decl rv_sra (Type Value Value) Riscv64Inst)
+(decl rv_slli (Type Value i64) Riscv64Inst)
+(decl rv_srli (Type Value i64) Riscv64Inst)
+(decl rv_srai (Type Value i64) Riscv64Inst)
+
+;; Comparisons
+(decl rv_slt (Type Value Value) Riscv64Inst)
+(decl rv_sltu (Type Value Value) Riscv64Inst)
+(decl rv_slti (Type Value i64) Riscv64Inst)
+(decl rv_sltiu (Type Value i64) Riscv64Inst)
+
+;; Load/store
+(decl rv_load (Type Value) Riscv64Inst)
+(decl rv_store (Value Value) Riscv64Inst)
+
+;; Control flow
+(decl rv_jmp (Block) Riscv64Inst)
+(decl rv_brif (Value Block) Riscv64Inst)
+(decl rv_ret () Riscv64Inst)
+
+;; Constants
+(decl rv_iconst (Type i64) Riscv64Inst)
+
+;; Floating-point ops
+(decl rv_fadd (Type Value Value) Riscv64Inst)
+(decl rv_fsub (Type Value Value) Riscv64Inst)
+(decl rv_fmul (Type Value Value) Riscv64Inst)
+(decl rv_fdiv (Type Value Value) Riscv64Inst)
+(decl rv_fsqrt (Type Value) Riscv64Inst)
+(decl rv_fmin (Type Value Value) Riscv64Inst)
+(decl rv_fmax (Type Value Value) Riscv64Inst)
+(decl rv_feq (Type Value Value) Riscv64Inst)
+(decl rv_flt (Type Value Value) Riscv64Inst)
+(decl rv_fle (Type Value Value) Riscv64Inst)
+
+;; Floating-point conversions
+(decl rv_fcvt_from_sint (Type Value) Riscv64Inst)
+(decl rv_fcvt_from_uint (Type Value) Riscv64Inst)
+(decl rv_fcvt_to_sint (Type Value) Riscv64Inst)
+(decl rv_fcvt_to_uint (Type Value) Riscv64Inst)
+(decl rv_fcvt_s_d (Value) Riscv64Inst)
+(decl rv_fcvt_d_s (Value) Riscv64Inst)
+
+;; Floating-point load/store
+(decl rv_flw (Value) Riscv64Inst)
+(decl rv_fld (Value) Riscv64Inst)
+(decl rv_fsw (Value Value) Riscv64Inst)
+(decl rv_fsd (Value Value) Riscv64Inst)
+
+;; Atomics
+(decl rv_amoadd (Type Value Value) Riscv64Inst)
+(decl rv_amoswap (Type Value Value) Riscv64Inst)
+(decl rv_amoand (Type Value Value) Riscv64Inst)
+(decl rv_amoor (Type Value Value) Riscv64Inst)
+(decl rv_amoxor (Type Value Value) Riscv64Inst)
+(decl rv_amomin (Type Value Value) Riscv64Inst)
+(decl rv_amomax (Type Value Value) Riscv64Inst)
+(decl rv_amominu (Type Value Value) Riscv64Inst)
+(decl rv_amomaxu (Type Value Value) Riscv64Inst)
+(decl rv_lr (Type Value) Riscv64Inst)
+(decl rv_sc (Value Value) Riscv64Inst)
+
+;; Fence
+(decl rv_fence () Riscv64Inst)
