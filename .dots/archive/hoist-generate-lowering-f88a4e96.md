@@ -1,9 +1,11 @@
 ---
 title: Generate lowering
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-02-02T23:55:42.634905+01:00"
+created-at: "\"\\\"2026-02-02T23:55:42.634905+01:00\\\"\""
+closed-at: "2026-02-04T00:17:42.502604+01:00"
+close-reason: Add gen-isle; generate ISLE outputs
 blocks:
   - hoist-isle-codegen-78102b33
 ---
