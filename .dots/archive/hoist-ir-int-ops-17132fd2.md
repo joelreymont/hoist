@@ -1,9 +1,11 @@
 ---
 title: IR int ops
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-02-02T23:54:12.473659+01:00"
+created-at: "\"\\\"2026-02-02T23:54:12.473659+01:00\\\"\""
+closed-at: "2026-02-03T09:27:14.934301+01:00"
+close-reason: Declared IR int op terms
 blocks:
   - hoist-ir-types-73db7c85
 ---

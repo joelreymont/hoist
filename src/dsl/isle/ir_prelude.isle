@@ -69,3 +69,56 @@
   umax
   umin
 ))
+
+;; Integer / bitwise operations
+
+;; iadd/isub/imul: integer arithmetic
+(decl iadd (Type Value Value) Value)
+(extern constructor iadd iadd_ctor)
+(extern extractor iadd iadd_ext)
+
+(decl isub (Type Value Value) Value)
+(extern constructor isub isub_ctor)
+(extern extractor isub isub_ext)
+
+(decl imul (Type Value Value) Value)
+(extern constructor imul imul_ctor)
+(extern extractor imul imul_ext)
+
+;; band/bor/bxor/bnot: bitwise ops
+(decl band (Type Value Value) Value)
+(extern constructor band band_ctor)
+(extern extractor band band_ext)
+
+(decl bor (Type Value Value) Value)
+(extern constructor bor bor_ctor)
+(extern extractor bor bor_ext)
+
+(decl bxor (Type Value Value) Value)
+(extern constructor bxor bxor_ctor)
+(extern extractor bxor bxor_ext)
+
+(decl bnot (Type Value) Value)
+(extern constructor bnot bnot_ctor)
+(extern extractor bnot bnot_ext)
+
+;; Shifts and rotates
+(decl ishl (Type Value Value) Value)
+(extern constructor ishl ishl_ctor)
+(extern extractor ishl ishl_ext)
+
+(decl ushr (Type Value Value) Value)
+(extern constructor ushr ushr_ctor)
+(extern extractor ushr ushr_ext)
+
+(decl sshr (Type Value Value) Value)
+(extern constructor sshr sshr_ctor)
+(extern extractor sshr sshr_ext)
+
+(decl rotl (Type Value Value) Value)
+(extern constructor rotl rotl_ctor)
+(extern extractor rotl rotl_ext)
+
+(decl rotr (Type Value Value) Value)
+(extern constructor rotr rotr_ctor)
+(extern extractor rotr rotr_ext)
