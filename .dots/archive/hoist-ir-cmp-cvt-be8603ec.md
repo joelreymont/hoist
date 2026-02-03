@@ -1,9 +1,11 @@
 ---
 title: IR cmp/cvt
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-02-02T23:54:20.014089+01:00"
+created-at: "\"\\\"2026-02-02T23:54:20.014089+01:00\\\"\""
+closed-at: "2026-02-03T10:21:11.631559+01:00"
+close-reason: Declared IR cmp/cvt terms
 blocks:
   - hoist-ir-float-ops-7621291d
 ---

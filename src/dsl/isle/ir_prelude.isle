@@ -188,3 +188,71 @@
 (decl floor (Type Value) Value)
 (extern constructor floor floor_ctor)
 (extern extractor floor floor_ext)
+
+;; Comparisons
+
+(decl icmp (IntCC Type Value Value) Value)
+(extern constructor icmp icmp_ctor)
+(extern extractor icmp icmp_ext)
+
+(decl icmp_imm (IntCC Type Value i64) Value)
+(extern constructor icmp_imm icmp_imm_ctor)
+(extern extractor icmp_imm icmp_imm_ext)
+
+(decl fcmp (FloatCC Type Value Value) Value)
+(extern constructor fcmp fcmp_ctor)
+(extern extractor fcmp fcmp_ext)
+
+;; Conversions / type punning
+
+(decl sextend (Type Type Value) Value)
+(extern constructor sextend sextend_ctor)
+(extern extractor sextend sextend_ext)
+
+(decl uextend (Type Type Value) Value)
+(extern constructor uextend uextend_ctor)
+(extern extractor uextend uextend_ext)
+
+(decl ireduce (Type Type Value) Value)
+(extern constructor ireduce ireduce_ctor)
+(extern extractor ireduce ireduce_ext)
+
+(decl fpromote (Type Type Value) Value)
+(extern constructor fpromote fpromote_ctor)
+(extern extractor fpromote fpromote_ext)
+
+(decl fdemote (Type Type Value) Value)
+(extern constructor fdemote fdemote_ctor)
+(extern extractor fdemote fdemote_ext)
+
+(decl fcvt_from_sint (Type Type Value) Value)
+(extern constructor fcvt_from_sint fcvt_from_sint_ctor)
+(extern extractor fcvt_from_sint fcvt_from_sint_ext)
+
+(decl fcvt_from_uint (Type Type Value) Value)
+(extern constructor fcvt_from_uint fcvt_from_uint_ctor)
+(extern extractor fcvt_from_uint fcvt_from_uint_ext)
+
+(decl fcvt_to_sint (Type Type Value) Value)
+(extern constructor fcvt_to_sint fcvt_to_sint_ctor)
+(extern extractor fcvt_to_sint fcvt_to_sint_ext)
+
+(decl fcvt_to_uint (Type Type Value) Value)
+(extern constructor fcvt_to_uint fcvt_to_uint_ctor)
+(extern extractor fcvt_to_uint fcvt_to_uint_ext)
+
+(decl fcvt_to_sint_sat (Type Type Value) Value)
+(extern constructor fcvt_to_sint_sat fcvt_to_sint_sat_ctor)
+(extern extractor fcvt_to_sint_sat fcvt_to_sint_sat_ext)
+
+(decl fcvt_to_uint_sat (Type Type Value) Value)
+(extern constructor fcvt_to_uint_sat fcvt_to_uint_sat_ctor)
+(extern extractor fcvt_to_uint_sat fcvt_to_uint_sat_ext)
+
+(decl bitcast (Type Value) Value)
+(extern constructor bitcast bitcast_ctor)
+(extern extractor bitcast bitcast_ext)
+
+(decl bmask (Type Type Value) Value)
+(extern constructor bmask bmask_ctor)
+(extern extractor bmask bmask_ext)
