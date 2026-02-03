@@ -412,6 +412,28 @@
 (extern constructor global_value global_value_ctor)
 (extern extractor global_value global_value_ext)
 
+;; Atomic operations
+
+(decl atomic_load (Type Value MemFlags AtomicOrdering) Value)
+(extern constructor atomic_load atomic_load_ctor)
+(extern extractor atomic_load atomic_load_ext)
+
+(decl atomic_store (Value Value MemFlags AtomicOrdering) Value)
+(extern constructor atomic_store atomic_store_ctor)
+(extern extractor atomic_store atomic_store_ext)
+
+(decl atomic_rmw (AtomicRmwOp Type Value Value MemFlags AtomicOrdering) Value)
+(extern constructor atomic_rmw atomic_rmw_ctor)
+(extern extractor atomic_rmw atomic_rmw_ext)
+
+(decl atomic_cas (Type Value Value Value MemFlags AtomicOrdering) Value)
+(extern constructor atomic_cas atomic_cas_ctor)
+(extern extractor atomic_cas atomic_cas_ext)
+
+(decl fence (AtomicOrdering) Value)
+(extern constructor fence fence_ctor)
+(extern extractor fence fence_ext)
+
 ;; SIMD / vector operations
 
 (decl vconst (Immediate) Value)

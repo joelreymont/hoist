@@ -1,9 +1,11 @@
 ---
 title: IR atomics
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-02-02T23:54:33.014335+01:00"
+created-at: "\"\\\"2026-02-02T23:54:33.014335+01:00\\\"\""
+closed-at: "2026-02-03T10:52:36.728762+01:00"
+close-reason: Declared atomic IR terms in ir_prelude.isle
 blocks:
   - hoist-ir-vector-ops-fd76c1f6
 ---
