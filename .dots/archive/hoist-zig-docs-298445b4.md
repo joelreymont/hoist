@@ -1,9 +1,11 @@
 ---
 title: Zig docs
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T23:55:04.016332+01:00"
+created-at: "\"2026-02-02T23:55:04.016332+01:00\""
+closed-at: "2026-02-03T12:04:19.334042+01:00"
+close-reason: Update global Zig notes
 blocks:
   - hoist-fix-atomic-sigs-a07b0668
 ---
