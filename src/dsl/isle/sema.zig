@@ -135,8 +135,8 @@ pub const Term = struct {
 };
 
 pub const ExternInfo = struct {
-    kind: ast.ExternKind,
-    func: Sym,
+    constructor: ?Sym = null,
+    extractor: ?Sym = null,
 };
 
 /// Bound variable in a pattern.
@@ -455,6 +455,23 @@ pub const TermEnv = struct {
         try self.externs.put(term_id, info);
     }
 
+    pub fn addExtern(self: *Self, term_id: TermId, kind: ast.ExternKind, func: Sym) !void {
+        const entry = try self.externs.getOrPut(term_id);
+        if (!entry.found_existing) {
+            entry.value_ptr.* = .{};
+        }
+        switch (kind) {
+            .constructor => {
+                if (entry.value_ptr.constructor != null) return error.DuplicateExtern;
+                entry.value_ptr.constructor = func;
+            },
+            .extractor => {
+                if (entry.value_ptr.extractor != null) return error.DuplicateExtern;
+                entry.value_ptr.extractor = func;
+            },
+        }
+    }
+
     pub fn getExtern(self: *const Self, term_id: TermId) ?ExternInfo {
         return self.externs.get(term_id);
     }
@@ -684,10 +701,7 @@ pub const Compiler = struct {
         const term_sym = try self.type_env.internSym(extern_def.term.name);
         const term_id = self.term_env.lookupTerm(term_sym) orelse return error.UndefinedTerm;
         const func_sym = try self.type_env.internSym(extern_def.func.name);
-        try self.term_env.setExtern(term_id, .{
-            .kind = extern_def.kind,
-            .func = func_sym,
-        });
+        try self.term_env.addExtern(term_id, extern_def.kind, func_sym);
     }
 
     fn registerExtractor(self: *Self, extractor: ast.Extractor) !void {

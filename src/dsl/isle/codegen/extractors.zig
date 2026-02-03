@@ -91,6 +91,34 @@ pub const ExtractorCodegen = struct {
 
                 switch (term.kind) {
                     .decl => |decl| {
+                        if (self.termenv.getExtern(t.term_id)) |ext| {
+                            if (ext.extractor != null) {
+                                // External extractor call - returns tuple of extracted values
+                                const result_var = try std.fmt.allocPrint(
+                                    self.allocator,
+                                    "extracted_{d}",
+                                    .{@intFromPtr(&pattern)},
+                                );
+                                defer self.allocator.free(result_var);
+
+                                try self.emitIndent(indent);
+                                try writer.print(
+                                    "const {s} = (try extractor_{s}(ctx, {s})) orelse return null;\n",
+                                    .{ result_var, term_name, source_expr },
+                                );
+
+                                for (t.args, 0..) |arg_pat, i| {
+                                    const field_expr = try std.fmt.allocPrint(
+                                        self.allocator,
+                                        "{s}.arg{d}",
+                                        .{ result_var, i },
+                                    );
+                                    defer self.allocator.free(field_expr);
+                                    try self.emitPatternMatch(arg_pat, field_expr, indent);
+                                }
+                                return;
+                            }
+                        }
                         // Constructor pattern - match enum variant
                         const ret_ty = self.typeenv.getType(decl.ret_ty);
                         if (ret_ty == .enum_type) {

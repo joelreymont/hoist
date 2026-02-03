@@ -194,7 +194,7 @@ pub const MatchCompiler = struct {
         if (iflet.expr == .term) {
             const term_expr = iflet.expr.term;
             if (self.termenv.getExtern(term_expr.term_id)) |ext| {
-                if (ext.kind == .extractor) {
+                if (ext.extractor != null) {
                     var arg_bindings = std.ArrayList(trie.BindingId){};
                     defer arg_bindings.deinit(self.allocator);
 
@@ -312,7 +312,7 @@ pub const MatchCompiler = struct {
     ) error{ OutOfMemory, ConflictingConstraints, UnsupportedExtractorPattern }!trie.BindingId {
         const term = self.termenv.getTerm(term_pat.term_id);
         if (self.termenv.getExtern(term_pat.term_id)) |ext| {
-            if (ext.kind == .extractor) {
+            if (ext.extractor != null) {
                 return try self.compileExternExtractorPattern(ruleset, rule, term_pat, source_id);
             }
         }
@@ -444,7 +444,7 @@ pub const MatchCompiler = struct {
                 }
 
                 if (self.termenv.getExtern(t.term_id)) |ext| {
-                    if (ext.kind == .extractor) {
+                    if (ext.extractor != null) {
                         const params = try arg_bindings.toOwnedSlice(self.allocator);
                         const binding = trie.Binding{
                             .extractor = .{
