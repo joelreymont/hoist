@@ -1,9 +1,9 @@
 ---
 title: Fix atomic sigs
-status: open
+status: active
 priority: 1
 issue-type: task
-created-at: "2026-02-02T23:54:59.754292+01:00"
+created-at: "\"2026-02-02T23:54:59.754292+01:00\""
 blocks:
   - hoist-fix-a64-sigs-cd143b98
 ---

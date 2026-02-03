@@ -23,7 +23,25 @@ pub const Parser = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: Allocator, lexer: *Lexer) !Self {
+    pub const Error = Allocator.Error || error{
+        InvalidCharacter,
+        Overflow,
+        UnterminatedBlockComment,
+        UnexpectedEof,
+        UnexpectedToken,
+        ExpectedSymbol,
+        ExpectedInt,
+        ExpectedFieldDefinition,
+        UnknownDefinition,
+        UnknownTypeValue,
+        MissingReturnType,
+        UnknownExternKind,
+        InvalidBindPattern,
+        InvalidPattern,
+        InvalidExpression,
+    };
+
+    pub fn init(allocator: Allocator, lexer: *Lexer) Error!Self {
         var self = Self{
             .lexer = lexer,
             .allocator = allocator,
@@ -38,11 +56,11 @@ pub const Parser = struct {
         self.errors.deinit(self.allocator);
     }
 
-    fn reportError(self: *Self, message: []const u8, pos: Pos) !void {
+    fn reportError(self: *Self, message: []const u8, pos: Pos) Error!void {
         try self.errors.append(self.allocator, .{ .message = message, .pos = pos });
     }
 
-    fn synchronize(self: *Self) !void {
+    fn synchronize(self: *Self) Error!void {
         // Skip tokens until we find a sync point (top-level lparen or EOF)
         while (self.current) |_| {
             const tok = self.peek() orelse break;
@@ -51,7 +69,7 @@ pub const Parser = struct {
         }
     }
 
-    fn advance(self: *Self) !void {
+    fn advance(self: *Self) Error!void {
         self.current = try self.lexer.next();
     }
 
@@ -65,7 +83,7 @@ pub const Parser = struct {
         return null;
     }
 
-    fn expect(self: *Self, expected: Token) !Pos {
+    fn expect(self: *Self, expected: Token) Error!Pos {
         const tok = self.current orelse return error.UnexpectedEof;
         const pos = tok[0];
         const found = tok[1];
@@ -82,7 +100,7 @@ pub const Parser = struct {
         return pos;
     }
 
-    fn expectSymbol(self: *Self) !ast.Ident {
+    fn expectSymbol(self: *Self) Error!ast.Ident {
         const tok = self.current orelse return error.UnexpectedEof;
         const pos = tok[0];
         const found = tok[1];
@@ -93,7 +111,7 @@ pub const Parser = struct {
         return ast.Ident.init(name, pos);
     }
 
-    fn expectInt(self: *Self) !struct { i128, Pos } {
+    fn expectInt(self: *Self) Error!struct { i128, Pos } {
         const tok = self.current orelse return error.UnexpectedEof;
         const pos = tok[0];
         const found = tok[1];
@@ -104,7 +122,7 @@ pub const Parser = struct {
         return .{ val, pos };
     }
 
-    pub fn parseDefs(self: *Self) ![]ast.Def {
+    pub fn parseDefs(self: *Self) Error![]ast.Def {
         var defs = std.ArrayList(ast.Def){};
         errdefer defs.deinit(self.allocator);
 
@@ -116,7 +134,7 @@ pub const Parser = struct {
         return defs.toOwnedSlice(self.allocator);
     }
 
-    fn parseDef(self: *Self) !ast.Def {
+    fn parseDef(self: *Self) Error!ast.Def {
         const start_pos = try self.expect(.lparen);
         const kw = try self.expectSymbol();
         defer self.allocator.free(kw.name);
@@ -137,7 +155,7 @@ pub const Parser = struct {
         }
     }
 
-    fn parseTypeDef(self: *Self, start_pos: Pos) !ast.TypeDef {
+    fn parseTypeDef(self: *Self, start_pos: Pos) Error!ast.TypeDef {
         const name = try self.expectSymbol();
         var is_extern = false;
         if (self.peek()) |tok| {
@@ -159,7 +177,7 @@ pub const Parser = struct {
         };
     }
 
-    fn parseTypeValue(self: *Self) !ast.TypeValue {
+    fn parseTypeValue(self: *Self) Error!ast.TypeValue {
         const tok = self.peek() orelse return error.UnexpectedEof;
         if (tok == .lparen) {
             _ = try self.expect(.lparen);
@@ -239,7 +257,7 @@ pub const Parser = struct {
         return ast.TypeValue{ .primitive = prim };
     }
 
-    fn parseDecl(self: *Self, start_pos: Pos) !ast.Decl {
+    fn parseDecl(self: *Self, start_pos: Pos) Error!ast.Decl {
         var pure = false;
         var partial = false;
         var term = try self.expectSymbol();
@@ -295,7 +313,7 @@ pub const Parser = struct {
         };
     }
 
-    fn parseExternDef(self: *Self, start_pos: Pos) !ast.ExternDef {
+    fn parseExternDef(self: *Self, start_pos: Pos) Error!ast.ExternDef {
         const kind_sym = try self.expectSymbol();
         const kind = if (std.mem.eql(u8, kind_sym.name, "constructor"))
             ast.ExternKind.constructor
@@ -317,7 +335,7 @@ pub const Parser = struct {
         };
     }
 
-    fn parseExtractor(self: *Self, start_pos: Pos) !ast.Extractor {
+    fn parseExtractor(self: *Self, start_pos: Pos) Error!ast.Extractor {
         // Parse: (extractor (name arg1 arg2) template_pattern)
         _ = try self.expect(.lparen);
         const name = try self.expectSymbol();
@@ -343,7 +361,7 @@ pub const Parser = struct {
         };
     }
 
-    fn parseRule(self: *Self, start_pos: Pos) !ast.Rule {
+    fn parseRule(self: *Self, start_pos: Pos) Error!ast.Rule {
         var prio: ?i64 = null;
         if (self.peek()) |tok| {
             if (tok == .int) {
@@ -427,7 +445,7 @@ pub const Parser = struct {
         };
     }
 
-    fn parsePattern(self: *Self) !ast.Pattern {
+    fn parsePattern(self: *Self) Error!ast.Pattern {
         var pat = try self.parsePatternAtom();
         if (self.peek()) |tok| {
             if (tok == .at) {
@@ -446,7 +464,7 @@ pub const Parser = struct {
         return pat;
     }
 
-    fn parsePatternAtom(self: *Self) !ast.Pattern {
+    fn parsePatternAtom(self: *Self) Error!ast.Pattern {
         const tok = self.peek() orelse return error.UnexpectedEof;
         const pos = self.peekPos().?;
 
@@ -475,7 +493,7 @@ pub const Parser = struct {
                 return ast.Pattern{ .const_int = .{ .val = int_tok[0], .pos = int_tok[1] } };
             },
             .symbol => {
-                const sym = try self.expectSymbol();
+                var sym = try self.expectSymbol();
                 if (std.mem.eql(u8, sym.name, "_")) {
                     self.allocator.free(sym.name);
                     return ast.Pattern{ .wildcard = .{ .pos = pos } };
@@ -503,7 +521,7 @@ pub const Parser = struct {
         }
     }
 
-    fn parseExpr(self: *Self) !ast.Expr {
+    fn parseExpr(self: *Self) Error!ast.Expr {
         const tok = self.peek() orelse return error.UnexpectedEof;
         const pos = self.peekPos().?;
 
@@ -546,7 +564,7 @@ pub const Parser = struct {
                 return ast.Expr{ .const_int = .{ .val = int_tok[0], .pos = int_tok[1] } };
             },
             .symbol => {
-                const sym = try self.expectSymbol();
+                var sym = try self.expectSymbol();
                 if (std.mem.eql(u8, sym.name, "true") or std.mem.eql(u8, sym.name, "false")) {
                     const val = std.mem.eql(u8, sym.name, "true");
                     self.allocator.free(sym.name);
@@ -570,7 +588,7 @@ pub const Parser = struct {
         }
     }
 
-    fn parseIdentList(self: *Self) ![]ast.Ident {
+    fn parseIdentList(self: *Self) Error![]ast.Ident {
         _ = try self.expect(.lparen);
         var items = std.ArrayList(ast.Ident){};
         errdefer items.deinit(self.allocator);
@@ -585,7 +603,7 @@ pub const Parser = struct {
         return items.toOwnedSlice(self.allocator);
     }
 
-    fn parseRetList(self: *Self) ![]ast.Ident {
+    fn parseRetList(self: *Self) Error![]ast.Ident {
         if (self.peek()) |tok| {
             if (tok == .lparen) {
                 return self.parseIdentList();
@@ -597,7 +615,7 @@ pub const Parser = struct {
         return list.toOwnedSlice(self.allocator);
     }
 
-    fn parseLetDefs(self: *Self) ![]ast.LetDef {
+    fn parseLetDefs(self: *Self) Error![]ast.LetDef {
         _ = try self.expect(.lparen);
         var defs = std.ArrayList(ast.LetDef){};
         errdefer defs.deinit(self.allocator);
@@ -622,7 +640,7 @@ pub const Parser = struct {
         return defs.toOwnedSlice(self.allocator);
     }
 
-    fn stripConstPrefix(self: *Self, ident: *ast.Ident) !void {
+    fn stripConstPrefix(self: *Self, ident: *ast.Ident) Error!void {
         if (ident.name.len == 0 or ident.name[0] != '$') return;
         const raw = ident.name[1..];
         const dup = try self.allocator.dupe(u8, raw);

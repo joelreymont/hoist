@@ -826,7 +826,7 @@ pub const Compiler = struct {
             .bind_pattern => |b| {
                 const subpat = try self.checkPatternWithType(b.subpat.*, bound_vars, expected_ty);
                 const name_sym = try self.type_env.internSym(b.var_name.name);
-                const binding = try self.bindVar(bound_vars, name_sym, subpat.ty, b.pos);
+                const binding = try self.bindVar(bound_vars, name_sym, self.patternType(subpat), b.pos);
                 const subpat_ptr = try self.allocator.create(Pattern);
                 subpat_ptr.* = subpat;
                 return Pattern{ .bind_pattern = .{
@@ -916,10 +916,11 @@ pub const Compiler = struct {
                 var ty = expected_ty;
                 for (a.subpats) |sub| {
                     const checked = try self.checkPatternWithType(sub, bound_vars, ty);
+                    const checked_ty = self.patternType(checked);
                     if (ty) |exp_ty| {
-                        if (checked.ty.index() != exp_ty.index()) return error.TypeMismatch;
+                        if (checked_ty.index() != exp_ty.index()) return error.TypeMismatch;
                     } else {
-                        ty = checked.ty;
+                        ty = checked_ty;
                     }
                     try subpats.append(self.allocator, checked);
                 }
@@ -1105,6 +1106,20 @@ pub const Compiler = struct {
         } };
         _ = try self.type_env.addType(ty);
         return type_id;
+    }
+
+    fn patternType(self: *Self, pat: Pattern) TypeId {
+        _ = self;
+        return switch (pat) {
+            .var_pat => |v| v.ty,
+            .bind_pattern => |b| b.ty,
+            .const_bool => TypeId.new(0),
+            .const_int => |c| c.ty,
+            .const_prim => |c| c.ty,
+            .term => |t| t.ty,
+            .wildcard => |w| w.ty,
+            .and_pat => |a| a.ty,
+        };
     }
 
     fn exprType(self: *Self, expr: Expr) TypeId {
