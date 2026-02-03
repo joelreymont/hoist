@@ -122,3 +122,69 @@
 (decl rotr (Type Value Value) Value)
 (extern constructor rotr rotr_ctor)
 (extern extractor rotr rotr_ext)
+
+;; Floating-point operations
+
+(decl fadd (Type Value Value) Value)
+(extern constructor fadd fadd_ctor)
+(extern extractor fadd fadd_ext)
+
+(decl fsub (Type Value Value) Value)
+(extern constructor fsub fsub_ctor)
+(extern extractor fsub fsub_ext)
+
+(decl fmul (Type Value Value) Value)
+(extern constructor fmul fmul_ctor)
+(extern extractor fmul fmul_ext)
+
+(decl fdiv (Type Value Value) Value)
+(extern constructor fdiv fdiv_ctor)
+(extern extractor fdiv fdiv_ext)
+
+(decl fmin (Type Value Value) Value)
+(extern constructor fmin fmin_ctor)
+(extern extractor fmin fmin_ext)
+
+(decl fmax (Type Value Value) Value)
+(extern constructor fmax fmax_ctor)
+(extern extractor fmax fmax_ext)
+
+(decl sqrt (Type Value) Value)
+(extern constructor sqrt sqrt_ctor)
+(extern extractor sqrt sqrt_ext)
+
+(decl fsqrt (Type Value) Value)
+(extern constructor fsqrt fsqrt_ctor)
+(extern extractor fsqrt fsqrt_ext)
+
+(decl fabs (Type Value) Value)
+(extern constructor fabs fabs_ctor)
+(extern extractor fabs fabs_ext)
+
+(decl fneg (Type Value) Value)
+(extern constructor fneg fneg_ctor)
+(extern extractor fneg fneg_ext)
+
+(decl fma (Type Value Value Value) Value)
+(extern constructor fma fma_ctor)
+(extern extractor fma fma_ext)
+
+(decl fcopysign (Type Value Value) Value)
+(extern constructor fcopysign fcopysign_ctor)
+(extern extractor fcopysign fcopysign_ext)
+
+(decl nearest (Type Value) Value)
+(extern constructor nearest nearest_ctor)
+(extern extractor nearest nearest_ext)
+
+(decl trunc (Type Value) Value)
+(extern constructor trunc trunc_ctor)
+(extern extractor trunc trunc_ext)
+
+(decl ceil (Type Value) Value)
+(extern constructor ceil ceil_ctor)
+(extern extractor ceil ceil_ext)
+
+(decl floor (Type Value) Value)
+(extern constructor floor floor_ctor)
+(extern extractor floor floor_ext)
