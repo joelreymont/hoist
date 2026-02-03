@@ -2664,6 +2664,12 @@
 (decl aarch64_sxtw (Value) Aarch64Inst)
 (decl aarch64_uxtb (Type Value) Aarch64Inst)
 (decl aarch64_uxth (Type Value) Aarch64Inst)
+(decl aarch64_uxtw (Value) Aarch64Inst)
+
+;; Integer narrowing and type punning
+(decl aarch64_ireduce (Type Value) Aarch64Inst)
+(decl aarch64_bitcast (Type Type Value) Aarch64Inst)
+(decl aarch64_bmask (Type Type Value) Aarch64Inst)
 
 ;; Comparison operations
 (decl aarch64_cmp_rr (Type Value Value IntCC) Aarch64Inst)
@@ -2691,6 +2697,8 @@
 (decl aarch64_ldr_shifted (Type Value Value i64) Aarch64Inst)
 (decl aarch64_ldr_pre (Type Value i64) Aarch64Inst)   ;; Pre-index: base+=offset, then load
 (decl aarch64_ldr_post (Type Value i64) Aarch64Inst)  ;; Post-index: load, then base+=offset
+(decl aarch64_ldp (Type Value i64) Aarch64Inst)       ;; Load pair (LDP)
+(decl aarch64_ld1r (Type Value) Aarch64Inst)          ;; Load and replicate (LD1R)
 (decl aarch64_str (Value Value) Aarch64Inst)
 (decl aarch64_str_imm (Value Value i64) Aarch64Inst)
 (decl aarch64_str_reg (Value Value Value) Aarch64Inst)
@@ -2698,6 +2706,7 @@
 (decl aarch64_str_shifted (Value Value Value i64) Aarch64Inst)
 (decl aarch64_str_pre (Value Value i64) Aarch64Inst)  ;; Pre-index: base+=offset, then store
 (decl aarch64_str_post (Value Value i64) Aarch64Inst) ;; Post-index: store, then base+=offset
+(decl aarch64_stp (Value Value Value i64) Aarch64Inst) ;; Store pair (STP)
 
 ;; Extending loads (load with zero/sign extension)
 (decl aarch64_uload8 (Value) Aarch64Inst)   ;; LDRB: load byte, zero-extend to 32/64
@@ -2722,6 +2731,7 @@
 ;; Constants
 (decl aarch64_movz (Type i64) Aarch64Inst)
 (decl aarch64_iconst (Type i64) Aarch64Inst)
+(decl aarch64_splat_const (Type Imm64) Aarch64Inst)
 
 ;; Floating-point arithmetic
 (decl aarch64_fadd (Type Value Value) Aarch64Inst)
@@ -2807,6 +2817,27 @@
 (decl aarch64_vec_smax (VectorSize Value Value) Aarch64Inst)
 (decl aarch64_vec_umin (VectorSize Value Value) Aarch64Inst)
 (decl aarch64_vec_umax (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_and (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_bic (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_orr (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_eor (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_not (VectorSize Value) Aarch64Inst)
+(decl aarch64_vec_neg (VectorSize Value) Aarch64Inst)
+(decl aarch64_vec_fadd (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_fsub (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_fmul (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_fdiv (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_fmin (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_fmax (VectorSize Value Value) Aarch64Inst)
+(decl aarch64_vec_shift_imm (VecShiftImmOp u8 Value VectorSize) Aarch64Inst)
+
+;; SVE operations
+(decl aarch64_sve_add (SveElemSize Value Value) Aarch64Inst)
+(decl aarch64_sve_sub (SveElemSize Value Value) Aarch64Inst)
+(decl aarch64_sve_mul (SveElemSize Value Value) Aarch64Inst)
+(decl aarch64_sve_and (Value Value) Aarch64Inst)
+(decl aarch64_sve_orr (Value Value) Aarch64Inst)
+(decl aarch64_sve_eor (Value Value) Aarch64Inst)
 
 ;; SIMD/Vector reductions (horizontal operations)
 (decl aarch64_addv (VectorSize Value) Aarch64Inst)     ;; Horizontal add across vector

@@ -1,9 +1,11 @@
 ---
 title: A64 decls
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-02-02T23:54:46.682594+01:00"
+created-at: "\"\\\"2026-02-02T23:54:46.682594+01:00\\\"\""
+closed-at: "2026-02-03T11:15:01.739757+01:00"
+close-reason: Added missing aarch64_* decls for lowering rules
 blocks:
   - hoist-wire-prelude-5c69866d
 ---
