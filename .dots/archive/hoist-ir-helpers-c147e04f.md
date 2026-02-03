@@ -1,9 +1,11 @@
 ---
 title: IR helpers
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-02-02T23:54:37.672184+01:00"
+created-at: "\"\\\"2026-02-02T23:54:37.672184+01:00\\\"\""
+closed-at: "2026-02-03T11:03:21.096683+01:00"
+close-reason: Added value/type helpers and immediate extractors to ir_prelude.isle
 blocks:
   - hoist-ir-atomics-bb4abfae
 ---

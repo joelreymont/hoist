@@ -11,10 +11,64 @@
 (type SigRef (primitive SigRef))
 (type ExternalName (primitive ExternalName))
 (type ValueSlice (primitive ValueSlice))
+(type Imm64 (primitive Imm64))
+(type Ieee32 (primitive Ieee32))
+(type Ieee64 (primitive Ieee64))
 (type Offset32 (primitive Offset32))
 (type MemFlags (primitive MemFlags))
 (type TrapCode (primitive TrapCode))
 (type Immediate (primitive u128))
+
+;; Type/value helpers (used by lowering patterns)
+
+(decl value_type (Type) Value)
+(extern extractor value_type value_type_ext)
+
+(decl has_type (Type Value) Value)
+(extern extractor has_type has_type_ext)
+
+;; Type predicates/extractors (used in `has_type`/`if` guards)
+
+(decl ty_vec (Type) Type)
+(extern extractor ty_vec ty_vec_ext)
+
+(decl ty_vec64 (Type) Type)
+(extern extractor ty_vec64 ty_vec64_ext)
+
+(decl ty_vec_fits_in_register (Type) Type)
+(extern extractor ty_vec_fits_in_register ty_vec_fits_in_register_ext)
+
+(decl ty_32_or_64 (Type) Type)
+(extern extractor ty_32_or_64 ty_32_or_64_ext)
+
+(decl ty_float_or_vec (Type) Type)
+(extern extractor ty_float_or_vec ty_float_or_vec_ext)
+
+(decl ty_vector_float (Type) Type)
+(extern extractor ty_vector_float ty_vector_float_ext)
+
+(decl ty_vector_not_float (Type) Type)
+(extern extractor ty_vector_not_float ty_vector_not_float_ext)
+
+(decl ty_int_ref_scalar_64 (Type) Type)
+(extern extractor ty_int_ref_scalar_64 ty_int_ref_scalar_64_ext)
+
+(decl ty_int_ref_scalar_64_from_ty (Type) Type)
+(extern extractor ty_int_ref_scalar_64_from_ty ty_int_ref_scalar_64_from_ty_ext)
+
+(decl ty_equal (Type Type) bool)
+(extern constructor ty_equal ty_equal_ctor)
+
+;; Immediate conversions (used by constant materialization patterns)
+
+(decl u64_from_imm64 (u64) Imm64)
+(extern extractor u64_from_imm64 u64_from_imm64_ext)
+
+(decl u32_from_ieee32 (u32) Ieee32)
+(extern extractor u32_from_ieee32 u32_from_ieee32_ext)
+
+(decl u64_from_ieee64 (u64) Ieee64)
+(extern extractor u64_from_ieee64 u64_from_ieee64_ext)
 
 ;; Condition codes
 (type IntCC (enum
