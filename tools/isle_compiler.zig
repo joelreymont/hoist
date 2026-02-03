@@ -1,6 +1,8 @@
 const std = @import("std");
 const isle = @import("isle");
 
+const prelude_path = "src/dsl/isle/ir_prelude.isle";
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -17,6 +19,16 @@ pub fn main() !void {
     const input_path = args[1];
     const output_path = args[2];
 
+    const prelude_content = std.fs.cwd().readFileAlloc(
+        allocator,
+        prelude_path,
+        10 * 1024 * 1024, // 10MB max
+    ) catch |err| {
+        std.debug.print("Failed to read {s}: {}\n", .{ prelude_path, err });
+        return err;
+    };
+    defer allocator.free(prelude_content);
+
     // Read input file
     const input_content = std.fs.cwd().readFileAlloc(
         allocator,
@@ -31,10 +43,16 @@ pub fn main() !void {
     // Compile ISLE to Zig
     var result = isle.compile(
         allocator,
-        &.{isle.Source{
-            .filename = input_path,
-            .content = input_content,
-        }},
+        &.{
+            isle.Source{
+                .filename = prelude_path,
+                .content = prelude_content,
+            },
+            isle.Source{
+                .filename = input_path,
+                .content = input_content,
+            },
+        },
         .{
             .debug_comments = true,
         },
