@@ -1,9 +1,11 @@
 ---
 title: Fix atomic sigs
-status: active
+status: closed
 priority: 1
 issue-type: task
-created-at: "\"2026-02-02T23:54:59.754292+01:00\""
+created-at: "\"\\\"2026-02-02T23:54:59.754292+01:00\\\"\""
+closed-at: "2026-02-03T12:00:56.671287+01:00"
+close-reason: Normalize atomic_load/store patterns
 blocks:
   - hoist-fix-a64-sigs-cd143b98
 ---

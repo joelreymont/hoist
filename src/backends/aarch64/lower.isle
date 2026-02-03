@@ -914,22 +914,22 @@
 ;; Atomic operations lowering
 
 ;; atomic_load with acquire ordering: LDAR
-(rule (lower (atomic_load ty addr AtomicOrdering.acquire _flags))
+(rule (lower (atomic_load ty addr _flags AtomicOrdering.acquire))
       (aarch64_atomic_load_acquire ty addr))
 
 ;; atomic_load with sequential consistency: DMB + LDAR
 ;; Note: Simplified - full seq_cst may need DMB before as well
-(rule (lower (atomic_load ty addr AtomicOrdering.seq_cst _flags))
+(rule (lower (atomic_load ty addr _flags AtomicOrdering.seq_cst))
       (aarch64_atomic_load_acquire ty addr))
 
 ;; atomic_store with release ordering: STLR
-(rule (lower (atomic_store val addr AtomicOrdering.release _flags))
+(rule (lower (atomic_store val addr _flags AtomicOrdering.release))
       (let ((ty Type (value_type val)))
            (aarch64_atomic_store_release ty addr val)))
 
 ;; atomic_store with sequential consistency: STLR + DMB
 ;; Note: Simplified - full seq_cst may need DMB after as well
-(rule (lower (atomic_store val addr AtomicOrdering.seq_cst _flags))
+(rule (lower (atomic_store val addr _flags AtomicOrdering.seq_cst))
       (let ((ty Type (value_type val)))
            (aarch64_atomic_store_release ty addr val)))
 
@@ -2950,78 +2950,6 @@
 
 (rule (lower (iadd_pairwise (value_type $I64X2) x))
       (aarch64_addp VecElemSize_64x2 x x))
-
-;; Atomic operations lowering
-
-;; atomic_load: Load with acquire semantics
-;; Pattern: atomic_load(addr) => LDAR
-(rule (lower (atomic_load addr _flags))
-      (aarch64_ldar addr))
-
-;; atomic_store: Store with release semantics
-;; Pattern: atomic_store(val, addr) => STLR
-(rule (lower (atomic_store val addr _flags))
-      (aarch64_stlr val addr))
-
-;; atomic_rmw: Atomic read-modify-write operations
-;; These use LSE (Large System Extensions) instructions when available
-
-;; atomic_rmw.add: Atomic add
-;; Pattern: atomic_rmw.add(addr, val) => LDADD / LDADDAL
-(rule (lower (atomic_rmw_add addr val))
-      (aarch64_ldadd addr val))
-
-;; atomic_rmw.sub: Atomic subtract (implemented as add with negated value)
-;; Pattern: atomic_rmw.sub(addr, val) => LDADD with -val
-(rule (lower (atomic_rmw_sub addr val))
-      (let ((neg_val Aarch64Inst (aarch64_neg $I64 val)))
-            (aarch64_ldadd addr neg_val)))
-
-;; atomic_rmw.and: Atomic AND (implemented as clear with complement)
-;; Pattern: atomic_rmw.and(addr, val) => LDCLR with ~val
-(rule (lower (atomic_rmw_and addr val))
-      (let ((not_val Aarch64Inst (aarch64_mvn_rr $I64 val)))
-            (aarch64_ldclr addr not_val)))
-
-;; atomic_rmw.or: Atomic OR
-;; Pattern: atomic_rmw.or(addr, val) => LDSET
-(rule (lower (atomic_rmw_or addr val))
-      (aarch64_ldset addr val))
-
-;; atomic_rmw.xor: Atomic XOR
-;; Pattern: atomic_rmw.xor(addr, val) => LDEOR
-(rule (lower (atomic_rmw_xor addr val))
-      (aarch64_ldeor addr val))
-
-;; atomic_rmw.xchg: Atomic exchange
-;; Pattern: atomic_rmw.xchg(addr, val) => SWPAL
-(rule (lower (atomic_rmw_xchg addr val))
-      (aarch64_swpal addr val))
-
-;; atomic_rmw.smax: Atomic signed maximum
-;; Pattern: atomic_rmw.smax(addr, val) => LDSMAX
-(rule (lower (atomic_rmw_smax addr val))
-      (aarch64_ldsmax addr val))
-
-;; atomic_rmw.smin: Atomic signed minimum
-;; Pattern: atomic_rmw.smin(addr, val) => LDSMIN
-(rule (lower (atomic_rmw_smin addr val))
-      (aarch64_ldsmin addr val))
-
-;; atomic_rmw.umax: Atomic unsigned maximum
-;; Pattern: atomic_rmw.umax(addr, val) => LDUMAX
-(rule (lower (atomic_rmw_umax addr val))
-      (aarch64_ldumax addr val))
-
-;; atomic_rmw.umin: Atomic unsigned minimum
-;; Pattern: atomic_rmw.umin(addr, val) => LDUMIN
-(rule (lower (atomic_rmw_umin addr val))
-      (aarch64_ldumin addr val))
-
-;; atomic_cas: Compare-and-swap with acquire/release semantics
-;; Pattern: atomic_cas(addr, expected, new) => CASAL
-(rule (lower (atomic_cas addr expected new_val))
-      (aarch64_casal addr expected new_val))
 
 ;; Memory barrier lowering
 
