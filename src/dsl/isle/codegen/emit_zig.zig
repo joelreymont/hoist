@@ -171,6 +171,83 @@ pub const ZigEmitter = struct {
         };
     }
 
+    fn isKeyword(name: []const u8) bool {
+        const keywords = [_][]const u8{
+            "align",
+            "allowzero",
+            "and",
+            "anyframe",
+            "anytype",
+            "asm",
+            "async",
+            "await",
+            "break",
+            "catch",
+            "comptime",
+            "const",
+            "continue",
+            "defer",
+            "else",
+            "enum",
+            "errdefer",
+            "error",
+            "export",
+            "extern",
+            "false",
+            "for",
+            "if",
+            "inline",
+            "linksection",
+            "noalias",
+            "noinline",
+            "nosuspend",
+            "null",
+            "opaque",
+            "or",
+            "orelse",
+            "packed",
+            "pub",
+            "resume",
+            "return",
+            "struct",
+            "suspend",
+            "switch",
+            "test",
+            "threadlocal",
+            "true",
+            "try",
+            "union",
+            "unreachable",
+            "usingnamespace",
+            "var",
+            "volatile",
+            "while",
+        };
+        for (keywords) |kw| {
+            if (std.mem.eql(u8, name, kw)) return true;
+        }
+        return false;
+    }
+
+    fn isValidIdent(name: []const u8) bool {
+        if (name.len == 0) return false;
+        const first = name[0];
+        if (!(std.ascii.isAlphabetic(first) or first == '_')) return false;
+        for (name[1..]) |c| {
+            if (!(std.ascii.isAlphanumeric(c) or c == '_')) return false;
+        }
+        return !isKeyword(name);
+    }
+
+    fn writeIdent(self: *const Self, writer: anytype, name: []const u8) !void {
+        _ = self;
+        if (isValidIdent(name)) {
+            try writer.writeAll(name);
+        } else {
+            try writer.print("@\"{s}\"", .{name});
+        }
+    }
+
     /// Emit a pattern match as Zig code.
     fn emitPatternMatch(
         self: *Self,
@@ -196,7 +273,9 @@ pub const ZigEmitter = struct {
             .const_prim => |c| {
                 try self.emitBinding(writer, binding);
                 const val_name = self.typeenv.symName(c.val);
-                try writer.print(" == .{s}) ", .{val_name});
+                try writer.writeAll(" == .");
+                try self.writeIdent(writer, val_name);
+                try writer.writeAll(") ");
             },
             .variant => |v| {
                 try self.emitBinding(writer, binding);
@@ -204,7 +283,9 @@ pub const ZigEmitter = struct {
                 if (ty == .enum_type) {
                     const variant = ty.enum_type.variants[v.variant.variant_index];
                     const variant_name = self.typeenv.symName(variant.name);
-                    try writer.print(" == .{s}) ", .{variant_name});
+                    try writer.writeAll(" == .");
+                    try self.writeIdent(writer, variant_name);
+                    try writer.writeAll(") ");
                 } else {
                     try writer.writeAll("false) ");
                 }
@@ -232,7 +313,8 @@ pub const ZigEmitter = struct {
             },
             .const_prim => |c| {
                 const val_name = self.typeenv.symName(c.val);
-                try writer.print(".{s}", .{val_name});
+                try writer.writeByte('.');
+                try self.writeIdent(writer, val_name);
             },
             .constructor => |ctor| {
                 const term = self.termenv.getTerm(ctor.term);
@@ -255,7 +337,9 @@ pub const ZigEmitter = struct {
                 if (ty == .enum_type) {
                     const variant = ty.enum_type.variants[mv.variant.index()];
                     const variant_name = self.typeenv.symName(variant.name);
-                    try writer.print(".{{ .{s} = .{{ ", .{variant_name});
+                    try writer.writeAll(".{ .");
+                    try self.writeIdent(writer, variant_name);
+                    try writer.writeAll(" = .{ ");
                     for (mv.fields, 0..) |field_id, i| {
                         if (i > 0) try writer.writeAll(", ");
                         const field_binding = self.ruleset.bindings.items[field_id.index()];
@@ -290,7 +374,8 @@ pub const ZigEmitter = struct {
                     if (mv.field.value() < variant.fields.len) {
                         const field = variant.fields[mv.field.value()];
                         const field_name = self.typeenv.symName(field.name);
-                        try writer.print(".{s}", .{field_name});
+                        try writer.writeByte('.');
+                        try self.writeIdent(writer, field_name);
                     }
                 }
             },

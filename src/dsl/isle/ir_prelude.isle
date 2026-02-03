@@ -1,0 +1,71 @@
+;; ISLE IR prelude: shared types/enums for lowering/opts
+
+;; Core IR primitives
+(type Type (primitive Type))
+(type Value (primitive Value))
+(type Inst (primitive Inst))
+(type Block (primitive Block))
+(type StackSlot (primitive StackSlot))
+(type GlobalValue (primitive GlobalValue))
+(type JumpTable (primitive JumpTable))
+(type SigRef (primitive SigRef))
+(type ExternalName (primitive ExternalName))
+(type ValueSlice (primitive ValueSlice))
+(type Offset32 (primitive Offset32))
+(type MemFlags (primitive MemFlags))
+(type TrapCode (primitive TrapCode))
+
+;; Condition codes
+(type IntCC (enum
+  eq
+  ne
+  slt
+  sge
+  sgt
+  sle
+  ult
+  uge
+  ugt
+  ule
+))
+
+(type FloatCC (enum
+  ord
+  uno
+  eq
+  ne
+  one
+  ueq
+  lt
+  le
+  gt
+  ge
+  ult
+  ule
+  ugt
+  uge
+))
+
+;; Atomics
+(type AtomicOrdering (enum
+  unordered
+  monotonic
+  acquire
+  release
+  acq_rel
+  seq_cst
+))
+
+(type AtomicRmwOp (enum
+  add
+  sub
+  and
+  nand
+  or
+  xor
+  xchg
+  max
+  min
+  umax
+  umin
+))

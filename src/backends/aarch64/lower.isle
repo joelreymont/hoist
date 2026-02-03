@@ -2,10 +2,6 @@
 ;; Minimal bootstrap set for ARM64 instruction selection
 
 ;; Primitive types (required by ISLE compiler)
-(type Unit (primitive Unit))
-(type Type (primitive Type))
-(type Value (primitive Value))
-(type Inst (primitive Inst))
 (type Immediate (primitive u128))
 
 ;; Relocation distance for calls/symbols
@@ -57,13 +53,13 @@
 
 ;; Vector size helper - maps multi_lane patterns to VectorSize enum
 (decl vector_size (Type) VectorSize)
-(rule 1 (vector_size (multi_lane 8 8)) (VectorSize.V8B))
-(rule 1 (vector_size (multi_lane 8 16)) (VectorSize.V16B))
-(rule 1 (vector_size (multi_lane 16 4)) (VectorSize.V4H))
-(rule 1 (vector_size (multi_lane 16 8)) (VectorSize.V8H))
-(rule 1 (vector_size (multi_lane 32 2)) (VectorSize.V2S))
-(rule 1 (vector_size (multi_lane 32 4)) (VectorSize.V4S))
-(rule 1 (vector_size (multi_lane 64 2)) (VectorSize.V2D))
+(rule 1 (vector_size (multi_lane 8 8)) VectorSize.V8B)
+(rule 1 (vector_size (multi_lane 8 16)) VectorSize.V16B)
+(rule 1 (vector_size (multi_lane 16 4)) VectorSize.V4H)
+(rule 1 (vector_size (multi_lane 16 8)) VectorSize.V8H)
+(rule 1 (vector_size (multi_lane 32 2)) VectorSize.V2S)
+(rule 1 (vector_size (multi_lane 32 4)) VectorSize.V4S)
+(rule 1 (vector_size (multi_lane 64 2)) VectorSize.V2D)
 
 ;; Vector arithmetic helpers (wrappers for type-parameterized rules)
 (decl add_vec (Value Value VectorSize) Aarch64Inst)
@@ -123,15 +119,15 @@
 
 (decl ushl_vec_imm (Value u8 VectorSize) Aarch64Inst)
 (rule (ushl_vec_imm x amt size)
-      (vec_shift_imm (VecShiftImmOp.Shl) amt x size))
+      (vec_shift_imm VecShiftImmOp.Shl amt x size))
 
 (decl ushr_vec_imm (Value u8 VectorSize) Aarch64Inst)
 (rule (ushr_vec_imm x amt size)
-      (vec_shift_imm (VecShiftImmOp.Ushr) amt x size))
+      (vec_shift_imm VecShiftImmOp.Ushr amt x size))
 
 (decl sshr_vec_imm (Value u8 VectorSize) Aarch64Inst)
 (rule (sshr_vec_imm x amt size)
-      (vec_shift_imm (VecShiftImmOp.Sshr) amt x size))
+      (vec_shift_imm VecShiftImmOp.Sshr amt x size))
 
 ;; ==================== SVE (Scalable Vector Extension) ====================
 
@@ -553,38 +549,38 @@
 ;; umin: Vector unsigned integer minimum
 ;; Use native UMIN instruction for all lanes except I64X2
 (rule (lower (has_type ty @ (not_i64x2) (umin x y)))
-      (vec_rrr (VecALUOp.Umin) x y (vector_size ty)))
+      (vec_rrr VecALUOp.Umin x y (vector_size ty)))
 
 ;; umin: I64X2 unsigned minimum (emulated via compare + bitselect)
 ;; No native I64X2 UMIN, use: BSL (x > y), x, y
 (rule 1 (lower (has_type $I64X2 (umin x y)))
-      (aarch64_bitselect (vec_rrr (VecALUOp.Cmhi) y x (VectorSize.Size64x2)) x y))
+      (aarch64_bitselect (vec_rrr VecALUOp.Cmhi y x VectorSize.Size64x2) x y))
 
 ;; umax: Vector unsigned integer maximum
 ;; Use native UMAX instruction for all lanes except I64X2
 (rule (lower (has_type ty @ (not_i64x2) (umax x y)))
-      (vec_rrr (VecALUOp.Umax) x y (vector_size ty)))
+      (vec_rrr VecALUOp.Umax x y (vector_size ty)))
 
 ;; umax: I64X2 unsigned maximum (emulated via compare + bitselect)
 ;; No native I64X2 UMAX, use: BSL (x > y), x, y
 (rule 1 (lower (has_type $I64X2 (umax x y)))
-      (aarch64_bitselect (vec_rrr (VecALUOp.Cmhi) x y (VectorSize.Size64x2)) x y))
+      (aarch64_bitselect (vec_rrr VecALUOp.Cmhi x y VectorSize.Size64x2) x y))
 
 ;; avg_round: Unsigned rounding average (x + y + 1) >> 1
 ;; Uses URHADD instruction for lanes that fit in 32 bits
 (rule -1 (lower (has_type (lane_fits_in_32 ty) (avg_round x y)))
-      (vec_rrr (VecALUOp.Urhadd) x y (vector_size ty)))
+      (vec_rrr VecALUOp.Urhadd x y (vector_size ty)))
 
 ;; avg_round: I64X2 requires manual implementation
 ;; (x | y) & 1 gives the rounding bit, then ((x >> 1) + (y >> 1)) + rounding
 (rule (lower (has_type $I64X2 (avg_round x y)))
-      (let ((one Reg (splat_const 1 (VectorSize.Size64x2)))
-            (c Reg (orr_vec x y (VectorSize.Size64x2)))
-            (c Reg (and_vec c one (VectorSize.Size64x2)))
-            (x Reg (ushr_vec_imm x 1 (VectorSize.Size64x2)))
-            (y Reg (ushr_vec_imm y 1 (VectorSize.Size64x2)))
-            (sum Reg (add_vec x y (VectorSize.Size64x2))))
-       (add_vec c sum (VectorSize.Size64x2))))
+      (let ((one Reg (splat_const 1 VectorSize.Size64x2))
+            (c Reg (orr_vec x y VectorSize.Size64x2))
+            (c Reg (and_vec c one VectorSize.Size64x2))
+            (x Reg (ushr_vec_imm x 1 VectorSize.Size64x2))
+            (y Reg (ushr_vec_imm y 1 VectorSize.Size64x2))
+            (sum Reg (add_vec x y VectorSize.Size64x2)))
+       (add_vec c sum VectorSize.Size64x2)))
 
 ;; Vector reduction operations (type-parameterized via multi_lane)
 
@@ -816,22 +812,22 @@
       (aarch64_ld1r ty addr))
 
 ;; splat: Float constant - use immediate splat
-(rule (lower (has_type ty (splat (f32const k)))))
+(rule (lower (has_type ty (splat (f32const k))))
       (aarch64_splat_const ty k))
 
-(rule (lower (has_type ty (splat (f64const k)))))
+(rule (lower (has_type ty (splat (f64const k))))
       (aarch64_splat_const ty k))
 
 ;; splat: Integer constant - use immediate splat
-(rule (lower (has_type ty (splat (iconst k)))))
+(rule (lower (has_type ty (splat (iconst k))))
       (aarch64_splat_const ty k))
 
 ;; splat: Integer constant with ireduce - use immediate splat
-(rule (lower (has_type ty (splat (ireduce (iconst k))))))
+(rule (lower (has_type ty (splat (ireduce (iconst k)))))
       (aarch64_splat_const ty k))
 
 ;; splat: Scalar float - use vec_dup_from_fpu
-(rule -2 (lower (has_type ty (splat x @ (value_type (ty_scalar_float _))))))
+(rule -2 (lower (has_type ty (splat x @ (value_type (ty_scalar_float _)))))
       (vec_dup_from_fpu x (vector_size ty) 0))
 
 ;; splat: Generic fallback (lowest priority)
@@ -918,22 +914,22 @@
 ;; Atomic operations lowering
 
 ;; atomic_load with acquire ordering: LDAR
-(rule (lower (atomic_load ty addr AtomicOrdering.Acquire _flags))
+(rule (lower (atomic_load ty addr AtomicOrdering.acquire _flags))
       (aarch64_atomic_load_acquire ty addr))
 
 ;; atomic_load with sequential consistency: DMB + LDAR
 ;; Note: Simplified - full seq_cst may need DMB before as well
-(rule (lower (atomic_load ty addr AtomicOrdering.SeqCst _flags))
+(rule (lower (atomic_load ty addr AtomicOrdering.seq_cst _flags))
       (aarch64_atomic_load_acquire ty addr))
 
 ;; atomic_store with release ordering: STLR
-(rule (lower (atomic_store val addr AtomicOrdering.Release _flags))
+(rule (lower (atomic_store val addr AtomicOrdering.release _flags))
       (let ((ty Type (value_type val)))
            (aarch64_atomic_store_release ty addr val)))
 
 ;; atomic_store with sequential consistency: STLR + DMB
 ;; Note: Simplified - full seq_cst may need DMB after as well
-(rule (lower (atomic_store val addr AtomicOrdering.SeqCst _flags))
+(rule (lower (atomic_store val addr AtomicOrdering.seq_cst _flags))
       (let ((ty Type (value_type val)))
            (aarch64_atomic_store_release ty addr val)))
 
@@ -965,8 +961,8 @@
         (with_flags
          (tst_imm $I64 amt 64)
          (consumes_flags_concat
-          (csel (IntCC.Ne) (zero_reg) lo_lshift)
-          (csel (IntCC.Ne) lo_lshift maybe_hi)))))
+          (csel IntCC.ne (zero_reg) lo_lshift)
+          (csel IntCC.ne lo_lshift maybe_hi)))))
 
 (rule (lower (has_type $I128 (ishl x y)))
       (lower_shl128 x (value_regs_get y 0)))
@@ -1011,8 +1007,8 @@
         (with_flags
          (tst_imm $I64 amt 64)
          (consumes_flags_concat
-          (csel (IntCC.Ne) hi_rshift maybe_lo)
-          (csel (IntCC.Ne) (zero_reg) hi_rshift)))))
+          (csel IntCC.ne hi_rshift maybe_lo)
+          (csel IntCC.ne (zero_reg) hi_rshift)))))
 
 (rule (lower (has_type $I128 (ushr x y)))
       (lower_ushr128 x (value_regs_get y 0)))
@@ -1064,8 +1060,8 @@
         (with_flags
          (tst_imm $I64 amt 64)
          (consumes_flags_concat
-          (csel (IntCC.Ne) hi_rshift maybe_lo)
-          (csel (IntCC.Ne) hi_sign hi_rshift)))))
+          (csel IntCC.ne hi_rshift maybe_lo)
+          (csel IntCC.ne hi_sign hi_rshift)))))
 
 (rule (lower (has_type $I128 (sshr x y)))
       (lower_sshr128 x (value_regs_get y 0)))
@@ -1256,44 +1252,44 @@
       (aarch64_cmp_imm ty x k cond))
 
 ;; icmp: Integer comparison with Equal condition
-(rule (lower (icmp IntCC.Equal ty x y))
-      (aarch64_cmp_rr ty x y IntCC.Equal))
+(rule (lower (icmp IntCC.eq ty x y))
+      (aarch64_cmp_rr ty x y IntCC.eq))
 
 ;; icmp: Integer comparison with NotEqual condition
-(rule (lower (icmp IntCC.NotEqual ty x y))
-      (aarch64_cmp_rr ty x y IntCC.NotEqual))
+(rule (lower (icmp IntCC.ne ty x y))
+      (aarch64_cmp_rr ty x y IntCC.ne))
 
 ;; icmp: Integer comparison with SignedLessThan condition
-(rule (lower (icmp IntCC.SignedLessThan ty x y))
-      (aarch64_cmp_rr ty x y IntCC.SignedLessThan))
+(rule (lower (icmp IntCC.slt ty x y))
+      (aarch64_cmp_rr ty x y IntCC.slt))
 
 ;; icmp: Integer comparison with SignedGreaterThanOrEqual condition
-(rule (lower (icmp IntCC.SignedGreaterThanOrEqual ty x y))
-      (aarch64_cmp_rr ty x y IntCC.SignedGreaterThanOrEqual))
+(rule (lower (icmp IntCC.sge ty x y))
+      (aarch64_cmp_rr ty x y IntCC.sge))
 
 ;; icmp: Integer comparison with SignedGreaterThan condition
-(rule (lower (icmp IntCC.SignedGreaterThan ty x y))
-      (aarch64_cmp_rr ty x y IntCC.SignedGreaterThan))
+(rule (lower (icmp IntCC.sgt ty x y))
+      (aarch64_cmp_rr ty x y IntCC.sgt))
 
 ;; icmp: Integer comparison with SignedLessThanOrEqual condition
-(rule (lower (icmp IntCC.SignedLessThanOrEqual ty x y))
-      (aarch64_cmp_rr ty x y IntCC.SignedLessThanOrEqual))
+(rule (lower (icmp IntCC.sle ty x y))
+      (aarch64_cmp_rr ty x y IntCC.sle))
 
 ;; icmp: Integer comparison with UnsignedLessThan condition
-(rule (lower (icmp IntCC.UnsignedLessThan ty x y))
-      (aarch64_cmp_rr ty x y IntCC.UnsignedLessThan))
+(rule (lower (icmp IntCC.ult ty x y))
+      (aarch64_cmp_rr ty x y IntCC.ult))
 
 ;; icmp: Integer comparison with UnsignedGreaterThanOrEqual condition
-(rule (lower (icmp IntCC.UnsignedGreaterThanOrEqual ty x y))
-      (aarch64_cmp_rr ty x y IntCC.UnsignedGreaterThanOrEqual))
+(rule (lower (icmp IntCC.uge ty x y))
+      (aarch64_cmp_rr ty x y IntCC.uge))
 
 ;; icmp: Integer comparison with UnsignedGreaterThan condition
-(rule (lower (icmp IntCC.UnsignedGreaterThan ty x y))
-      (aarch64_cmp_rr ty x y IntCC.UnsignedGreaterThan))
+(rule (lower (icmp IntCC.ugt ty x y))
+      (aarch64_cmp_rr ty x y IntCC.ugt))
 
 ;; icmp: Integer comparison with UnsignedLessThanOrEqual condition
-(rule (lower (icmp IntCC.UnsignedLessThanOrEqual ty x y))
-      (aarch64_cmp_rr ty x y IntCC.UnsignedLessThanOrEqual))
+(rule (lower (icmp IntCC.ule ty x y))
+      (aarch64_cmp_rr ty x y IntCC.ule))
 
 ;; icmp with immediate form (12-bit unsigned immediate)
 (rule (lower (icmp cc ty x (iconst k)))
@@ -1756,11 +1752,11 @@
 
 ;; iabs: Vector integer absolute value
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (iabs x)))
-      (vec_misc (VecMisc2.Abs) x (vector_size ty)))
+      (vec_misc VecMisc2.Abs x (vector_size ty)))
 
 ;; sqmul_round_sat: Signed saturating rounding doubling multiply high
 (rule (lower (has_type ty @ (multi_lane _ _) (sqmul_round_sat x y)))
-      (vec_rrr (VecALUOp.Sqrdmulh) x y (vector_size ty)))
+      (vec_rrr VecALUOp.Sqrdmulh x y (vector_size ty)))
 
 ;; iabs: Integer absolute value
 ;; Implemented as (x XOR sign) - sign, where sign = x >> (bits-1)
@@ -1788,7 +1784,7 @@
 (rule -1 (lower (has_type ty (select rcond @ (value_type $I8) rn rm)))
       (lower_select
         (tst_imm $I32 rcond 255)
-        (IntCC.Ne)
+        IntCC.ne
         ty
         rn
         rm))
@@ -1798,7 +1794,7 @@
       (let ((rcond_reg Reg (put_in_reg_zext32 rcond)))
        (lower_select
         (cmp $I32 rcond_reg (zero_reg))
-        (IntCC.Ne)
+        IntCC.ne
         ty
         rn
         rm)))
@@ -1808,7 +1804,7 @@
       (let ((rcond_reg Reg (put_in_reg_zext64 rcond)))
        (lower_select
         (cmp $I64 rcond_reg (zero_reg))
-        (IntCC.Ne)
+        IntCC.ne
         ty
         rn
         rm)))
@@ -1821,7 +1817,7 @@
             (rt Reg (orr $I64 c_lo c_hi)))
        (lower_select
         (cmp $I64 rt (zero_reg))
-        (IntCC.Ne)
+        IntCC.ne
         ty
         rn
         rm)))
@@ -1853,7 +1849,7 @@
       (let ((rcond_reg Reg (put_in_reg_zext64 rcond)))
        (lower_select
         (cmp $I64 rcond_reg (zero_reg))
-        (IntCC.Ne)
+        IntCC.ne
         ty
         rn
         rm)))
@@ -1866,7 +1862,7 @@
             (rt Reg (orr $I64 c_lo c_hi)))
        (lower_select
         (cmp $I64 rt (zero_reg))
-        (IntCC.Ne)
+        IntCC.ne
         ty
         rn
         rm)))
@@ -2214,28 +2210,28 @@
 
 ;; Vector float conversions
 (rule -1 (lower (has_type ty @ (multi_lane 32 _) (fcvt_from_uint x @ (value_type (multi_lane 32 _)))))
-      (vec_misc (VecMisc2.Ucvtf) x (vector_size ty)))
+      (vec_misc VecMisc2.Ucvtf x (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane 64 _) (fcvt_from_uint x @ (value_type (multi_lane 64 _)))))
-      (vec_misc (VecMisc2.Ucvtf) x (vector_size ty)))
+      (vec_misc VecMisc2.Ucvtf x (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane 32 _) (fcvt_from_sint x @ (value_type (multi_lane 32 _)))))
-      (vec_misc (VecMisc2.Scvtf) x (vector_size ty)))
+      (vec_misc VecMisc2.Scvtf x (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane 64 _) (fcvt_from_sint x @ (value_type (multi_lane 64 _)))))
-      (vec_misc (VecMisc2.Scvtf) x (vector_size ty)))
+      (vec_misc VecMisc2.Scvtf x (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane 32 _) (fcvt_to_uint_sat x @ (value_type (multi_lane 32 _)))))
-      (vec_misc (VecMisc2.Fcvtzu) x (vector_size ty)))
+      (vec_misc VecMisc2.Fcvtzu x (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane 64 _) (fcvt_to_uint_sat x @ (value_type (multi_lane 64 _)))))
-      (vec_misc (VecMisc2.Fcvtzu) x (vector_size ty)))
+      (vec_misc VecMisc2.Fcvtzu x (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane 32 _) (fcvt_to_sint_sat x @ (value_type (multi_lane 32 _)))))
-      (vec_misc (VecMisc2.Fcvtzs) x (vector_size ty)))
+      (vec_misc VecMisc2.Fcvtzs x (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane 64 _) (fcvt_to_sint_sat x @ (value_type (multi_lane 64 _)))))
-      (vec_misc (VecMisc2.Fcvtzs) x (vector_size ty)))
+      (vec_misc VecMisc2.Fcvtzs x (vector_size ty)))
 
 ;; fcvt_from_uint: Convert unsigned integer to float (UCVTF)
 (rule (lower (fcvt_from_uint (value_type $I32) x (value_type $F32)))
@@ -2326,7 +2322,7 @@
 
 ;; Vector FMA - delegate to lower_fmla helper (priority 1)
 (rule 1 (lower (has_type ty @ (multi_lane _ _) (fma x y z)))
-      (lower_fmla (VecALUModOp.Fmla) x y z (vector_size ty)))
+      (lower_fmla VecALUModOp.Fmla x y z (vector_size ty)))
 
 ;; Scalar FMA (priority 0 - fallback)
 (rule (lower (fma ty x y z))
@@ -2334,22 +2330,22 @@
 
 ;; Vector float binary operations
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fadd x y)))
-      (vec_rrr (VecALUOp.Fadd) x y (vector_size ty)))
+      (vec_rrr VecALUOp.Fadd x y (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fsub x y)))
-      (vec_rrr (VecALUOp.Fsub) x y (vector_size ty)))
+      (vec_rrr VecALUOp.Fsub x y (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fmul x y)))
-      (vec_rrr (VecALUOp.Fmul) x y (vector_size ty)))
+      (vec_rrr VecALUOp.Fmul x y (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fdiv x y)))
-      (vec_rrr (VecALUOp.Fdiv) x y (vector_size ty)))
+      (vec_rrr VecALUOp.Fdiv x y (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fmin x y)))
-      (vec_rrr (VecALUOp.Fmin) x y (vector_size ty)))
+      (vec_rrr VecALUOp.Fmin x y (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fmax x y)))
-      (vec_rrr (VecALUOp.Fmax) x y (vector_size ty)))
+      (vec_rrr VecALUOp.Fmax x y (vector_size ty)))
 
 ;;;; Rules for `fcmp` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -2422,25 +2418,25 @@
 
 ;; Vector float unary operations
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (sqrt x)))
-      (vec_misc (VecMisc2.Fsqrt) x (vector_size ty)))
+      (vec_misc VecMisc2.Fsqrt x (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fneg x)))
-      (vec_misc (VecMisc2.Fneg) x (vector_size ty)))
+      (vec_misc VecMisc2.Fneg x (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fabs x)))
-      (vec_misc (VecMisc2.Fabs) x (vector_size ty)))
+      (vec_misc VecMisc2.Fabs x (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (ceil x)))
-      (vec_misc (VecMisc2.Frintp) x (vector_size ty)))
+      (vec_misc VecMisc2.Frintp x (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (floor x)))
-      (vec_misc (VecMisc2.Frintm) x (vector_size ty)))
+      (vec_misc VecMisc2.Frintm x (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (trunc x)))
-      (vec_misc (VecMisc2.Frintz) x (vector_size ty)))
+      (vec_misc VecMisc2.Frintz x (vector_size ty)))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (nearest x)))
-      (vec_misc (VecMisc2.Frintn) x (vector_size ty)))
+      (vec_misc VecMisc2.Frintn x (vector_size ty)))
 
 ;; fabs: FP absolute value (FABS)
 (rule (lower (fabs ty x))
@@ -2513,7 +2509,7 @@
 
 ;; Check if value is in range where negation fits in unsigned 12-bit
 ;; Returns true if -4095 <= val <= -1
-(decl in_neg_uimm12_range (i64) Unit)
+(decl in_neg_uimm12_range (i64) bool)
 (extern extractor in_neg_uimm12_range in_neg_uimm12_range)
 
 ;; Addressing mode extractors
@@ -2536,20 +2532,6 @@
 (extern extractor valid_str_shift valid_str_shift)
 
 ;; Type declarations
-
-;; Integer comparison condition codes
-(type IntCC (enum
-  Equal
-  NotEqual
-  SignedLessThan
-  SignedLessThanOrEqual
-  SignedGreaterThan
-  SignedGreaterThanOrEqual
-  UnsignedLessThan
-  UnsignedLessThanOrEqual
-  UnsignedGreaterThan
-  UnsignedGreaterThanOrEqual
-))
 
 ;; Extend operations for extended register operands
 (type ExtendOp (enum
@@ -3105,99 +3087,99 @@
 
 ;; I8X16 -> I16X8: widen low 8 lanes
 (rule (lower (has_type $I16X8 (swiden_low x)))
-      (aarch64_sshll x (VecElemSize.Size16x8) 0 false))
+      (aarch64_sshll x VecElemSize.Size16x8 0 false))
 
 ;; I16X8 -> I32X4: widen low 4 lanes
 (rule (lower (has_type $I32X4 (swiden_low x)))
-      (aarch64_sshll x (VecElemSize.Size32x4) 0 false))
+      (aarch64_sshll x VecElemSize.Size32x4 0 false))
 
 ;; I32X4 -> I64X2: widen low 2 lanes
 (rule (lower (has_type $I64X2 (swiden_low x)))
-      (aarch64_sshll x (VecElemSize.Size64x2) 0 false))
+      (aarch64_sshll x VecElemSize.Size64x2 0 false))
 
 ;;;; Rules for `swiden_high` (signed widen high half) ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; I8X16 -> I16X8: widen high 8 lanes
 (rule (lower (has_type $I16X8 (swiden_high x)))
-      (aarch64_sshll x (VecElemSize.Size16x8) 0 true))
+      (aarch64_sshll x VecElemSize.Size16x8 0 true))
 
 ;; I16X8 -> I32X4: widen high 4 lanes
 (rule (lower (has_type $I32X4 (swiden_high x)))
-      (aarch64_sshll x (VecElemSize.Size32x4) 0 true))
+      (aarch64_sshll x VecElemSize.Size32x4 0 true))
 
 ;; I32X4 -> I64X2: widen high 2 lanes
 (rule (lower (has_type $I64X2 (swiden_high x)))
-      (aarch64_sshll x (VecElemSize.Size64x2) 0 true))
+      (aarch64_sshll x VecElemSize.Size64x2 0 true))
 
 ;;;; Rules for `uwiden_low` (unsigned widen low half) ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; I8X16 -> I16X8: widen low 8 lanes
 (rule (lower (has_type $I16X8 (uwiden_low x)))
-      (aarch64_ushll x (VecElemSize.Size16x8) 0 false))
+      (aarch64_ushll x VecElemSize.Size16x8 0 false))
 
 ;; I16X8 -> I32X4: widen low 4 lanes
 (rule (lower (has_type $I32X4 (uwiden_low x)))
-      (aarch64_ushll x (VecElemSize.Size32x4) 0 false))
+      (aarch64_ushll x VecElemSize.Size32x4 0 false))
 
 ;; I32X4 -> I64X2: widen low 2 lanes
 (rule (lower (has_type $I64X2 (uwiden_low x)))
-      (aarch64_ushll x (VecElemSize.Size64x2) 0 false))
+      (aarch64_ushll x VecElemSize.Size64x2 0 false))
 
 ;;;; Rules for `uwiden_high` (unsigned widen high half) ;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; I8X16 -> I16X8: widen high 8 lanes
 (rule (lower (has_type $I16X8 (uwiden_high x)))
-      (aarch64_ushll x (VecElemSize.Size16x8) 0 true))
+      (aarch64_ushll x VecElemSize.Size16x8 0 true))
 
 ;; I16X8 -> I32X4: widen high 4 lanes
 (rule (lower (has_type $I32X4 (uwiden_high x)))
-      (aarch64_ushll x (VecElemSize.Size32x4) 0 true))
+      (aarch64_ushll x VecElemSize.Size32x4 0 true))
 
 ;; I32X4 -> I64X2: widen high 2 lanes
 (rule (lower (has_type $I64X2 (uwiden_high x)))
-      (aarch64_ushll x (VecElemSize.Size64x2) 0 true))
+      (aarch64_ushll x VecElemSize.Size64x2 0 true))
 
 ;;;; Rules for `snarrow` (signed narrow) ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; I16X8 + I16X8 -> I8X16: narrow two vectors to one
 (rule (lower (has_type $I8X16 (snarrow x y)))
-      (aarch64_sqxtn_combined x y (VecElemSize.Size8x16)))
+      (aarch64_sqxtn_combined x y VecElemSize.Size8x16))
 
 ;; I32X4 + I32X4 -> I16X8: narrow two vectors to one
 (rule (lower (has_type $I16X8 (snarrow x y)))
-      (aarch64_sqxtn_combined x y (VecElemSize.Size16x8)))
+      (aarch64_sqxtn_combined x y VecElemSize.Size16x8))
 
 ;; I64X2 + I64X2 -> I32X4: narrow two vectors to one
 (rule (lower (has_type $I32X4 (snarrow x y)))
-      (aarch64_sqxtn_combined x y (VecElemSize.Size32x4)))
+      (aarch64_sqxtn_combined x y VecElemSize.Size32x4))
 
 ;;;; Rules for `unarrow` (unsigned narrow from signed) ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; I16X8 + I16X8 -> I8X16: narrow signed to unsigned
 (rule (lower (has_type $I8X16 (unarrow x y)))
-      (aarch64_sqxtun_combined x y (VecElemSize.Size8x16)))
+      (aarch64_sqxtun_combined x y VecElemSize.Size8x16))
 
 ;; I32X4 + I32X4 -> I16X8: narrow signed to unsigned
 (rule (lower (has_type $I16X8 (unarrow x y)))
-      (aarch64_sqxtun_combined x y (VecElemSize.Size16x8)))
+      (aarch64_sqxtun_combined x y VecElemSize.Size16x8))
 
 ;; I64X2 + I64X2 -> I32X4: narrow signed to unsigned
 (rule (lower (has_type $I32X4 (unarrow x y)))
-      (aarch64_sqxtun_combined x y (VecElemSize.Size32x4)))
+      (aarch64_sqxtun_combined x y VecElemSize.Size32x4))
 
 ;;;; Rules for `uunarrow` (unsigned narrow from unsigned) ;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; I16X8 + I16X8 -> I8X16: narrow unsigned to unsigned
 (rule (lower (has_type $I8X16 (uunarrow x y)))
-      (aarch64_uqxtn_combined x y (VecElemSize.Size8x16)))
+      (aarch64_uqxtn_combined x y VecElemSize.Size8x16))
 
 ;; I32X4 + I32X4 -> I16X8: narrow unsigned to unsigned
 (rule (lower (has_type $I16X8 (uunarrow x y)))
-      (aarch64_uqxtn_combined x y (VecElemSize.Size16x8)))
+      (aarch64_uqxtn_combined x y VecElemSize.Size16x8))
 
 ;; I64X2 + I64X2 -> I32X4: narrow unsigned to unsigned
 (rule (lower (has_type $I32X4 (uunarrow x y)))
-      (aarch64_uqxtn_combined x y (VecElemSize.Size32x4)))
+      (aarch64_uqxtn_combined x y VecElemSize.Size32x4))
 
 ;;;; Float vector conversions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -3499,7 +3481,7 @@
 (decl aarch64_return_call (SigRef ExternalName ValueSlice) Aarch64Inst)
 
 ;; Near return call optimization (priority 1 - prefer when distance is known near)
-(rule 1 (lower (return_call (func_ref_data sig_ref name (RelocDistance.Near) _) args))
+(rule 1 (lower (return_call (func_ref_data sig_ref name RelocDistance.Near _) args))
       (aarch64_return_call sig_ref name args))
 
 ;; Fallback return call (priority 0 - any distance)
@@ -3532,7 +3514,7 @@
 (decl aarch64_call (SigRef ExternalName ValueSlice) ValueRegs)
 
 ;; Near call optimization (priority 1 - prefer when distance is known near)
-(rule 1 (lower (call (func_ref_data sig_ref name (RelocDistance.Near) _) args))
+(rule 1 (lower (call (func_ref_data sig_ref name RelocDistance.Near _) args))
       (aarch64_call sig_ref name args))
 
 ;; Fallback call (priority 0 - any distance)
@@ -3549,7 +3531,7 @@
 (decl aarch64_try_call (SigRef ExternalName ValueSlice) ValueRegs)
 (extern constructor aarch64_try_call aarch64_try_call)
 
-(rule 1 (lower (try_call (func_ref_data sig_ref name (RelocDistance.Near) _) args))
+(rule 1 (lower (try_call (func_ref_data sig_ref name RelocDistance.Near _) args))
       (aarch64_try_call sig_ref name args))
 
 (rule (lower (try_call (func_ref_data sig_ref name dist _) args))
@@ -3592,13 +3574,13 @@
 
 ;; DUP patterns - single element broadcast
 (rule 6 (lower (shuffle a b (shuffle_dup8_from_imm n)))
-      (vec_dup_from_fpu a (VectorSize.V16B) n))
+      (vec_dup_from_fpu a VectorSize.V16B n))
 (rule 5 (lower (shuffle a b (shuffle_dup16_from_imm n)))
-      (vec_dup_from_fpu a (VectorSize.V8H) n))
+      (vec_dup_from_fpu a VectorSize.V8H n))
 (rule 4 (lower (shuffle a b (shuffle_dup32_from_imm n)))
-      (vec_dup_from_fpu a (VectorSize.V4S) n))
+      (vec_dup_from_fpu a VectorSize.V4S n))
 (rule 3 (lower (shuffle a b (shuffle_dup64_from_imm n)))
-      (vec_dup_from_fpu a (VectorSize.V2D) n))
+      (vec_dup_from_fpu a VectorSize.V2D n))
 
 ;; EXT pattern - byte-wise concatenate and shift
 (decl vec_extract (Value Value u8) Aarch64Inst)
@@ -3618,21 +3600,21 @@
 (extern constructor vec_uzp2 vec_uzp2)
 
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1e1c_1a18_1614_1210_0e0c_0a08_0604_0200)))
-      (vec_uzp1 a b (VectorSize.V16B)))
+      (vec_uzp1 a b VectorSize.V16B))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1f1d_1b19_1715_1311_0f0d_0b09_0705_0301)))
-      (vec_uzp2 a b (VectorSize.V16B)))
+      (vec_uzp2 a b VectorSize.V16B))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1d1c_1918_1514_1110_0d0c_0908_0504_0100)))
-      (vec_uzp1 a b (VectorSize.V8H)))
+      (vec_uzp1 a b VectorSize.V8H))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1f1e_1b1a_1716_1312_0f0e_0b0a_0706_0302)))
-      (vec_uzp2 a b (VectorSize.V8H)))
+      (vec_uzp2 a b VectorSize.V8H))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1b1a1918_13121110_0b0a0908_03020100)))
-      (vec_uzp1 a b (VectorSize.V4S)))
+      (vec_uzp1 a b VectorSize.V4S))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1f1e1d1c_17161514_0f0e0d0c_07060504)))
-      (vec_uzp2 a b (VectorSize.V4S)))
+      (vec_uzp2 a b VectorSize.V4S))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1716151413121110_0706050403020100)))
-      (vec_uzp1 a b (VectorSize.V2D)))
+      (vec_uzp1 a b VectorSize.V2D))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1f1e1d1c1b1a1918_0f0e0d0c0b0a0908)))
-      (vec_uzp2 a b (VectorSize.V2D)))
+      (vec_uzp2 a b VectorSize.V2D))
 
 ;; ZIP1/ZIP2 patterns - interleave low/high halves
 (decl vec_zip1 (Value Value VectorSize) Aarch64Inst)
@@ -3641,21 +3623,21 @@
 (extern constructor vec_zip2 vec_zip2)
 
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1707_1606_1505_1404_1303_1202_1101_1000)))
-      (vec_zip1 a b (VectorSize.V16B)))
+      (vec_zip1 a b VectorSize.V16B))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1f0f_1e0e_1d0d_1c0c_1b0b_1a0a_1909_1808)))
-      (vec_zip2 a b (VectorSize.V16B)))
+      (vec_zip2 a b VectorSize.V16B))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1716_0706_1514_0504_1312_0302_1110_0100)))
-      (vec_zip1 a b (VectorSize.V8H)))
+      (vec_zip1 a b VectorSize.V8H))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1f1e_0f0e_1d1c_0d0c_1b1a_0b0a_1918_0908)))
-      (vec_zip2 a b (VectorSize.V8H)))
+      (vec_zip2 a b VectorSize.V8H))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x17161514_07060504_13121110_03020100)))
-      (vec_zip1 a b (VectorSize.V4S)))
+      (vec_zip1 a b VectorSize.V4S))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1f1e1d1c_0f0e0d0c_1b1a1918_0b0a0908)))
-      (vec_zip2 a b (VectorSize.V4S)))
+      (vec_zip2 a b VectorSize.V4S))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1716151413121110_0706050403020100)))
-      (vec_zip1 a b (VectorSize.V2D)))
+      (vec_zip1 a b VectorSize.V2D))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1f1e1d1c1b1a1918_0f0e0d0c0b0a0908)))
-      (vec_zip2 a b (VectorSize.V2D)))
+      (vec_zip2 a b VectorSize.V2D))
 
 ;; TRN1/TRN2 patterns - transpose (interleave alternating lanes)
 (decl vec_trn1 (Value Value VectorSize) Aarch64Inst)
@@ -3664,17 +3646,17 @@
 (extern constructor vec_trn2 vec_trn2)
 
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1e0e_1c0c_1a0a_1808_1606_1404_1202_1000)))
-      (vec_trn1 a b (VectorSize.V16B)))
+      (vec_trn1 a b VectorSize.V16B))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1f0f_1d0d_1b0b_1909_1707_1505_1303_1101)))
-      (vec_trn2 a b (VectorSize.V16B)))
+      (vec_trn2 a b VectorSize.V16B))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1d1c_0d0c_1918_0908_1514_0504_1110_0100)))
-      (vec_trn1 a b (VectorSize.V8H)))
+      (vec_trn1 a b VectorSize.V8H))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1f1e_0f0e_1b1a_0b0a_1716_0706_1312_0302)))
-      (vec_trn2 a b (VectorSize.V8H)))
+      (vec_trn2 a b VectorSize.V8H))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1b1a1918_0b0a0908_13121110_03020100)))
-      (vec_trn1 a b (VectorSize.V4S)))
+      (vec_trn1 a b VectorSize.V4S))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x1f1e1d1c_0f0e0d0c_17161514_07060504)))
-      (vec_trn2 a b (VectorSize.V4S)))
+      (vec_trn2 a b VectorSize.V4S))
 
 ;; REV patterns - byte reversals at different granularities
 (decl rev16 (Value VectorSize) Aarch64Inst)
@@ -3685,17 +3667,17 @@
 (extern constructor rev64 rev64)
 
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x0e0f_0c0d_0a0b_0809_0607_0405_0203_0001)))
-      (rev16 a (VectorSize.V16B)))
+      (rev16 a VectorSize.V16B))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x0c0d0e0f_08090a0b_04050607_00010203)))
-      (rev32 a (VectorSize.V16B)))
+      (rev32 a VectorSize.V16B))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x0d0c0f0e_09080b0a_05040706_01000302)))
-      (rev32 a (VectorSize.V8H)))
+      (rev32 a VectorSize.V8H))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x08090a0b0c0d0e0f_0001020304050607)))
-      (rev64 a (VectorSize.V16B)))
+      (rev64 a VectorSize.V16B))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x09080b0a0d0c0f0e_0100030205040706)))
-      (rev64 a (VectorSize.V8H)))
+      (rev64 a VectorSize.V8H))
 (rule 1 (lower (shuffle a b (u128_from_immediate 0x0b0a09080f0e0d0c_0302010007060504)))
-      (rev64 a (VectorSize.V4S)))
+      (rev64 a VectorSize.V4S))
 
 ;; TBL fallback: handles all shuffle patterns via table lookup
 (decl aarch64_shuffle_tbl (Value Value Immediate) Aarch64Inst)
@@ -3753,7 +3735,7 @@
 ;; Helper for generating float compare equal to zero instruction
 (decl fcmeq0 (Reg VectorSize) Reg)
 (rule (fcmeq0 rn size)
-      (vec_misc (VecMisc2.Fcmeq0) rn size))
+      (vec_misc VecMisc2.Fcmeq0 rn size))
 
 ;; Helper for generating float compare to zero instructions where 2nd argument is zero
 (decl float_cmp_zero (FloatCC Reg VectorSize) Reg)
@@ -3768,7 +3750,7 @@
 ;; Helper for generating int compare equal to zero instruction
 (decl cmeq0 (Reg VectorSize) Reg)
 (rule (cmeq0 rn size)
-      (vec_misc (VecMisc2.Cmeq0) rn size))
+      (vec_misc VecMisc2.Cmeq0 rn size))
 
 ;; Helper for generating int compare to zero instructions where 2nd argument is zero
 (decl int_cmp_zero (IntCC Reg VectorSize) Reg)
@@ -3783,78 +3765,78 @@
 ;; Helper for vector comparisons using VecALUOp
 (decl vec_cmp_vc (Reg Reg VectorSize) Reg)
 (rule (vec_cmp_vc rn rm size)
-      (let ((dst Reg (vec_rrr (VecALUOp.Fcmeq) rn rn size))
-            (tmp Reg (vec_rrr (VecALUOp.Fcmeq) rm rm size))
-            (dst Reg (vec_rrr (VecALUOp.And) dst tmp size)))
+      (let ((dst Reg (vec_rrr VecALUOp.Fcmeq rn rn size))
+            (tmp Reg (vec_rrr VecALUOp.Fcmeq rm rm size))
+            (dst Reg (vec_rrr VecALUOp.And dst tmp size)))
        dst))
 
 ;; Main vector comparison helper - dispatches based on type and condition
 (decl vec_cmp (Reg Reg Type Cond) Reg)
 
 ;; Floating point Vs / Vc
-(rule (vec_cmp rn rm ty (Cond.Vc))
+(rule (vec_cmp rn rm ty Cond.Vc)
       (if (ty_vector_float ty))
       (vec_cmp_vc rn rm (vector_size ty)))
-(rule (vec_cmp rn rm ty (Cond.Vs))
+(rule (vec_cmp rn rm ty Cond.Vs)
       (if (ty_vector_float ty))
       (let ((tmp Reg (vec_cmp_vc rn rm (vector_size ty))))
-       (vec_misc (VecMisc2.Not) tmp (vector_size ty))))
+       (vec_misc VecMisc2.Not tmp (vector_size ty))))
 
 ;; Floating-point comparisons
-(rule (vec_cmp rn rm ty (Cond.Eq))
+(rule (vec_cmp rn rm ty Cond.Eq)
       (if (ty_vector_float ty))
-      (vec_rrr (VecALUOp.Fcmeq) rn rm (vector_size ty)))
-(rule (vec_cmp rn rm ty (Cond.Ne))
+      (vec_rrr VecALUOp.Fcmeq rn rm (vector_size ty)))
+(rule (vec_cmp rn rm ty Cond.Ne)
       (if (ty_vector_float ty))
-      (let ((tmp Reg (vec_rrr (VecALUOp.Fcmeq) rn rm (vector_size ty))))
-       (vec_misc (VecMisc2.Not) tmp (vector_size ty))))
-(rule (vec_cmp rn rm ty (Cond.Ge))
+      (let ((tmp Reg (vec_rrr VecALUOp.Fcmeq rn rm (vector_size ty))))
+       (vec_misc VecMisc2.Not tmp (vector_size ty))))
+(rule (vec_cmp rn rm ty Cond.Ge)
       (if (ty_vector_float ty))
-      (vec_rrr (VecALUOp.Fcmge) rn rm (vector_size ty)))
-(rule (vec_cmp rn rm ty (Cond.Gt))
+      (vec_rrr VecALUOp.Fcmge rn rm (vector_size ty)))
+(rule (vec_cmp rn rm ty Cond.Gt)
       (if (ty_vector_float ty))
-      (vec_rrr (VecALUOp.Fcmgt) rn rm (vector_size ty)))
+      (vec_rrr VecALUOp.Fcmgt rn rm (vector_size ty)))
 ;; Floating-point swapped-operands
-(rule (vec_cmp rn rm ty (Cond.Mi))
+(rule (vec_cmp rn rm ty Cond.Mi)
       (if (ty_vector_float ty))
-      (vec_rrr (VecALUOp.Fcmgt) rm rn (vector_size ty)))
-(rule (vec_cmp rn rm ty (Cond.Ls))
+      (vec_rrr VecALUOp.Fcmgt rm rn (vector_size ty)))
+(rule (vec_cmp rn rm ty Cond.Ls)
       (if (ty_vector_float ty))
-      (vec_rrr (VecALUOp.Fcmge) rm rn (vector_size ty)))
+      (vec_rrr VecALUOp.Fcmge rm rn (vector_size ty)))
 
 ;; Integer comparisons
-(rule 1 (vec_cmp rn rm ty (Cond.Eq))
+(rule 1 (vec_cmp rn rm ty Cond.Eq)
       (if (ty_vector_not_float ty))
-      (vec_rrr (VecALUOp.Cmeq) rn rm (vector_size ty)))
-(rule 1 (vec_cmp rn rm ty (Cond.Ne))
+      (vec_rrr VecALUOp.Cmeq rn rm (vector_size ty)))
+(rule 1 (vec_cmp rn rm ty Cond.Ne)
       (if (ty_vector_not_float ty))
-      (let ((tmp Reg (vec_rrr (VecALUOp.Cmeq) rn rm (vector_size ty))))
-       (vec_misc (VecMisc2.Not) tmp (vector_size ty))))
-(rule 1 (vec_cmp rn rm ty (Cond.Ge))
+      (let ((tmp Reg (vec_rrr VecALUOp.Cmeq rn rm (vector_size ty))))
+       (vec_misc VecMisc2.Not tmp (vector_size ty))))
+(rule 1 (vec_cmp rn rm ty Cond.Ge)
       (if (ty_vector_not_float ty))
-      (vec_rrr (VecALUOp.Cmge) rn rm (vector_size ty)))
-(rule 1 (vec_cmp rn rm ty (Cond.Gt))
+      (vec_rrr VecALUOp.Cmge rn rm (vector_size ty)))
+(rule 1 (vec_cmp rn rm ty Cond.Gt)
       (if (ty_vector_not_float ty))
-      (vec_rrr (VecALUOp.Cmgt) rn rm (vector_size ty)))
-(rule (vec_cmp rn rm ty (Cond.Hs))
+      (vec_rrr VecALUOp.Cmgt rn rm (vector_size ty)))
+(rule (vec_cmp rn rm ty Cond.Hs)
       (if (ty_vector_not_float ty))
-      (vec_rrr (VecALUOp.Cmhs) rn rm (vector_size ty)))
-(rule (vec_cmp rn rm ty (Cond.Hi))
+      (vec_rrr VecALUOp.Cmhs rn rm (vector_size ty)))
+(rule (vec_cmp rn rm ty Cond.Hi)
       (if (ty_vector_not_float ty))
-      (vec_rrr (VecALUOp.Cmhi) rn rm (vector_size ty)))
+      (vec_rrr VecALUOp.Cmhi rn rm (vector_size ty)))
 ;; Integer swapped-operands
-(rule (vec_cmp rn rm ty (Cond.Le))
+(rule (vec_cmp rn rm ty Cond.Le)
       (if (ty_vector_not_float ty))
-      (vec_rrr (VecALUOp.Cmge) rm rn (vector_size ty)))
-(rule (vec_cmp rn rm ty (Cond.Lt))
+      (vec_rrr VecALUOp.Cmge rm rn (vector_size ty)))
+(rule (vec_cmp rn rm ty Cond.Lt)
       (if (ty_vector_not_float ty))
-      (vec_rrr (VecALUOp.Cmgt) rm rn (vector_size ty)))
-(rule 1 (vec_cmp rn rm ty (Cond.Ls))
+      (vec_rrr VecALUOp.Cmgt rm rn (vector_size ty)))
+(rule 1 (vec_cmp rn rm ty Cond.Ls)
       (if (ty_vector_not_float ty))
-      (vec_rrr (VecALUOp.Cmhs) rm rn (vector_size ty)))
-(rule (vec_cmp rn rm ty (Cond.Lo))
+      (vec_rrr VecALUOp.Cmhs rm rn (vector_size ty)))
+(rule (vec_cmp rn rm ty Cond.Lo)
       (if (ty_vector_not_float ty))
-      (vec_rrr (VecALUOp.Cmhi) rm rn (vector_size ty)))
+      (vec_rrr VecALUOp.Cmhi rm rn (vector_size ty)))
 
 (rule (lower_fmla op x y z size)
       (vec_rrr_mod op z x y size))
@@ -3877,25 +3859,25 @@
 (extern constructor vec_fmla_elem vec_fmla_elem)
 
 ;; 32-bit float shuffle fusion (V4S)
-(rule 3 (lower_fmla op (bitcast _ (shuffle x x (shuffle32_from_imm n n n n))) y z size @ (VectorSize.V4S))
+(rule 3 (lower_fmla op (bitcast _ (shuffle x x (shuffle32_from_imm n n n n))) y z size @ VectorSize.V4S)
       (if-let true (u64_lt n 4))
       (vec_fmla_elem op z y x size n))
-(rule 4 (lower_fmla op x (bitcast _ (shuffle y y (shuffle32_from_imm n n n n))) z size @ (VectorSize.V4S))
+(rule 4 (lower_fmla op x (bitcast _ (shuffle y y (shuffle32_from_imm n n n n))) z size @ VectorSize.V4S)
       (if-let true (u64_lt n 4))
       (vec_fmla_elem op z x y size n))
 
 ;; 64-bit float shuffle fusion (V2D)
-(rule 3 (lower_fmla op (bitcast _ (shuffle x x (shuffle64_from_imm n n))) y z size @ (VectorSize.V2D))
+(rule 3 (lower_fmla op (bitcast _ (shuffle x x (shuffle64_from_imm n n))) y z size @ VectorSize.V2D)
       (if-let true (u64_lt n 2))
       (vec_fmla_elem op z y x size n))
-(rule 4 (lower_fmla op x (bitcast _ (shuffle y y (shuffle64_from_imm n n))) z size @ (VectorSize.V2D))
+(rule 4 (lower_fmla op x (bitcast _ (shuffle y y (shuffle64_from_imm n n))) z size @ VectorSize.V2D)
       (if-let true (u64_lt n 2))
       (vec_fmla_elem op z x y size n))
 
 ;; Helper to negate FMA op (Fmla <-> Fmls)
 (decl neg_fmla (VecALUModOp) VecALUModOp)
-(rule (neg_fmla (VecALUModOp.Fmla)) (VecALUModOp.Fmls))
-(rule (neg_fmla (VecALUModOp.Fmls)) (VecALUModOp.Fmla))
+(rule (neg_fmla VecALUModOp.Fmla) VecALUModOp.Fmls)
+(rule (neg_fmla VecALUModOp.Fmls) VecALUModOp.Fmla)
 
 ;; ============================================================================
 ;; Helpers for lower_select

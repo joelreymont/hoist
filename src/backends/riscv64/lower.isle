@@ -77,17 +77,17 @@
 
 ;; Comparison operations
 
-(rule (lower (icmp (slt) ty x y))
+(rule (lower (icmp IntCC.slt ty x y))
       (rv_slt ty x y))
 
-(rule (lower (icmp (ult) ty x y))
+(rule (lower (icmp IntCC.ult ty x y))
       (rv_sltu ty x y))
 
-(rule (lower (icmp (slt) ty x (iconst k)))
+(rule (lower (icmp IntCC.slt ty x (iconst k)))
       (if-let $true (simm12 k))
       (rv_slti ty x k))
 
-(rule (lower (icmp (ult) ty x (iconst k)))
+(rule (lower (icmp IntCC.ult ty x (iconst k)))
       (if-let $true (simm12 k))
       (rv_sltiu ty x k))
 
@@ -140,13 +140,13 @@
 
 ;; FP comparisons
 
-(rule (lower (fcmp (eq) ty x y))
+(rule (lower (fcmp FloatCC.eq ty x y))
       (rv_feq ty x y))
 
-(rule (lower (fcmp (lt) ty x y))
+(rule (lower (fcmp FloatCC.lt ty x y))
       (rv_flt ty x y))
 
-(rule (lower (fcmp (le) ty x y))
+(rule (lower (fcmp FloatCC.le ty x y))
       (rv_fle ty x y))
 
 ;; FP conversions
@@ -171,45 +171,45 @@
 
 ;; FP load/store
 
-(rule (lower (load (f32) addr _flags _offset))
+(rule (lower (load $F32 addr _flags _offset))
       (rv_flw addr))
 
-(rule (lower (load (f64) addr _flags _offset))
+(rule (lower (load $F64 addr _flags _offset))
       (rv_fld addr))
 
-(rule (lower (store (f32 val) addr _flags _offset))
+(rule (lower (store (has_type $F32 val) addr _flags _offset))
       (rv_fsw val addr))
 
-(rule (lower (store (f64 val) addr _flags _offset))
+(rule (lower (store (has_type $F64 val) addr _flags _offset))
       (rv_fsd val addr))
 
 ;; Atomics
 
-(rule (lower (atomic_rmw (add) ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.add ty addr val _ordering))
       (rv_amoadd ty addr val))
 
-(rule (lower (atomic_rmw (swap) ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.xchg ty addr val _ordering))
       (rv_amoswap ty addr val))
 
-(rule (lower (atomic_rmw (and) ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.and ty addr val _ordering))
       (rv_amoand ty addr val))
 
-(rule (lower (atomic_rmw (or) ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.or ty addr val _ordering))
       (rv_amoor ty addr val))
 
-(rule (lower (atomic_rmw (xor) ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.xor ty addr val _ordering))
       (rv_amoxor ty addr val))
 
-(rule (lower (atomic_rmw (smin) ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.min ty addr val _ordering))
       (rv_amomin ty addr val))
 
-(rule (lower (atomic_rmw (smax) ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.max ty addr val _ordering))
       (rv_amomax ty addr val))
 
-(rule (lower (atomic_rmw (umin) ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.umin ty addr val _ordering))
       (rv_amominu ty addr val))
 
-(rule (lower (atomic_rmw (umax) ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.umax ty addr val _ordering))
       (rv_amomaxu ty addr val))
 
 (rule (lower (atomic_load ty addr _ordering))

@@ -82,19 +82,19 @@
 ;; Comparison simplifications
 
 ;; x == x => true
-(rule (simplify (icmp IntCC.Equal ty x x))
+(rule (simplify (icmp IntCC.eq ty x x))
       (iconst 1))
 
 ;; x != x => false
-(rule (simplify (icmp IntCC.NotEqual ty x x))
+(rule (simplify (icmp IntCC.ne ty x x))
       (iconst 0))
 
 ;; x < x => false
-(rule (simplify (icmp IntCC.SignedLessThan ty x x))
+(rule (simplify (icmp IntCC.slt ty x x))
       (iconst 0))
 
 ;; x <= x => true
-(rule (simplify (icmp IntCC.SignedLessThanOrEqual ty x x))
+(rule (simplify (icmp IntCC.sle ty x x))
       (iconst 1))
 
 ;; Control flow simplifications
@@ -112,21 +112,6 @@
 (decl iadd_const (i64 i64) i64)
 (decl isub_const (i64 i64) i64)
 (decl imul_const (i64 i64) i64)
-
-;; Type declarations
-
-(type IntCC (enum
-  Equal
-  NotEqual
-  SignedLessThan
-  SignedLessThanOrEqual
-  SignedGreaterThan
-  SignedGreaterThanOrEqual
-  UnsignedLessThan
-  UnsignedLessThanOrEqual
-  UnsignedGreaterThan
-  UnsignedGreaterThanOrEqual
-))
 
 ;; Optimization pass entry point
 (decl simplify (Value) Value)
