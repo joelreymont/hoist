@@ -256,3 +256,69 @@
 (decl bmask (Type Type Value) Value)
 (extern constructor bmask bmask_ctor)
 (extern extractor bmask bmask_ext)
+
+;; Memory and control flow
+
+(decl load (Type Value MemFlags Offset32) Value)
+(extern constructor load load_ctor)
+(extern extractor load load_ext)
+
+(decl store (Value Value MemFlags Offset32) Value)
+(extern constructor store store_ctor)
+(extern extractor store store_ext)
+
+(decl jump (Block) Value)
+(extern constructor jump jump_ctor)
+(extern extractor jump jump_ext)
+
+(decl brif (Value Block) Value)
+(extern constructor brif brif_ctor)
+(extern extractor brif brif_ext)
+
+(decl br_table (Value JumpTable) Value)
+(extern constructor br_table br_table_ctor)
+(extern extractor br_table br_table_ext)
+
+(decl brz (Value Block) Value)
+(extern constructor brz brz_ctor)
+(extern extractor brz brz_ext)
+
+(decl brnz (Value Block) Value)
+(extern constructor brnz brnz_ctor)
+(extern extractor brnz brnz_ext)
+
+(decl debugtrap () Value)
+(extern constructor debugtrap debugtrap_ctor)
+(extern extractor debugtrap debugtrap_ext)
+
+(decl trap (TrapCode) Value)
+(extern constructor trap trap_ctor)
+(extern extractor trap trap_ext)
+
+(decl trapz (Value TrapCode) Value)
+(extern constructor trapz trapz_ctor)
+(extern extractor trapz trapz_ext)
+
+(decl trapnz (Value TrapCode) Value)
+(extern constructor trapnz trapnz_ctor)
+(extern extractor trapnz trapnz_ext)
+
+(decl return () Value)
+(extern constructor return return_ctor)
+(extern extractor return return_ext)
+
+(decl nop () Value)
+(extern constructor nop nop_ctor)
+(extern extractor nop nop_ext)
+
+(decl sequence_point () Value)
+(extern constructor sequence_point sequence_point_ctor)
+(extern extractor sequence_point sequence_point_ext)
+
+(decl spectre_fence () Value)
+(extern constructor spectre_fence spectre_fence_ctor)
+(extern extractor spectre_fence spectre_fence_ext)
+
+(decl global_value (GlobalValue) Value)
+(extern constructor global_value global_value_ctor)
+(extern extractor global_value global_value_ext)
