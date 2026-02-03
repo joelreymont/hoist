@@ -572,6 +572,12 @@ pub fn build(b: *std.Build) void {
 
     // ISLE compilation (.isle -> .zig generation)
     const IsleCompileStep = @import("build/IsleCompileStep.zig");
+    const isle_debug_comments = b.option(
+        bool,
+        "isle-debug-comments",
+        "Include debug comments in ISLE-generated Zig (can be huge)",
+    ) orelse false;
+
     const isle_step = IsleCompileStep.create(
         b,
         isle_compiler,
@@ -582,10 +588,11 @@ pub fn build(b: *std.Build) void {
             "src/dsl/isle/opts.isle",
         },
         "src/generated/isle",
+        .{ .debug_comments = isle_debug_comments },
     );
 
-    // Make library depend on ISLE code generation
-    lib.step.dependOn(&isle_step.step);
+    const gen_isle_step = b.step("gen-isle", "Regenerate ISLE-generated Zig code");
+    gen_isle_step.dependOn(&isle_step.step);
 
     // CLIF tool
     const clif = b.addExecutable(.{

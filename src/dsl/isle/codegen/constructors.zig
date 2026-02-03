@@ -123,7 +123,10 @@ pub const ConstructorGen = struct {
             // Fallback if tree building fails
             return self.emitFallback(is_partial);
         };
-        defer tree.deinit(self.allocator);
+        defer {
+            tree.deinit(self.allocator);
+            self.allocator.destroy(tree);
+        }
 
         // Emit code from decision tree
         try self.emitDecisionTree(tree, ruleset, ret_ty, is_partial);

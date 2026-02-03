@@ -504,6 +504,17 @@ pub const TermEnv = struct {
     }
 
     pub fn deinit(self: *Self) void {
+        // Free per-term owned allocations (arg lists, extractor templates).
+        for (self.terms.items) |term| {
+            switch (term.kind) {
+                .decl => |d| if (d.arg_tys.len != 0) self.allocator.free(d.arg_tys),
+                .extractor => |e| {
+                    if (e.arg_tys.len != 0) self.allocator.free(e.arg_tys);
+                    deinitPattern(self.allocator, e.template);
+                },
+                .extern_func => |f| if (f.arg_tys.len != 0) self.allocator.free(f.arg_tys),
+            }
+        }
         self.terms.deinit(self.allocator);
         self.term_map.deinit();
         self.externs.deinit();

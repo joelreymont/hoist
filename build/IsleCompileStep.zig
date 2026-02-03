@@ -5,18 +5,24 @@ const Allocator = std.mem.Allocator;
 
 const IsleCompileStep = @This();
 
+pub const Options = struct {
+    debug_comments: bool = false,
+};
+
 step: Step,
 owner: *Build,
 compiler_exe: *Build.Step.Compile,
 source_files: []const []const u8,
 output_dir: []const u8,
 generated_files: std.ArrayList(Build.GeneratedFile),
+debug_comments: bool,
 
 pub fn create(
     owner: *Build,
     compiler_exe: *Build.Step.Compile,
     source_files: []const []const u8,
     output_dir: []const u8,
+    opts: Options,
 ) *IsleCompileStep {
     const self = owner.allocator.create(IsleCompileStep) catch @panic("OOM");
     self.* = .{
@@ -31,6 +37,7 @@ pub fn create(
         .source_files = owner.allocator.dupe([]const u8, source_files) catch @panic("OOM"),
         .output_dir = owner.allocator.dupe(u8, output_dir) catch @panic("OOM"),
         .generated_files = .{},
+        .debug_comments = opts.debug_comments,
     };
 
     // Create output directory path
@@ -66,6 +73,7 @@ pub fn create(
 
         // Create run step for this file
         const run_step = owner.addRunArtifact(compiler_exe);
+        if (self.debug_comments) run_step.addArg("--debug-comments");
         run_step.addFileArg(.{ .cwd_relative = full_source_path });
         run_step.addArg(output_path);
 
