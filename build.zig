@@ -581,7 +581,7 @@ pub fn build(b: *std.Build) void {
             "src/backends/riscv64/lower.isle",
             "src/dsl/isle/opts.isle",
         },
-        "src/generated",
+        "src/generated/isle",
     );
 
     // Make library depend on ISLE code generation

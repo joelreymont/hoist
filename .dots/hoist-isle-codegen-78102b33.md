@@ -1,9 +1,9 @@
 ---
 title: ISLE codegen
-status: open
+status: active
 priority: 1
 issue-type: task
-created-at: "2026-02-02T23:55:19.630291+01:00"
+created-at: "\"\\\"2026-02-02T23:55:19.630291+01:00\\\"\""
 blocks:
   - hoist-agents-docs-b6d41e8d
 ---

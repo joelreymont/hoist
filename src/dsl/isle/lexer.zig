@@ -76,11 +76,12 @@ pub const Lexer = struct {
                 },
                 '(' => {
                     // Block comment (;...;)
-                    if (self.lookaheadByte(1) == ';') {
+                    // Disambiguate from line comments immediately after '(' like "(;; foo)".
+                    if (self.lookaheadByte(1) == ';' and self.lookaheadByte(2) != ';') {
                         var depth: usize = 1;
                         while (true) {
                             const ch = self.peekByte() orelse return error.UnterminatedBlockComment;
-                            if (ch == '(' and self.lookaheadByte(1) == ';') {
+                            if (ch == '(' and self.lookaheadByte(1) == ';' and self.lookaheadByte(2) != ';') {
                                 self.advanceBy(2);
                                 depth += 1;
                             } else if (ch == ';' and self.lookaheadByte(1) == ')') {

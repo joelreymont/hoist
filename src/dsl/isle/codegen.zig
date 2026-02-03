@@ -32,6 +32,20 @@ pub const Codegen = struct {
 
     const Self = @This();
 
+    const TermSignature = struct {
+        params: []const sema.TypeId,
+        ret_ty: sema.TypeId,
+    };
+
+    fn getTermSignature(self: *const Self, term: sema.Term) TermSignature {
+        _ = self;
+        return switch (term.kind) {
+            .decl => |d| .{ .params = d.arg_tys, .ret_ty = d.ret_ty },
+            .extractor => |e| .{ .params = e.arg_tys, .ret_ty = e.ret_ty },
+            .extern_func => |f| .{ .params = f.arg_tys, .ret_ty = f.ret_ty },
+        };
+    }
+
     pub fn init(
         allocator: Allocator,
         typeenv: *const sema.TypeEnv,
@@ -175,7 +189,7 @@ pub const Codegen = struct {
                 try writer.writeAll(") !?");
                 try self.emitExtractorOutType(writer, sig.params, sig.ret_ty);
                 try writer.writeAll(" {\n");
-                try writer.print("    return ctx.{s}(input);\n}\n", .{func_name});
+                try writer.print("    return ctx.{s}(input);\n}}\n", .{func_name});
             }
         }
     }
@@ -187,7 +201,7 @@ pub const Codegen = struct {
         for (self.termenv.terms.items) |term| {
             if (term.kind != .extractor) continue;
             const code = try gen.generateExtractor(term.id);
-            try self.output.appendSlice(code);
+            try self.output.appendSlice(self.allocator, code);
         }
     }
 
@@ -236,11 +250,11 @@ pub const Codegen = struct {
                 try rules.append(self.allocator, self.rules[idx]);
             }
 
-            var ruleset = try mc.buildRuleSet(rules.items);
+            var ruleset = try mc.buildRuleSetForTerm(term_id, rules.items);
             defer ruleset.deinit();
 
             const code = try ctor_gen.genConstructor(term_id, &ruleset);
-            try self.output.appendSlice(code);
+            try self.output.appendSlice(self.allocator, code);
         }
     }
 

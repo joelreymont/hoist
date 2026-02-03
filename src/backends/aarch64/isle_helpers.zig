@@ -3,7 +3,13 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const hoist = if (builtin.is_test) @import("../../root.zig") else @import("root");
+const root_mod = @import("root");
+const hoist = if (builtin.is_test)
+    @import("../../root.zig")
+else if (@hasDecl(root_mod, "entities"))
+    root_mod
+else
+    @import("../../root.zig");
 const Inst = hoist.aarch64_inst.Inst;
 const Reg = hoist.aarch64_inst.Reg;
 const PReg = hoist.machinst.PReg;
@@ -200,7 +206,8 @@ pub fn uimm12(val: u64) ?u64 {
 
 /// Extractor: Check if value fits in unsigned 16-bit (0-65535).
 /// Returns the value if valid, null otherwise.
-pub fn uimm16(val: u64) ?u64 {
+pub fn uimm16(val: i64) ?i64 {
+    if (val < 0) return null;
     if (val <= 65535) return val;
     return null;
 }
@@ -224,8 +231,8 @@ pub fn valid_rotl_imm(width: u32, k: u64) ?u32 {
 
 /// Extractor: Check if offset is valid for load immediate addressing.
 /// AArch64 LDR has 12-bit unsigned immediate scaled by access size.
-/// Returns the offset if valid (0-4095 scaled), null otherwise.
-pub fn valid_ldr_imm_offset(ty: types.Type, offset: u64) ?u64 {
+/// Returns the byte offset if valid (0-4095 scaled), null otherwise.
+pub fn valid_ldr_imm_offset(ty: types.Type, offset: u64) ?i64 {
     // LDR immediate encoding: offset = imm12 * size
     // imm12 is 12-bit unsigned (0-4095)
     const size = ty.bytes();
@@ -235,13 +242,13 @@ pub fn valid_ldr_imm_offset(ty: types.Type, offset: u64) ?u64 {
     if (offset % size != 0) return null;
     if (offset > max_offset) return null;
 
-    return offset;
+    return @intCast(offset);
 }
 
 /// Extractor: Check if offset is valid for store immediate addressing.
 /// AArch64 STR has 12-bit unsigned immediate scaled by access size.
-/// Returns the offset if valid (0-4095 scaled), null otherwise.
-pub fn valid_str_imm_offset(val: lower_mod.Value, offset: u64) ?u64 {
+/// Returns the byte offset if valid (0-4095 scaled), null otherwise.
+pub fn valid_str_imm_offset(val: lower_mod.Value, offset: u64) ?i64 {
     // STR immediate encoding: offset = imm12 * size
     // imm12 is 12-bit unsigned (0-4095)
     const ty = val.type;
@@ -252,22 +259,36 @@ pub fn valid_str_imm_offset(val: lower_mod.Value, offset: u64) ?u64 {
     if (offset % size != 0) return null;
     if (offset > max_offset) return null;
 
-    return offset;
+    return @intCast(offset);
+}
+
+pub fn is_ldp_valid_offset(offset1: i64, offset2: i64) bool {
+    // LDP (pair load) uses a signed 7-bit immediate scaled by 8 for 64-bit regs.
+    // We fuse only adjacent 8-byte loads: [base + off1] and [base + off1 + 8].
+    if (offset2 != offset1 + 8) return false;
+    if (@mod(offset1, 8) != 0) return false;
+    const scaled = @divTrunc(offset1, 8);
+    return scaled >= -64 and scaled <= 63;
+}
+
+pub fn is_stp_valid_offset(offset1: i64, offset2: i64) bool {
+    // Same addressing constraints as LDP for our STP fusion.
+    return is_ldp_valid_offset(offset1, offset2);
 }
 
 /// Extractor: Check if shift is valid for load (must be 0-3).
 /// Returns the shift if valid, null otherwise.
-pub fn valid_ldr_shift(ty: types.Type, shift: u64) ?u64 {
+pub fn valid_ldr_shift(ty: types.Type, shift: u64) ?i64 {
     _ = ty; // Type determines valid shift range
-    if (shift <= 3) return shift;
+    if (shift <= 3) return @intCast(shift);
     return null;
 }
 
 /// Extractor: Check if shift is valid for store (must be 0-3).
 /// Returns the shift if valid, null otherwise.
-pub fn valid_str_shift(val: lower_mod.Value, shift: u64) ?u64 {
+pub fn valid_str_shift(val: lower_mod.Value, shift: u64) ?i64 {
     _ = val; // Value type determines valid shift range
-    if (shift <= 3) return shift;
+    if (shift <= 3) return @intCast(shift);
     return null;
 }
 
@@ -1305,6 +1326,17 @@ pub fn aarch64_fcvtn_combined(x: lower_mod.Value, y: lower_mod.Value, ctx: *lowe
         .dst = temp_reg,
         .src = y_reg,
         .high = true,
+    } };
+}
+
+pub fn aarch64_fcvtn(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_fcvtn");
+    const x_reg = try getValueReg(ctx, x);
+
+    return Inst{ .vec_fcvtn = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
+        .src = x_reg,
+        .high = false,
     } };
 }
 
@@ -2702,7 +2734,7 @@ pub fn tls_general_dynamic(extname: ExternalName, ctx: *lower_mod.LowerCtx(Inst)
 }
 
 /// Dynamic stack operations (ISLE constructors)
-pub fn dynamic_stack_addr(offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_dynamic_stack_addr(offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Get dynamic stack pointer register (X19)
     // This requires dynamic allocations to be enabled in the ABI
     const dyn_sp = Reg.gpr(19); // X19 - dynamic stack pointer
@@ -2741,7 +2773,7 @@ pub fn dynamic_stack_addr(offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     }
 }
 
-pub fn dynamic_stack_load(ty: Type, offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_dynamic_stack_load(ty: Type, offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Load from dynamic stack: LDR Xd/Vd, [X19, #offset]
     const dyn_sp = Reg.gpr(19); // X19 - dynamic stack pointer
 
@@ -2750,7 +2782,7 @@ pub fn dynamic_stack_load(ty: Type, offset: u64, ctx: *lower_mod.LowerCtx(Inst))
     if (offset > max_load_offset) {
         // Compute address in temp register
         const addr_reg = lower_mod.WritableReg.allocReg(.int, ctx);
-        try ctx.emit(try dynamic_stack_addr(offset, ctx));
+        try ctx.emit(try aarch64_dynamic_stack_addr(offset, ctx));
         // Then load from [addr_reg, #0]
         const load_base = addr_reg.toReg();
         return switch (ty) {
@@ -2788,7 +2820,7 @@ pub fn dynamic_stack_load(ty: Type, offset: u64, ctx: *lower_mod.LowerCtx(Inst))
     }
 }
 
-pub fn dynamic_stack_store(ty: Type, val: lower_mod.Value, offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_dynamic_stack_store(ty: Type, val: lower_mod.Value, offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Store to dynamic stack: STR Xs/Vs, [X19, #offset]
     const dyn_sp = Reg.gpr(19); // X19 - dynamic stack pointer
 
@@ -2797,7 +2829,7 @@ pub fn dynamic_stack_store(ty: Type, val: lower_mod.Value, offset: u64, ctx: *lo
     if (offset > max_store_offset) {
         // Compute address in temp register
         const addr_reg = lower_mod.WritableReg.allocReg(.int, ctx);
-        try ctx.emit(try dynamic_stack_addr(offset, ctx));
+        try ctx.emit(try aarch64_dynamic_stack_addr(offset, ctx));
         // Then store to [addr_reg, #0]
         const store_base = addr_reg.toReg();
         return switch (ty) {
@@ -2853,6 +2885,12 @@ pub fn aarch64_debugtrap(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     _ = ctx;
     // BRK #0 - debugger breakpoint
     return Inst{ .brk = .{ .imm = 0 } };
+}
+
+pub fn aarch64_nop(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("aarch64_nop");
+    _ = ctx;
+    return Inst{ .nop = {} };
 }
 
 /// Float constant constructors (ISLE constructors)

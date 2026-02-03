@@ -25,8 +25,11 @@
 
 ;; Immediate forms
 
+(decl simm12 (i64) i64)
+(extern extractor simm12 simm12)
+
 (rule (lower (iadd ty x (iconst k)))
-      (if-let $true (simm12 k))
+      (if-let _ (simm12 k))
       (rv_addi ty x k))
 
 ;; Bitwise operations
@@ -41,18 +44,21 @@
       (rv_xor ty x y))
 
 (rule (lower (band ty x (iconst k)))
-      (if-let $true (simm12 k))
+      (if-let _ (simm12 k))
       (rv_andi ty x k))
 
 (rule (lower (bor ty x (iconst k)))
-      (if-let $true (simm12 k))
+      (if-let _ (simm12 k))
       (rv_ori ty x k))
 
 (rule (lower (bxor ty x (iconst k)))
-      (if-let $true (simm12 k))
+      (if-let _ (simm12 k))
       (rv_xori ty x k))
 
 ;; Shift operations
+
+(decl uimm6 (i64) i64)
+(extern extractor uimm6 uimm6)
 
 (rule (lower (ishl ty x y))
       (rv_sll ty x y))
@@ -64,15 +70,15 @@
       (rv_sra ty x y))
 
 (rule (lower (ishl ty x (iconst k)))
-      (if-let $true (uimm6 k))
+      (if-let _ (uimm6 k))
       (rv_slli ty x k))
 
 (rule (lower (ushr ty x (iconst k)))
-      (if-let $true (uimm6 k))
+      (if-let _ (uimm6 k))
       (rv_srli ty x k))
 
 (rule (lower (sshr ty x (iconst k)))
-      (if-let $true (uimm6 k))
+      (if-let _ (uimm6 k))
       (rv_srai ty x k))
 
 ;; Comparison operations
@@ -185,37 +191,37 @@
 
 ;; Atomics
 
-(rule (lower (atomic_rmw AtomicRmwOp.add ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.add ty addr val _flags _ordering))
       (rv_amoadd ty addr val))
 
-(rule (lower (atomic_rmw AtomicRmwOp.xchg ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.xchg ty addr val _flags _ordering))
       (rv_amoswap ty addr val))
 
-(rule (lower (atomic_rmw AtomicRmwOp.and ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.and ty addr val _flags _ordering))
       (rv_amoand ty addr val))
 
-(rule (lower (atomic_rmw AtomicRmwOp.or ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.or ty addr val _flags _ordering))
       (rv_amoor ty addr val))
 
-(rule (lower (atomic_rmw AtomicRmwOp.xor ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.xor ty addr val _flags _ordering))
       (rv_amoxor ty addr val))
 
-(rule (lower (atomic_rmw AtomicRmwOp.min ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.min ty addr val _flags _ordering))
       (rv_amomin ty addr val))
 
-(rule (lower (atomic_rmw AtomicRmwOp.max ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.max ty addr val _flags _ordering))
       (rv_amomax ty addr val))
 
-(rule (lower (atomic_rmw AtomicRmwOp.umin ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.umin ty addr val _flags _ordering))
       (rv_amominu ty addr val))
 
-(rule (lower (atomic_rmw AtomicRmwOp.umax ty addr val _ordering))
+(rule (lower (atomic_rmw AtomicRmwOp.umax ty addr val _flags _ordering))
       (rv_amomaxu ty addr val))
 
-(rule (lower (atomic_load ty addr _ordering))
+(rule (lower (atomic_load ty addr _flags _ordering))
       (rv_lr ty addr))
 
-(rule (lower (atomic_store val addr _ordering))
+(rule (lower (atomic_store val addr _flags _ordering))
       (rv_sc val addr))
 
 ;; Fence

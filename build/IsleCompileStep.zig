@@ -97,6 +97,10 @@ fn getBackendFromPath(path: []const u8) []const u8 {
         std.mem.indexOf(u8, path, "arm64") != null)
     {
         return "aarch64";
+    } else if (std.mem.indexOf(u8, path, "riscv64") != null) {
+        return "riscv64";
+    } else if (std.mem.indexOf(u8, path, "s390x") != null) {
+        return "s390x";
     } else {
         return "generic";
     }

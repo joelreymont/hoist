@@ -16,6 +16,18 @@ pub const Ident = struct {
     }
 };
 
+/// Type reference used in term signatures.
+pub const Ty = union(enum) {
+    /// Simple type name.
+    ident: Ident,
+    /// Term signature type: (arg1 arg2 ...) ret
+    term_sig: struct {
+        args: []Ident,
+        ret: Ident,
+        pos: Pos,
+    },
+};
+
 /// Top-level definition.
 pub const Def = union(enum) {
     type_def: TypeDef,
@@ -66,7 +78,7 @@ pub const Field = struct {
 /// Term declaration.
 pub const Decl = struct {
     term: Ident,
-    arg_tys: []Ident,
+    arg_tys: []Ty,
     ret_tys: []Ident,
     pure: bool,
     partial: bool,
@@ -201,8 +213,8 @@ pub fn cleanupDef(allocator: Allocator, def: Def) void {
         },
         .decl => |d| {
             allocator.free(d.term.name);
-            for (d.arg_tys) |arg| {
-                allocator.free(arg.name);
+            for (d.arg_tys) |arg_ty| {
+                cleanupTy(allocator, arg_ty);
             }
             allocator.free(d.arg_tys);
             for (d.ret_tys) |ret_ty| {
@@ -212,8 +224,13 @@ pub fn cleanupDef(allocator: Allocator, def: Def) void {
         },
         .rule => |r| {
             cleanupPattern(allocator, r.pattern);
+            for (r.iflets) |iflet| {
+                cleanupPattern(allocator, iflet.pattern);
+                cleanupExpr(allocator, iflet.expr);
+            }
             cleanupExpr(allocator, r.expr);
             allocator.free(r.iflets);
+            if (r.name) |name| allocator.free(name.name);
         },
         .extern_def => |e| {
             allocator.free(e.term.name);
@@ -226,6 +243,17 @@ pub fn cleanupDef(allocator: Allocator, def: Def) void {
             }
             allocator.free(e.args);
             cleanupPattern(allocator, e.template);
+        },
+    }
+}
+
+pub fn cleanupTy(allocator: Allocator, ty: Ty) void {
+    switch (ty) {
+        .ident => |id| allocator.free(id.name),
+        .term_sig => |sig| {
+            for (sig.args) |arg| allocator.free(arg.name);
+            allocator.free(sig.args);
+            allocator.free(sig.ret.name);
         },
     }
 }

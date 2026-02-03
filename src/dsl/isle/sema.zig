@@ -90,6 +90,14 @@ pub const Type = union(enum) {
         variants: []Variant,
         pos: Pos,
     },
+    /// Term signature type: a constructor/extractor function value.
+    term_sig: struct {
+        name: Sym,
+        id: TypeId,
+        args: []TypeId,
+        ret: TypeId,
+        pos: Pos,
+    },
 };
 
 /// Enum variant.
@@ -267,6 +275,52 @@ pub const Rule = struct {
     pos: Pos,
 };
 
+fn deinitExpr(allocator: Allocator, expr: Expr) void {
+    switch (expr) {
+        .term => |t| {
+            for (t.args) |arg| deinitExpr(allocator, arg);
+            allocator.free(t.args);
+        },
+        .let_expr => |l| {
+            for (l.bindings) |b| deinitExpr(allocator, b.val);
+            allocator.free(l.bindings);
+            deinitExpr(allocator, l.body.*);
+            allocator.destroy(l.body);
+        },
+        else => {},
+    }
+}
+
+fn deinitPattern(allocator: Allocator, pat: Pattern) void {
+    switch (pat) {
+        .bind_pattern => |b| {
+            deinitPattern(allocator, b.subpat.*);
+            allocator.destroy(b.subpat);
+        },
+        .term => |t| {
+            for (t.args) |arg| deinitPattern(allocator, arg);
+            allocator.free(t.args);
+        },
+        .and_pat => |a| {
+            for (a.subpats) |sub| deinitPattern(allocator, sub);
+            allocator.free(a.subpats);
+        },
+        else => {},
+    }
+}
+
+fn deinitIfLet(allocator: Allocator, iflet: IfLet) void {
+    deinitPattern(allocator, iflet.pattern);
+    deinitExpr(allocator, iflet.expr);
+}
+
+fn deinitRule(allocator: Allocator, rule: Rule) void {
+    deinitPattern(allocator, rule.pattern);
+    for (rule.iflets) |iflet| deinitIfLet(allocator, iflet);
+    allocator.free(rule.iflets);
+    deinitExpr(allocator, rule.expr);
+}
+
 /// Type environment - symbol table and type definitions.
 pub const TypeEnv = struct {
     /// Interned symbol strings.
@@ -279,6 +333,8 @@ pub const TypeEnv = struct {
     type_map: std.AutoHashMap(Sym, TypeId),
     /// Constant symbol types.
     const_types: std.AutoHashMap(Sym, TypeId),
+    /// Enum variant constructor lookup (QualifiedName -> VariantId).
+    const_variants: std.AutoHashMap(Sym, VariantId),
     /// Allocator for owned data.
     allocator: Allocator,
 
@@ -291,6 +347,7 @@ pub const TypeEnv = struct {
             .types = std.ArrayList(Type){},
             .type_map = std.AutoHashMap(Sym, TypeId).init(allocator),
             .const_types = std.AutoHashMap(Sym, TypeId).init(allocator),
+            .const_variants = std.AutoHashMap(Sym, VariantId).init(allocator),
             .allocator = allocator,
         };
         try self.addBuiltinTypes();
@@ -303,9 +360,26 @@ pub const TypeEnv = struct {
         }
         self.syms.deinit(self.allocator);
         self.sym_map.deinit();
+
+        for (self.types.items) |ty| {
+            switch (ty) {
+                .tuple => |t| if (t.fields.len != 0) self.allocator.free(t.fields),
+                .enum_type => |e| {
+                    if (e.variants.len != 0) {
+                        for (e.variants) |variant| {
+                            if (variant.fields.len != 0) self.allocator.free(variant.fields);
+                        }
+                        self.allocator.free(e.variants);
+                    }
+                },
+                .term_sig => |s| if (s.args.len != 0) self.allocator.free(s.args),
+                else => {},
+            }
+        }
         self.types.deinit(self.allocator);
         self.type_map.deinit();
         self.const_types.deinit();
+        self.const_variants.deinit();
     }
 
     fn addBuiltinTypes(self: *Self) !void {
@@ -372,6 +446,7 @@ pub const TypeEnv = struct {
             .primitive => |*p| p.id = type_id,
             .tuple => |*t| t.id = type_id,
             .enum_type => |*e| e.id = type_id,
+            .term_sig => |*s| s.id = type_id,
             .builtin => {},
         }
 
@@ -380,6 +455,7 @@ pub const TypeEnv = struct {
             .primitive => |p| p.name,
             .tuple => |t| t.name,
             .enum_type => |e| e.name,
+            .term_sig => |s| s.name,
         };
 
         if (name_sym) |sym| {
@@ -538,8 +614,25 @@ pub const Compiler = struct {
     term_env: TermEnv,
     rules: std.ArrayList(Rule),
     allocator: Allocator,
+    last_err: ?ErrInfo = null,
 
     const Self = @This();
+
+    pub const ErrInfo = struct {
+        kind: Kind,
+        sym: Sym,
+        pos: Pos,
+        exp: usize = 0,
+        got: usize = 0,
+
+        pub const Kind = enum {
+            undefined_term,
+            undefined_type,
+            undefined_var,
+            arity_mismatch,
+            type_mismatch,
+        };
+    };
 
     pub fn init(allocator: Allocator) !Self {
         return .{
@@ -547,18 +640,41 @@ pub const Compiler = struct {
             .term_env = TermEnv.init(allocator),
             .rules = std.ArrayList(Rule){},
             .allocator = allocator,
+            .last_err = null,
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.type_env.deinit();
         self.term_env.deinit();
+        for (self.rules.items) |rule| {
+            deinitRule(self.allocator, rule);
+        }
         self.rules.deinit(self.allocator);
     }
 
     /// Compile AST definitions to semantic IR.
     pub fn compile(self: *Self, defs: []const ast.Def) !void {
-        // Pass 1: Register all type definitions
+        // Pass 1a: Predeclare enum types so enum variants can reference types
+        // declared later in the file (forward refs).
+        for (defs) |def| {
+            if (def != .type_def) continue;
+            if (def.type_def.ty != .enum_type) continue;
+
+            const type_def = def.type_def;
+            const name_sym = try self.type_env.internSym(type_def.name.name);
+            if (self.type_env.lookupType(name_sym) != null) continue;
+
+            _ = try self.type_env.addType(.{ .enum_type = .{
+                .name = name_sym,
+                .id = TypeId.new(0),
+                .is_extern = type_def.is_extern,
+                .variants = @constCast(&[_]Variant{}),
+                .pos = type_def.pos,
+            } });
+        }
+
+        // Pass 1b: Register all type definitions
         for (defs) |def| {
             if (def == .type_def) {
                 try self.registerType(def.type_def);
@@ -584,25 +700,64 @@ pub const Compiler = struct {
         }
     }
 
+    fn undefinedTerm(self: *Self, term: Sym, pos: Pos) anyerror {
+        self.last_err = .{ .kind = .undefined_term, .sym = term, .pos = pos };
+        return error.UndefinedTerm;
+    }
+
+    fn undefinedType(self: *Self, ty: Sym, pos: Pos) anyerror {
+        self.last_err = .{ .kind = .undefined_type, .sym = ty, .pos = pos };
+        return error.UndefinedType;
+    }
+
+    fn undefinedVar(self: *Self, name: Sym, pos: Pos) anyerror {
+        self.last_err = .{ .kind = .undefined_var, .sym = name, .pos = pos };
+        return error.UndefinedVariable;
+    }
+
+    fn arityMismatch(self: *Self, term: Sym, pos: Pos, exp: usize, got: usize) anyerror {
+        self.last_err = .{ .kind = .arity_mismatch, .sym = term, .pos = pos, .exp = exp, .got = got };
+        return error.ArityMismatch;
+    }
+
+    fn typeMismatch(self: *Self, sym: Sym, pos: Pos) anyerror {
+        self.last_err = .{ .kind = .type_mismatch, .sym = sym, .pos = pos };
+        return error.TypeMismatch;
+    }
+
     fn registerType(self: *Self, type_def: ast.TypeDef) !void {
         const name_sym = try self.type_env.internSym(type_def.name.name);
 
         switch (type_def.ty) {
             .primitive => |prim| {
                 const prim_sym = try self.type_env.internSym(prim.name);
-                if (prim_sym != name_sym) return error.PrimitiveNameMismatch;
+                if (prim_sym == name_sym) {
+                    if (self.type_env.lookupType(prim_sym)) |existing_id| {
+                        const existing_ty = self.type_env.getType(existing_id);
+                        if (existing_ty != .primitive) return error.DuplicateType;
+                        return;
+                    }
 
-                if (self.type_env.lookupType(prim_sym)) |existing_id| {
-                    const existing_ty = self.type_env.getType(existing_id);
-                    if (existing_ty != .primitive) return error.DuplicateType;
+                    _ = try self.type_env.addType(.{ .primitive = .{
+                        .id = TypeId.new(0),
+                        .name = prim_sym,
+                        .pos = type_def.pos,
+                    } });
                     return;
                 }
 
-                _ = try self.type_env.addType(.{ .primitive = .{
-                    .id = TypeId.new(0),
-                    .name = prim_sym,
-                    .pos = type_def.pos,
-                } });
+                // Alias: map the new type name onto an existing primitive/builtin type.
+                const target_id = self.type_env.lookupType(prim_sym) orelse return self.undefinedType(prim_sym, prim.pos);
+                const target_ty = self.type_env.getType(target_id);
+                if (target_ty != .primitive and target_ty != .builtin) {
+                    return error.PrimitiveAliasTargetNotPrimitive;
+                }
+
+                if (self.type_env.lookupType(name_sym)) |existing_id| {
+                    if (existing_id != target_id) return error.DuplicateType;
+                    return;
+                }
+                try self.type_env.type_map.put(name_sym, target_id);
                 return;
             },
             .enum_type => |variants_ast| {
@@ -617,7 +772,7 @@ pub const Compiler = struct {
                     for (v.fields) |f| {
                         const f_name = try self.type_env.internSym(f.name.name);
                         const f_ty_sym = try self.type_env.internSym(f.ty.name);
-                        const f_ty = self.type_env.lookupType(f_ty_sym) orelse return error.UndefinedType;
+                        const f_ty = self.type_env.lookupType(f_ty_sym) orelse return self.undefinedType(f_ty_sym, f.ty.pos);
 
                         try fields.append(self.allocator, Field{
                             .name = f_name,
@@ -636,7 +791,24 @@ pub const Compiler = struct {
                     for (owned_variants) |variant| self.allocator.free(variant.fields);
                     self.allocator.free(owned_variants);
                 }
-                const type_id = try self.type_env.addType(.{ .enum_type = .{
+                const type_id = if (self.type_env.lookupType(name_sym)) |existing_id| blk: {
+                    const existing_ty = self.type_env.getType(existing_id);
+                    if (existing_ty != .enum_type) return error.DuplicateType;
+                    if (existing_ty.enum_type.variants.len != 0) {
+                        for (existing_ty.enum_type.variants) |variant| {
+                            if (variant.fields.len != 0) self.allocator.free(variant.fields);
+                        }
+                        self.allocator.free(existing_ty.enum_type.variants);
+                    }
+                    self.type_env.types.items[existing_id.index()] = .{ .enum_type = .{
+                        .name = name_sym,
+                        .id = existing_id,
+                        .is_extern = type_def.is_extern,
+                        .variants = owned_variants,
+                        .pos = type_def.pos,
+                    } };
+                    break :blk existing_id;
+                } else try self.type_env.addType(.{ .enum_type = .{
                     .name = name_sym,
                     .id = TypeId.new(0),
                     .is_extern = type_def.is_extern,
@@ -645,12 +817,44 @@ pub const Compiler = struct {
                 } });
 
                 const type_name = self.type_env.symName(name_sym);
-                for (owned_variants) |variant| {
+                for (owned_variants, 0..) |variant, variant_index| {
                     const variant_name = self.type_env.symName(variant.name);
                     const qualified = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ type_name, variant_name });
                     defer self.allocator.free(qualified);
                     const qualified_sym = try self.type_env.internSym(qualified);
                     try self.type_env.const_types.put(qualified_sym, type_id);
+                    try self.type_env.const_variants.put(
+                        qualified_sym,
+                        VariantId.new(type_id, @intCast(variant_index)),
+                    );
+
+                    // Treat enum variants as constructor terms, so ISLE can write:
+                    //   (Type.Variant field0 field1 ...)
+                    // This matches Cranelift's ISLE style and enables codegen to
+                    // use make_variant/match_variant bindings.
+                    if (self.term_env.lookupTerm(qualified_sym) == null) {
+                        var arg_tys = std.ArrayList(TypeId){};
+                        defer arg_tys.deinit(self.allocator);
+                        for (variant.fields) |field| {
+                            try arg_tys.append(self.allocator, field.ty);
+                        }
+                        const args_slice = try arg_tys.toOwnedSlice(self.allocator);
+                        errdefer self.allocator.free(args_slice);
+
+                        const term_id = TermId.new(@intCast(self.term_env.terms.items.len));
+                        const term = Term{
+                            .name = qualified_sym,
+                            .id = term_id,
+                            .kind = .{ .decl = .{
+                                .arg_tys = args_slice,
+                                .ret_ty = type_id,
+                                .pure = true,
+                                .partial = false,
+                            } },
+                            .pos = type_def.pos,
+                        };
+                        _ = try self.term_env.addTerm(term);
+                    }
                 }
             },
         }
@@ -663,8 +867,30 @@ pub const Compiler = struct {
         defer arg_tys.deinit(self.allocator);
 
         for (decl.arg_tys) |arg| {
-            const arg_sym = try self.type_env.internSym(arg.name);
-            const arg_ty = self.type_env.lookupType(arg_sym) orelse return error.UndefinedType;
+            const arg_ty = switch (arg) {
+                .ident => |id| blk: {
+                    const arg_sym = try self.type_env.internSym(id.name);
+                    break :blk self.type_env.lookupType(arg_sym) orelse return self.undefinedType(arg_sym, id.pos);
+                },
+                .term_sig => |sig| blk: {
+                    var sig_args = std.ArrayList(TypeId){};
+                    defer sig_args.deinit(self.allocator);
+
+                    for (sig.args) |arg_id| {
+                        const arg_sym = try self.type_env.internSym(arg_id.name);
+                        const ty = self.type_env.lookupType(arg_sym) orelse return self.undefinedType(arg_sym, arg_id.pos);
+                        try sig_args.append(self.allocator, ty);
+                    }
+
+                    const ret_sym = try self.type_env.internSym(sig.ret.name);
+                    const ret_ty = self.type_env.lookupType(ret_sym) orelse return self.undefinedType(ret_sym, sig.ret.pos);
+
+                    const args_slice = try sig_args.toOwnedSlice(self.allocator);
+                    errdefer self.allocator.free(args_slice);
+
+                    break :blk try self.createTermSigType(args_slice, ret_ty, sig.pos);
+                },
+            };
             try arg_tys.append(self.allocator, arg_ty);
         }
 
@@ -672,7 +898,7 @@ pub const Compiler = struct {
         defer ret_tys.deinit(self.allocator);
         for (decl.ret_tys) |ret_ident| {
             const ret_sym = try self.type_env.internSym(ret_ident.name);
-            const ret_ty = self.type_env.lookupType(ret_sym) orelse return error.UndefinedType;
+            const ret_ty = self.type_env.lookupType(ret_sym) orelse return self.undefinedType(ret_sym, ret_ident.pos);
             try ret_tys.append(self.allocator, ret_ty);
         }
         if (ret_tys.items.len == 0) return error.MissingReturnType;
@@ -699,7 +925,7 @@ pub const Compiler = struct {
 
     fn registerExtern(self: *Self, extern_def: ast.ExternDef) !void {
         const term_sym = try self.type_env.internSym(extern_def.term.name);
-        const term_id = self.term_env.lookupTerm(term_sym) orelse return error.UndefinedTerm;
+        const term_id = self.term_env.lookupTerm(term_sym) orelse return self.undefinedTerm(term_sym, extern_def.term.pos);
         const func_sym = try self.type_env.internSym(extern_def.func.name);
         try self.term_env.addExtern(term_id, extern_def.kind, func_sym);
     }
@@ -864,7 +1090,7 @@ pub const Compiler = struct {
             },
             .term => |t| {
                 const term_sym = try self.type_env.internSym(t.sym.name);
-                const term_id = self.term_env.lookupTerm(term_sym) orelse return error.UndefinedTerm;
+                const term_id = self.term_env.lookupTerm(term_sym) orelse return self.undefinedTerm(term_sym, t.pos);
                 const term = self.term_env.getTerm(term_id);
 
                 // Get expected argument types from term signature
@@ -874,16 +1100,31 @@ pub const Compiler = struct {
                     .extern_func => |e| e.arg_tys,
                 };
 
-                if (t.args.len != arg_tys.len) {
-                    return error.ArityMismatch;
+                if (t.args.len > arg_tys.len) {
+                    return self.arityMismatch(term_sym, t.pos, arg_tys.len, t.args.len);
                 }
 
                 var args = std.ArrayList(Pattern){};
                 defer args.deinit(self.allocator);
 
+                const missing = arg_tys.len - t.args.len;
+                if (missing != 0) {
+                    const ty_sym = try self.type_env.internSym("Type");
+                    const type_ty = self.type_env.lookupType(ty_sym) orelse return error.UndefinedType;
+                    for (0..missing) |i| {
+                        if (arg_tys[i].index() != type_ty.index()) {
+                            return self.arityMismatch(term_sym, t.pos, arg_tys.len, t.args.len);
+                        }
+                        try args.append(self.allocator, Pattern{ .wildcard = .{
+                            .ty = arg_tys[i],
+                            .pos = t.pos,
+                        } });
+                    }
+                }
+
                 // Type-check each argument with expected type from signature
                 for (t.args, 0..) |arg, i| {
-                    const expected_arg_ty = arg_tys[i];
+                    const expected_arg_ty = arg_tys[missing + i];
                     try args.append(
                         self.allocator,
                         try self.checkPatternWithType(arg, bound_vars, expected_arg_ty),
@@ -899,7 +1140,7 @@ pub const Compiler = struct {
                 // Verify return type matches expected type if provided
                 if (expected_ty) |exp_ty| {
                     if (ret_ty.index() != exp_ty.index()) {
-                        return error.TypeMismatch;
+                        return self.typeMismatch(term_sym, t.pos);
                     }
                 }
 
@@ -952,7 +1193,7 @@ pub const Compiler = struct {
                 for (bound_vars.items, 0..) |bv, i| {
                     if (bv.name.index() == name_sym.index()) {
                         if (expected_ty) |exp_ty| {
-                            if (bv.ty.index() != exp_ty.index()) return error.TypeMismatch;
+                            if (bv.ty.index() != exp_ty.index()) return self.typeMismatch(name_sym, v.pos);
                         }
                         return Expr{ .var_expr = .{
                             .var_id = i,
@@ -963,11 +1204,11 @@ pub const Compiler = struct {
                     }
                 }
 
-                return error.UndefinedVariable;
+                return self.undefinedVar(name_sym, v.pos);
             },
             .term => |t| {
                 const term_sym = try self.type_env.internSym(t.sym.name);
-                const term_id = self.term_env.lookupTerm(term_sym) orelse return error.UndefinedTerm;
+                const term_id = self.term_env.lookupTerm(term_sym) orelse return self.undefinedTerm(term_sym, t.pos);
                 const term = self.term_env.getTerm(term_id);
 
                 const arg_tys = switch (term.kind) {
@@ -975,13 +1216,39 @@ pub const Compiler = struct {
                     .extractor => |e| e.arg_tys,
                     .extern_func => |e| e.arg_tys,
                 };
-                if (t.args.len != arg_tys.len) return error.ArityMismatch;
+                if (t.args.len > arg_tys.len) return self.arityMismatch(term_sym, t.pos, arg_tys.len, t.args.len);
 
                 var args = std.ArrayList(Expr){};
                 defer args.deinit(self.allocator);
 
+                const missing = arg_tys.len - t.args.len;
+                if (missing != 0) {
+                    const ty_sym = try self.type_env.internSym("Type");
+                    const type_ty = self.type_env.lookupType(ty_sym) orelse return error.UndefinedType;
+                    for (0..missing) |i| {
+                        if (arg_tys[i].index() != type_ty.index()) {
+                            return self.arityMismatch(term_sym, t.pos, arg_tys.len, t.args.len);
+                        }
+
+                        var found: ?usize = null;
+                        for (bound_vars.items, 0..) |bv, j| {
+                            if (bv.ty.index() != type_ty.index()) continue;
+                            if (found != null) return error.AmbiguousImplicitTypeArg;
+                            found = j;
+                        }
+                        const var_id = found orelse return error.MissingImplicitTypeArg;
+                        const bv = bound_vars.items[var_id];
+                        try args.append(self.allocator, Expr{ .var_expr = .{
+                            .var_id = var_id,
+                            .name = bv.name,
+                            .ty = bv.ty,
+                            .pos = t.pos,
+                        } });
+                    }
+                }
+
                 for (t.args, 0..) |arg, i| {
-                    try args.append(self.allocator, try self.checkExprWithType(arg, bound_vars, arg_tys[i]));
+                    try args.append(self.allocator, try self.checkExprWithType(arg, bound_vars, arg_tys[missing + i]));
                 }
 
                 const ret_ty = switch (term.kind) {
@@ -991,7 +1258,7 @@ pub const Compiler = struct {
                 };
 
                 if (expected_ty) |exp_ty| {
-                    if (ret_ty.index() != exp_ty.index()) return error.TypeMismatch;
+                    if (ret_ty.index() != exp_ty.index()) return self.typeMismatch(term_sym, t.pos);
                 }
 
                 return Expr{ .term = .{
@@ -1102,6 +1369,22 @@ pub const Compiler = struct {
             .id = type_id,
             .name = name_sym,
             .fields = fields,
+            .pos = pos,
+        } };
+        _ = try self.type_env.addType(ty);
+        return type_id;
+    }
+
+    fn createTermSigType(self: *Self, args: []TypeId, ret: TypeId, pos: Pos) !TypeId {
+        const type_id = TypeId.new(@intCast(self.type_env.types.items.len));
+        const name = try std.fmt.allocPrint(self.allocator, "sig_{d}", .{@intFromEnum(type_id)});
+        defer self.allocator.free(name);
+        const name_sym = try self.type_env.internSym(name);
+        const ty = Type{ .term_sig = .{
+            .name = name_sym,
+            .id = type_id,
+            .args = args,
+            .ret = ret,
             .pos = pos,
         } };
         _ = try self.type_env.addType(ty);

@@ -19,12 +19,12 @@
 
 ;; iadd with small immediate
 (rule (lower (iadd ty x (iconst k)))
-      (if-let $true (simm32 k))
+      (if-let _ (simm32 k))
       (x64_add_imm ty x k))
 
 ;; isub with small immediate
 (rule (lower (isub ty x (iconst k)))
-      (if-let $true (simm32 k))
+      (if-let _ (simm32 k))
       (x64_sub_imm ty x k))
 
 ;; Load/store lowering
@@ -93,15 +93,15 @@
 
 ;; Shift with immediate
 (rule (lower (ishl ty x (iconst k)))
-      (if-let $true (simm32 k))
+      (if-let _ (simm32 k))
       (x64_shl_imm ty x k))
 
 (rule (lower (ushr ty x (iconst k)))
-      (if-let $true (simm32 k))
+      (if-let _ (simm32 k))
       (x64_shr_imm ty x k))
 
 (rule (lower (sshr ty x (iconst k)))
-      (if-let $true (simm32 k))
+      (if-let _ (simm32 k))
       (x64_sar_imm ty x k))
 
 ;; Negation and complement
@@ -117,9 +117,8 @@
 ;; Helper extractors
 
 ;; Check if value fits in signed 32-bit
-(extractor (simm32 val)
-  (if (<= -2147483648 val 2147483647)
-      val))
+(decl simm32 (i64) i64)
+(extern extractor simm32 simm32)
 
 ;; Constructor terms for x64 instructions
 
@@ -235,8 +234,8 @@
 (rule (lower (vconst ty bits))
       (x64_vconst ty bits))
 
-;; vsplat: Broadcast scalar to vector lanes
-(rule (lower (vsplat ty x))
+;; splat: Broadcast scalar to vector lanes
+(rule (lower (splat ty x))
       (x64_vsplat ty x))
 
 ;; vselect: Lane-wise select
@@ -281,15 +280,15 @@
 
 ;; vshl_imm: Vector shift with immediate
 (rule (lower (vshl ty x (iconst k)))
-      (if-let $true (simm8 k))
+      (if-let _ (simm8 k))
       (x64_vshl_imm ty x k))
 
 (rule (lower (vushr ty x (iconst k)))
-      (if-let $true (simm8 k))
+      (if-let _ (simm8 k))
       (x64_vushr_imm ty x k))
 
 (rule (lower (vsshr ty x (iconst k)))
-      (if-let $true (simm8 k))
+      (if-let _ (simm8 k))
       (x64_vsshr_imm ty x k))
 
 ;; vcmp: Vector comparison
@@ -322,9 +321,8 @@
 ;; Additional extractors
 
 ;; Check if value fits in signed 8-bit
-(extractor (simm8 val)
-  (if (<= -128 val 127)
-      val))
+(decl simm8 (i64) i64)
+(extern extractor simm8 simm8)
 
 ;; FP/SIMD constructor terms
 

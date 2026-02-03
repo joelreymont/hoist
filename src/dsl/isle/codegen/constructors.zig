@@ -42,7 +42,7 @@ pub const ConstructorGen = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.output.deinit();
+        self.output.deinit(self.allocator);
         self.prebound.deinit();
         self.emitted.deinit();
     }
@@ -61,7 +61,7 @@ pub const ConstructorGen = struct {
             else => return error.NotAConstructor,
         };
 
-        const writer = self.output.writer();
+        const writer = self.output.writer(self.allocator);
         self.current_term_name = term_name;
         defer self.current_term_name = null;
 
@@ -131,7 +131,7 @@ pub const ConstructorGen = struct {
 
     /// Emit fallback for empty or failed rulesets.
     fn emitFallback(self: *Self, is_partial: bool) !void {
-        const writer = self.output.writer();
+        const writer = self.output.writer(self.allocator);
         try self.indent(self.indent_level);
         if (is_partial) {
             try writer.writeAll("return null;\n");
@@ -155,7 +155,7 @@ pub const ConstructorGen = struct {
             }
             scope_emitted.deinit(self.allocator);
         }
-        const writer = self.output.writer();
+        const writer = self.output.writer(self.allocator);
 
         switch (tree.*) {
             .fail => {
@@ -273,7 +273,7 @@ pub const ConstructorGen = struct {
 
     /// Emit constraint pattern for switch arm.
     fn emitConstraintPattern(self: *Self, constraint: trie.Constraint) !void {
-        const writer = self.output.writer();
+        const writer = self.output.writer(self.allocator);
         switch (constraint) {
             .const_bool => |b| try writer.print("{}", .{b.val}),
             .const_int => |i| try writer.print("{d}", .{i.val}),
@@ -282,7 +282,7 @@ pub const ConstructorGen = struct {
                 const ty = self.typeenv.types.items[v.ty.index()];
                 switch (ty) {
                     .enum_type => |e| {
-                        const variant = e.variants[v.variant.index()];
+                        const variant = e.variants[@intCast(v.variant.variant_index)];
                         try writer.print(".{s}", .{self.typeenv.symName(variant.name)});
                     },
                     else => try writer.writeAll("_"),
@@ -299,7 +299,7 @@ pub const ConstructorGen = struct {
         ruleset: *const trie.RuleSet,
         rule_index: usize,
     ) !void {
-        const writer = self.output.writer();
+        const writer = self.output.writer(self.allocator);
         var scope_emitted = std.ArrayList(usize){};
         defer {
             for (scope_emitted.items) |id| {
@@ -331,14 +331,14 @@ pub const ConstructorGen = struct {
 
     fn emitRuleRecord(self: *Self, rule_index: usize) !void {
         const term_name = self.current_term_name orelse return;
-        const writer = self.output.writer();
+        const writer = self.output.writer(self.allocator);
         try self.indent(self.indent_level);
         try writer.print("ctx.recordRule(\"{s}:{d}\");\n", .{ term_name, rule_index });
     }
 
     /// Emit a single binding.
     fn emitBinding(self: *Self, id: trie.BindingId, binding: *const trie.Binding) !void {
-        const writer = self.output.writer();
+        const writer = self.output.writer(self.allocator);
         if (binding.* == .argument and self.prebound.contains(id.index())) {
             return;
         }
@@ -390,7 +390,7 @@ pub const ConstructorGen = struct {
                 const ty = self.typeenv.types.items[v.ty.index()];
                 switch (ty) {
                     .enum_type => |e| {
-                        const variant = e.variants[v.variant.index()];
+                        const variant = e.variants[@intCast(v.variant.variant_index)];
                         try writer.print(".{{ .{s} = .{{ ", .{self.typeenv.symName(variant.name)});
                         for (v.fields, 0..) |f, i| {
                             if (i > 0) try writer.writeAll(", ");
@@ -524,7 +524,7 @@ pub const ConstructorGen = struct {
             else => return error.NotAConstructor,
         };
 
-        const writer = self.output.writer();
+        const writer = self.output.writer(self.allocator);
 
         // Function signature for trait
         try writer.print("    fn constructor_{s}(\n", .{term_name});
@@ -558,7 +558,7 @@ pub const ConstructorGen = struct {
         ruleset: *const trie.RuleSet,
         arg_tys: []const sema.TypeId,
     ) !void {
-        const writer = self.output.writer();
+        const writer = self.output.writer(self.allocator);
         for (arg_tys, 0..) |arg_ty, i| {
             const binding = trie.Binding{
                 .argument = .{ .index = trie.TupleIndex.new(@intCast(i)) },
@@ -579,7 +579,7 @@ pub const ConstructorGen = struct {
         ret_ty: sema.TypeId,
         result_binding: trie.BindingId,
     ) !void {
-        const writer = self.output.writer();
+        const writer = self.output.writer(self.allocator);
         _ = ret_ty;
 
         try self.indent(self.indent_level);
@@ -593,6 +593,7 @@ pub const ConstructorGen = struct {
             .primitive => |p| self.typeenv.symName(p.name),
             .tuple => |t| self.typeenv.symName(t.name),
             .enum_type => |e| self.typeenv.symName(e.name),
+            .term_sig => |s| self.typeenv.symName(s.name),
             .builtin => |b| switch (b) {
                 .bool => "bool",
                 .unit => "void",
@@ -607,13 +608,14 @@ pub const ConstructorGen = struct {
             .primitive => false,
             .tuple => false,
             .enum_type => true,
+            .term_sig => false,
             .builtin => false,
         };
     }
 
     /// Write indentation at current level.
     fn indent(self: *Self, level: usize) !void {
-        const writer = self.output.writer();
+        const writer = self.output.writer(self.allocator);
         var i: usize = 0;
         while (i < level * 4) : (i += 1) {
             try writer.writeByte(' ');
@@ -628,7 +630,7 @@ pub const ConstructorGen = struct {
     ) !void {
         const term = self.termenv.getTerm(term_id);
         const term_name = self.typeenv.symName(term.name);
-        const writer = self.output.writer();
+        const writer = self.output.writer(self.allocator);
 
         try writer.print("constructor_{s}(ctx", .{term_name});
         for (args, 0..) |arg, i| {
@@ -645,7 +647,7 @@ pub const ConstructorGen = struct {
     ) !void {
         const term = self.termenv.getTerm(term_id);
         const term_name = self.typeenv.symName(term.name);
-        const writer = self.output.writer();
+        const writer = self.output.writer(self.allocator);
 
         const extern_sig = switch (term.kind) {
             .extern_func => |e| e,

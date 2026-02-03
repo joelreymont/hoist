@@ -124,7 +124,12 @@ pub const Parser = struct {
 
     pub fn parseDefs(self: *Self) Error![]ast.Def {
         var defs = std.ArrayList(ast.Def){};
-        errdefer defs.deinit(self.allocator);
+        errdefer {
+            for (defs.items) |def| {
+                ast.cleanupDef(self.allocator, def);
+            }
+            defs.deinit(self.allocator);
+        }
 
         while (self.peek() != null) {
             const def = try self.parseDef();
@@ -277,8 +282,13 @@ pub const Parser = struct {
             break;
         }
 
-        const arg_tys = try self.parseIdentList();
-        errdefer self.allocator.free(arg_tys);
+        const arg_tys = try self.parseTyList();
+        errdefer {
+            for (arg_tys) |ty| {
+                ast.cleanupTy(self.allocator, ty);
+            }
+            self.allocator.free(arg_tys);
+        }
 
         const ret_tys = try self.parseRetList();
         errdefer self.allocator.free(ret_tys);
@@ -372,35 +382,34 @@ pub const Parser = struct {
 
         const pattern = try self.parsePattern();
         var iflets = std.ArrayList(ast.IfLet){};
-        errdefer iflets.deinit(self.allocator);
+        errdefer {
+            for (iflets.items) |iflet| {
+                ast.cleanupPattern(self.allocator, iflet.pattern);
+                ast.cleanupExpr(self.allocator, iflet.expr);
+            }
+            iflets.deinit(self.allocator);
+        }
 
         // Parse optional if-let/if guards: (if-let pattern expr) or (if expr)
+        var expr_opt: ?ast.Expr = null;
         while (true) {
             const tok = self.peek() orelse break;
             if (tok != .lparen) break;
 
-            // Peek ahead to see if this is an if-let
-            const saved_current = self.current;
-            _ = try self.expect(.lparen);
-
+            const lparen_pos = try self.expect(.lparen);
             const guard_kind: enum { none, if_let, if_guard } = blk: {
                 if (self.peek()) |next_tok| {
                     if (next_tok == .symbol) {
                         const sym = next_tok.symbol;
-                        if (std.mem.eql(u8, sym, "if-let")) {
-                            break :blk .if_let;
-                        }
-                        if (std.mem.eql(u8, sym, "if")) {
-                            break :blk .if_guard;
-                        }
+                        if (std.mem.eql(u8, sym, "if-let")) break :blk .if_let;
+                        if (std.mem.eql(u8, sym, "if")) break :blk .if_guard;
                     }
                 }
                 break :blk .none;
             };
 
             if (guard_kind == .none) {
-                // Not an if-let, restore and break
-                self.current = saved_current;
+                expr_opt = try self.parseExprAfterLParen(lparen_pos);
                 break;
             }
 
@@ -428,11 +437,11 @@ pub const Parser = struct {
                 .pattern = .{ .const_bool = .{ .val = true, .pos = iflet_pos } },
                 .expr = if_expr,
                 .pos = iflet_pos,
-            });
+                });
 
         }
 
-        const expr = try self.parseExpr();
+        const expr = expr_opt orelse try self.parseExpr();
         _ = try self.expect(.rparen);
 
         return ast.Rule{
@@ -521,43 +530,64 @@ pub const Parser = struct {
         }
     }
 
+    fn parseExprAfterLParen(self: *Self, pos: Pos) Error!ast.Expr {
+        const sym = try self.expectSymbol();
+
+        if (std.mem.eql(u8, sym.name, "let")) {
+            self.allocator.free(sym.name);
+            const defs = try self.parseLetDefs();
+            errdefer {
+                for (defs) |def| {
+                    self.allocator.free(def.var_name.name);
+                    self.allocator.free(def.ty.name);
+                    ast.cleanupExpr(self.allocator, def.val);
+                }
+                self.allocator.free(defs);
+            }
+
+            const body = try self.parseExpr();
+            _ = try self.expect(.rparen);
+            const body_ptr = try self.allocator.create(ast.Expr);
+            body_ptr.* = body;
+            return ast.Expr{ .let_expr = .{
+                .defs = defs,
+                .body = body_ptr,
+                .pos = pos,
+            } };
+        }
+
+        errdefer self.allocator.free(sym.name);
+
+        var args = std.ArrayList(ast.Expr){};
+        errdefer {
+            for (args.items) |arg| {
+                ast.cleanupExpr(self.allocator, arg);
+            }
+            args.deinit(self.allocator);
+        }
+
+        while (true) {
+            const next_tok = self.peek() orelse break;
+            if (next_tok == .rparen) break;
+            try args.append(self.allocator, try self.parseExpr());
+        }
+        _ = try self.expect(.rparen);
+
+        return ast.Expr{ .term = .{
+            .sym = sym,
+            .args = try args.toOwnedSlice(self.allocator),
+            .pos = pos,
+        } };
+    }
+
     fn parseExpr(self: *Self) Error!ast.Expr {
         const tok = self.peek() orelse return error.UnexpectedEof;
         const pos = self.peekPos().?;
 
         switch (tok) {
             .lparen => {
-                _ = try self.expect(.lparen);
-                const sym = try self.expectSymbol();
-                if (std.mem.eql(u8, sym.name, "let")) {
-                    self.allocator.free(sym.name);
-                    const defs = try self.parseLetDefs();
-                    errdefer self.allocator.free(defs);
-                    const body = try self.parseExpr();
-                    _ = try self.expect(.rparen);
-                    const body_ptr = try self.allocator.create(ast.Expr);
-                    body_ptr.* = body;
-                    return ast.Expr{ .let_expr = .{
-                        .defs = defs,
-                        .body = body_ptr,
-                        .pos = pos,
-                    } };
-                }
-                var args = std.ArrayList(ast.Expr){};
-                errdefer args.deinit(self.allocator);
-
-                while (true) {
-                    const next_tok = self.peek() orelse break;
-                    if (next_tok == .rparen) break;
-                    try args.append(self.allocator, try self.parseExpr());
-                }
-                _ = try self.expect(.rparen);
-
-                return ast.Expr{ .term = .{
-                    .sym = sym,
-                    .args = try args.toOwnedSlice(self.allocator),
-                    .pos = pos,
-                } };
+                const lparen_pos = try self.expect(.lparen);
+                return try self.parseExprAfterLParen(lparen_pos);
             },
             .int => {
                 const int_tok = try self.expectInt();
@@ -586,6 +616,67 @@ pub const Parser = struct {
             },
             else => return error.InvalidExpression,
         }
+    }
+
+    fn parseTyList(self: *Self) Error![]ast.Ty {
+        _ = try self.expect(.lparen);
+        var items = std.ArrayList(ast.Ty){};
+        errdefer {
+            for (items.items) |ty| {
+                ast.cleanupTy(self.allocator, ty);
+            }
+            items.deinit(self.allocator);
+        }
+
+        while (true) {
+            const tok = self.peek() orelse break;
+            if (tok == .rparen) break;
+
+            try items.ensureUnusedCapacity(self.allocator, 1);
+            switch (tok) {
+                .symbol => {
+                    const id = try self.expectSymbol();
+                    items.appendAssumeCapacity(.{ .ident = id });
+                },
+                .lparen => {
+                    const ty = blk: {
+                        const sig_pos = try self.expect(.lparen);
+                        var args = std.ArrayList(ast.Ident){};
+                        errdefer {
+                            for (args.items) |arg| self.allocator.free(arg.name);
+                            args.deinit(self.allocator);
+                        }
+
+                        while (true) {
+                            const arg_tok = self.peek() orelse break;
+                            if (arg_tok == .rparen) break;
+                            if (arg_tok != .symbol) return error.ExpectedSymbol;
+                            try args.ensureUnusedCapacity(self.allocator, 1);
+                            args.appendAssumeCapacity(try self.expectSymbol());
+                        }
+                        _ = try self.expect(.rparen);
+
+                        const args_slice = try args.toOwnedSlice(self.allocator);
+                        errdefer {
+                            for (args_slice) |arg| self.allocator.free(arg.name);
+                            self.allocator.free(args_slice);
+                        }
+
+                        const ret = try self.expectSymbol();
+                        break :blk ast.Ty{ .term_sig = .{
+                            .args = args_slice,
+                            .ret = ret,
+                            .pos = sig_pos,
+                        } };
+                    };
+                    items.appendAssumeCapacity(ty);
+                },
+                else => return error.UnexpectedToken,
+            }
+        }
+
+        _ = try self.expect(.rparen);
+        return items.toOwnedSlice(self.allocator);
     }
 
     fn parseIdentList(self: *Self) Error![]ast.Ident {
@@ -618,7 +709,14 @@ pub const Parser = struct {
     fn parseLetDefs(self: *Self) Error![]ast.LetDef {
         _ = try self.expect(.lparen);
         var defs = std.ArrayList(ast.LetDef){};
-        errdefer defs.deinit(self.allocator);
+        errdefer {
+            for (defs.items) |def| {
+                self.allocator.free(def.var_name.name);
+                self.allocator.free(def.ty.name);
+                ast.cleanupExpr(self.allocator, def.val);
+            }
+            defs.deinit(self.allocator);
+        }
 
         while (true) {
             const tok = self.peek() orelse break;

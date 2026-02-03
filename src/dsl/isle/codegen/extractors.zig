@@ -24,6 +24,13 @@ pub const ExtractorCodegen = struct {
         ty: sema.TypeId,
     };
 
+    pub const Error = Allocator.Error || error{
+        ExternalFunctionInPattern,
+        NotAnEnum,
+        NotAnExtractor,
+        TypeMismatch,
+    };
+
     pub fn init(
         allocator: Allocator,
         typeenv: *const sema.TypeEnv,
@@ -45,7 +52,7 @@ pub const ExtractorCodegen = struct {
     pub fn generateExtractor(
         self: *Self,
         term_id: sema.TermId,
-    ) ![]const u8 {
+    ) Error![]const u8 {
         self.output.clearRetainingCapacity();
         const term = self.termenv.getTerm(term_id);
         try self.emitExtractor(term);
@@ -58,7 +65,7 @@ pub const ExtractorCodegen = struct {
         pattern: sema.Pattern,
         source_expr: []const u8,
         indent: usize,
-    ) !void {
+    ) Error!void {
         const writer = self.output.writer(self.allocator);
 
         switch (pattern) {
@@ -192,7 +199,7 @@ pub const ExtractorCodegen = struct {
         variant_id: sema.VariantId,
         arg_patterns: []const sema.Pattern,
         indent: usize,
-    ) !void {
+    ) Error!void {
         const writer = self.output.writer(self.allocator);
         const ty = self.typeenv.getType(variant_id.type_id);
 
@@ -257,12 +264,13 @@ pub const ExtractorCodegen = struct {
     }
 
     /// Get the Zig type name for a type ID.
-    fn getTypeName(self: *const Self, type_id: sema.TypeId) ![]const u8 {
+    fn getTypeName(self: *const Self, type_id: sema.TypeId) Error![]const u8 {
         const ty = self.typeenv.types.items[type_id.index()];
         return switch (ty) {
             .primitive => |p| self.typeenv.symName(p.name),
             .tuple => |t| self.typeenv.symName(t.name),
             .enum_type => |e| self.typeenv.symName(e.name),
+            .term_sig => |s| self.typeenv.symName(s.name),
             .builtin => |b| switch (b) {
                 .bool => "bool",
                 .unit => "void",
@@ -271,7 +279,7 @@ pub const ExtractorCodegen = struct {
     }
 
     /// Emit indentation.
-    fn emitIndent(self: *Self, count: usize) !void {
+    fn emitIndent(self: *Self, count: usize) Error!void {
         const writer = self.output.writer(self.allocator);
         var i: usize = 0;
         while (i < count) : (i += 1) {
@@ -283,7 +291,7 @@ pub const ExtractorCodegen = struct {
     pub fn generateAll(
         self: *Self,
         terms: []const sema.Term,
-    ) ![]const u8 {
+    ) Error![]const u8 {
         // Clear output
         self.output.clearRetainingCapacity();
 
@@ -307,7 +315,7 @@ pub const ExtractorCodegen = struct {
         return self.output.items;
     }
 
-    fn emitExtractor(self: *Self, term: sema.Term) !void {
+    fn emitExtractor(self: *Self, term: sema.Term) Error!void {
         const term_name = self.typeenv.symName(term.name);
         const extractor = switch (term.kind) {
             .extractor => |e| e,
@@ -378,7 +386,7 @@ pub const ExtractorCodegen = struct {
         writer: anytype,
         arg_tys: []const sema.TypeId,
         ret_ty: sema.TypeId,
-    ) !void {
+    ) Error!void {
         if (arg_tys.len == 0) {
             try writer.writeAll(try self.getTypeName(ret_ty));
             return;
@@ -392,7 +400,7 @@ pub const ExtractorCodegen = struct {
         try writer.writeAll(" }");
     }
 
-    fn collectBindingList(self: *Self, pattern: sema.Pattern) ![]BindingInfo {
+    fn collectBindingList(self: *Self, pattern: sema.Pattern) Error![]BindingInfo {
         var bindings = std.AutoHashMap(usize, sema.TypeId).init(self.allocator);
         defer bindings.deinit();
 
@@ -421,7 +429,7 @@ pub const ExtractorCodegen = struct {
         self: *Self,
         pattern: sema.Pattern,
         bindings: *std.AutoHashMap(usize, sema.TypeId),
-    ) !void {
+    ) Error!void {
         switch (pattern) {
             .var_pat => |v| try self.recordBinding(bindings, v.var_id, v.ty),
             .bind_pattern => |b| {
@@ -447,7 +455,7 @@ pub const ExtractorCodegen = struct {
         bindings: *std.AutoHashMap(usize, sema.TypeId),
         var_id: usize,
         ty: sema.TypeId,
-    ) !void {
+    ) Error!void {
         _ = self;
         if (bindings.get(var_id)) |prev| {
             if (prev.index() != ty.index()) return error.TypeMismatch;
@@ -462,7 +470,7 @@ pub const ExtractorCodegen = struct {
         source_expr: []const u8,
         indent: usize,
         rebind: bool,
-    ) !void {
+    ) Error!void {
         const writer = self.output.writer(self.allocator);
 
         if (rebind) {
@@ -481,7 +489,7 @@ pub const ExtractorCodegen = struct {
         try writer.print("b{d}_set = true;\n", .{var_id});
         try self.emitIndent(indent);
         try writer.print(
-            "} else if (!std.meta.eql({s}, b{d})) return null;\n",
+            "}} else if (!std.meta.eql({s}, b{d})) return null;\n",
             .{ source_expr, var_id },
         );
     }

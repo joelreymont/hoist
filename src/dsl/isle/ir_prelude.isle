@@ -10,6 +10,7 @@
 (type JumpTable (primitive JumpTable))
 (type SigRef (primitive SigRef))
 (type ExternalName (primitive ExternalName))
+(type RelocDistance (primitive RelocDistance))
 (type ValueSlice (primitive ValueSlice))
 (type Imm64 (primitive Imm64))
 (type Ieee32 (primitive Ieee32))
@@ -18,6 +19,8 @@
 (type MemFlags (primitive MemFlags))
 (type TrapCode (primitive TrapCode))
 (type Immediate (primitive u128))
+(type SymbolValueData (primitive SymbolValueData))
+(type FuncRefData (primitive FuncRefData))
 
 ;; Type/value helpers (used by lowering patterns)
 
@@ -64,11 +67,40 @@
 (decl u64_from_imm64 (u64) Imm64)
 (extern extractor u64_from_imm64 u64_from_imm64_ext)
 
+(decl u64_from_i64 (u64) i64)
+(extern extractor u64_from_i64 u64_from_i64_ext)
+
+(decl pure u64_lt (u64 u64) bool)
+(extern constructor u64_lt u64_lt)
+
+(decl pure u64_lteq (u64 u64) bool)
+(extern constructor u64_lteq u64_lteq)
+
+(decl pure u64_nonzero (u64) bool)
+(extern constructor u64_nonzero u64_nonzero)
+
+(decl pure u64_to_u6 (u64) u6)
+(extern constructor u64_to_u6 u64_to_u6)
+
 (decl u32_from_ieee32 (u32) Ieee32)
 (extern extractor u32_from_ieee32 u32_from_ieee32_ext)
 
 (decl u64_from_ieee64 (u64) Ieee64)
 (extern extractor u64_from_ieee64 u64_from_ieee64_ext)
+
+;; Constant instructions
+
+(decl iconst (Type i64) Value)
+(extern constructor iconst iconst_ctor)
+(extern extractor iconst iconst_ext)
+
+(decl f32const (Ieee32) Value)
+(extern constructor f32const f32const_ctor)
+(extern extractor f32const f32const_ext)
+
+(decl f64const (Ieee64) Value)
+(extern constructor f64const f64const_ctor)
+(extern extractor f64const f64const_ext)
 
 ;; Condition codes
 (type IntCC (enum
@@ -220,30 +252,302 @@
 (extern constructor iadd iadd_ctor)
 (extern extractor iadd iadd_ext)
 
+;; iadd_imm: integer add with immediate operand
+(decl iadd_imm (Type Value i64) Value)
+(extern constructor iadd_imm iadd_imm_ctor)
+(extern extractor iadd_imm iadd_imm_ext)
+
 (decl isub (Type Value Value) Value)
 (extern constructor isub isub_ctor)
 (extern extractor isub isub_ext)
 
+;; isub_imm: integer subtract with immediate operand
+(decl isub_imm (Type Value i64) Value)
+(extern constructor isub_imm isub_imm_ctor)
+(extern extractor isub_imm isub_imm_ext)
+
+;; irsub_imm: reverse subtract (imm - x)
+(decl irsub_imm (Type Value i64) Value)
+(extern constructor irsub_imm irsub_imm_ctor)
+(extern extractor irsub_imm irsub_imm_ext)
+
 (decl imul (Type Value Value) Value)
 (extern constructor imul imul_ctor)
 (extern extractor imul imul_ext)
+
+;; imul_imm: integer multiply with immediate operand
+(decl imul_imm (Type Value i64) Value)
+(extern constructor imul_imm imul_imm_ctor)
+(extern extractor imul_imm imul_imm_ext)
+
+;; Multiply high (returns upper bits)
+(decl smul_hi (Type Value Value) Value)
+(extern constructor smul_hi smul_hi_ctor)
+(extern extractor smul_hi smul_hi_ext)
+
+(decl umul_hi (Type Value Value) Value)
+(extern constructor umul_hi umul_hi_ctor)
+(extern extractor umul_hi umul_hi_ext)
+
+(decl smulhi (Value Value) Value)
+(extern constructor smulhi smulhi_ctor)
+(extern extractor smulhi smulhi_ext)
+
+(decl umulhi (Value Value) Value)
+(extern constructor umulhi umulhi_ctor)
+(extern extractor umulhi umulhi_ext)
+
+;; Overflowing arithmetic
+(decl uadd_overflow (Value Value) Value)
+(extern constructor uadd_overflow uadd_overflow_ctor)
+(extern extractor uadd_overflow uadd_overflow_ext)
+
+(decl sadd_overflow (Value Value) Value)
+(extern constructor sadd_overflow sadd_overflow_ctor)
+(extern extractor sadd_overflow sadd_overflow_ext)
+
+(decl usub_overflow (Value Value) Value)
+(extern constructor usub_overflow usub_overflow_ctor)
+(extern extractor usub_overflow usub_overflow_ext)
+
+(decl ssub_overflow (Value Value) Value)
+(extern constructor ssub_overflow ssub_overflow_ctor)
+(extern extractor ssub_overflow ssub_overflow_ext)
+
+(decl umul_overflow (Value Value) Value)
+(extern constructor umul_overflow umul_overflow_ctor)
+(extern extractor umul_overflow umul_overflow_ext)
+
+(decl smul_overflow (Value Value) Value)
+(extern constructor smul_overflow smul_overflow_ctor)
+(extern extractor smul_overflow smul_overflow_ext)
+
+(decl uadd_overflow_cin (Value Value Value) Value)
+(extern constructor uadd_overflow_cin uadd_overflow_cin_ctor)
+(extern extractor uadd_overflow_cin uadd_overflow_cin_ext)
+
+(decl sadd_overflow_cin (Value Value Value) Value)
+(extern constructor sadd_overflow_cin sadd_overflow_cin_ctor)
+(extern extractor sadd_overflow_cin sadd_overflow_cin_ext)
+
+(decl uadd_overflow_trap (Value Value TrapCode) Value)
+(extern constructor uadd_overflow_trap uadd_overflow_trap_ctor)
+(extern extractor uadd_overflow_trap uadd_overflow_trap_ext)
+
+(decl usub_overflow_trap (Value Value TrapCode) Value)
+(extern constructor usub_overflow_trap usub_overflow_trap_ctor)
+(extern extractor usub_overflow_trap usub_overflow_trap_ext)
+
+(decl umul_overflow_trap (Value Value TrapCode) Value)
+(extern constructor umul_overflow_trap umul_overflow_trap_ctor)
+(extern extractor umul_overflow_trap umul_overflow_trap_ext)
+
+(decl sadd_overflow_trap (Value Value TrapCode) Value)
+(extern constructor sadd_overflow_trap sadd_overflow_trap_ctor)
+(extern extractor sadd_overflow_trap sadd_overflow_trap_ext)
+
+(decl ssub_overflow_trap (Value Value TrapCode) Value)
+(extern constructor ssub_overflow_trap ssub_overflow_trap_ctor)
+(extern extractor ssub_overflow_trap ssub_overflow_trap_ext)
+
+(decl smul_overflow_trap (Value Value TrapCode) Value)
+(extern constructor smul_overflow_trap smul_overflow_trap_ctor)
+(extern extractor smul_overflow_trap smul_overflow_trap_ext)
+
+;; Saturating arithmetic
+(decl uadd_sat (Value Value) Value)
+(extern constructor uadd_sat uadd_sat_ctor)
+(extern extractor uadd_sat uadd_sat_ext)
+
+(decl sadd_sat (Value Value) Value)
+(extern constructor sadd_sat sadd_sat_ctor)
+(extern extractor sadd_sat sadd_sat_ext)
+
+(decl usub_sat (Value Value) Value)
+(extern constructor usub_sat usub_sat_ctor)
+(extern extractor usub_sat usub_sat_ext)
+
+(decl ssub_sat (Value Value) Value)
+(extern constructor ssub_sat ssub_sat_ctor)
+(extern extractor ssub_sat ssub_sat_ext)
+
+;; Signed saturating rounding doubling multiply high
+(decl sqmul_round_sat (Type Value Value) Value)
+(extern constructor sqmul_round_sat sqmul_round_sat_ctor)
+(extern extractor sqmul_round_sat sqmul_round_sat_ext)
+
+;; Min/max (integer)
+(decl smin (Type Value Value) Value)
+(extern constructor smin smin_ctor)
+(extern extractor smin smin_ext)
+
+(decl smax (Type Value Value) Value)
+(extern constructor smax smax_ctor)
+(extern extractor smax smax_ext)
+
+(decl imin (Value Value) Value)
+(extern constructor imin imin_ctor)
+(extern extractor imin imin_ext)
+
+(decl imax (Value Value) Value)
+(extern constructor imax imax_ctor)
+(extern extractor imax imax_ext)
+
+(decl umin (Type Value Value) Value)
+(extern constructor umin umin_ctor)
+(extern extractor umin umin_ext)
+
+(decl umax (Type Value Value) Value)
+(extern constructor umax umax_ctor)
+(extern extractor umax umax_ext)
+
+;; bitselect: Bitwise select ((x & c) | (y & ~c))
+(decl bitselect (Type Value Value Value) Value)
+(extern constructor bitselect bitselect_ctor)
+(extern extractor bitselect bitselect_ext)
+
+;; select: Conditional select (scalar)
+(decl select (Type Value Value Value) Value)
+(extern constructor select select_ctor)
+(extern extractor select select_ext)
+
+;; select_spectre_guard: Conditional select with Spectre mitigation
+(decl select_spectre_guard (Type Value Value Value) Value)
+(extern constructor select_spectre_guard select_spectre_guard_ctor)
+(extern extractor select_spectre_guard select_spectre_guard_ext)
+
+;; Vector ops
+(decl avg_round (Value Value) Value)
+(extern constructor avg_round avg_round_ctor)
+(extern extractor avg_round avg_round_ext)
+
+(decl reduce_add (Value) Value)
+(extern constructor reduce_add reduce_add_ctor)
+(extern extractor reduce_add reduce_add_ext)
+
+(decl reduce_smin (Value) Value)
+(extern constructor reduce_smin reduce_smin_ctor)
+(extern extractor reduce_smin reduce_smin_ext)
+
+(decl reduce_smax (Value) Value)
+(extern constructor reduce_smax reduce_smax_ctor)
+(extern extractor reduce_smax reduce_smax_ext)
+
+(decl reduce_umin (Value) Value)
+(extern constructor reduce_umin reduce_umin_ctor)
+(extern extractor reduce_umin reduce_umin_ext)
+
+(decl reduce_umax (Value) Value)
+(extern constructor reduce_umax reduce_umax_ctor)
+(extern extractor reduce_umax reduce_umax_ext)
+
+;; Division / remainder
+(decl udiv (Type Value Value) Value)
+(extern constructor udiv udiv_ctor)
+(extern extractor udiv udiv_ext)
+
+(decl sdiv (Type Value Value) Value)
+(extern constructor sdiv sdiv_ctor)
+(extern extractor sdiv sdiv_ext)
+
+(decl urem (Type Value Value) Value)
+(extern constructor urem urem_ctor)
+(extern extractor urem urem_ext)
+
+(decl srem (Type Value Value) Value)
+(extern constructor srem srem_ctor)
+(extern extractor srem srem_ext)
+
+;; Division / remainder with immediate
+(decl udiv_imm (Type Value i64) Value)
+(extern constructor udiv_imm udiv_imm_ctor)
+(extern extractor udiv_imm udiv_imm_ext)
+
+(decl sdiv_imm (Type Value i64) Value)
+(extern constructor sdiv_imm sdiv_imm_ctor)
+(extern extractor sdiv_imm sdiv_imm_ext)
+
+(decl urem_imm (Type Value i64) Value)
+(extern constructor urem_imm urem_imm_ctor)
+(extern extractor urem_imm urem_imm_ext)
+
+(decl srem_imm (Type Value i64) Value)
+(extern constructor srem_imm srem_imm_ctor)
+(extern extractor srem_imm srem_imm_ext)
 
 ;; band/bor/bxor/bnot: bitwise ops
 (decl band (Type Value Value) Value)
 (extern constructor band band_ctor)
 (extern extractor band band_ext)
 
+(decl band_imm (Type Value u64) Value)
+(extern constructor band_imm band_imm_ctor)
+(extern extractor band_imm band_imm_ext)
+
 (decl bor (Type Value Value) Value)
 (extern constructor bor bor_ctor)
 (extern extractor bor bor_ext)
+
+(decl bor_imm (Type Value u64) Value)
+(extern constructor bor_imm bor_imm_ctor)
+(extern extractor bor_imm bor_imm_ext)
 
 (decl bxor (Type Value Value) Value)
 (extern constructor bxor bxor_ctor)
 (extern extractor bxor bxor_ext)
 
+(decl bxor_imm (Type Value u64) Value)
+(extern constructor bxor_imm bxor_imm_ctor)
+(extern extractor bxor_imm bxor_imm_ext)
+
 (decl bnot (Type Value) Value)
 (extern constructor bnot bnot_ctor)
 (extern extractor bnot bnot_ext)
+
+(decl band_not (Type Value Value) Value)
+(extern constructor band_not band_not_ctor)
+(extern extractor band_not band_not_ext)
+
+(decl bor_not (Type Value Value) Value)
+(extern constructor bor_not bor_not_ctor)
+(extern extractor bor_not bor_not_ext)
+
+(decl bxor_not (Type Value Value) Value)
+(extern constructor bxor_not bxor_not_ctor)
+(extern extractor bxor_not bxor_not_ext)
+
+;; Unary integer ops
+(decl ineg (Type Value) Value)
+(extern constructor ineg ineg_ctor)
+(extern extractor ineg ineg_ext)
+
+(decl iabs (Type Value) Value)
+(extern constructor iabs iabs_ctor)
+(extern extractor iabs iabs_ext)
+
+(decl clz (Type Value) Value)
+(extern constructor clz clz_ctor)
+(extern extractor clz clz_ext)
+
+(decl cls (Type Value) Value)
+(extern constructor cls cls_ctor)
+(extern extractor cls cls_ext)
+
+(decl ctz (Type Value) Value)
+(extern constructor ctz ctz_ctor)
+(extern extractor ctz ctz_ext)
+
+(decl bitrev (Type Value) Value)
+(extern constructor bitrev bitrev_ctor)
+(extern extractor bitrev bitrev_ext)
+
+(decl bswap (Type Value) Value)
+(extern constructor bswap bswap_ctor)
+(extern extractor bswap bswap_ext)
+
+(decl popcnt (Type Value) Value)
+(extern constructor popcnt popcnt_ctor)
+(extern extractor popcnt popcnt_ext)
 
 ;; Shifts and rotates
 (decl ishl (Type Value Value) Value)
@@ -265,6 +569,27 @@
 (decl rotr (Type Value Value) Value)
 (extern constructor rotr rotr_ctor)
 (extern extractor rotr rotr_ext)
+
+;; Shifts and rotates with immediate
+(decl ishl_imm (Type Value u64) Value)
+(extern constructor ishl_imm ishl_imm_ctor)
+(extern extractor ishl_imm ishl_imm_ext)
+
+(decl ushr_imm (Type Value u64) Value)
+(extern constructor ushr_imm ushr_imm_ctor)
+(extern extractor ushr_imm ushr_imm_ext)
+
+(decl sshr_imm (Type Value u64) Value)
+(extern constructor sshr_imm sshr_imm_ctor)
+(extern extractor sshr_imm sshr_imm_ext)
+
+(decl rotl_imm (Type Value u64) Value)
+(extern constructor rotl_imm rotl_imm_ctor)
+(extern extractor rotl_imm rotl_imm_ext)
+
+(decl rotr_imm (Type Value u64) Value)
+(extern constructor rotr_imm rotr_imm_ctor)
+(extern extractor rotr_imm rotr_imm_ext)
 
 ;; Floating-point operations
 
@@ -360,6 +685,14 @@
 (extern constructor ireduce ireduce_ctor)
 (extern extractor ireduce ireduce_ext)
 
+(decl iconcat (Value Value) Value)
+(extern constructor iconcat iconcat_ctor)
+(extern extractor iconcat iconcat_ext)
+
+(decl isplit (Value) Value)
+(extern constructor isplit isplit_ctor)
+(extern extractor isplit isplit_ext)
+
 (decl fpromote (Type Type Value) Value)
 (extern constructor fpromote fpromote_ctor)
 (extern extractor fpromote fpromote_ext)
@@ -392,6 +725,10 @@
 (extern constructor fcvt_to_uint_sat fcvt_to_uint_sat_ctor)
 (extern extractor fcvt_to_uint_sat fcvt_to_uint_sat_ext)
 
+(decl fcvt_low_from_sint (Type Type Value) Value)
+(extern constructor fcvt_low_from_sint fcvt_low_from_sint_ctor)
+(extern extractor fcvt_low_from_sint fcvt_low_from_sint_ext)
+
 (decl bitcast (Type Value) Value)
 (extern constructor bitcast bitcast_ctor)
 (extern extractor bitcast bitcast_ext)
@@ -410,6 +747,62 @@
 (extern constructor store store_ctor)
 (extern extractor store store_ext)
 
+;; Narrow integer stores
+(decl istore8 (Value Value MemFlags Offset32) Value)
+(extern constructor istore8 istore8_ctor)
+(extern extractor istore8 istore8_ext)
+
+(decl istore16 (Value Value MemFlags Offset32) Value)
+(extern constructor istore16 istore16_ctor)
+(extern extractor istore16 istore16_ext)
+
+(decl istore32 (Value Value MemFlags Offset32) Value)
+(extern constructor istore32 istore32_ctor)
+(extern extractor istore32 istore32_ext)
+
+;; Widening loads (vector)
+(decl uload8x8 (Value MemFlags Offset32) Value)
+(extern constructor uload8x8 uload8x8_ctor)
+(extern extractor uload8x8 uload8x8_ext)
+
+(decl sload8x8 (Value MemFlags Offset32) Value)
+(extern constructor sload8x8 sload8x8_ctor)
+(extern extractor sload8x8 sload8x8_ext)
+
+(decl uload16x4 (Value MemFlags Offset32) Value)
+(extern constructor uload16x4 uload16x4_ctor)
+(extern extractor uload16x4 uload16x4_ext)
+
+(decl sload16x4 (Value MemFlags Offset32) Value)
+(extern constructor sload16x4 sload16x4_ctor)
+(extern extractor sload16x4 sload16x4_ext)
+
+(decl uload32x2 (Value MemFlags Offset32) Value)
+(extern constructor uload32x2 uload32x2_ctor)
+(extern extractor uload32x2 uload32x2_ext)
+
+(decl sload32x2 (Value MemFlags Offset32) Value)
+(extern constructor sload32x2 sload32x2_ctor)
+(extern extractor sload32x2 sload32x2_ext)
+
+;; Addressing modes (pre/post increment)
+(decl pre_inc (Value Value) Value)
+(extern constructor pre_inc pre_inc_ctor)
+(extern extractor pre_inc pre_inc_ext)
+
+(decl post_inc (Value Value) Value)
+(extern constructor post_inc post_inc_ctor)
+(extern extractor post_inc post_inc_ext)
+
+;; Load/store pair pseudo-ops
+(decl load_pair (Type Value i64 i64) Value)
+(extern constructor load_pair load_pair_ctor)
+(extern extractor load_pair load_pair_ext)
+
+(decl store_pair (Value Value Value i64 i64) Value)
+(extern constructor store_pair store_pair_ctor)
+(extern extractor store_pair store_pair_ext)
+
 (decl jump (Block) Value)
 (extern constructor jump jump_ctor)
 (extern extractor jump jump_ext)
@@ -418,7 +811,7 @@
 (extern constructor brif brif_ctor)
 (extern extractor brif brif_ext)
 
-(decl br_table (Value JumpTable) Value)
+(decl br_table (Value JumpTable Block) Value)
 (extern constructor br_table br_table_ctor)
 (extern extractor br_table br_table_ext)
 
@@ -450,6 +843,30 @@
 (extern constructor return return_ctor)
 (extern extractor return return_ext)
 
+(decl call (FuncRefData ValueSlice) Value)
+(extern constructor call call_ctor)
+(extern extractor call call_ext)
+
+(decl call_indirect (SigRef Value ValueSlice) Value)
+(extern constructor call_indirect call_indirect_ctor)
+(extern extractor call_indirect call_indirect_ext)
+
+(decl return_call (FuncRefData ValueSlice) Value)
+(extern constructor return_call return_call_ctor)
+(extern extractor return_call return_call_ext)
+
+(decl return_call_indirect (SigRef Value ValueSlice) Value)
+(extern constructor return_call_indirect return_call_indirect_ctor)
+(extern extractor return_call_indirect return_call_indirect_ext)
+
+(decl try_call (FuncRefData ValueSlice) Value)
+(extern constructor try_call try_call_ctor)
+(extern extractor try_call try_call_ext)
+
+(decl try_call_indirect (SigRef Value ValueSlice) Value)
+(extern constructor try_call_indirect try_call_indirect_ctor)
+(extern extractor try_call_indirect try_call_indirect_ext)
+
 (decl nop () Value)
 (extern constructor nop nop_ctor)
 (extern extractor nop nop_ext)
@@ -462,9 +879,80 @@
 (extern constructor spectre_fence spectre_fence_ctor)
 (extern extractor spectre_fence spectre_fence_ext)
 
+(decl landingpad () Value)
+(extern constructor landingpad landingpad_ctor)
+(extern extractor landingpad landingpad_ext)
+
+(decl get_frame_pointer () Value)
+(extern constructor get_frame_pointer get_frame_pointer_ctor)
+(extern extractor get_frame_pointer get_frame_pointer_ext)
+
+(decl get_stack_pointer () Value)
+(extern constructor get_stack_pointer get_stack_pointer_ctor)
+(extern extractor get_stack_pointer get_stack_pointer_ext)
+
+(decl get_return_address () Value)
+(extern constructor get_return_address get_return_address_ctor)
+(extern extractor get_return_address get_return_address_ext)
+
+(decl get_pinned_reg () Value)
+(extern constructor get_pinned_reg get_pinned_reg_ctor)
+(extern extractor get_pinned_reg get_pinned_reg_ext)
+
+(decl set_pinned_reg (Value) Value)
+(extern constructor set_pinned_reg set_pinned_reg_ctor)
+(extern extractor set_pinned_reg set_pinned_reg_ext)
+
 (decl global_value (GlobalValue) Value)
 (extern constructor global_value global_value_ctor)
 (extern extractor global_value global_value_ext)
+
+(decl symbol_value (SymbolValueData) Value)
+(extern constructor symbol_value symbol_value_ctor)
+(extern extractor symbol_value symbol_value_ext)
+
+(decl func_addr (FuncRefData) Value)
+(extern constructor func_addr func_addr_ctor)
+(extern extractor func_addr func_addr_ext)
+
+;; Stack operations
+(decl stack_addr (StackSlot Offset32) Value)
+(extern constructor stack_addr stack_addr_ctor)
+(extern extractor stack_addr stack_addr_ext)
+
+(decl stack_load (StackSlot Offset32) Value)
+(extern constructor stack_load stack_load_ctor)
+(extern extractor stack_load stack_load_ext)
+
+(decl stack_store (Value StackSlot Offset32) Value)
+(extern constructor stack_store stack_store_ctor)
+(extern extractor stack_store stack_store_ext)
+
+(decl dynamic_stack_addr (u64) Value)
+(extern constructor dynamic_stack_addr dynamic_stack_addr_ctor)
+(extern extractor dynamic_stack_addr dynamic_stack_addr_ext)
+
+(decl dynamic_stack_load (u64) Value)
+(extern constructor dynamic_stack_load dynamic_stack_load_ctor)
+(extern extractor dynamic_stack_load dynamic_stack_load_ext)
+
+(decl dynamic_stack_store (Value u64) Value)
+(extern constructor dynamic_stack_store dynamic_stack_store_ctor)
+(extern extractor dynamic_stack_store dynamic_stack_store_ext)
+
+(decl symbol_value_data (ExternalName RelocDistance i64) SymbolValueData)
+(extern extractor symbol_value_data symbol_value_data_ext)
+
+(decl func_ref_data (SigRef ExternalName RelocDistance i64) FuncRefData)
+(extern extractor func_ref_data func_ref_data_ext)
+
+(decl stack_switch (Value Value) Value)
+(extern constructor stack_switch stack_switch_ctor)
+(extern extractor stack_switch stack_switch_ext)
+
+(decl tls_value (u64) Value)
+(extern constructor tls_value tls_value_ctor)
+(extern extractor tls_value tls_value_ext)
 
 ;; Atomic operations
 
@@ -490,21 +978,99 @@
 
 ;; SIMD / vector operations
 
-(decl vconst (Immediate) Value)
+(decl vconst (Type Immediate) Value)
 (extern constructor vconst vconst_ctor)
 (extern extractor vconst vconst_ext)
 
-(decl shuffle (Value Value Immediate) Value)
+(decl vadd (Type Value Value) Value)
+(extern constructor vadd vadd_ctor)
+(extern extractor vadd vadd_ext)
+
+(decl vsub (Type Value Value) Value)
+(extern constructor vsub vsub_ctor)
+(extern extractor vsub vsub_ext)
+
+(decl vmul (Type Value Value) Value)
+(extern constructor vmul vmul_ctor)
+(extern extractor vmul vmul_ext)
+
+(decl vand (Type Value Value) Value)
+(extern constructor vand vand_ctor)
+(extern extractor vand vand_ext)
+
+(decl vor (Type Value Value) Value)
+(extern constructor vor vor_ctor)
+(extern extractor vor vor_ext)
+
+(decl vxor (Type Value Value) Value)
+(extern constructor vxor vxor_ctor)
+(extern extractor vxor vxor_ext)
+
+(decl vnot (Type Value) Value)
+(extern constructor vnot vnot_ctor)
+(extern extractor vnot vnot_ext)
+
+(decl vshl (Type Value Value) Value)
+(extern constructor vshl vshl_ctor)
+(extern extractor vshl vshl_ext)
+
+(decl vushr (Type Value Value) Value)
+(extern constructor vushr vushr_ctor)
+(extern extractor vushr vushr_ext)
+
+(decl vsshr (Type Value Value) Value)
+(extern constructor vsshr vsshr_ctor)
+(extern extractor vsshr vsshr_ext)
+
+(decl vcmp (IntCC Type Value Value) Value)
+(extern constructor vcmp vcmp_ctor)
+(extern extractor vcmp vcmp_ext)
+
+(decl vall_true (Value) Value)
+(extern constructor vall_true vall_true_ctor)
+(extern extractor vall_true vall_true_ext)
+
+(decl vany_true (Value) Value)
+(extern constructor vany_true vany_true_ctor)
+(extern extractor vany_true vany_true_ext)
+
+(decl vhigh_bits (Value) Value)
+(extern constructor vhigh_bits vhigh_bits_ctor)
+(extern extractor vhigh_bits vhigh_bits_ext)
+
+(decl vmin (Type Value Value) Value)
+(extern constructor vmin vmin_ctor)
+(extern extractor vmin vmin_ext)
+
+(decl vmax (Type Value Value) Value)
+(extern constructor vmax vmax_ctor)
+(extern extractor vmax vmax_ext)
+
+(decl shuffle (Type Value Value Immediate) Value)
 (extern constructor shuffle shuffle_ctor)
 (extern extractor shuffle shuffle_ext)
 
-(decl splat (Value) Value)
+(decl splat (Type Value) Value)
 (extern constructor splat splat_ctor)
 (extern extractor splat splat_ext)
 
-(decl swizzle (Value Value) Value)
+;; scalar_to_vector: duplicate scalar to all vector lanes
+(decl scalar_to_vector (Type Value) Value)
+(extern constructor scalar_to_vector scalar_to_vector_ctor)
+(extern extractor scalar_to_vector scalar_to_vector_ext)
+
+;; iadd_pairwise: add adjacent pairs of lanes (vector integer)
+(decl iadd_pairwise (Type Value) Value)
+(extern constructor iadd_pairwise iadd_pairwise_ctor)
+(extern extractor iadd_pairwise iadd_pairwise_ext)
+
+(decl swizzle (Type Value Value) Value)
 (extern constructor swizzle swizzle_ctor)
 (extern extractor swizzle swizzle_ext)
+
+(decl vselect (Value Value Value) Value)
+(extern constructor vselect vselect_ctor)
+(extern extractor vselect vselect_ext)
 
 (decl extractlane (Type Value u32) Value)
 (extern constructor extractlane extractlane_ctor)
@@ -513,3 +1079,41 @@
 (decl insertlane (Type Value Value u32) Value)
 (extern constructor insertlane insertlane_ctor)
 (extern extractor insertlane insertlane_ext)
+
+;; SIMD / vector operations - widening/narrowing and lane ops
+
+(decl swiden_low (Value) Value)
+(extern constructor swiden_low swiden_low_ctor)
+(extern extractor swiden_low swiden_low_ext)
+
+(decl swiden_high (Value) Value)
+(extern constructor swiden_high swiden_high_ctor)
+(extern extractor swiden_high swiden_high_ext)
+
+(decl uwiden_low (Value) Value)
+(extern constructor uwiden_low uwiden_low_ctor)
+(extern extractor uwiden_low uwiden_low_ext)
+
+(decl uwiden_high (Value) Value)
+(extern constructor uwiden_high uwiden_high_ctor)
+(extern extractor uwiden_high uwiden_high_ext)
+
+(decl snarrow (Value Value) Value)
+(extern constructor snarrow snarrow_ctor)
+(extern extractor snarrow snarrow_ext)
+
+(decl unarrow (Value Value) Value)
+(extern constructor unarrow unarrow_ctor)
+(extern extractor unarrow unarrow_ext)
+
+(decl uunarrow (Value Value) Value)
+(extern constructor uunarrow uunarrow_ctor)
+(extern extractor uunarrow uunarrow_ext)
+
+(decl fvpromote_low (Value) Value)
+(extern constructor fvpromote_low fvpromote_low_ctor)
+(extern extractor fvpromote_low fvpromote_low_ext)
+
+(decl fvdemote (Value) Value)
+(extern constructor fvdemote fvdemote_ctor)
+(extern extractor fvdemote fvdemote_ext)

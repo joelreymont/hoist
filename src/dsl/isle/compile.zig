@@ -96,8 +96,16 @@ pub fn compile(
     for (sources, 0..) |source, file_idx| {
         var lexer = Lexer.init(allocator, @intCast(file_idx), source.content);
         var parser = try Parser.init(allocator, &lexer);
+        defer parser.deinit();
         const defs = parser.parseDefs() catch |err| {
-            std.debug.print("Parse error in {s}: {}\n", .{ source.filename, err });
+            if (parser.current) |cur| {
+                std.debug.print(
+                    "Parse error in {s}: {} at {}:{} (token {any})\n",
+                    .{ source.filename, err, cur[0].line, cur[0].col, cur[1] },
+                );
+            } else {
+                std.debug.print("Parse error in {s}: {}\n", .{ source.filename, err });
+            }
             return error.ParseError;
         };
         try all_defs.appendSlice(allocator, defs);
@@ -109,7 +117,30 @@ pub fn compile(
     defer compiler.deinit();
 
     compiler.compile(all_defs.items) catch |err| {
-        std.debug.print("Semantic error in ISLE sources: {}\n", .{err});
+        if (compiler.last_err) |info| {
+            const filename = if (info.pos.file < sources.len) sources[info.pos.file].filename else "<unknown>";
+            const name = compiler.type_env.symName(info.sym);
+            const kind = switch (info.kind) {
+                .undefined_term => "undefined term",
+                .undefined_type => "undefined type",
+                .undefined_var => "undefined variable",
+                .arity_mismatch => "arity mismatch",
+                .type_mismatch => "type mismatch",
+            };
+            if (info.kind == .arity_mismatch) {
+                std.debug.print(
+                    "Semantic error in {s}:{}:{}: {s} '{s}' (expected {d} args, got {d}) ({})\n",
+                    .{ filename, info.pos.line, info.pos.col, kind, name, info.exp, info.got, err },
+                );
+            } else {
+                std.debug.print(
+                    "Semantic error in {s}:{}:{}: {s} '{s}' ({})\n",
+                    .{ filename, info.pos.line, info.pos.col, kind, name, err },
+                );
+            }
+        } else {
+            std.debug.print("Semantic error in ISLE sources: {}\n", .{err});
+        }
         return error.SemanticError;
     };
 
