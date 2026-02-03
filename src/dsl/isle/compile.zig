@@ -81,27 +81,26 @@ pub fn compile(
     sources: []const Source,
     options: CodegenOptions,
 ) !CompiledCode {
-    // For now, we only support single-file compilation
     if (sources.len == 0) {
         return error.NoSources;
     }
-
-    const source = sources[0];
-
-    // Phase 1: Lexical analysis
-    var lexer = Lexer.init(allocator, 0, source.content);
-
-    // Phase 2: Parsing
-    var parser = try Parser.init(allocator, &lexer);
-    const defs = parser.parseDefs() catch |err| {
-        std.debug.print("Parse error in {s}: {}\n", .{ source.filename, err });
-        return error.ParseError;
-    };
+    var all_defs = std.ArrayList(ast_mod.Def){};
     defer {
-        // Clean up AST
-        for (defs) |def| {
+        for (all_defs.items) |def| {
             ast_mod.cleanupDef(allocator, def);
         }
+        all_defs.deinit(allocator);
+    }
+
+    // Phase 1-2: Lexical analysis + Parsing for each source
+    for (sources, 0..) |source, file_idx| {
+        var lexer = Lexer.init(allocator, @intCast(file_idx), source.content);
+        var parser = try Parser.init(allocator, &lexer);
+        const defs = parser.parseDefs() catch |err| {
+            std.debug.print("Parse error in {s}: {}\n", .{ source.filename, err });
+            return error.ParseError;
+        };
+        try all_defs.appendSlice(allocator, defs);
         allocator.free(defs);
     }
 
@@ -109,8 +108,8 @@ pub fn compile(
     var compiler = try Compiler.init(allocator);
     defer compiler.deinit();
 
-    compiler.compile(defs) catch |err| {
-        std.debug.print("Semantic error in {s}: {}\n", .{ source.filename, err });
+    compiler.compile(all_defs.items) catch |err| {
+        std.debug.print("Semantic error in ISLE sources: {}\n", .{err});
         return error.SemanticError;
     };
 
