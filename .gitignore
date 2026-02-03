@@ -1,7 +1,11 @@
 /target
 SESSION*.md
 .zig-cache/
+.zig-global-cache/
 zig-out/
+
+# Generated ISLE output (debug/intermediate)
+src/generated/isle/
 
 # Backup files
 *.bak
