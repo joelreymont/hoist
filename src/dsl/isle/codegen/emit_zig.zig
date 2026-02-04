@@ -63,6 +63,7 @@ pub const ZigEmitter = struct {
             try writer.writeAll("// Generated from ISLE specification\n");
         }
         try writer.writeAll("\nconst std = @import(\"std\");\n");
+        try writer.writeAll("inline fn use(_: anytype) void {}\n");
         try writer.writeAll("const Allocator = std.mem.Allocator;\n\n");
     }
 
@@ -134,10 +135,10 @@ pub const ZigEmitter = struct {
         // Emit the decision tree as Zig code
         // For now, emit a simple fallthrough to error
         try self.emitIndent(writer);
-        try writer.writeAll("_ = ctx;\n");
+        try writer.writeAll("use(ctx);\n");
         for (0..sig.params.len) |i| {
             try self.emitIndent(writer);
-            try writer.print("_ = arg{d};\n", .{i});
+            try writer.print("use(arg{d});\n", .{i});
         }
         try self.emitIndent(writer);
         try writer.writeAll("return error.NoMatch;\n");

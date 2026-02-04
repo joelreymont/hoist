@@ -338,6 +338,7 @@ pub const ExtractorCodegen = struct {
         try writer.writeAll(
             \\// Auto-generated extractor functions
             \\const std = @import("std");
+            \\inline fn use(_: anytype) void {}
             \\
             \\
         );
@@ -374,7 +375,7 @@ pub const ExtractorCodegen = struct {
         try self.emitExtractorOutType(writer, extractor.arg_tys, extractor.ret_ty);
         try writer.writeAll(" {\n");
         try self.emitIndent(4);
-        try writer.writeAll("_ = ctx;\n");
+        try writer.writeAll("use(ctx);\n");
 
         for (bindings) |binding| {
             try self.emitIndent(4);

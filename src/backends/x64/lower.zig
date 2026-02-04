@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-const root = @import("root");
+const root = @import("../../root.zig");
 const Inst = root.x64_inst.Inst;
 const Reg = root.x64_inst.Reg;
 const OperandSize = root.x64_inst.OperandSize;
@@ -21,11 +21,12 @@ pub const X64Lower = struct {
         inst: lower_mod.Inst,
     ) !bool {
         // Try ISLE-generated lowering first
-        const handled = try isle_lower.lower(ctx, inst);
-        if (handled) return true;
-
-        // Fallback for instructions not handled by ISLE
-        return false;
+        const value = ctx.func.dfg.firstResult(inst) orelse try ctx.func.dfg.appendInstResult(inst, root.types.Type.INVALID);
+        _ = isle_lower.lower(ctx, value) catch |err| {
+            if (err == error.NoMatch) return false;
+            return err;
+        };
+        return true;
     }
 
     /// Lower a branch instruction.

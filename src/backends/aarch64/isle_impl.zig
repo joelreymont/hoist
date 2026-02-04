@@ -4,7 +4,7 @@
 //! machine instructions that are emitted into the VCode buffer.
 
 const std = @import("std");
-const root = @import("root");
+const root = @import("../../root.zig");
 const abi_mod = @import("abi.zig");
 
 const Inst = root.aarch64_inst.Inst;

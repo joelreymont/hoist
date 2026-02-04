@@ -3,7 +3,7 @@ const isle = @import("isle");
 
 const prelude_path = "src/dsl/isle/ir_prelude.isle";
 const base_preamble =
-    \\const root = @import("root");
+    \\const root = @import("../../root.zig");
     \\const Type = root.types.Type;
     \\const Value = root.entities.Value;
     \\const Inst = root.entities.Inst;
@@ -85,10 +85,7 @@ pub fn main() !void {
         \\const ImmLogic = root.aarch64_isle_types.ImmLogic;
         \\const CondCode = root.aarch64_isle_types.CondCode;
         \\const Cond = root.aarch64_isle_types.Cond;
-        \\const VecALUOp = root.aarch64_isle_types.VecALUOp;
         \\const VecALUModOp = root.aarch64_isle_types.VecALUModOp;
-        \\const VecElemSize = root.aarch64_isle_types.VecElemSize;
-        \\const VecMisc2 = root.aarch64_isle_types.VecMisc2;
         \\const VecShiftImmOp = root.aarch64_isle_types.VecShiftImmOp;
         \\const VectorSize = root.aarch64_isle_types.VectorSize;
         \\const SveElemSize = root.aarch64_isle_types.SveElemSize;
@@ -99,15 +96,32 @@ pub fn main() !void {
         \\const ProducesFlags = root.aarch64_isle_types.ProducesFlags;
         \\const ConsumesFlags = root.aarch64_isle_types.ConsumesFlags;
         \\const ValueRegs = root.aarch64_isle_types.ValueRegs;
+        \\const Context = root.aarch64_isle_impl.IsleContext;
+        \\const externs_primary = root.aarch64_isle_impl;
+        \\const externs_secondary = root.aarch64_isle_helpers;
+        \\const recordRule = root.aarch64_isle_helpers.recordRule;
         \\
     else if (std.mem.indexOf(u8, input_path, "x64") != null)
         \\const X64Inst = root.x64_inst.Inst;
+        \\const Context = root.lower.LowerCtx(root.x64_inst.Inst);
+        \\const externs_primary = struct {};
+        \\const externs_secondary = struct {};
+        \\fn recordRule(_: []const u8) void {}
         \\
     else if (std.mem.indexOf(u8, input_path, "riscv64") != null)
-        \\const Riscv64Inst = root.riscv64_inst.Inst;
+        \\const Riscv64Inst = root.lower.ValueRegs;
+        \\const Context = root.riscv64_isle_impl.IsleCtx;
+        \\const externs_primary = root.riscv64_isle_impl;
+        \\const externs_secondary = struct {};
+        \\fn recordRule(_: []const u8) void {}
         \\
     else
-        "";
+        \\const Context = struct {};
+        \\const externs_primary = struct {};
+        \\const externs_secondary = struct {};
+        \\fn recordRule(_: []const u8) void {}
+        \\
+    ;
     const preamble = try std.fmt.allocPrint(allocator, "{s}{s}", .{ base_preamble, arch_preamble });
     defer allocator.free(preamble);
 

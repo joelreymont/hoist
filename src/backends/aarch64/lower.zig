@@ -1,13 +1,14 @@
 const std = @import("std");
 const testing = std.testing;
 
-const root = @import("root");
+const root = @import("../../root.zig");
 const Inst = root.aarch64_inst.Inst;
 const Reg = root.aarch64_inst.Reg;
 const OperandSize = root.aarch64_inst.OperandSize;
 const WritableReg = root.aarch64_inst.WritableReg;
 const lower_mod = root.lower;
 const LowerCtx = lower_mod.LowerCtx;
+const isle_impl = root.aarch64_isle_impl;
 const types = root.types;
 const abi_mod = @import("abi.zig");
 const call_layout = @import("call_layout.zig");
@@ -68,12 +69,13 @@ pub const Aarch64Lower = struct {
         inst: lower_mod.Inst,
     ) !bool {
         // Try ISLE-generated lowering first
-        const handled = try isle_lower.lower(ctx, inst);
-        if (handled) return true;
-
-        // Fallback for instructions not handled by ISLE
-        // (none yet - ISLE compiler needs parser completion)
-        return false;
+        var isle_ctx = isle_impl.IsleContext.init(ctx);
+        const value = ctx.func.dfg.firstResult(inst) orelse try ctx.func.dfg.appendInstResult(inst, types.Type.INVALID);
+        _ = isle_lower.lower(&isle_ctx, value) catch |err| {
+            if (err == error.NoMatch) return false;
+            return err;
+        };
+        return true;
     }
 
     /// Lower a branch instruction.

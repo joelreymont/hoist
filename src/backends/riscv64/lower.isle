@@ -230,7 +230,7 @@
       (rv_fence))
 
 ;; Constructor terms for riscv64 instructions
-(type Riscv64Inst (enum))
+(type Riscv64Inst extern (enum))
 
 ;; Lowering entry point
 (decl lower (Value) Riscv64Inst)

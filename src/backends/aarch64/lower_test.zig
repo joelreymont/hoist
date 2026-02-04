@@ -7,7 +7,8 @@ const testing = std.testing;
 
 const root = @import("../../root.zig");
 const lower_mod = root.lower;
-const aarch64_lower = @import("../../generated/aarch64_lower_generated.zig");
+const aarch64_lower = @import("../../generated/isle/aarch64_lower_generated.zig");
+const isle_impl = root.aarch64_isle_impl;
 const inst_mod = @import("inst.zig");
 const Inst = inst_mod.Inst;
 
@@ -336,15 +337,29 @@ test "lower try_call indirect" {
 }
 
 // Helper wrappers to call generated lowering functions
+fn instValue(ctx: *lower_mod.LowerCtx(Inst), inst: lower_mod.Inst) !Value {
+    return ctx.func.dfg.firstResult(inst) orelse try ctx.func.dfg.appendInstResult(inst, Type.INVALID);
+}
+
 fn lowerInst(ctx: *lower_mod.LowerCtx(Inst), inst: lower_mod.Inst) !bool {
-    return try aarch64_lower.lower(ctx, inst);
+    var isle_ctx = isle_impl.IsleContext.init(ctx);
+    _ = aarch64_lower.lower(&isle_ctx, try instValue(ctx, inst)) catch |err| {
+        if (err == error.NoMatch) return false;
+        return err;
+    };
+    return true;
 }
 
 fn lowerBranch(ctx: *lower_mod.LowerCtx(Inst), inst: lower_mod.Inst) !bool {
     const inst_data = ctx.getInstData(inst);
     switch (inst_data.*) {
         .branch, .jump, .nullary, .unary => {
-            return try aarch64_lower.lower(ctx, inst);
+            var isle_ctx = isle_impl.IsleContext.init(ctx);
+            _ = aarch64_lower.lower(&isle_ctx, try instValue(ctx, inst)) catch |err| {
+                if (err == error.NoMatch) return false;
+                return err;
+            };
+            return true;
         },
         else => return false,
     }

@@ -17,6 +17,7 @@ pub const ConstructorGen = struct {
     allocator: Allocator,
     output: std.ArrayList(u8),
     indent_level: usize,
+    sw_id: usize,
     arg_tys: ?[]const sema.TypeId,
     prebound: std.AutoHashMap(usize, void),
     emitted: std.AutoHashMap(usize, void),
@@ -35,6 +36,7 @@ pub const ConstructorGen = struct {
             .allocator = allocator,
             .output = std.ArrayList(u8){},
             .indent_level = 0,
+            .sw_id = 0,
             .arg_tys = null,
             .prebound = std.AutoHashMap(usize, void).init(allocator),
             .emitted = std.AutoHashMap(usize, void).init(allocator),
@@ -55,6 +57,7 @@ pub const ConstructorGen = struct {
         ruleset: *const trie.RuleSet,
     ) ![]const u8 {
         self.output.clearRetainingCapacity();
+        self.sw_id = 0;
         const term = self.termenv.getTerm(term_id);
         const term_name = self.typeenv.symName(term.name);
 
@@ -110,10 +113,20 @@ pub const ConstructorGen = struct {
         // Function body
         self.indent_level = 1;
         try self.indent(self.indent_level);
-        try writer.writeAll("_ = ctx;\n");
+        try writer.writeAll("use(ctx);\n");
+        if (ruleset.rules.items.len == 0) {
+            try self.emitExternFallback(term_name, decl.arg_tys, is_partial);
+            try writer.writeAll("}\n");
+            return self.output.items;
+        }
         for (decl.arg_tys, 0..) |_, i| {
-            try self.indent(self.indent_level);
-            try writer.print("_ = arg{d};\n", .{i});
+            const binding = trie.Binding{
+                .argument = .{ .index = trie.TupleIndex.new(@intCast(i)) },
+            };
+            if (ruleset.findBinding(&binding) == null) {
+                try self.indent(self.indent_level);
+                try writer.print("_ = arg{d};\n", .{i});
+            }
         }
         self.arg_tys = decl.arg_tys;
         self.prebound.clearRetainingCapacity();
@@ -160,6 +173,127 @@ pub const ConstructorGen = struct {
         } else {
             try writer.writeAll("return error.NoMatch;\n");
         }
+    }
+
+    fn emitExternFallback(
+        self: *Self,
+        term_name: []const u8,
+        arg_tys: []const sema.TypeId,
+        is_partial: bool,
+    ) !void {
+        const writer = self.output.writer(self.allocator);
+        try self.indent(self.indent_level);
+        try writer.writeAll("if (comptime @hasDecl(externs_primary, \"");
+        try writer.writeAll(term_name);
+        try writer.writeAll("\")) {\n");
+        try self.indent(self.indent_level + 1);
+        try writer.writeAll("const func = externs_primary.");
+        try self.writeIdent(writer, term_name);
+        try writer.writeAll(";\n");
+        try self.indent(self.indent_level + 1);
+        try writer.writeAll("const info = @typeInfo(@TypeOf(func)).@\"fn\";\n");
+        try self.indent(self.indent_level + 1);
+        try writer.print("if (info.params.len == {d}) {{\n", .{arg_tys.len + 1});
+        try self.indent(self.indent_level + 2);
+        try writer.writeAll("const ctx_ty = @TypeOf(ctx);\n");
+        try self.indent(self.indent_level + 2);
+        try writer.writeAll("if (info.params[0].type != null and info.params[0].type.? == ctx_ty) {\n");
+        try self.indent(self.indent_level + 3);
+        try writer.writeAll("return func(ctx");
+        for (arg_tys, 0..) |_, i| {
+            try writer.print(", arg{d}", .{i});
+        }
+        try writer.writeAll(");\n");
+        try self.indent(self.indent_level + 2);
+        try writer.writeAll("}\n");
+        try self.indent(self.indent_level + 2);
+        try writer.writeAll("if (info.params[info.params.len - 1].type != null and info.params[info.params.len - 1].type.? == ctx_ty) {\n");
+        try self.indent(self.indent_level + 3);
+        if (arg_tys.len == 0) {
+            try writer.writeAll("return func(ctx);\n");
+        } else {
+            try writer.writeAll("return func(");
+            for (arg_tys, 0..) |_, i| {
+                if (i > 0) try writer.writeAll(", ");
+                try writer.print("arg{d}", .{i});
+            }
+            try writer.writeAll(", ctx);\n");
+        }
+        try self.indent(self.indent_level + 2);
+        try writer.writeAll("}\n");
+        try self.indent(self.indent_level + 1);
+        try writer.writeAll("}\n");
+        try self.indent(self.indent_level + 1);
+        try writer.writeAll("return func(");
+        for (arg_tys, 0..) |_, i| {
+            if (i > 0) try writer.writeAll(", ");
+            try writer.print("arg{d}", .{i});
+        }
+        try writer.writeAll(");\n");
+        try self.indent(self.indent_level);
+        try writer.writeAll("} else if (comptime @hasDecl(externs_secondary, \"");
+        try writer.writeAll(term_name);
+        try writer.writeAll("\")) {\n");
+        try self.indent(self.indent_level + 1);
+        try writer.writeAll("const func = externs_secondary.");
+        try self.writeIdent(writer, term_name);
+        try writer.writeAll(";\n");
+        try self.indent(self.indent_level + 1);
+        try writer.writeAll("const info = @typeInfo(@TypeOf(func)).@\"fn\";\n");
+        try self.indent(self.indent_level + 1);
+        try writer.print("if (info.params.len == {d}) {{\n", .{arg_tys.len + 1});
+        try self.indent(self.indent_level + 2);
+        try writer.writeAll("const ctx_ty = @TypeOf(ctx);\n");
+        try self.indent(self.indent_level + 2);
+        try writer.writeAll("if (info.params[0].type != null and info.params[0].type.? == ctx_ty) {\n");
+        try self.indent(self.indent_level + 3);
+        try writer.writeAll("return func(ctx");
+        for (arg_tys, 0..) |_, i| {
+            try writer.print(", arg{d}", .{i});
+        }
+        try writer.writeAll(");\n");
+        try self.indent(self.indent_level + 2);
+        try writer.writeAll("}\n");
+        try self.indent(self.indent_level + 2);
+        try writer.writeAll("if (info.params[info.params.len - 1].type != null and info.params[info.params.len - 1].type.? == ctx_ty) {\n");
+        try self.indent(self.indent_level + 3);
+        if (arg_tys.len == 0) {
+            try writer.writeAll("return func(ctx);\n");
+        } else {
+            try writer.writeAll("return func(");
+            for (arg_tys, 0..) |_, i| {
+                if (i > 0) try writer.writeAll(", ");
+                try writer.print("arg{d}", .{i});
+            }
+            try writer.writeAll(", ctx);\n");
+        }
+        try self.indent(self.indent_level + 2);
+        try writer.writeAll("}\n");
+        try self.indent(self.indent_level + 1);
+        try writer.writeAll("}\n");
+        try self.indent(self.indent_level + 1);
+        try writer.writeAll("return func(");
+        for (arg_tys, 0..) |_, i| {
+            if (i > 0) try writer.writeAll(", ");
+            try writer.print("arg{d}", .{i});
+        }
+        try writer.writeAll(");\n");
+        try self.indent(self.indent_level);
+        try writer.writeAll("} else {\n");
+        try self.indent(self.indent_level + 1);
+        try writer.writeAll("use(ctx);\n");
+        for (arg_tys, 0..) |_, i| {
+            try self.indent(self.indent_level + 1);
+            try writer.print("use(arg{d});\n", .{i});
+        }
+        try self.indent(self.indent_level + 1);
+        if (is_partial) {
+            try writer.writeAll("return null;\n");
+        } else {
+            try writer.writeAll("return error.NoMatch;\n");
+        }
+        try self.indent(self.indent_level);
+        try writer.writeAll("}\n");
     }
 
     /// Emit code from a decision tree node.
@@ -226,8 +360,24 @@ pub const ConstructorGen = struct {
                         }
                     }
                 }
+                const bind_idx = sw.binding.index();
+                const sid = self.sw_id;
+                self.sw_id += 1;
                 try self.indent(self.indent_level);
-                try writer.print("switch (v{d}) {{\n", .{sw.binding.index()});
+                try writer.writeAll("{\n");
+                self.indent_level += 1;
+                try self.indent(self.indent_level);
+                try writer.print(
+                    "const r{d} = switch (@typeInfo(@TypeOf(v{d}))) {{ .@\"struct\" => @hasField(@TypeOf(v{d}), \"raw\"), else => false }};\n",
+                    .{ sid, bind_idx, bind_idx },
+                );
+                try self.indent(self.indent_level);
+                try writer.print(
+                    "const k{d} = if (r{d}) v{d}.raw else v{d};\n",
+                    .{ sid, sid, bind_idx, bind_idx },
+                );
+                try self.indent(self.indent_level);
+                try writer.print("switch (k{d}) {{\n", .{sid});
                 self.indent_level += 1;
 
                 var it = sw.cases.iterator();
@@ -236,7 +386,7 @@ pub const ConstructorGen = struct {
                     const subtree = entry.value_ptr.*;
 
                     try self.indent(self.indent_level);
-                    try self.emitConstraintPattern(constraint);
+                    try self.emitConstraintPattern(constraint, bind_idx, sid);
                     try writer.writeAll(" => {\n");
                     self.indent_level += 1;
                     try self.emitDecisionTree(subtree, ruleset, ret_ty, is_partial);
@@ -267,6 +417,9 @@ pub const ConstructorGen = struct {
                 self.indent_level -= 1;
                 try self.indent(self.indent_level);
                 try writer.writeAll("}\n");
+                self.indent_level -= 1;
+                try self.indent(self.indent_level);
+                try writer.writeAll("}\n");
             },
             .test_equal => |eq| {
                 if (eq.a.index() < ruleset.bindings.items.len) {
@@ -294,13 +447,21 @@ pub const ConstructorGen = struct {
     }
 
     /// Emit constraint pattern for switch arm.
-    fn emitConstraintPattern(self: *Self, constraint: trie.Constraint) !void {
+    fn emitConstraintPattern(
+        self: *Self,
+        constraint: trie.Constraint,
+        bind_idx: usize,
+        sid: usize,
+    ) !void {
         const writer = self.output.writer(self.allocator);
         switch (constraint) {
             .const_bool => |b| try writer.print("{}", .{b.val}),
             .const_int => |i| try writer.print("{d}", .{i.val}),
             .const_prim => |p| {
-                try self.writeEnumLit(writer, self.typeenv.symName(p.val));
+                const val_name = self.typeenv.symName(p.val);
+                try writer.print("(if (r{d}) @field(@TypeOf(v{d}), \"{s}\").raw else ", .{ sid, bind_idx, val_name });
+                try self.writeEnumLit(writer, val_name);
+                try writer.writeAll(")");
             },
             .variant => |v| {
                 const ty = self.typeenv.types.items[v.ty.index()];
@@ -357,7 +518,7 @@ pub const ConstructorGen = struct {
         const term_name = self.current_term_name orelse return;
         const writer = self.output.writer(self.allocator);
         try self.indent(self.indent_level);
-        try writer.print("ctx.recordRule(\"{s}:{d}\");\n", .{ term_name, rule_index });
+        try writer.print("recordRule(\"{s}:{d}\");\n", .{ term_name, rule_index });
     }
 
     /// Emit a single binding.
@@ -385,14 +546,30 @@ pub const ConstructorGen = struct {
             .extractor => |e| {
                 const term = self.termenv.getTerm(e.term);
                 const name = self.typeenv.symName(term.name);
-                try writer.writeAll("try ");
-                try self.writePref(writer, "extractor_", name);
-                try writer.writeAll("(ctx");
-                for (e.parameters) |param| {
-                    try writer.writeAll(", ");
-                    try writer.print("v{d}", .{param.index()});
+                const arg_count = switch (term.kind) {
+                    .decl => |d| d.arg_tys.len,
+                    .extractor => |ex| ex.arg_tys.len,
+                    .extern_func => |f| f.arg_tys.len,
+                };
+                if (arg_count == 1) {
+                    try writer.writeAll("blk: { const tmp = try ");
+                    try self.writePref(writer, "extractor_", name);
+                    try writer.writeAll("(ctx");
+                    for (e.parameters) |param| {
+                        try writer.writeAll(", ");
+                        try writer.print("v{d}", .{param.index()});
+                    }
+                    try writer.writeAll("); if (tmp) |val| break :blk val.arg0; break :blk null; }");
+                } else {
+                    try writer.writeAll("try ");
+                    try self.writePref(writer, "extractor_", name);
+                    try writer.writeAll("(ctx");
+                    for (e.parameters) |param| {
+                        try writer.writeAll(", ");
+                        try writer.print("v{d}", .{param.index()});
+                    }
+                    try writer.writeAll(")");
                 }
-                try writer.writeAll(")");
             },
             .constructor => |c| {
                 const term = self.termenv.getTerm(c.term);
