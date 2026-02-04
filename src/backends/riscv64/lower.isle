@@ -29,7 +29,7 @@
 (extern extractor simm12 simm12)
 
 (rule (lower (iadd ty x (iconst k)))
-      (if-let _ (simm12 k))
+      (if-let (simm12 _) k)
       (rv_addi ty x k))
 
 ;; Bitwise operations
@@ -44,15 +44,15 @@
       (rv_xor ty x y))
 
 (rule (lower (band ty x (iconst k)))
-      (if-let _ (simm12 k))
+      (if-let (simm12 _) k)
       (rv_andi ty x k))
 
 (rule (lower (bor ty x (iconst k)))
-      (if-let _ (simm12 k))
+      (if-let (simm12 _) k)
       (rv_ori ty x k))
 
 (rule (lower (bxor ty x (iconst k)))
-      (if-let _ (simm12 k))
+      (if-let (simm12 _) k)
       (rv_xori ty x k))
 
 ;; Shift operations
@@ -70,15 +70,15 @@
       (rv_sra ty x y))
 
 (rule (lower (ishl ty x (iconst k)))
-      (if-let _ (uimm6 k))
+      (if-let (uimm6 _) k)
       (rv_slli ty x k))
 
 (rule (lower (ushr ty x (iconst k)))
-      (if-let _ (uimm6 k))
+      (if-let (uimm6 _) k)
       (rv_srli ty x k))
 
 (rule (lower (sshr ty x (iconst k)))
-      (if-let _ (uimm6 k))
+      (if-let (uimm6 _) k)
       (rv_srai ty x k))
 
 ;; Comparison operations
@@ -90,11 +90,11 @@
       (rv_sltu ty x y))
 
 (rule (lower (icmp IntCC.slt ty x (iconst k)))
-      (if-let $true (simm12 k))
+      (if-let (simm12 _) k)
       (rv_slti ty x k))
 
 (rule (lower (icmp IntCC.ult ty x (iconst k)))
-      (if-let $true (simm12 k))
+      (if-let (simm12 _) k)
       (rv_sltiu ty x k))
 
 ;; Load/store

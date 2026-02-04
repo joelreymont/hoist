@@ -18,7 +18,7 @@ pub const Riscv64Lower = struct {
         inst: lower_mod.Inst,
     ) !bool {
         var isle_ctx = isle_impl.IsleCtx.init(ctx);
-        const value = ctx.func.dfg.firstResult(inst) orelse try ctx.func.dfg.appendInstResult(inst, root.types.Type.INVALID);
+        const value = ctx.func.dfg.firstResult(inst) orelse try ctx.func.dfg.appendInstResult(inst, root.types.Type.I8);
         _ = isle_lower.lower(&isle_ctx, value) catch |err| {
             if (err == error.NoMatch) return false;
             return err;
