@@ -22,6 +22,8 @@ pub const ConstructorGen = struct {
     prebound: std.AutoHashMap(usize, void),
     emitted: std.AutoHashMap(usize, void),
     current_term_name: ?[]const u8,
+    current_is_partial: bool,
+    fail_sid: ?usize,
 
     const Self = @This();
 
@@ -41,6 +43,8 @@ pub const ConstructorGen = struct {
             .prebound = std.AutoHashMap(usize, void).init(allocator),
             .emitted = std.AutoHashMap(usize, void).init(allocator),
             .current_term_name = null,
+            .current_is_partial = false,
+            .fail_sid = null,
         };
     }
 
@@ -69,6 +73,12 @@ pub const ConstructorGen = struct {
         const writer = self.output.writer(self.allocator);
         self.current_term_name = term_name;
         defer self.current_term_name = null;
+        self.current_is_partial = decl.partial;
+        self.fail_sid = null;
+        defer {
+            self.current_is_partial = false;
+            self.fail_sid = null;
+        }
 
         // Function signature
         try writer.writeAll("\n/// Generated constructor for term `");
@@ -221,6 +231,41 @@ pub const ConstructorGen = struct {
         }
         try self.indent(self.indent_level + 2);
         try writer.writeAll("}\n");
+        try self.indent(self.indent_level + 2);
+        try writer.writeAll("if (comptime @hasField(@TypeOf(ctx.*), \"lower_ctx\")) {\n");
+        try self.indent(self.indent_level + 3);
+        try writer.writeAll("const lower_ctx_ty = @TypeOf(ctx.lower_ctx);\n");
+        try self.indent(self.indent_level + 3);
+        try writer.writeAll("if (info.params[0].type != null and info.params[0].type.? == lower_ctx_ty) {\n");
+        try self.indent(self.indent_level + 4);
+        if (arg_tys.len == 0) {
+            try writer.writeAll("return func(ctx.lower_ctx);\n");
+        } else {
+            try writer.writeAll("return func(ctx.lower_ctx");
+            for (arg_tys, 0..) |_, i| {
+                try writer.print(", arg{d}", .{i});
+            }
+            try writer.writeAll(");\n");
+        }
+        try self.indent(self.indent_level + 3);
+        try writer.writeAll("}\n");
+        try self.indent(self.indent_level + 3);
+        try writer.writeAll("if (info.params[info.params.len - 1].type != null and info.params[info.params.len - 1].type.? == lower_ctx_ty) {\n");
+        try self.indent(self.indent_level + 4);
+        if (arg_tys.len == 0) {
+            try writer.writeAll("return func(ctx.lower_ctx);\n");
+        } else {
+            try writer.writeAll("return func(");
+            for (arg_tys, 0..) |_, i| {
+                if (i > 0) try writer.writeAll(", ");
+                try writer.print("arg{d}", .{i});
+            }
+            try writer.writeAll(", ctx.lower_ctx);\n");
+        }
+        try self.indent(self.indent_level + 3);
+        try writer.writeAll("}\n");
+        try self.indent(self.indent_level + 2);
+        try writer.writeAll("}\n");
         try self.indent(self.indent_level + 1);
         try writer.writeAll("}\n");
         try self.indent(self.indent_level + 1);
@@ -267,6 +312,41 @@ pub const ConstructorGen = struct {
             }
             try writer.writeAll(", ctx);\n");
         }
+        try self.indent(self.indent_level + 2);
+        try writer.writeAll("}\n");
+        try self.indent(self.indent_level + 2);
+        try writer.writeAll("if (comptime @hasField(@TypeOf(ctx.*), \"lower_ctx\")) {\n");
+        try self.indent(self.indent_level + 3);
+        try writer.writeAll("const lower_ctx_ty = @TypeOf(ctx.lower_ctx);\n");
+        try self.indent(self.indent_level + 3);
+        try writer.writeAll("if (info.params[0].type != null and info.params[0].type.? == lower_ctx_ty) {\n");
+        try self.indent(self.indent_level + 4);
+        if (arg_tys.len == 0) {
+            try writer.writeAll("return func(ctx.lower_ctx);\n");
+        } else {
+            try writer.writeAll("return func(ctx.lower_ctx");
+            for (arg_tys, 0..) |_, i| {
+                try writer.print(", arg{d}", .{i});
+            }
+            try writer.writeAll(");\n");
+        }
+        try self.indent(self.indent_level + 3);
+        try writer.writeAll("}\n");
+        try self.indent(self.indent_level + 3);
+        try writer.writeAll("if (info.params[info.params.len - 1].type != null and info.params[info.params.len - 1].type.? == lower_ctx_ty) {\n");
+        try self.indent(self.indent_level + 4);
+        if (arg_tys.len == 0) {
+            try writer.writeAll("return func(ctx.lower_ctx);\n");
+        } else {
+            try writer.writeAll("return func(");
+            for (arg_tys, 0..) |_, i| {
+                if (i > 0) try writer.writeAll(", ");
+                try writer.print("arg{d}", .{i});
+            }
+            try writer.writeAll(", ctx.lower_ctx);\n");
+        }
+        try self.indent(self.indent_level + 3);
+        try writer.writeAll("}\n");
         try self.indent(self.indent_level + 2);
         try writer.writeAll("}\n");
         try self.indent(self.indent_level + 1);
@@ -336,14 +416,53 @@ pub const ConstructorGen = struct {
                     if (case_it.next()) |entry| {
                         if (entry.key_ptr.* == .some) {
                             const subtree = entry.value_ptr.*;
-                            try self.indent(self.indent_level);
-                            try writer.print("if (v{d} != null) {{\n", .{sw.binding.index()});
-                            self.indent_level += 1;
-                            try self.emitDecisionTree(subtree, ruleset, ret_ty, is_partial);
-                            self.indent_level -= 1;
-                            try self.indent(self.indent_level);
-                            try writer.writeAll("} else {\n");
-                            self.indent_level += 1;
+                            const needs_fail = switch (subtree.*) {
+                                .leaf => |leaf| try self.ruleHasPartialCtor(&ruleset.rules.items[leaf.rule_index], ruleset),
+                                else => false,
+                            };
+                            if (needs_fail) {
+                                const sid = self.sw_id;
+                                self.sw_id += 1;
+                                try self.indent(self.indent_level);
+                                try writer.print("try{d}: {{\n", .{sid});
+                                self.indent_level += 1;
+                                try self.indent(self.indent_level);
+                                try writer.print("if (v{d} != null) {{\n", .{sw.binding.index()});
+                                self.indent_level += 1;
+                                const prev_fail = self.fail_sid;
+                                self.fail_sid = sid;
+                                defer self.fail_sid = prev_fail;
+                                try self.emitDecisionTree(subtree, ruleset, ret_ty, is_partial);
+                                self.indent_level -= 1;
+                                try self.indent(self.indent_level);
+                                try writer.writeAll("}\n");
+                                self.indent_level -= 1;
+                                try self.indent(self.indent_level);
+                                try writer.writeAll("}\n");
+                            } else {
+                                try self.indent(self.indent_level);
+                                try writer.print("if (v{d} != null) {{\n", .{sw.binding.index()});
+                                self.indent_level += 1;
+                                try self.emitDecisionTree(subtree, ruleset, ret_ty, is_partial);
+                                self.indent_level -= 1;
+                                try self.indent(self.indent_level);
+                                try writer.writeAll("} else {\n");
+                                self.indent_level += 1;
+                                if (sw.default) |def| {
+                                    try self.emitDecisionTree(def, ruleset, ret_ty, is_partial);
+                                } else if (is_partial) {
+                                    try self.indent(self.indent_level);
+                                    try writer.writeAll("return null;\n");
+                                } else {
+                                    try self.indent(self.indent_level);
+                                    try writer.writeAll("unreachable;\n");
+                                }
+                                self.indent_level -= 1;
+                                try self.indent(self.indent_level);
+                                try writer.writeAll("}\n");
+                                return;
+                            }
+
                             if (sw.default) |def| {
                                 try self.emitDecisionTree(def, ruleset, ret_ty, is_partial);
                             } else if (is_partial) {
@@ -353,9 +472,6 @@ pub const ConstructorGen = struct {
                                 try self.indent(self.indent_level);
                                 try writer.writeAll("unreachable;\n");
                             }
-                            self.indent_level -= 1;
-                            try self.indent(self.indent_level);
-                            try writer.writeAll("}\n");
                             return;
                         }
                     }
@@ -521,6 +637,80 @@ pub const ConstructorGen = struct {
         try writer.print("recordRule(\"{s}:{d}\");\n", .{ term_name, rule_index });
     }
 
+    fn treeHasPartialCtor(self: *const Self, tree: *const trie.DecisionTree, ruleset: *const trie.RuleSet) !bool {
+        return switch (tree.*) {
+            .fail => false,
+            .leaf => |leaf| {
+                const rule = &ruleset.rules.items[leaf.rule_index];
+                return try self.ruleHasPartialCtor(rule, ruleset);
+            },
+            .test_equal => |t| (try self.treeHasPartialCtor(t.on_equal, ruleset)) or
+                (try self.treeHasPartialCtor(t.on_not_equal, ruleset)),
+            .switch_constraint => |sw| blk: {
+                var it = sw.cases.valueIterator();
+                while (it.next()) |subtree| {
+                    if (try self.treeHasPartialCtor(subtree.*, ruleset)) break :blk true;
+                }
+                if (sw.default) |def| {
+                    if (try self.treeHasPartialCtor(def, ruleset)) break :blk true;
+                }
+                break :blk false;
+            },
+        };
+    }
+
+    fn ruleHasPartialCtor(self: *const Self, rule: *const trie.Rule, ruleset: *const trie.RuleSet) !bool {
+        var seen = std.AutoHashMap(usize, void).init(self.allocator);
+        defer seen.deinit();
+
+        for (rule.impure.items) |id| {
+            if (try self.bindingHasPartialCtor(id, ruleset, &seen)) return true;
+        }
+        return self.bindingHasPartialCtor(rule.result, ruleset, &seen);
+    }
+
+    fn bindingHasPartialCtor(
+        self: *const Self,
+        id: trie.BindingId,
+        ruleset: *const trie.RuleSet,
+        seen: *std.AutoHashMap(usize, void),
+    ) !bool {
+        if (id.index() >= ruleset.bindings.items.len) return false;
+        if (seen.contains(id.index())) return false;
+        try seen.put(id.index(), {});
+
+        const binding = &ruleset.bindings.items[id.index()];
+        return switch (binding.*) {
+            .const_bool, .const_int, .const_prim, .argument => false,
+            .extractor => |e| blk: {
+                for (e.parameters) |p| {
+                    if (try self.bindingHasPartialCtor(p, ruleset, seen)) break :blk true;
+                }
+                break :blk false;
+            },
+            .constructor => |c| blk: {
+                const term = self.termenv.getTerm(c.term);
+                if (term.kind == .decl and term.kind.decl.partial) break :blk true;
+                for (c.parameters) |p| {
+                    if (try self.bindingHasPartialCtor(p, ruleset, seen)) break :blk true;
+                }
+                break :blk false;
+            },
+            .iterator => |it| self.bindingHasPartialCtor(it.source, ruleset, seen),
+            .make_variant => |v| blk: {
+                for (v.fields) |f| {
+                    if (try self.bindingHasPartialCtor(f, ruleset, seen)) break :blk true;
+                }
+                break :blk false;
+            },
+            .match_variant => |m| self.bindingHasPartialCtor(m.source, ruleset, seen),
+            .make_some => |s| self.bindingHasPartialCtor(s.inner, ruleset, seen),
+            .match_some => |m| self.bindingHasPartialCtor(m.source, ruleset, seen),
+            .match_tuple => |t| self.bindingHasPartialCtor(t.source, ruleset, seen),
+            .match_extractor => |m| self.bindingHasPartialCtor(m.source, ruleset, seen),
+        };
+    }
+
     /// Emit a single binding.
     fn emitBinding(self: *Self, id: trie.BindingId, binding: *const trie.Binding) !void {
         const writer = self.output.writer(self.allocator);
@@ -534,7 +724,15 @@ pub const ConstructorGen = struct {
             .const_bool => |b| try writer.print("{}", .{b.val}),
             .const_int => |i| try writer.print("{d}", .{i.val}),
             .const_prim => |p| {
-                try self.writeEnumLit(writer, self.typeenv.symName(p.val));
+                const val_name = self.typeenv.symName(p.val);
+                const ty = self.typeenv.types.items[p.ty.index()];
+                if (ty == .enum_type) {
+                    try self.writeEnumLit(writer, val_name);
+                } else {
+                    try self.writeTy(writer, p.ty);
+                    try writer.writeByte('.');
+                    try self.writeIdent(writer, val_name);
+                }
             },
             .argument => |a| {
                 if (self.argType(a.index.value())) |arg_ty| {
@@ -551,22 +749,49 @@ pub const ConstructorGen = struct {
                     .extractor => |ex| ex.arg_tys.len,
                     .extern_func => |f| f.arg_tys.len,
                 };
+                const input_ty = switch (term.kind) {
+                    .decl => |d| d.ret_ty,
+                    .extractor => |ex| ex.ret_ty,
+                    .extern_func => |f| f.ret_ty,
+                };
+
+                const input_expr = blk: {
+                    if (e.parameters.len == 1) {
+                        break :blk e.parameters[0];
+                    }
+                    const ty = self.typeenv.getType(input_ty);
+                    if (ty != .tuple) break :blk e.parameters[0];
+                    if (ty.tuple.fields.len != e.parameters.len) break :blk e.parameters[0];
+                    break :blk null;
+                };
                 if (arg_count == 1) {
                     try writer.writeAll("blk: { const tmp = try ");
                     try self.writePref(writer, "extractor_", name);
-                    try writer.writeAll("(ctx");
-                    for (e.parameters) |param| {
-                        try writer.writeAll(", ");
+                    try writer.writeAll("(ctx, ");
+                    if (input_expr) |param| {
                         try writer.print("v{d}", .{param.index()});
+                    } else {
+                        try writer.writeAll(".{ ");
+                        for (e.parameters, 0..) |param, i| {
+                            if (i > 0) try writer.writeAll(", ");
+                            try writer.print(".field{d} = v{d}", .{ i, param.index() });
+                        }
+                        try writer.writeAll(" }");
                     }
                     try writer.writeAll("); if (tmp) |val| break :blk val.arg0; break :blk null; }");
                 } else {
                     try writer.writeAll("try ");
                     try self.writePref(writer, "extractor_", name);
-                    try writer.writeAll("(ctx");
-                    for (e.parameters) |param| {
-                        try writer.writeAll(", ");
+                    try writer.writeAll("(ctx, ");
+                    if (input_expr) |param| {
                         try writer.print("v{d}", .{param.index()});
+                    } else {
+                        try writer.writeAll(".{ ");
+                        for (e.parameters, 0..) |param, i| {
+                            if (i > 0) try writer.writeAll(", ");
+                            try writer.print(".field{d} = v{d}", .{ i, param.index() });
+                        }
+                        try writer.writeAll(" }");
                     }
                     try writer.writeAll(")");
                 }
@@ -589,7 +814,14 @@ pub const ConstructorGen = struct {
                     try writer.print("v{d}", .{param.index()});
                 }
                 if (is_partial) {
-                    try writer.writeAll(")) orelse return null");
+                    try writer.writeAll(")) orelse ");
+                    if (self.fail_sid) |sid| {
+                        try writer.print("break :try{d}", .{sid});
+                    } else if (self.current_is_partial) {
+                        try writer.writeAll("return null");
+                    } else {
+                        try writer.writeAll("return error.NoMatch");
+                    }
                 } else {
                     try writer.writeAll(")");
                 }
@@ -844,7 +1076,9 @@ pub const ConstructorGen = struct {
         return switch (ty) {
             .primitive => false,
             .tuple => false,
-            .enum_type => true,
+            // Enums are small POD values; pass by value to avoid address-taking
+            // mismatches in generated call sites.
+            .enum_type => false,
             .term_sig => false,
             .builtin => false,
         };
@@ -1014,14 +1248,14 @@ test "ConstructorGen: partial constructor" {
     try testing.expect(std.mem.indexOf(u8, sig, ") !?i32;") != null);
 }
 
-test "ConstructorGen: reference type handling" {
+test "ConstructorGen: enum argument handling" {
     var typeenv = try sema.TypeEnv.init(testing.allocator);
     defer typeenv.deinit();
 
     var termenv = sema.TermEnv.init(testing.allocator);
     defer termenv.deinit();
 
-    // Create an enum type (should be passed by reference)
+    // Create an enum type (should be passed by value)
     const enum_sym = try typeenv.internSym("MyEnum");
     const variants = try testing.allocator.alloc(sema.Variant, 1);
     defer testing.allocator.free(variants);
@@ -1058,8 +1292,8 @@ test "ConstructorGen: reference type handling" {
 
     const sig = try gen.genConstructorSig(sema.TermId.new(0));
 
-    // Enum types should be passed by reference
-    try testing.expect(std.mem.indexOf(u8, sig, "*const MyEnum") != null);
+    // Enum types should be passed by value
+    try testing.expect(std.mem.indexOf(u8, sig, "arg0: MyEnum") != null);
 }
 
 test "ConstructorGen: constructor body generation" {

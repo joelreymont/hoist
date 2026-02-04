@@ -46,6 +46,7 @@ pub const Binding = union(enum) {
     /// A primitive constant value (symbol name).
     const_prim: struct {
         val: sema.Sym,
+        ty: sema.TypeId,
     },
     /// One of the function arguments.
     argument: struct {
@@ -120,6 +121,7 @@ pub const Constraint = union(enum) {
     /// Must equal this primitive value.
     const_prim: struct {
         val: sema.Sym,
+        ty: sema.TypeId,
     },
     /// Must be Option::Some (from fallible extractor).
     some,
@@ -392,7 +394,10 @@ fn hashBinding(binding: *const Binding) u64 {
             hasher.update(std.mem.asBytes(&i.val));
             hasher.update(std.mem.asBytes(&i.ty));
         },
-        .const_prim => |p| hasher.update(std.mem.asBytes(&p.val)),
+        .const_prim => |p| {
+            hasher.update(std.mem.asBytes(&p.val));
+            hasher.update(std.mem.asBytes(&p.ty));
+        },
         .argument => |a| hasher.update(std.mem.asBytes(&a.index)),
         .extractor => |e| {
             hasher.update(std.mem.asBytes(&e.term));
@@ -599,6 +604,107 @@ const SplitScore = struct {
     }
 };
 
+fn commonConstraints(
+    ruleset: *const RuleSet,
+    subset: *const RuleSubset,
+    allocator: Allocator,
+) !std.AutoHashMap(BindingId, Constraint) {
+    var common = std.AutoHashMap(BindingId, Constraint).init(allocator);
+    if (subset.indices.items.len == 0) return common;
+
+    const first = &ruleset.rules.items[subset.indices.items[0]];
+    var it = first.constraints.iterator();
+    while (it.next()) |entry| {
+        try common.put(entry.key_ptr.*, entry.value_ptr.*);
+    }
+
+    var rm = std.ArrayList(BindingId){};
+    defer rm.deinit(allocator);
+
+    for (subset.indices.items[1..]) |rule_idx| {
+        const rule = &ruleset.rules.items[rule_idx];
+        rm.clearRetainingCapacity();
+
+        var cit = common.iterator();
+        while (cit.next()) |entry| {
+            const id = entry.key_ptr.*;
+            const c = entry.value_ptr.*;
+            if (rule.getConstraint(id)) |other| {
+                if (!std.meta.eql(c, other)) {
+                    try rm.append(allocator, id);
+                }
+            } else {
+                try rm.append(allocator, id);
+            }
+        }
+
+        for (rm.items) |id| _ = common.remove(id);
+        if (common.count() == 0) break;
+    }
+
+    return common;
+}
+
+fn bindOk(
+    ruleset: *const RuleSet,
+    id: BindingId,
+    common: *const std.AutoHashMap(BindingId, Constraint),
+    st: []u8,
+    memo: []bool,
+) bool {
+    const idx = id.index();
+    if (idx >= st.len) return true;
+    switch (st[idx]) {
+        1 => return true,
+        2 => return memo[idx],
+        else => {},
+    }
+
+    st[idx] = 1;
+    var ok = true;
+
+    const binding = ruleset.bindings.items[idx];
+    switch (binding) {
+        .constructor => |c| for (c.parameters) |p| {
+            if (!bindOk(ruleset, p, common, st, memo)) ok = false;
+        },
+        .extractor => |e| for (e.parameters) |p| {
+            if (!bindOk(ruleset, p, common, st, memo)) ok = false;
+        },
+        .iterator => |it| ok = bindOk(ruleset, it.source, common, st, memo),
+        .make_variant => |v| for (v.fields) |f| {
+            if (!bindOk(ruleset, f, common, st, memo)) ok = false;
+        },
+        .match_variant => |m| {
+            if (common.get(m.source)) |c| {
+                ok = ok and switch (c) {
+                    .variant => |v| std.meta.eql(v.variant, m.variant) and v.field_count.index > m.field.index,
+                    else => false,
+                };
+            } else {
+                ok = false;
+            }
+            ok = ok and bindOk(ruleset, m.source, common, st, memo);
+        },
+        .make_some => |s| ok = bindOk(ruleset, s.inner, common, st, memo),
+        .match_some => |m| {
+            if (common.get(m.source)) |c| {
+                ok = ok and c == .some;
+            } else {
+                ok = false;
+            }
+            ok = ok and bindOk(ruleset, m.source, common, st, memo);
+        },
+        .match_tuple => |t| ok = bindOk(ruleset, t.source, common, st, memo),
+        .match_extractor => |m| ok = bindOk(ruleset, m.source, common, st, memo),
+        else => {},
+    }
+
+    st[idx] = 2;
+    memo[idx] = ok;
+    return ok;
+}
+
 /// Build a decision tree from a rule set.
 pub fn buildDecisionTree(
     ruleset: *const RuleSet,
@@ -733,6 +839,16 @@ fn findBestSplit(
     var candidates = std.ArrayList(SplitScore){};
     defer candidates.deinit(allocator);
 
+    var common = try commonConstraints(ruleset, subset, allocator);
+    defer common.deinit();
+
+    const n = ruleset.bindings.items.len;
+    const st = try allocator.alloc(u8, n);
+    defer allocator.free(st);
+    @memset(st, 0);
+    const memo = try allocator.alloc(bool, n);
+    defer allocator.free(memo);
+
     // Collect all constraints from rules in subset
     for (subset.indices.items) |rule_idx| {
         const rule = &ruleset.rules.items[rule_idx];
@@ -740,6 +856,8 @@ fn findBestSplit(
         while (it.next()) |entry| {
             const binding = entry.key_ptr.*;
             const constraint = entry.value_ptr.*;
+
+            if (!bindOk(ruleset, binding, &common, st, memo)) continue;
 
             // Count how many rules this would eliminate
             var eliminated: usize = 0;

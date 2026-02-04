@@ -93,7 +93,14 @@ pub const ExtractorCodegen = struct {
                 try writer.writeAll("if (!std.meta.eql(");
                 try writer.writeAll(source_expr);
                 try writer.writeAll(", ");
-                try self.writeEnumLit(writer, val_name);
+                const ty = self.typeenv.types.items[c.ty.index()];
+                if (ty == .enum_type) {
+                    try self.writeEnumLit(writer, val_name);
+                } else {
+                    try self.writeTy(writer, c.ty);
+                    try writer.writeByte('.');
+                    try self.writeIdent(writer, val_name);
+                }
                 try writer.writeAll(")) return null;\n");
             },
             .term => |t| {

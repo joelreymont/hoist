@@ -176,6 +176,105 @@ pub const Codegen = struct {
         try writer.writeAll("};\n\n");
     }
 
+    fn emitExtractorReturn(
+        self: *const Self,
+        writer: anytype,
+        indent: []const u8,
+        arg_tys: []const sema.TypeId,
+        call_expr: []const u8,
+    ) !void {
+        _ = self;
+        try writer.print("{s}const RetTy = info.return_type orelse @compileError(\"extern extractor missing return type\");\n", .{indent});
+        try writer.print("{s}const r = blk: {{\n", .{indent});
+        try writer.print("{s}    switch (@typeInfo(RetTy)) {{\n", .{indent});
+        try writer.print("{s}        .error_union => break :blk try {s},\n", .{ indent, call_expr });
+        try writer.print("{s}        else => break :blk {s},\n", .{ indent, call_expr });
+        try writer.print("{s}    }}\n", .{indent});
+        try writer.print("{s}}};\n", .{indent});
+
+        if (arg_tys.len == 0) {
+            try writer.print("{s}return r;\n", .{indent});
+            return;
+        }
+
+        try writer.print("{s}switch (@typeInfo(@TypeOf(r))) {{\n", .{indent});
+        try writer.print("{s}    .optional => {{\n", .{indent});
+        try writer.print("{s}        if (r) |v| {{\n", .{indent});
+        if (arg_tys.len == 1) {
+            try writer.print(
+                "{s}            return .{{ .arg0 = switch (@typeInfo(@TypeOf(v))) {{ .@\"struct\" => if (comptime @hasField(@TypeOf(v), \"arg0\")) v.arg0 else v, else => v }} }};\n",
+                .{indent},
+            );
+        } else {
+            try writer.print("{s}            return blk_pack: {{\n", .{indent});
+            try writer.print("{s}                switch (@typeInfo(@TypeOf(v))) {{ .@\"struct\" => {{}}, else => @compileError(\"extern extractor return must be a struct\") }}\n", .{indent});
+            try writer.print("{s}                const has_args = comptime blk3: {{\n", .{indent});
+            try writer.print("{s}                    const T = @TypeOf(v);\n", .{indent});
+            try writer.print("{s}                    break :blk3 ", .{indent});
+            for (arg_tys, 0..) |_, i| {
+                if (i > 0) try writer.writeAll(" and ");
+                try writer.print("@hasField(T, \"arg{d}\")", .{i});
+            }
+            try writer.writeAll(";\n");
+            try writer.print("{s}                }};\n", .{indent});
+            try writer.print("{s}                if (has_args) break :blk_pack .{{ ", .{indent});
+            for (arg_tys, 0..) |_, i| {
+                if (i > 0) try writer.writeAll(", ");
+                try writer.print(".arg{d} = v.arg{d}", .{ i, i });
+            }
+            try writer.writeAll(" };\n");
+            try writer.print("{s}                const fs = std.meta.fields(@TypeOf(v));\n", .{indent});
+            try writer.print("{s}                if (fs.len < {d}) @compileError(\"extern extractor return struct arity mismatch\");\n", .{ indent, arg_tys.len });
+            try writer.print("{s}                break :blk_pack .{{ ", .{indent});
+            for (arg_tys, 0..) |_, i| {
+                if (i > 0) try writer.writeAll(", ");
+                try writer.print(".arg{d} = @field(v, fs[{d}].name)", .{ i, i });
+            }
+            try writer.writeAll(" };\n");
+            try writer.print("{s}            }};\n", .{indent});
+        }
+        try writer.print("{s}        }}\n", .{indent});
+        try writer.print("{s}        return null;\n", .{indent});
+        try writer.print("{s}    }},\n", .{indent});
+        try writer.print("{s}    else => {{\n", .{indent});
+        try writer.print("{s}        const v = r;\n", .{indent});
+        if (arg_tys.len == 1) {
+            try writer.print(
+                "{s}        return .{{ .arg0 = switch (@typeInfo(@TypeOf(v))) {{ .@\"struct\" => if (comptime @hasField(@TypeOf(v), \"arg0\")) v.arg0 else v, else => v }} }};\n",
+                .{indent},
+            );
+        } else {
+            try writer.print("{s}        return blk_pack: {{\n", .{indent});
+            try writer.print("{s}            switch (@typeInfo(@TypeOf(v))) {{ .@\"struct\" => {{}}, else => @compileError(\"extern extractor return must be a struct\") }}\n", .{indent});
+            try writer.print("{s}            const has_args = comptime blk3: {{\n", .{indent});
+            try writer.print("{s}                const T = @TypeOf(v);\n", .{indent});
+            try writer.print("{s}                break :blk3 ", .{indent});
+            for (arg_tys, 0..) |_, i| {
+                if (i > 0) try writer.writeAll(" and ");
+                try writer.print("@hasField(T, \"arg{d}\")", .{i});
+            }
+            try writer.writeAll(";\n");
+            try writer.print("{s}            }};\n", .{indent});
+            try writer.print("{s}            if (has_args) break :blk_pack .{{ ", .{indent});
+            for (arg_tys, 0..) |_, i| {
+                if (i > 0) try writer.writeAll(", ");
+                try writer.print(".arg{d} = v.arg{d}", .{ i, i });
+            }
+            try writer.writeAll(" };\n");
+            try writer.print("{s}            const fs = std.meta.fields(@TypeOf(v));\n", .{indent});
+            try writer.print("{s}            if (fs.len < {d}) @compileError(\"extern extractor return struct arity mismatch\");\n", .{ indent, arg_tys.len });
+            try writer.print("{s}            break :blk_pack .{{ ", .{indent});
+            for (arg_tys, 0..) |_, i| {
+                if (i > 0) try writer.writeAll(", ");
+                try writer.print(".arg{d} = @field(v, fs[{d}].name)", .{ i, i });
+            }
+            try writer.writeAll(" };\n");
+            try writer.print("{s}        }};\n", .{indent});
+        }
+        try writer.print("{s}    }},\n", .{indent});
+        try writer.print("{s}}}\n", .{indent});
+    }
+
     fn emitExternWrappers(self: *Self) !void {
         const writer = self.output.writer(self.allocator);
         var it = self.termenv.externs.iterator();
@@ -230,6 +329,28 @@ pub const Codegen = struct {
                     try writer.writeAll(", ctx);\n");
                 }
                 try writer.writeAll("            }\n");
+                try writer.writeAll("            if (comptime @hasField(@TypeOf(ctx.*), \"lower_ctx\")) {\n");
+                try writer.writeAll("                const lower_ctx_ty = @TypeOf(ctx.lower_ctx);\n");
+                try writer.writeAll("                if (info.params[0].type != null and info.params[0].type.? == lower_ctx_ty) {\n");
+                try writer.writeAll("                    return func(ctx.lower_ctx");
+                for (sig.params, 0..) |_, i| {
+                    try writer.print(", arg{d}", .{i});
+                }
+                try writer.writeAll(");\n");
+                try writer.writeAll("                }\n");
+                try writer.writeAll("                if (info.params[info.params.len - 1].type != null and info.params[info.params.len - 1].type.? == lower_ctx_ty) {\n");
+                if (sig.params.len == 0) {
+                    try writer.writeAll("                    return func(ctx.lower_ctx);\n");
+                } else {
+                    try writer.writeAll("                    return func(");
+                    for (sig.params, 0..) |_, i| {
+                        if (i > 0) try writer.writeAll(", ");
+                        try writer.print("arg{d}", .{i});
+                    }
+                    try writer.writeAll(", ctx.lower_ctx);\n");
+                }
+                try writer.writeAll("                }\n");
+                try writer.writeAll("            }\n");
                 try writer.writeAll("        }\n");
                 try writer.writeAll("        return func(");
                 for (sig.params, 0..) |_, i| {
@@ -265,6 +386,28 @@ pub const Codegen = struct {
                     try writer.writeAll(", ctx);\n");
                 }
                 try writer.writeAll("            }\n");
+                try writer.writeAll("            if (comptime @hasField(@TypeOf(ctx.*), \"lower_ctx\")) {\n");
+                try writer.writeAll("                const lower_ctx_ty = @TypeOf(ctx.lower_ctx);\n");
+                try writer.writeAll("                if (info.params[0].type != null and info.params[0].type.? == lower_ctx_ty) {\n");
+                try writer.writeAll("                    return func(ctx.lower_ctx");
+                for (sig.params, 0..) |_, i| {
+                    try writer.print(", arg{d}", .{i});
+                }
+                try writer.writeAll(");\n");
+                try writer.writeAll("                }\n");
+                try writer.writeAll("                if (info.params[info.params.len - 1].type != null and info.params[info.params.len - 1].type.? == lower_ctx_ty) {\n");
+                if (sig.params.len == 0) {
+                    try writer.writeAll("                    return func(ctx.lower_ctx);\n");
+                } else {
+                    try writer.writeAll("                    return func(");
+                    for (sig.params, 0..) |_, i| {
+                        if (i > 0) try writer.writeAll(", ");
+                        try writer.print("arg{d}", .{i});
+                    }
+                    try writer.writeAll(", ctx.lower_ctx);\n");
+                }
+                try writer.writeAll("                }\n");
+                try writer.writeAll("            }\n");
                 try writer.writeAll("        }\n");
                 try writer.writeAll("        return func(");
                 for (sig.params, 0..) |_, i| {
@@ -283,6 +426,37 @@ pub const Codegen = struct {
 
             if (ext.extractor) |func_sym| {
                 const func_name = self.typeenv.symName(func_sym);
+                const tuple_len: usize = switch (self.typeenv.getType(sig.ret_ty)) {
+                    .tuple => |t| t.fields.len,
+                    else => 0,
+                };
+                var call_fields: ?[]const u8 = null;
+                var call_ctx_fields_first: ?[]const u8 = null;
+                var call_ctx_fields_last: ?[]const u8 = null;
+                var call_lc_fields_first: ?[]const u8 = null;
+                var call_lc_fields_last: ?[]const u8 = null;
+                defer {
+                    if (call_fields) |s| self.allocator.free(s);
+                    if (call_ctx_fields_first) |s| self.allocator.free(s);
+                    if (call_ctx_fields_last) |s| self.allocator.free(s);
+                    if (call_lc_fields_first) |s| self.allocator.free(s);
+                    if (call_lc_fields_last) |s| self.allocator.free(s);
+                }
+                if (tuple_len > 0) {
+                    var args = std.ArrayList(u8){};
+                    defer args.deinit(self.allocator);
+                    const w = args.writer(self.allocator);
+                    for (0..tuple_len) |i| {
+                        if (i > 0) try w.writeAll(", ");
+                        try w.print("input.field{d}", .{i});
+                    }
+
+                    call_fields = try std.fmt.allocPrint(self.allocator, "func({s})", .{args.items});
+                    call_ctx_fields_first = try std.fmt.allocPrint(self.allocator, "func(ctx, {s})", .{args.items});
+                    call_ctx_fields_last = try std.fmt.allocPrint(self.allocator, "func({s}, ctx)", .{args.items});
+                    call_lc_fields_first = try std.fmt.allocPrint(self.allocator, "func(ctx.lower_ctx, {s})", .{args.items});
+                    call_lc_fields_last = try std.fmt.allocPrint(self.allocator, "func({s}, ctx.lower_ctx)", .{args.items});
+                }
                 try writer.writeAll("\npub fn ");
                 try self.writePref(writer, "extractor_", term_name);
                 try writer.writeAll("(\n");
@@ -303,13 +477,36 @@ pub const Codegen = struct {
                 try writer.writeAll("        if (info.params.len == 2) {\n");
                 try writer.writeAll("            const ctx_ty = @TypeOf(ctx);\n");
                 try writer.writeAll("            if (info.params[0].type != null and info.params[0].type.? == ctx_ty) {\n");
-                try writer.writeAll("                return func(ctx, input);\n");
+                try self.emitExtractorReturn(writer, "                ", sig.params, "func(ctx, input)");
                 try writer.writeAll("            }\n");
                 try writer.writeAll("            if (info.params[1].type != null and info.params[1].type.? == ctx_ty) {\n");
-                try writer.writeAll("                return func(input, ctx);\n");
+                try self.emitExtractorReturn(writer, "                ", sig.params, "func(input, ctx)");
                 try writer.writeAll("            }\n");
                 try writer.writeAll("        }\n");
-                try writer.writeAll("        return func(input);\n");
+                if (tuple_len > 0) {
+                    try writer.print("        if (info.params.len == {d}) {{\n", .{tuple_len});
+                    try self.emitExtractorReturn(writer, "            ", sig.params, call_fields.?);
+                    try writer.writeAll("        }\n");
+                    try writer.print("        if (info.params.len == {d}) {{\n", .{tuple_len + 1});
+                    try writer.writeAll("            const ctx_ty = @TypeOf(ctx);\n");
+                    try writer.writeAll("            if (info.params[0].type != null and info.params[0].type.? == ctx_ty) {\n");
+                    try self.emitExtractorReturn(writer, "                ", sig.params, call_ctx_fields_first.?);
+                    try writer.writeAll("            }\n");
+                    try writer.writeAll("            if (info.params[info.params.len - 1].type != null and info.params[info.params.len - 1].type.? == ctx_ty) {\n");
+                    try self.emitExtractorReturn(writer, "                ", sig.params, call_ctx_fields_last.?);
+                    try writer.writeAll("            }\n");
+                    try writer.writeAll("            if (comptime @hasField(@TypeOf(ctx.*), \"lower_ctx\")) {\n");
+                    try writer.writeAll("                const lower_ctx_ty = @TypeOf(ctx.lower_ctx);\n");
+                    try writer.writeAll("                if (info.params[0].type != null and info.params[0].type.? == lower_ctx_ty) {\n");
+                    try self.emitExtractorReturn(writer, "                    ", sig.params, call_lc_fields_first.?);
+                    try writer.writeAll("                }\n");
+                    try writer.writeAll("                if (info.params[info.params.len - 1].type != null and info.params[info.params.len - 1].type.? == lower_ctx_ty) {\n");
+                    try self.emitExtractorReturn(writer, "                    ", sig.params, call_lc_fields_last.?);
+                    try writer.writeAll("                }\n");
+                    try writer.writeAll("            }\n");
+                    try writer.writeAll("        }\n");
+                }
+                try self.emitExtractorReturn(writer, "        ", sig.params, "func(input)");
                 try writer.writeAll("    } else if (comptime @hasDecl(externs_secondary, \"");
                 try writer.writeAll(func_name);
                 try writer.writeAll("\")) {\n");
@@ -320,13 +517,36 @@ pub const Codegen = struct {
                 try writer.writeAll("        if (info.params.len == 2) {\n");
                 try writer.writeAll("            const ctx_ty = @TypeOf(ctx);\n");
                 try writer.writeAll("            if (info.params[0].type != null and info.params[0].type.? == ctx_ty) {\n");
-                try writer.writeAll("                return func(ctx, input);\n");
+                try self.emitExtractorReturn(writer, "                ", sig.params, "func(ctx, input)");
                 try writer.writeAll("            }\n");
                 try writer.writeAll("            if (info.params[1].type != null and info.params[1].type.? == ctx_ty) {\n");
-                try writer.writeAll("                return func(input, ctx);\n");
+                try self.emitExtractorReturn(writer, "                ", sig.params, "func(input, ctx)");
                 try writer.writeAll("            }\n");
                 try writer.writeAll("        }\n");
-                try writer.writeAll("        return func(input);\n");
+                if (tuple_len > 0) {
+                    try writer.print("        if (info.params.len == {d}) {{\n", .{tuple_len});
+                    try self.emitExtractorReturn(writer, "            ", sig.params, call_fields.?);
+                    try writer.writeAll("        }\n");
+                    try writer.print("        if (info.params.len == {d}) {{\n", .{tuple_len + 1});
+                    try writer.writeAll("            const ctx_ty = @TypeOf(ctx);\n");
+                    try writer.writeAll("            if (info.params[0].type != null and info.params[0].type.? == ctx_ty) {\n");
+                    try self.emitExtractorReturn(writer, "                ", sig.params, call_ctx_fields_first.?);
+                    try writer.writeAll("            }\n");
+                    try writer.writeAll("            if (info.params[info.params.len - 1].type != null and info.params[info.params.len - 1].type.? == ctx_ty) {\n");
+                    try self.emitExtractorReturn(writer, "                ", sig.params, call_ctx_fields_last.?);
+                    try writer.writeAll("            }\n");
+                    try writer.writeAll("            if (comptime @hasField(@TypeOf(ctx.*), \"lower_ctx\")) {\n");
+                    try writer.writeAll("                const lower_ctx_ty = @TypeOf(ctx.lower_ctx);\n");
+                    try writer.writeAll("                if (info.params[0].type != null and info.params[0].type.? == lower_ctx_ty) {\n");
+                    try self.emitExtractorReturn(writer, "                    ", sig.params, call_lc_fields_first.?);
+                    try writer.writeAll("                }\n");
+                    try writer.writeAll("                if (info.params[info.params.len - 1].type != null and info.params[info.params.len - 1].type.? == lower_ctx_ty) {\n");
+                    try self.emitExtractorReturn(writer, "                    ", sig.params, call_lc_fields_last.?);
+                    try writer.writeAll("                }\n");
+                    try writer.writeAll("            }\n");
+                    try writer.writeAll("        }\n");
+                }
+                try self.emitExtractorReturn(writer, "        ", sig.params, "func(input)");
                 try writer.writeAll("    } else {\n");
                 try writer.writeAll("        use(ctx);\n");
                 try writer.writeAll("        use(input);\n");
@@ -858,7 +1078,11 @@ pub const Codegen = struct {
             .primitive => |p| self.typeenv.symName(p.name),
             .tuple => |t| self.typeenv.symName(t.name),
             .enum_type => |e| self.typeenv.symName(e.name),
-            else => "Value",
+            .term_sig => |s| self.typeenv.symName(s.name),
+            .builtin => |b| switch (b) {
+                .bool => "bool",
+                .unit => "void",
+            },
         };
     }
 

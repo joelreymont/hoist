@@ -209,8 +209,17 @@ pub const ZigEmitter = struct {
             .const_prim => |c| {
                 try self.emitBinding(writer, binding);
                 const val_name = self.typeenv.symName(c.val);
-                try writer.writeAll(" == .");
-                try self.writeIdent(writer, val_name);
+                const ty = self.typeenv.getType(c.ty);
+                if (ty == .enum_type) {
+                    try writer.writeAll(" == .");
+                    try self.writeIdent(writer, val_name);
+                } else {
+                    const ty_name = try self.getTypeName(c.ty);
+                    try writer.writeAll(" == ");
+                    try self.writeIdent(writer, ty_name);
+                    try writer.writeByte('.');
+                    try self.writeIdent(writer, val_name);
+                }
                 try writer.writeAll(") ");
             },
             .variant => |v| {
@@ -249,8 +258,16 @@ pub const ZigEmitter = struct {
             },
             .const_prim => |c| {
                 const val_name = self.typeenv.symName(c.val);
-                try writer.writeByte('.');
-                try self.writeIdent(writer, val_name);
+                const ty = self.typeenv.getType(c.ty);
+                if (ty == .enum_type) {
+                    try writer.writeByte('.');
+                    try self.writeIdent(writer, val_name);
+                } else {
+                    const ty_name = try self.getTypeName(c.ty);
+                    try self.writeIdent(writer, ty_name);
+                    try writer.writeByte('.');
+                    try self.writeIdent(writer, val_name);
+                }
             },
             .constructor => |ctor| {
                 const term = self.termenv.getTerm(ctor.term);

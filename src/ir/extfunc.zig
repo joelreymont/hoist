@@ -103,6 +103,21 @@ pub const ExternalName = union(enum) {
     }
 };
 
+/// Convert an ExternalName into the symbol string used by instruction emission.
+/// Caller must ensure the returned slice outlives emission:
+/// - `.testcase` borrows the already-owned string inside ExternalName.
+/// - `.user` allocates a formatted name in `allocator`.
+pub fn symName(allocator: Allocator, name: ExternalName) ![]const u8 {
+    return switch (name) {
+        .testcase => |n| n,
+        .user => |u| blk: {
+            var buf: [64]u8 = undefined;
+            const s = try std.fmt.bufPrint(&buf, "u{d}:{d}", .{ u.namespace, u.index });
+            break :blk try allocator.dupe(u8, s);
+        },
+    };
+}
+
 /// User-defined external name.
 pub const UserExternalName = struct {
     namespace: u32,

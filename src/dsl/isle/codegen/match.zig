@@ -217,14 +217,14 @@ pub const MatchCompiler = struct {
                 return binding_id;
             },
             .const_prim => |c| {
-                const binding = trie.Binding{ .const_prim = .{ .val = c.val } };
+                const binding = trie.Binding{ .const_prim = .{ .val = c.val, .ty = c.ty } };
                 const binding_id = try ruleset.internBinding(binding);
 
                 const source = trie.Binding{
                     .argument = .{ .index = trie.TupleIndex.new(0) },
                 };
                 const source_id = try ruleset.internBinding(source);
-                const constraint = trie.Constraint{ .const_prim = .{ .val = c.val } };
+                const constraint = trie.Constraint{ .const_prim = .{ .val = c.val, .ty = c.ty } };
                 try rule.setConstraint(source_id, constraint);
 
                 return binding_id;
@@ -266,38 +266,6 @@ pub const MatchCompiler = struct {
         vars: *VarMap,
         iflet: sema.IfLet,
     ) !trie.BindingId {
-        if (iflet.expr == .term) {
-            const term_expr = iflet.expr.term;
-            if (self.termenv.getExtern(term_expr.term_id)) |ext| {
-                if (ext.extractor != null) {
-                    var arg_bindings = std.ArrayList(trie.BindingId){};
-                    defer arg_bindings.deinit(self.allocator);
-
-                    for (term_expr.args) |arg| {
-                        const binding = try self.compileExpr(ruleset, vars, arg);
-                        try arg_bindings.append(self.allocator, binding);
-                    }
-
-                    const params = try arg_bindings.toOwnedSlice(self.allocator);
-                    const binding = trie.Binding{
-                        .extractor = .{
-                            .term = term_expr.term_id,
-                            .parameters = params,
-                        },
-                    };
-                    const pre_len = ruleset.bindings.items.len;
-                    const extract_id = try ruleset.internBinding(binding);
-                    if (ruleset.bindings.items.len == pre_len) {
-                        self.allocator.free(params);
-                    }
-                    try rule.setConstraint(extract_id, .some);
-                    const some_binding = trie.Binding{ .match_some = .{ .source = extract_id } };
-                    const some_id = try ruleset.internBinding(some_binding);
-                    return try self.compilePatternWithSource(ruleset, rule, vars, iflet.pattern, some_id);
-                }
-            }
-        }
-
         // Evaluate the RHS expression to get a binding
         const expr_binding = try self.compileExpr(ruleset, vars, iflet.expr);
 
@@ -361,7 +329,7 @@ pub const MatchCompiler = struct {
             },
             .const_prim => |c| {
                 const constraint = trie.Constraint{
-                    .const_prim = .{ .val = c.val },
+                    .const_prim = .{ .val = c.val, .ty = c.ty },
                 };
                 try rule.setConstraint(source_id, constraint);
                 return source_id;
@@ -550,24 +518,6 @@ pub const MatchCompiler = struct {
                     else => {},
                 }
 
-                if (self.termenv.getExtern(t.term_id)) |ext| {
-                    if (ext.extractor != null) {
-                        const params = try arg_bindings.toOwnedSlice(self.allocator);
-                        const binding = trie.Binding{
-                            .extractor = .{
-                                .term = t.term_id,
-                                .parameters = params,
-                            },
-                        };
-                        const pre_len = ruleset.bindings.items.len;
-                        const binding_id = try ruleset.internBinding(binding);
-                        if (ruleset.bindings.items.len == pre_len) {
-                            self.allocator.free(params);
-                        }
-                        return binding_id;
-                    }
-                }
-
                 const is_pure = switch (term.kind) {
                     .decl => |d| d.pure,
                     else => false,
@@ -605,7 +555,7 @@ pub const MatchCompiler = struct {
                 return try ruleset.internBinding(binding);
             },
             .const_prim => |c| {
-                const binding = trie.Binding{ .const_prim = .{ .val = c.val } };
+                const binding = trie.Binding{ .const_prim = .{ .val = c.val, .ty = c.ty } };
                 return try ruleset.internBinding(binding);
             },
             .let_expr => |l| {

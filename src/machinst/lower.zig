@@ -84,6 +84,8 @@ pub fn LowerCtx(comptime MachInst: type) type {
 
         /// Next available virtual register index.
         next_vreg: u32,
+        /// Next synthetic Value index used for ISLE temporaries.
+        next_tmp_val: u32,
 
         /// Value use state (unused, once, multiple) for each SSA value.
         /// Used to skip dead code and enable single-use optimizations.
@@ -108,6 +110,7 @@ pub fn LowerCtx(comptime MachInst: type) type {
                 .value_to_reg = std.AutoHashMap(Value, VReg).init(allocator),
                 .block_map = std.AutoHashMap(Block, vcode_mod.BlockIndex).init(allocator),
                 .next_vreg = 0,
+                .next_tmp_val = @intCast(func.dfg.values.elems.items.len),
                 .value_uses = std.AutoHashMap(Value, ValueUseState).init(allocator),
                 .out_stack_max = 0,
                 .allocator = allocator,
@@ -131,11 +134,29 @@ pub fn LowerCtx(comptime MachInst: type) type {
             return entry.value_ptr.*;
         }
 
+        pub fn getValueFromReg(self: *Self, reg: Reg, class: RegClass) !Value {
+            if (reg.isSpillSlot()) return error.UnexpectedSpillSlot;
+            if (reg.class() != class) return error.UnexpectedRegClass;
+
+            const idx = self.next_tmp_val;
+            self.next_tmp_val += 1;
+            const val = Value.new(idx);
+
+            const vreg = VReg{ .bits = reg.bits };
+            try self.value_to_reg.put(val, vreg);
+            return val;
+        }
+
         /// Allocate a fresh virtual register.
         pub fn allocVReg(self: *Self, class: RegClass) VReg {
             const vreg = VReg.new(self.next_vreg, class);
             self.next_vreg += 1;
             return vreg;
+        }
+
+        /// Allocate a fresh temporary writable register.
+        pub fn newTempReg(self: *Self, class: RegClass) reg_mod.WritableReg {
+            return reg_mod.WritableReg.fromVReg(self.allocVReg(class));
         }
 
         /// Emit a machine instruction to the current block.
