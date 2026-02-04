@@ -19,12 +19,12 @@
 
 ;; iadd with small immediate
 (rule (lower (iadd ty x (iconst k)))
-      (if-let _ (simm32 k))
+      (if-let (simm32 _) k)
       (x64_add_imm ty x k))
 
 ;; isub with small immediate
 (rule (lower (isub ty x (iconst k)))
-      (if-let _ (simm32 k))
+      (if-let (simm32 _) k)
       (x64_sub_imm ty x k))
 
 ;; Load/store lowering
@@ -93,15 +93,15 @@
 
 ;; Shift with immediate
 (rule (lower (ishl ty x (iconst k)))
-      (if-let _ (simm32 k))
+      (if-let (simm32 _) k)
       (x64_shl_imm ty x k))
 
 (rule (lower (ushr ty x (iconst k)))
-      (if-let _ (simm32 k))
+      (if-let (simm32 _) k)
       (x64_shr_imm ty x k))
 
 (rule (lower (sshr ty x (iconst k)))
-      (if-let _ (simm32 k))
+      (if-let (simm32 _) k)
       (x64_sar_imm ty x k))
 
 ;; Negation and complement
@@ -280,15 +280,15 @@
 
 ;; vshl_imm: Vector shift with immediate
 (rule (lower (vshl ty x (iconst k)))
-      (if-let _ (simm8 k))
+      (if-let (simm8 _) k)
       (x64_vshl_imm ty x k))
 
 (rule (lower (vushr ty x (iconst k)))
-      (if-let _ (simm8 k))
+      (if-let (simm8 _) k)
       (x64_vushr_imm ty x k))
 
 (rule (lower (vsshr ty x (iconst k)))
-      (if-let _ (simm8 k))
+      (if-let (simm8 _) k)
       (x64_vsshr_imm ty x k))
 
 ;; vcmp: Vector comparison

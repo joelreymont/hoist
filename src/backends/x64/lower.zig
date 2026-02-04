@@ -21,7 +21,7 @@ pub const X64Lower = struct {
         inst: lower_mod.Inst,
     ) !bool {
         // Try ISLE-generated lowering first
-        const value = ctx.func.dfg.firstResult(inst) orelse try ctx.func.dfg.appendInstResult(inst, root.types.Type.INVALID);
+        const value = ctx.func.dfg.firstResult(inst) orelse try ctx.func.dfg.appendInstResult(inst, root.types.Type.I8);
         _ = isle_lower.lower(ctx, value) catch |err| {
             if (err == error.NoMatch) return false;
             return err;
