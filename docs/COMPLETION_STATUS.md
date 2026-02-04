@@ -24,6 +24,7 @@
 - End-to-end JIT tests
 - ABI and encoding tests
 - TLS and FP special values tests
+- Baseline benchmark step: `zig build baseline` writes `/tmp/hoist-baseline-*.log`
 
 ## Partially Implemented / In Progress
 
@@ -64,4 +65,3 @@
 - Feature gaps: `docs/feature_gap_analysis.md`
 - Cranelift gap summary: `docs/cranelift_gap_analysis.md`
 - Active work items: `.dots/*.md`
-

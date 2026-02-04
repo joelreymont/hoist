@@ -1,9 +1,11 @@
 ---
 title: Add Baseline Checks
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.538952+01:00"
+created-at: "\"2026-02-02T21:35:56.538952+01:00\""
+closed-at: "2026-02-05T19:47:38.994363+01:00"
+close-reason: Added baseline runner and recorded /tmp baseline log
 blocks:
   - hoist-plan-review-fixes-46e51002
 ---

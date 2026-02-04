@@ -522,6 +522,23 @@ pub fn build(b: *std.Build) void {
     bench_step.dependOn(&run_bench_large.step);
     bench_step.dependOn(&run_bench_aarch64.step);
 
+    const baseline = b.addExecutable(.{
+        .name = "baseline",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/baseline.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    applyFlags(baseline, enable_lto, debug_info, strip_debug, pic, single_threaded);
+
+    const baseline_step = b.step("baseline", "Run benchmarks and write baseline logs to /tmp");
+    const run_baseline = b.addRunArtifact(baseline);
+    run_baseline.addFileArg(bench_fib.getEmittedBin());
+    run_baseline.addFileArg(bench_large.getEmittedBin());
+    run_baseline.addFileArg(bench_aarch64.getEmittedBin());
+    baseline_step.dependOn(&run_baseline.step);
+
     // Fuzzing
     const fuzz_compile = b.addExecutable(.{
         .name = "fuzz_compile",
