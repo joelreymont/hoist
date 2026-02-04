@@ -3,32 +3,11 @@ const Allocator = std.mem.Allocator;
 
 const module_mod = @import("../module/module.zig");
 const symbols_mod = @import("../module/symbols.zig");
+const obj_reloc = @import("reloc.zig");
 const FuncId = module_mod.FuncId;
-const DataId = module_mod.DataId;
-const RelocTarget = symbols_mod.RelocTarget;
 const ModuleReloc = symbols_mod.ModuleReloc;
 const RelocKind = symbols_mod.RelocKind;
-
-const RelocKeyTag = enum(u8) {
-    user,
-    libcall,
-    known_sym,
-};
-
-const RelocKey = struct {
-    tag: RelocKeyTag,
-    a: u32,
-    b: u32,
-};
-
-fn relocKey(target: RelocTarget) RelocKey {
-    return switch (target) {
-        .user => |u| .{ .tag = .user, .a = u.namespace, .b = u.idx },
-        .func_off => |f| .{ .tag = .user, .a = 0, .b = f.func.idx },
-        .libcall => |lc| .{ .tag = .libcall, .a = @intFromEnum(lc), .b = 0 },
-        .known_sym => |ks| .{ .tag = .known_sym, .a = @intFromEnum(ks), .b = 0 },
-    };
-}
+const SymKind = obj_reloc.SymKind;
 
 /// ELF section header.
 pub const SectionHeader = struct {
@@ -79,7 +58,19 @@ const Section = struct {
     kind: SectionKind,
     data: std.ArrayList(u8),
     align_: u64,
-    relocs: std.ArrayList(Rela),
+    relocs: std.ArrayList(RelocEntry),
+};
+
+const SymRef = struct {
+    local: bool,
+    idx: u32,
+};
+
+const RelocEntry = struct {
+    off: u64,
+    typ: u32,
+    addend: i64,
+    sym: SymRef,
 };
 
 /// ELF object file writer.
@@ -88,8 +79,9 @@ pub const ElfWriter = struct {
     sections: std.ArrayList(Section),
     strtab: std.ArrayList(u8),
     shstrtab: std.ArrayList(u8),
-    syms: std.ArrayList(Symbol),
-    sym_map: std.AutoHashMap(RelocKey, u32),
+    sym_local: std.ArrayList(Symbol),
+    sym_global: std.ArrayList(Symbol),
+    sym_map: std.StringHashMap(SymRef),
     arch: Arch,
 
     pub const Arch = enum {
@@ -103,8 +95,9 @@ pub const ElfWriter = struct {
             .sections = std.ArrayList(Section).init(allocator),
             .strtab = std.ArrayList(u8).init(allocator),
             .shstrtab = std.ArrayList(u8).init(allocator),
-            .syms = std.ArrayList(Symbol).init(allocator),
-            .sym_map = std.AutoHashMap(RelocKey, u32).init(allocator),
+            .sym_local = std.ArrayList(Symbol).init(allocator),
+            .sym_global = std.ArrayList(Symbol).init(allocator),
+            .sym_map = std.StringHashMap(SymRef).init(allocator),
             .arch = arch,
         };
     }
@@ -117,7 +110,10 @@ pub const ElfWriter = struct {
         self.sections.deinit();
         self.strtab.deinit();
         self.shstrtab.deinit();
-        self.syms.deinit();
+        self.sym_local.deinit();
+        self.sym_global.deinit();
+        var it = self.sym_map.keyIterator();
+        while (it.next()) |key| self.allocator.free(key.*);
         self.sym_map.deinit();
     }
 
@@ -143,9 +139,9 @@ pub const ElfWriter = struct {
         return off;
     }
 
-    fn ensureSymtabInit(self: *ElfWriter) !void {
-        if (self.syms.items.len != 0) return;
-        try self.syms.append(.{
+    fn ensureNullSym(self: *ElfWriter) !void {
+        if (self.sym_local.items.len != 0) return;
+        try self.sym_local.append(.{
             .name_off = 0,
             .info = 0,
             .other = 0,
@@ -155,54 +151,98 @@ pub const ElfWriter = struct {
         });
     }
 
-    fn symbolName(self: *ElfWriter, target: RelocTarget, sym_table: *const symbols_mod.SymbolTable) ![]const u8 {
-        _ = self;
-        return switch (target) {
-            .user => |u| switch (u.namespace) {
-                0 => blk: {
-                    const func = sym_table.getFunc(FuncId.from(u.idx)) orelse return error.InvalidFuncId;
-                    break :blk func.name orelse return error.MissingFuncName;
-                },
-                1 => blk: {
-                    const data = sym_table.getData(DataId.from(u.idx)) orelse return error.InvalidDataId;
-                    break :blk data.name orelse return error.MissingDataName;
-                },
-                else => error.InvalidNamespace,
-            },
-            .func_off => |f| blk: {
-                const func = sym_table.getFunc(f.func) orelse return error.InvalidFuncId;
-                break :blk func.name orelse return error.MissingFuncName;
-            },
-            .libcall => |lc| @tagName(lc),
-            .known_sym => |ks| switch (ks) {
-                .elf_global_offset_table => "_GLOBAL_OFFSET_TABLE_",
-                .coff_tls_index => "__tls_index",
-            },
+    fn symBinding(linkage: module_mod.Linkage) u8 {
+        return switch (linkage) {
+            .local => 0, // STB_LOCAL
+            .@"export", .import => 1, // STB_GLOBAL
         };
+    }
+
+    fn symType(kind: SymKind) u8 {
+        return switch (kind) {
+            .func => 2, // STT_FUNC
+            .data, .tls => 1, // STT_OBJECT
+            .unknown => 0, // STT_NOTYPE
+        };
+    }
+
+    fn symInfo(linkage: module_mod.Linkage, kind: SymKind) u8 {
+        return (symBinding(linkage) << 4) | (symType(kind) & 0xF);
+    }
+
+    fn symRefIndex(ref: SymRef, local_count: u32) u32 {
+        return if (ref.local) ref.idx else local_count + ref.idx;
+    }
+
+    fn defineSymbol(
+        self: *ElfWriter,
+        name: []const u8,
+        kind: SymKind,
+        linkage: module_mod.Linkage,
+        shndx: u16,
+        value: u64,
+        size: u64,
+    ) !SymRef {
+        try self.ensureNullSym();
+        if (self.sym_map.get(name)) |ref| {
+            var list = if (ref.local) &self.sym_local else &self.sym_global;
+            const name_off = list.items[ref.idx].name_off;
+            list.items[ref.idx] = .{
+                .name_off = name_off,
+                .info = symInfo(linkage, kind),
+                .other = 0,
+                .shndx = shndx,
+                .value = value,
+                .size = size,
+            };
+            return ref;
+        }
+
+        const is_local = linkage == .local;
+        var list = if (is_local) &self.sym_local else &self.sym_global;
+        const name_off = try self.addString(name);
+        try list.append(.{
+            .name_off = name_off,
+            .info = symInfo(linkage, kind),
+            .other = 0,
+            .shndx = shndx,
+            .value = value,
+            .size = size,
+        });
+        const idx: u32 = @intCast(list.items.len - 1);
+        const key = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(key);
+        const ref = SymRef{ .local = is_local, .idx = idx };
+        try self.sym_map.put(key, ref);
+        return ref;
     }
 
     fn ensureSymbol(
         self: *ElfWriter,
-        target: RelocTarget,
-        sym_table: *const symbols_mod.SymbolTable,
-    ) !u32 {
-        const key = relocKey(target);
-        if (self.sym_map.get(key)) |idx| return idx;
+        name: []const u8,
+        kind: SymKind,
+        linkage: module_mod.Linkage,
+    ) !SymRef {
+        try self.ensureNullSym();
+        if (self.sym_map.get(name)) |ref| return ref;
 
-        try self.ensureSymtabInit();
-        const name = try self.symbolName(target, sym_table);
+        const is_local = linkage == .local;
+        var list = if (is_local) &self.sym_local else &self.sym_global;
         const name_off = try self.addString(name);
-        const idx: u32 = @intCast(self.syms.items.len);
-        try self.syms.append(.{
+        try list.append(.{
             .name_off = name_off,
-            .info = 0x10, // STB_GLOBAL | STT_NOTYPE
+            .info = symInfo(linkage, kind),
             .other = 0,
             .shndx = 0,
             .value = 0,
             .size = 0,
         });
-        try self.sym_map.put(key, idx);
-        return idx;
+        const idx: u32 = @intCast(list.items.len - 1);
+        const key = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(key);
+        const ref = SymRef{ .local = is_local, .idx = idx };
+        try self.sym_map.put(key, ref);
+        return ref;
     }
 
     /// Create a section.
@@ -211,7 +251,7 @@ pub const ElfWriter = struct {
             .kind = kind,
             .data = std.ArrayList(u8).init(self.allocator),
             .align_ = align_,
-            .relocs = std.ArrayList(Rela).init(self.allocator),
+            .relocs = std.ArrayList(RelocEntry).init(self.allocator),
         };
         try self.sections.append(sec);
         return @intCast(self.sections.items.len - 1);
@@ -226,9 +266,8 @@ pub const ElfWriter = struct {
         relocs: []const ModuleReloc,
         sym_table: *const symbols_mod.SymbolTable,
     ) !void {
-        const name_off = try self.addString(name);
-        try self.ensureSymtabInit();
-        const func_key = relocKey(RelocTarget.fromFuncId(func));
+        const func_decl = sym_table.getFunc(func) orelse return error.InvalidFuncId;
+        const linkage = func_decl.linkage;
 
         // Find or create .text section
         var text_idx: ?u32 = null;
@@ -246,55 +285,57 @@ pub const ElfWriter = struct {
         const func_off: u64 = @intCast(sec.data.items.len);
         try sec.data.appendSlice(code);
 
-        // Add symbol
-        if (self.sym_map.get(func_key)) |idx| {
-            self.syms.items[idx] = .{
-                .name_off = name_off,
-                .info = 0x12, // STB_GLOBAL | STT_FUNC
-                .other = 0,
-                .shndx = @intCast(text_idx.? + 1), // +1 for null section
-                .value = func_off,
-                .size = @intCast(code.len),
-            };
-        } else {
-            try self.syms.append(.{
-                .name_off = name_off,
-                .info = 0x12, // STB_GLOBAL | STT_FUNC
-                .other = 0,
-                .shndx = @intCast(text_idx.? + 1), // +1 for null section
-                .value = func_off,
-                .size = @intCast(code.len),
-            });
-            try self.sym_map.put(func_key, @intCast(self.syms.items.len - 1));
-        }
+        _ = try self.defineSymbol(
+            name,
+            .func,
+            linkage,
+            @intCast(text_idx.? + 1),
+            func_off,
+            @intCast(code.len),
+        );
 
         // Add relocations
         for (relocs) |reloc| {
-            const rela = try self.makeRela(reloc, func_off, sym_table);
-            try sec.relocs.append(rela);
+            const entry = try self.makeReloc(reloc, func_off, sym_table);
+            try sec.relocs.append(entry);
         }
     }
 
     /// Convert ModuleReloc to ELF RELA.
-    fn makeRela(
+    fn makeReloc(
         self: *ElfWriter,
         reloc: ModuleReloc,
         base_off: u64,
         sym_table: *const symbols_mod.SymbolTable,
-    ) !Rela {
-        const sym_idx = try self.ensureSymbol(reloc.target, sym_table);
-        const typ: u32 = switch (reloc.kind) {
-            .abs64 => 1, // R_X86_64_64 or R_AARCH64_ABS64
-            .abs32 => 10, // R_X86_64_32
-            .pcrel32 => 2, // R_X86_64_PC32 or R_AARCH64_PREL32
-            .got => 3, // R_X86_64_GOT32
-            .plt => 4, // R_X86_64_PLT32
-        };
+    ) !RelocEntry {
+        const target = try obj_reloc.resolveTarget(sym_table, reloc.target);
+        const sym_ref = try self.ensureSymbol(target.name, target.kind, target.linkage);
+        const typ: u32 = try self.relocType(reloc.kind);
 
         return .{
             .off = base_off + reloc.off,
-            .info = (@as(u64, sym_idx) << 32) | @as(u64, typ),
-            .addend = reloc.addend,
+            .typ = typ,
+            .addend = reloc.addend + target.addend,
+            .sym = sym_ref,
+        };
+    }
+
+    fn relocType(self: *ElfWriter, kind: RelocKind) !u32 {
+        return switch (self.arch) {
+            .x86_64 => switch (kind) {
+                .abs64 => 1, // R_X86_64_64
+                .abs32 => 10, // R_X86_64_32
+                .pcrel32 => 2, // R_X86_64_PC32
+                .got => 3, // R_X86_64_GOT32
+                .plt => 4, // R_X86_64_PLT32
+            },
+            .aarch64 => switch (kind) {
+                .abs64 => 257, // R_AARCH64_ABS64
+                .abs32 => 258, // R_AARCH64_ABS32
+                .pcrel32 => 261, // R_AARCH64_PREL32
+                .plt => 283, // R_AARCH64_CALL26
+                .got => return error.UnsupportedRelocation,
+            },
         };
     }
 
@@ -368,7 +409,7 @@ pub const ElfWriter = struct {
 
     /// Write ELF object file to buffer.
     pub fn finish(self: *ElfWriter, buf: *std.ArrayList(u8)) !void {
-        try self.ensureSymtabInit();
+        try self.ensureNullSym();
         if (self.strtab.items.len == 0) {
             try self.strtab.append(0);
         }
@@ -419,7 +460,7 @@ pub const ElfWriter = struct {
             info: u32,
             entsize: u64,
             is_nobits: bool,
-            relocs: ?[]const Rela,
+            relocs: ?[]const RelocEntry,
         };
 
         var out_sections = std.ArrayList(SecOut).init(self.allocator);
@@ -427,7 +468,7 @@ pub const ElfWriter = struct {
 
         var rela_sections = std.ArrayList(struct {
             name_off: u32,
-            relocs: []const Rela,
+            relocs: []const RelocEntry,
             info: u32,
         }).init(self.allocator);
         defer rela_sections.deinit();
@@ -499,15 +540,18 @@ pub const ElfWriter = struct {
         const strtab_name_off = try self.addSectionName(sectionName(.strtab));
         const shstrtab_name_off = try self.addSectionName(sectionName(.shstrtab));
 
+        const local_count: u32 = @intCast(self.sym_local.items.len);
+        const sym_count: u32 = local_count + @intCast(self.sym_global.items.len);
+
         try out_sections.append(.{
             .name_off = symtab_name_off,
             .typ = SHT_SYMTAB,
             .flags = 0,
             .align_ = 8,
             .data = &.{},
-            .size = @intCast(self.syms.items.len * @sizeOf(Symbol)),
+            .size = @intCast(sym_count * @sizeOf(Symbol)),
             .link = strtab_idx,
-            .info = 1,
+            .info = local_count,
             .entsize = @sizeOf(Symbol),
             .is_nobits = false,
             .relocs = null,
@@ -550,12 +594,21 @@ pub const ElfWriter = struct {
             try sec_offsets.append(off);
 
             if (sec.typ == SHT_SYMTAB) {
-                for (self.syms.items) |sym| try writeSymbol(buf, sym);
-                off += @intCast(self.syms.items.len * @sizeOf(Symbol));
+                for (self.sym_local.items) |sym| try writeSymbol(buf, sym);
+                for (self.sym_global.items) |sym| try writeSymbol(buf, sym);
+                off += @intCast(sym_count * @sizeOf(Symbol));
                 continue;
             }
             if (sec.relocs) |rels| {
-                for (rels) |rel| try writeRela(buf, rel);
+                for (rels) |rel| {
+                    const sym_idx = symRefIndex(rel.sym, local_count);
+                    const rela = Rela{
+                        .off = rel.off,
+                        .info = (@as(u64, sym_idx) << 32) | @as(u64, rel.typ),
+                        .addend = rel.addend,
+                    };
+                    try writeRela(buf, rela);
+                }
                 off += @intCast(rels.len * @sizeOf(Rela));
                 continue;
             }
@@ -624,12 +677,38 @@ test "ElfWriter resolves reloc target" {
     const relocs = [_]ModuleReloc{.{
         .off = 0,
         .kind = .abs64,
-        .target = RelocTarget.fromFuncId(func),
+        .target = symbols_mod.RelocTarget.fromFuncId(func),
         .addend = 0,
     }};
     try writer.addFunc(func, "foo", &[_]u8{0xC3}, &relocs, &symtab);
 
     const sec = &writer.sections.items[0];
-    const sym_idx: u32 = @intCast(sec.relocs.items[0].info >> 32);
-    try std.testing.expectEqual(@as(u32, 1), sym_idx);
+    const ref = sec.relocs.items[0].sym;
+    try std.testing.expectEqual(false, ref.local);
+    try std.testing.expectEqual(@as(u32, 0), ref.idx);
+}
+
+test "ElfWriter finish basic" {
+    const allocator = std.testing.allocator;
+    var symtab = symbols_mod.SymbolTable.init(allocator);
+    defer symtab.deinit();
+    const func = try symtab.declareFunc("foo", module_mod.Linkage.@"export");
+
+    var writer = ElfWriter.init(allocator, .x86_64);
+    defer writer.deinit();
+
+    try writer.addFunc(func, "foo", &[_]u8{0xC3}, &[_]ModuleReloc{}, &symtab);
+
+    var buf = std.ArrayList(u8).init(allocator);
+    defer buf.deinit();
+    try writer.finish(&buf);
+
+    try std.testing.expectEqual(@as(u8, 0x7F), buf.items[0]);
+    try std.testing.expectEqual(@as(u8, 'E'), buf.items[1]);
+    const shoff = std.mem.readInt(u64, buf.items[40..48], .little);
+    const shnum = std.mem.readInt(u16, buf.items[58..60], .little);
+    const shstrndx = std.mem.readInt(u16, buf.items[60..62], .little);
+    try std.testing.expect(shnum > 0);
+    try std.testing.expect(shstrndx < shnum);
+    try std.testing.expect(buf.items.len >= shoff + @as(u64, shnum) * 64);
 }
