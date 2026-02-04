@@ -1,9 +1,11 @@
 ---
 title: Update completion status
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.954908+01:00"
+created-at: "\"2026-02-02T21:35:56.954908+01:00\""
+closed-at: "2026-02-05T19:41:54.375510+01:00"
+close-reason: Updated completion status to match current parity audit
 blocks:
   - hoist-update-parity-docs-c03ff19d
 ---

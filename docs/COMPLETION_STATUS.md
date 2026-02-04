@@ -2,166 +2,66 @@
 
 ## Executive Summary
 
-**Status**: Production-ready for basic to intermediate workloads
+**Status**: Functional AArch64 compiler with ongoing parity work
 **Test Coverage**: 2050+ tests (435 integration, 1618 unit)
-**Remaining Work**: 0 dots (advanced optimizations partially implemented)
+**Remaining Work**: Active dots in `.dots/` (ABI, exceptions, feature detection, perf)
 
-## Completed Features (P0 - Critical)
+## Completed (High Confidence)
 
 ### Core Infrastructure ✅
-- IR representation (SSA form, basic blocks)
-- Type system (integers, floats, vectors, pointers)
-- Control flow graph construction and analysis
-- Dominance tree computation
-- Value lists and entity references
+- IR representation, CFG, dominance, value lists
+- ISLE lowering pipeline
+- Constant pools, label resolution, relocations
 
-### Register Allocation ✅
-- Linear scan allocator with live range analysis
-- Spilling with furthest-next-use heuristic
-- Reload insertion at use points
-- Spill slot reuse and mapping
-- Frame size calculation with alignment
-- Machine-level copy coalescing (mov_rr hint propagation)
-
-### AArch64 Backend ✅
-- ISLE instruction selection (645 rules)
-- Pattern matching for IR → machine instruction lowering
-- AAPCS64 calling convention (complete)
-- Struct classification and HFA detection
-- i128 multi-register support (X0:X1 pairs)
-- Floating-point operations (arithmetic, comparisons)
-- Vector operations (SIMD with shuffles; dot product patterns pending)
-- Load/store with various addressing modes
-- Atomic instructions (LDAXR/STLXR, LSE ops, CAS) and barriers (DMB/DSB/ISB)
-- Conditional execution (CSEL, CSINC, etc.)
-- Branch instructions (B, BL, CBZ, CBNZ, TBZ, TBNZ)
-- Arithmetic with shifts and extensions (including shifted bitwise ops)
-- Bit manipulation (CLZ, RBIT, REV, etc.)
-- CPU feature flags and parser (runtime detection stubbed)
-
-### Memory & Linking ✅
-- Stack slot allocation with alignment
-- Constant pool with deduplication
-- PC-relative literal loads
-- Machine code buffer with label resolution
-- Relocation support (all AArch64 types)
-- ELF object emission
-- Jump tables for br_table
-
-### Thread-Local Storage ✅
-- Local Exec model (MRS + ADD)
-- Initial Exec model (ADRP + LDR GOT + MRS + ADD)
-- General Dynamic model (TLSDESC)
-- All TLS relocations implemented
-
-### Function Calls ✅
-- Direct calls (BL with relocation)
-- Indirect calls (BLR through register)
-- Argument marshaling (registers + stack)
-- Return value handling (AArch64 multi-return for int/float; other backends limited)
-- Signature validation infrastructure
-
-### Floating-Point Constants ✅
-- F32/F64 constant loading
-- FMOV immediate for encodable values
-- Constant pool for non-encodable values
-- Special values (NaN, Infinity, signed zeros)
-
-### Varargs ⚠️
-- VaList structure and register save area helpers (AAPCS64) in `src/backends/aarch64/abi.zig`
-- Unit tests for VaList in `src/backends/aarch64/abi.zig`
-- IR/callsite integration not wired (no variadic signature flag)
+### AArch64 Core Lowering ✅
+- Scalar integer/FP ops, comparisons, shifts, bit-manipulation
+- Basic SIMD ops and vector loads/stores
+- Atomics and barriers
+- TLS models and relocations
+- Direct/indirect calls and basic returns
 
 ### Testing ✅
-- 28+ test files, 2050+ test cases
 - End-to-end JIT tests
-- Spilling integration tests (40+ live values)
-- ABI compliance tests
-- Encoding tests
-- Lowering tests
-- TLS tests
-- FP special values tests
+- ABI and encoding tests
+- TLS and FP special values tests
 
-## Remaining Work (0 dots - advanced optimizations deferred)
+## Partially Implemented / In Progress
 
-### Register Allocation Optimizations (partially implemented)
-1. **Rematerialization** ✅: Constant rematerialization (iconst, f32const, f64const) emits mov_imm/fmov_imm instead of reload
-2. **Reload hoisting** ⚠️: Analysis infrastructure in place (vreg-to-blocks mapping, domtree threaded); actual hoisting deferred (requires persisting pregs across instructions)
+### ABI / Calls ⚠️
+- Tail-call ABI conformance (return_call)
+- Varargs ABI + lowering
+- Struct returns/args (sret)
+- Multi-return ABI/emit
 
-Note: Spill/reload emission and linear scan are integrated. Peephole optimizer handles STP combining for adjacent spills.
+### Exception Handling ⚠️
+- try_call lowering exists, but exception edges, landing pads, and unwind info are incomplete
 
-## Implementation Effort Estimates
+### Feature Detection ⚠️
+- AArch64 runtime feature probing and plumbing
 
-### Completed
-- Peephole optimizer (LDP/STP combining, dead move elimination - wired into compilation)
-- Basic spill coalescing (adjacent stores combined to STP via peephole)
-- Machine-level copy coalescing (mov_rr hint propagation in linear scan)
-- Exception handling (try_call CFG edges, LSDA emission, landing pad support)
-- Unwind info emission (DWARF eh_frame with CIE/FDE, macOS compact unwind)
-
-### High Complexity (1-2 weeks each)
-- Full rematerialization for binary ops (requires tracking operand pregs through spill)
-- Reload hoisting emit (requires persisting pregs across instructions in spill pass)
+### Performance Parity ⚠️
+- Shuffle pattern coverage
+- Dot-product patterns (SDOT/UDOT)
+- Addressing modes, peepholes, LICM/partial-loop opts
+- Regalloc2 verification + spill/reload audit
 
 ## Comparison with Cranelift
 
-### Areas Where Hoist Matches Cranelift
-- IR design and SSA form
-- Register allocation quality (linear scan with spilling)
-- AArch64 instruction coverage
-- AAPCS64 ABI compliance
-- TLS support (all models)
-- Constant pool management
+### Where Hoist Matches
+- IR/SSA fundamentals
+- Core AArch64 lowering coverage
+- TLS support
 
-### Areas Where Cranelift is Ahead
-- Register allocation: regalloc2 with backtracking
-- Optimization passes: multiple levels (Hoist has basic peephole)
-- Exception handling: full support
-- Multi-backend: x86-64, AArch64, RISC-V, s390x
-- Testing: extensive fuzzing, differential testing
+### Where Cranelift is Ahead
+- ABI completeness (tail calls, varargs, multi-return)
+- Exception handling (landing pads + unwind)
+- Feature detection and ISA gating
+- Optimization depth and testing infrastructure
 
-### Hoist Advantages
-- Simplicity: easier to understand and modify
-- ISLE integration: clean pattern matching
-- Zig idioms: type safety, explicit error handling
-- Code size: smaller, more focused codebase
+## Tracking
 
-## Recommendations
+- Opcode audit and remaining tasks: `docs/arm64_parity_plan.md`
+- Feature gaps: `docs/feature_gap_analysis.md`
+- Cranelift gap summary: `docs/cranelift_gap_analysis.md`
+- Active work items: `.dots/*.md`
 
-### For Production Use
-The compiler is ready for production use in:
-- Basic to intermediate workloads
-- Applications not requiring complex exception handling
-- Single-threaded code generation
-- Code targeting AArch64 (Darwin, Linux)
-
-### Next Development Priorities
-If performance optimization is needed:
-1. **Peephole optimizer** (medium complexity, high impact)
-2. **Register coalescing** (high complexity, high impact)
-3. **Rematerialization** (high complexity, medium impact)
-
-If feature completeness is needed:
-1. **Exception handling** (for languages requiring it)
-2. **Additional backends** (x86-64, RISC-V)
-3. **Varargs IR/callsite integration** (wire variadic signatures)
-
-## Conclusion
-
-Hoist has successfully implemented a production-ready JIT compiler core. All P0 (critical) features are complete with comprehensive test coverage (2050+ tests). Constant rematerialization is now implemented (emits mov_imm instead of reload for spilled iconst). Reload hoisting analysis infrastructure is in place; full hoisting deferred pending architectural changes to persist pregs across instructions.
-
-The compiler can currently:
-- Compile complex functions with arbitrary control flow
-- Handle high register pressure with allocation and spill emission
-- Generate correct AArch64 code following AAPCS64
-- Support TLS with all three models
-- Emit linkable ELF objects
-- Generate exception handling info (LSDA, eh_frame)
-- Coalesce mov_rr instructions via hint propagation
-- Varargs ABI helpers available; IR/callsite integration pending
-- Perform shifted bitwise operations (AND/OR/XOR with LSL/LSR/ASR)
-- Feature flags and parsing; runtime detection stubbed
-- Support vector operations including shuffles (dot product patterns pending)
-- Support multi-return values in IR and AArch64 lowering
-
-**Status**: ✅ Production-ready compiler with excellent foundation for future enhancements.
