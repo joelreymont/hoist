@@ -1,9 +1,11 @@
 ---
 title: Update feature gaps
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.961995+01:00"
+created-at: "\"2026-02-02T21:35:56.961995+01:00\""
+closed-at: "2026-02-05T19:40:58.249586+01:00"
+close-reason: Feature gap analysis refreshed in parity audit
 blocks:
   - hoist-update-completion-status-83d032e2
 ---
