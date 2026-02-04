@@ -9,6 +9,27 @@ const RelocTarget = symbols_mod.RelocTarget;
 const ModuleReloc = symbols_mod.ModuleReloc;
 const RelocKind = symbols_mod.RelocKind;
 
+const RelocKeyTag = enum(u8) {
+    user,
+    libcall,
+    known_sym,
+};
+
+const RelocKey = struct {
+    tag: RelocKeyTag,
+    a: u32,
+    b: u32,
+};
+
+fn relocKey(target: RelocTarget) RelocKey {
+    return switch (target) {
+        .user => |u| .{ .tag = .user, .a = u.namespace, .b = u.idx },
+        .func_off => |f| .{ .tag = .user, .a = 0, .b = f.func.idx },
+        .libcall => |lc| .{ .tag = .libcall, .a = @intFromEnum(lc), .b = 0 },
+        .known_sym => |ks| .{ .tag = .known_sym, .a = @intFromEnum(ks), .b = 0 },
+    };
+}
+
 /// Mach-O section header (64-bit).
 pub const Section64 = struct {
     sectname: [16]u8,
@@ -65,6 +86,7 @@ pub const MachoWriter = struct {
     sections: std.ArrayList(Section),
     strtab: std.ArrayList(u8),
     syms: std.ArrayList(Nlist64),
+    sym_map: std.AutoHashMap(RelocKey, u32),
     arch: Arch,
 
     pub const Arch = enum {
@@ -78,6 +100,7 @@ pub const MachoWriter = struct {
             .sections = std.ArrayList(Section).init(allocator),
             .strtab = std.ArrayList(u8).init(allocator),
             .syms = std.ArrayList(Nlist64).init(allocator),
+            .sym_map = std.AutoHashMap(RelocKey, u32).init(allocator),
             .arch = arch,
         };
     }
@@ -90,14 +113,66 @@ pub const MachoWriter = struct {
         self.sections.deinit();
         self.strtab.deinit();
         self.syms.deinit();
+        self.sym_map.deinit();
     }
 
     /// Add string to strtab and return offset.
     fn addString(self: *MachoWriter, str: []const u8) !u32 {
+        if (self.strtab.items.len == 0) {
+            try self.strtab.append(0);
+        }
         const off: u32 = @intCast(self.strtab.items.len);
         try self.strtab.appendSlice(str);
         try self.strtab.append(0);
         return off;
+    }
+
+    fn symbolName(self: *MachoWriter, target: RelocTarget, sym_table: *const symbols_mod.SymbolTable) ![]const u8 {
+        _ = self;
+        return switch (target) {
+            .user => |u| switch (u.namespace) {
+                0 => blk: {
+                    const func = sym_table.getFunc(FuncId.from(u.idx)) orelse return error.InvalidFuncId;
+                    break :blk func.name orelse return error.MissingFuncName;
+                },
+                1 => blk: {
+                    const data = sym_table.getData(DataId.from(u.idx)) orelse return error.InvalidDataId;
+                    break :blk data.name orelse return error.MissingDataName;
+                },
+                else => error.InvalidNamespace,
+            },
+            .func_off => |f| blk: {
+                const func = sym_table.getFunc(f.func) orelse return error.InvalidFuncId;
+                break :blk func.name orelse return error.MissingFuncName;
+            },
+            .libcall => |lc| @tagName(lc),
+            .known_sym => |ks| switch (ks) {
+                .elf_global_offset_table => "_GLOBAL_OFFSET_TABLE_",
+                .coff_tls_index => "__tls_index",
+            },
+        };
+    }
+
+    fn ensureSymbol(
+        self: *MachoWriter,
+        target: RelocTarget,
+        sym_table: *const symbols_mod.SymbolTable,
+    ) !u32 {
+        const key = relocKey(target);
+        if (self.sym_map.get(key)) |idx| return idx;
+
+        const name = try self.symbolName(target, sym_table);
+        const name_off = try self.addString(name);
+        const idx: u32 = @intCast(self.syms.items.len);
+        try self.syms.append(.{
+            .n_strx = name_off,
+            .n_type = 0x01, // N_EXT
+            .n_sect = 0,
+            .n_desc = 0,
+            .n_value = 0,
+        });
+        try self.sym_map.put(key, idx);
+        return idx;
     }
 
     /// Create a section.
@@ -115,11 +190,14 @@ pub const MachoWriter = struct {
     /// Add function code to __text section.
     pub fn addFunc(
         self: *MachoWriter,
+        func: FuncId,
         name: []const u8,
         code: []const u8,
         relocs: []const ModuleReloc,
+        sym_table: *const symbols_mod.SymbolTable,
     ) !void {
         const name_off = try self.addString(name);
+        const func_key = relocKey(RelocTarget.fromFuncId(func));
 
         // Find or create __text section
         var text_idx: ?u32 = null;
@@ -138,26 +216,40 @@ pub const MachoWriter = struct {
         try sec.data.appendSlice(code);
 
         // Add symbol
-        try self.syms.append(.{
-            .n_strx = name_off,
-            .n_type = 0x0F, // N_SECT | N_EXT
-            .n_sect = @intCast(text_idx.? + 1),
-            .n_desc = 0,
-            .n_value = func_off,
-        });
+        if (self.sym_map.get(func_key)) |idx| {
+            self.syms.items[idx] = .{
+                .n_strx = name_off,
+                .n_type = 0x0F, // N_SECT | N_EXT
+                .n_sect = @intCast(text_idx.? + 1),
+                .n_desc = 0,
+                .n_value = func_off,
+            };
+        } else {
+            try self.syms.append(.{
+                .n_strx = name_off,
+                .n_type = 0x0F, // N_SECT | N_EXT
+                .n_sect = @intCast(text_idx.? + 1),
+                .n_desc = 0,
+                .n_value = func_off,
+            });
+            try self.sym_map.put(func_key, @intCast(self.syms.items.len - 1));
+        }
 
         // Add relocations
         for (relocs) |reloc| {
-            const rinfo = try self.makeRelocInfo(reloc, func_off);
+            const rinfo = try self.makeRelocInfo(reloc, func_off, sym_table);
             try sec.relocs.append(rinfo);
         }
     }
 
     /// Convert ModuleReloc to Mach-O relocation.
-    fn makeRelocInfo(self: *MachoWriter, reloc: ModuleReloc, base_off: u64) !RelocInfo {
-        _ = self;
-        // TODO: resolve target symbol index
-        const sym_idx: u32 = 0;
+    fn makeRelocInfo(
+        self: *MachoWriter,
+        reloc: ModuleReloc,
+        base_off: u64,
+        sym_table: *const symbols_mod.SymbolTable,
+    ) !RelocInfo {
+        const sym_idx = try self.ensureSymbol(reloc.target, sym_table);
         const r_type: u8 = switch (reloc.kind) {
             .abs64 => 0, // X86_64_RELOC_UNSIGNED or ARM64_RELOC_UNSIGNED
             .abs32 => 0,
@@ -192,7 +284,6 @@ pub const MachoWriter = struct {
         try buf.appendSlice(&std.mem.toBytes(@as(u32, 0))); // reserved
 
         // TODO: write load commands, sections, symbol table, string table
-        _ = self;
     }
 };
 
@@ -200,4 +291,25 @@ test "MachoWriter init" {
     const allocator = std.testing.allocator;
     var writer = MachoWriter.init(allocator, .x86_64);
     defer writer.deinit();
+}
+
+test "MachoWriter resolves reloc target" {
+    const allocator = std.testing.allocator;
+    var symtab = symbols_mod.SymbolTable.init(allocator);
+    defer symtab.deinit();
+    const func = try symtab.declareFunc("foo", module_mod.Linkage.@"export");
+
+    var writer = MachoWriter.init(allocator, .x86_64);
+    defer writer.deinit();
+
+    const relocs = [_]ModuleReloc{.{
+        .off = 0,
+        .kind = .abs64,
+        .target = RelocTarget.fromFuncId(func),
+        .addend = 0,
+    }};
+    try writer.addFunc(func, "foo", &[_]u8{0xC3}, &relocs, &symtab);
+
+    const sec = &writer.sections.items[0];
+    try std.testing.expectEqual(@as(u32, 0), sec.relocs.items[0].r_symbolnum);
 }

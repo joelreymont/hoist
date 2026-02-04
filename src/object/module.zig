@@ -107,9 +107,9 @@ pub const ObjectModule = struct {
         const name = func_decl.name orelse return error.MissingFuncName;
 
         switch (self.writer) {
-            .elf => |*w| try w.addFunc(name, code, func_decl.relocs.items),
-            .macho => |*w| try w.addFunc(name, code, func_decl.relocs.items),
-            .coff => |*w| try w.addFunc(name, code, func_decl.relocs.items),
+            .elf => |*w| try w.addFunc(func, name, code, func_decl.relocs.items, &self.sym_table),
+            .macho => |*w| try w.addFunc(func, name, code, func_decl.relocs.items, &self.sym_table),
+            .coff => |*w| try w.addFunc(func, name, code, func_decl.relocs.items, &self.sym_table),
         }
     }
 

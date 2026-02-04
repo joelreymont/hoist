@@ -9,6 +9,27 @@ const RelocTarget = symbols_mod.RelocTarget;
 const ModuleReloc = symbols_mod.ModuleReloc;
 const RelocKind = symbols_mod.RelocKind;
 
+const RelocKeyTag = enum(u8) {
+    user,
+    libcall,
+    known_sym,
+};
+
+const RelocKey = struct {
+    tag: RelocKeyTag,
+    a: u32,
+    b: u32,
+};
+
+fn relocKey(target: RelocTarget) RelocKey {
+    return switch (target) {
+        .user => |u| .{ .tag = .user, .a = u.namespace, .b = u.idx },
+        .func_off => |f| .{ .tag = .user, .a = 0, .b = f.func.idx },
+        .libcall => |lc| .{ .tag = .libcall, .a = @intFromEnum(lc), .b = 0 },
+        .known_sym => |ks| .{ .tag = .known_sym, .a = @intFromEnum(ks), .b = 0 },
+    };
+}
+
 /// COFF section header.
 pub const SectionHeader = struct {
     name: [8]u8,
@@ -61,6 +82,7 @@ pub const CoffWriter = struct {
     sections: std.ArrayList(Section),
     strtab: std.ArrayList(u8),
     syms: std.ArrayList(Symbol),
+    sym_map: std.AutoHashMap(RelocKey, u32),
     arch: Arch,
 
     pub const Arch = enum {
@@ -74,6 +96,7 @@ pub const CoffWriter = struct {
             .sections = std.ArrayList(Section).init(allocator),
             .strtab = std.ArrayList(u8).init(allocator),
             .syms = std.ArrayList(Symbol).init(allocator),
+            .sym_map = std.AutoHashMap(RelocKey, u32).init(allocator),
             .arch = arch,
         };
     }
@@ -86,6 +109,7 @@ pub const CoffWriter = struct {
         self.sections.deinit();
         self.strtab.deinit();
         self.syms.deinit();
+        self.sym_map.deinit();
     }
 
     /// Add string to strtab and return offset.
@@ -94,6 +118,66 @@ pub const CoffWriter = struct {
         try self.strtab.appendSlice(str);
         try self.strtab.append(0);
         return off;
+    }
+
+    fn buildSymName(self: *CoffWriter, name: []const u8) ![8]u8 {
+        var sym_name: [8]u8 = [_]u8{0} ** 8;
+        if (name.len <= 8) {
+            @memcpy(sym_name[0..name.len], name);
+        } else {
+            const str_off = try self.addString(name);
+            std.mem.writeInt(u32, sym_name[4..8], str_off, .little);
+        }
+        return sym_name;
+    }
+
+    fn symbolName(self: *CoffWriter, target: RelocTarget, sym_table: *const symbols_mod.SymbolTable) ![]const u8 {
+        _ = self;
+        return switch (target) {
+            .user => |u| switch (u.namespace) {
+                0 => blk: {
+                    const func = sym_table.getFunc(FuncId.from(u.idx)) orelse return error.InvalidFuncId;
+                    break :blk func.name orelse return error.MissingFuncName;
+                },
+                1 => blk: {
+                    const data = sym_table.getData(DataId.from(u.idx)) orelse return error.InvalidDataId;
+                    break :blk data.name orelse return error.MissingDataName;
+                },
+                else => error.InvalidNamespace,
+            },
+            .func_off => |f| blk: {
+                const func = sym_table.getFunc(f.func) orelse return error.InvalidFuncId;
+                break :blk func.name orelse return error.MissingFuncName;
+            },
+            .libcall => |lc| @tagName(lc),
+            .known_sym => |ks| switch (ks) {
+                .elf_global_offset_table => "_GLOBAL_OFFSET_TABLE_",
+                .coff_tls_index => "__tls_index",
+            },
+        };
+    }
+
+    fn ensureSymbol(
+        self: *CoffWriter,
+        target: RelocTarget,
+        sym_table: *const symbols_mod.SymbolTable,
+    ) !u32 {
+        const key = relocKey(target);
+        if (self.sym_map.get(key)) |idx| return idx;
+
+        const name = try self.symbolName(target, sym_table);
+        const sym_name = try self.buildSymName(name);
+        const idx: u32 = @intCast(self.syms.items.len);
+        try self.syms.append(.{
+            .name = sym_name,
+            .value = 0,
+            .section = 0, // undefined
+            .typ = 0,
+            .storage_class = 2, // external
+            .n_aux = 0,
+        });
+        try self.sym_map.put(key, idx);
+        return idx;
     }
 
     /// Create a section.
@@ -111,10 +195,13 @@ pub const CoffWriter = struct {
     /// Add function code to .text section.
     pub fn addFunc(
         self: *CoffWriter,
+        func: FuncId,
         name: []const u8,
         code: []const u8,
         relocs: []const ModuleReloc,
+        sym_table: *const symbols_mod.SymbolTable,
     ) !void {
+        const func_key = relocKey(RelocTarget.fromFuncId(func));
         // Find or create .text section
         var text_idx: ?u32 = null;
         for (self.sections.items, 0..) |*sec, i| {
@@ -132,35 +219,43 @@ pub const CoffWriter = struct {
         try sec.data.appendSlice(code);
 
         // Add symbol
-        var sym_name: [8]u8 = [_]u8{0} ** 8;
-        if (name.len <= 8) {
-            @memcpy(sym_name[0..name.len], name);
+        const sym_name = try self.buildSymName(name);
+        if (self.sym_map.get(func_key)) |idx| {
+            self.syms.items[idx] = .{
+                .name = sym_name,
+                .value = func_off,
+                .section = @intCast(text_idx.? + 1),
+                .typ = 0x20, // function
+                .storage_class = 2, // external
+                .n_aux = 0,
+            };
         } else {
-            const str_off = try self.addString(name);
-            std.mem.writeInt(u32, sym_name[4..8], str_off, .little);
+            try self.syms.append(.{
+                .name = sym_name,
+                .value = func_off,
+                .section = @intCast(text_idx.? + 1),
+                .typ = 0x20, // function
+                .storage_class = 2, // external
+                .n_aux = 0,
+            });
+            try self.sym_map.put(func_key, @intCast(self.syms.items.len - 1));
         }
-
-        try self.syms.append(.{
-            .name = sym_name,
-            .value = func_off,
-            .section = @intCast(text_idx.? + 1),
-            .typ = 0x20, // function
-            .storage_class = 2, // external
-            .n_aux = 0,
-        });
 
         // Add relocations
         for (relocs) |reloc| {
-            const rel = try self.makeRelocation(reloc, func_off);
+            const rel = try self.makeRelocation(reloc, func_off, sym_table);
             try sec.relocs.append(rel);
         }
     }
 
     /// Convert ModuleReloc to COFF relocation.
-    fn makeRelocation(self: *CoffWriter, reloc: ModuleReloc, base_off: u32) !Relocation {
-        _ = self;
-        // TODO: resolve target symbol index
-        const sym_idx: u32 = 0;
+    fn makeRelocation(
+        self: *CoffWriter,
+        reloc: ModuleReloc,
+        base_off: u32,
+        sym_table: *const symbols_mod.SymbolTable,
+    ) !Relocation {
+        const sym_idx = try self.ensureSymbol(reloc.target, sym_table);
         const typ: u16 = switch (reloc.kind) {
             .abs64 => 1, // IMAGE_REL_AMD64_ADDR64 or IMAGE_REL_ARM64_ADDR64
             .abs32 => 2, // IMAGE_REL_AMD64_ADDR32
@@ -191,7 +286,6 @@ pub const CoffWriter = struct {
         try buf.appendSlice(&std.mem.toBytes(@as(u16, 0))); // flags
 
         // TODO: write sections, section headers, symbol table, string table
-        _ = self;
     }
 };
 
@@ -199,4 +293,25 @@ test "CoffWriter init" {
     const allocator = std.testing.allocator;
     var writer = CoffWriter.init(allocator, .x86_64);
     defer writer.deinit();
+}
+
+test "CoffWriter resolves reloc target" {
+    const allocator = std.testing.allocator;
+    var symtab = symbols_mod.SymbolTable.init(allocator);
+    defer symtab.deinit();
+    const func = try symtab.declareFunc("foo", module_mod.Linkage.@"export");
+
+    var writer = CoffWriter.init(allocator, .x86_64);
+    defer writer.deinit();
+
+    const relocs = [_]ModuleReloc{.{
+        .off = 0,
+        .kind = .abs64,
+        .target = RelocTarget.fromFuncId(func),
+        .addend = 0,
+    }};
+    try writer.addFunc(func, "foo", &[_]u8{0xC3}, &relocs, &symtab);
+
+    const sec = &writer.sections.items[0];
+    try std.testing.expectEqual(@as(u32, 0), sec.relocs.items[0].sym_idx);
 }
