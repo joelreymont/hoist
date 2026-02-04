@@ -1,9 +1,11 @@
 ---
 title: Cranelift parity audit
-status: active
+status: closed
 priority: 2
 issue-type: task
-created-at: "\"2026-02-02T21:21:49.116533+01:00\""
+created-at: "\"\\\"2026-02-02T21:21:49.116533+01:00\\\"\""
+closed-at: "2026-02-05T19:37:32.999894+01:00"
+close-reason: Updated feature gap analysis with current parity gaps
 ---
 
 docs/COMPLETION_STATUS.md:1; docs/feature_gap_analysis.md:1; cause: parity status drifts from current Cranelift; fix: compare to ~/Work/wasmtime/cranelift and list missing features with priority; why: accurate roadmap.
