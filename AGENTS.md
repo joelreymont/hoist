@@ -37,3 +37,6 @@ New instructions: `isle_impl.zig` → `inst.zig` → `getOperands()` → `emitAA
 - Allocator first param
 - Batch append: `appendSlice(&items)`
 - Labeled switch for state machines
+
+### Workflow
+- Commit after each significant feature/fix and after closing a dot
