@@ -1,9 +1,11 @@
 ---
 title: Update parity docs
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.988744+01:00"
+created-at: "\"2026-02-02T21:35:56.988744+01:00\""
+closed-at: "2026-02-05T19:42:26.618230+01:00"
+close-reason: Parity docs updated in completion status and feature gap analysis
 blocks:
   - hoist-tailcall-stress-tests-ecf1b585
 ---
