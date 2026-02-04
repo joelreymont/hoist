@@ -5,7 +5,24 @@ pub const Aarch64Inst = inst_mod.Inst;
 pub const Reg = inst_mod.Reg;
 pub const ImmLogic = inst_mod.ImmLogic;
 pub const CondCode = inst_mod.CondCode;
-pub const Cond = inst_mod.CondCode;
+pub const Cond = enum {
+    Eq,
+    Ne,
+    Hs,
+    Lo,
+    Mi,
+    Pl,
+    Vs,
+    Vc,
+    Hi,
+    Ls,
+    Ge,
+    Lt,
+    Gt,
+    Le,
+    Al,
+    Nv,
+};
 pub const VecALUOp = inst_mod.VecALUOp;
 pub const VecALUModOp = inst_mod.VecALUModOp;
 pub const VecElemSize = inst_mod.VecElemSize;

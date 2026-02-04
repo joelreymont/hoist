@@ -416,6 +416,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .vec_dup_lane => |i| try emitVecDupLane(i.dst.toReg(), i.src, i.lane, i.size, buffer),
         .vec_extract_lane => |i| try emitVecExtractLane(i.dst.toReg(), i.src, i.lane, i.size, buffer),
         .vec_insert_lane => |i| try emitVecInsertLane(i.dst.toReg(), i.vec, i.src, i.lane, i.size, buffer),
+        .vec_tbl2 => |i| try emitVecTbl2(i.dst.toReg(), i.src1, i.src2, i.idx, buffer),
         .tbl => |i| try emitTbl(i.dst.toReg(), i.table, i.indices, i.table_regs, buffer),
         .tbx => |i| try emitTbx(i.dst.toReg(), i.table, i.indices, i.table_regs, buffer),
         .zip1 => |i| try emitZip1(i.dst.toReg(), i.src1, i.src2, i.size, buffer),
@@ -12336,6 +12337,32 @@ fn emitUmaxv(dst: Reg, src: Reg, vec_size: VecElemSize, buffer: *buffer_mod.Mach
 /// TBL (table lookup): TBL Vd.16B, {Vn.16B-Vn+len.16B}, Vm.16B
 /// Encoding: Q|0|001110|000|Rm|0|len|00|Rn|Rd
 /// len = number of consecutive table registers - 1 (0-3 for 1-4 regs)
+fn emitVecTbl2(dst: Reg, src1: Reg, src2: Reg, idx: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    const src1_hw = try hwEnc(src1);
+    const src2_hw = try hwEnc(src2);
+    const expected: u5 = @intCast((@as(u6, src1_hw) + 1) & 0x1F);
+
+    // Fast path: already consecutive, can encode directly.
+    if (src2_hw == expected) {
+        try emitTbl(dst, src1, idx, 1, buffer);
+        return;
+    }
+
+    // Use reserved scratch vector regs v16-v19 (excluded from allocation pools).
+    // Pick a consecutive pair that does not clobber the index reg.
+    const idx_hw = try hwEnc(idx);
+    const scratch_base: u6 = if (idx_hw == @as(u5, 16) or idx_hw == @as(u5, 17)) 18 else 16;
+
+    const scratch0 = Reg.fromPReg(PReg.new(.vector, @intCast(scratch_base)));
+    const scratch1 = Reg.fromPReg(PReg.new(.vector, @intCast(scratch_base + 1)));
+
+    // Copy table regs into scratch consecutive pair.
+    try emitVecOrr(scratch0, src1, src1, buffer);
+    try emitVecOrr(scratch1, src2, src2, buffer);
+
+    try emitTbl(dst, scratch0, idx, 1, buffer);
+}
+
 fn emitTbl(dst: Reg, table: Reg, indices: Reg, table_regs: u2, buffer: *buffer_mod.MachBuffer) !void {
     const rd = try hwEnc(dst);
     const rn = try hwEnc(table);

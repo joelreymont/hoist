@@ -20,6 +20,9 @@ const ExtendOp = isle_types.ExtendOp;
 const VecALUOp = isle_types.VecALUOp;
 const VecMisc2 = isle_types.VecMisc2;
 const OperandSize = hoist.aarch64_inst.OperandSize;
+const FpuOperandSize = hoist.aarch64_inst.FpuOperandSize;
+const VecElemSize = hoist.aarch64_inst.VecElemSize;
+const SystemReg = hoist.aarch64_inst.SystemReg;
 const lower_mod = hoist.lower;
 const types = hoist.types;
 const trapcode = hoist.trapcode;
@@ -40,6 +43,7 @@ const SigRef = entities.SigRef;
 const ExternalName = extfunc.ExternalName;
 const VectorSize = isle_types.VectorSize;
 const VecALUModOp = isle_types.VecALUModOp;
+const VecShiftImmOp = isle_types.VecShiftImmOp;
 const SveElemSize = isle_types.SveElemSize;
 
 // ISLE rule coverage tracking (optional, for testing)
@@ -113,7 +117,7 @@ pub fn u64_to_u6(val: u64) u6 {
 
 /// Constructor: Create ImmLogic from u64 for given type.
 pub fn imm_logic_from_u64(ty: types.Type, val: u64) ?ImmLogic {
-    const size = if (ty.bits() <= 32) .size32 else .size64;
+    const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
     return ImmLogic.maybeFromU64(val, size);
 }
 
@@ -196,19 +200,23 @@ pub fn uimm16(val: i64) ?i64 {
 
 /// Extractor: Check if value is a valid shift amount (0-63).
 /// Returns the value if valid, null otherwise.
-pub fn valid_shift_imm(val: u64) ?u64 {
-    if (val <= 63) return val;
+pub fn valid_shift_imm(val: u64) ?u8 {
+    if (val <= 63) return @intCast(val);
     return null;
 }
 
 /// Extractor: Extract rotl immediate and convert to rotr immediate.
 /// ARM64 has ROR but not ROL, so rotl(x, k) = rotr(x, width - k).
 /// Returns the rotr shift amount if valid, null otherwise.
-pub fn valid_rotl_imm(width: u32, k: u64) ?u32 {
-    if (k > 63) return null;
-    const k32: u32 = @intCast(k);
-    if (k32 >= width) return null;
-    return width - k32;
+pub fn valid_rotl_imm(ty: types.Type, k: u64) ?u8 {
+    const width = ty.bits();
+    if (width != 32 and width != 64) return null;
+    if (k >= width) return null;
+    if (k == 0) return 0;
+
+    const w: u8 = @intCast(width);
+    const kk: u8 = @intCast(k);
+    return w - kk;
 }
 
 /// Extractor: Check if offset is valid for load immediate addressing.
@@ -230,10 +238,14 @@ pub fn valid_ldr_imm_offset(ty: types.Type, offset: u64) ?i64 {
 /// Extractor: Check if offset is valid for store immediate addressing.
 /// AArch64 STR has 12-bit unsigned immediate scaled by access size.
 /// Returns the byte offset if valid (0-4095 scaled), null otherwise.
-pub fn valid_str_imm_offset(val: lower_mod.Value, offset: u64) ?i64 {
+pub fn valid_str_imm_offset(
+    val: lower_mod.Value,
+    offset: u64,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !?i64 {
     // STR immediate encoding: offset = imm12 * size
     // imm12 is 12-bit unsigned (0-4095)
-    const ty = val.type;
+    const ty = try ctx.getValueType(val);
     const size = ty.bytes();
     const max_offset = 4095 * size;
 
@@ -608,7 +620,7 @@ pub fn aarch64_bitcast(dst_ty: hoist.types.Type, src_ty: hoist.types.Type, src: 
     if (src_is_float and !dst_is_float) {
         // Float to int: fmov wN, sN or fmov xN, dN
         const src_reg = try getValueRegFloat(ctx, src);
-        const size = if (dst_ty.bits() == 32) OperandSize.size32 else OperandSize.size64;
+        const size: FpuOperandSize = if (dst_ty.bits() == 32) .size32 else .size64;
         return Inst{ .fmov_to_gpr = .{
             .dst = ctx.newTempReg(.int),
             .src = src_reg,
@@ -617,7 +629,7 @@ pub fn aarch64_bitcast(dst_ty: hoist.types.Type, src_ty: hoist.types.Type, src: 
     } else if (!src_is_float and dst_is_float) {
         // Int to float: fmov sN, wN or fmov dN, xN
         const src_reg = try getValueReg(ctx, src);
-        const size = if (src_ty.bits() == 32) OperandSize.size32 else OperandSize.size64;
+        const size: FpuOperandSize = if (src_ty.bits() == 32) .size32 else .size64;
         return Inst{ .fmov_from_gpr = .{
             .dst = ctx.newTempReg(.float),
             .src = src_reg,
@@ -639,9 +651,10 @@ pub fn aarch64_bmask(dst_ty: hoist.types.Type, src_ty: hoist.types.Type, src: lo
     const dst_size = if (dst_ty.bits() == 32) OperandSize.size32 else OperandSize.size64;
 
     // Emit: CMP src, #0
+    const imm0 = Imm12.maybeFromU64(0) orelse return error.InvalidImmediate;
     const cmp_inst = Inst{ .cmp_imm = .{
         .src = src_reg,
-        .imm = 0,
+        .imm = imm0,
         .size = cmp_size,
     } };
     try ctx.emit(cmp_inst);
@@ -650,7 +663,7 @@ pub fn aarch64_bmask(dst_ty: hoist.types.Type, src_ty: hoist.types.Type, src: lo
     const temp = ctx.newTempReg(.int);
     const cset_inst = Inst{ .cset = .{
         .dst = temp,
-        .cond = .NE,
+        .cond = .ne,
         .size = dst_size,
     } };
     try ctx.emit(cset_inst);
@@ -713,23 +726,11 @@ pub fn aarch64_floor(ty: hoist.types.Type, src: lower_mod.Value, ctx: *lower_mod
 
 /// Constructor: Create ValueRegs from two I64 values (for iconcat).
 /// Takes low and high 64-bit values, returns a ValueRegs pair for I128.
-pub fn value_regs_from_values(lo: lower_mod.Value, hi: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs(lower_mod.VReg) {
-    // Get VRegs for each value (both must be I64, so single-reg)
-    const lo_vregs = try ctx.getValueRegs(lo, .int);
-    const hi_vregs = try ctx.getValueRegs(hi, .int);
-
-    // Extract single VRegs (lo and hi must be 64-bit or smaller)
-    const lo_vreg = switch (lo_vregs) {
-        .one => |r| r,
-        .two => return error.InvalidIconcatOperand, // I64 should never be two regs
-    };
-    const hi_vreg = switch (hi_vregs) {
-        .one => |r| r,
-        .two => return error.InvalidIconcatOperand,
-    };
-
-    // Return pair representing I128
-    return lower_mod.ValueRegs(lower_mod.VReg).two(lo_vreg, hi_vreg);
+pub fn value_regs_from_values(lo: lower_mod.Value, hi: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    recordRule("value_regs_from_values");
+    const lo_reg = try getValueReg(ctx, lo);
+    const hi_reg = try getValueReg(ctx, hi);
+    return lower_mod.ValueRegs.pair(lo_reg, hi_reg);
 }
 
 /// Constructor: Atomic load with acquire semantics (LDAR).
@@ -742,6 +743,7 @@ pub fn aarch64_atomic_load_acquire(ty: hoist.types.Type, addr: lower_mod.Value, 
         return Inst{ .ldar = .{
             .dst = ctx.newTempReg(.int),
             .base = addr_reg,
+            .size = size,
         } };
     } else {
         return Inst{ .ldar_w = .{
@@ -762,6 +764,7 @@ pub fn aarch64_atomic_store_release(ty: hoist.types.Type, addr: lower_mod.Value,
         return Inst{ .stlr = .{
             .src = val_reg,
             .base = addr_reg,
+            .size = size,
         } };
     } else {
         return Inst{ .stlr_w = .{
@@ -854,6 +857,12 @@ fn getValueReg(ctx: *lower_mod.LowerCtx(Inst), value: lower_mod.Value) !lower_mo
 /// Helper: Get FP register for IR value.
 fn getValueRegFloat(ctx: *lower_mod.LowerCtx(Inst), value: lower_mod.Value) !lower_mod.Reg {
     const vreg = try ctx.getValueReg(value, .float);
+    return lower_mod.Reg.fromVReg(vreg);
+}
+
+/// Helper: Get vector register for IR value.
+fn getValueRegVec(ctx: *lower_mod.LowerCtx(Inst), value: lower_mod.Value) !lower_mod.Reg {
+    const vreg = try ctx.getValueReg(value, .vector);
     return lower_mod.Reg.fromVReg(vreg);
 }
 
@@ -1173,7 +1182,7 @@ test "aarch64_tst_imm: creates test bits immediate instruction" {
 
 /// Constructor: SSHLL - Signed shift-left-long (widen and shift).
 /// Widens lower or upper half of vector elements and optionally shifts left.
-pub fn aarch64_sshll(val: lower_mod.Value, output_size: Inst.VecElemSize, shift_amt: u8, high: bool, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_sshll(val: lower_mod.Value, output_size: VecElemSize, shift_amt: u8, high: bool, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_sshll");
     const src_reg = try getValueReg(ctx, val);
 
@@ -1188,7 +1197,7 @@ pub fn aarch64_sshll(val: lower_mod.Value, output_size: Inst.VecElemSize, shift_
 
 /// Constructor: USHLL - Unsigned shift-left-long (widen and shift).
 /// Widens lower or upper half of vector elements and optionally shifts left.
-pub fn aarch64_ushll(val: lower_mod.Value, output_size: Inst.VecElemSize, shift_amt: u8, high: bool, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_ushll(val: lower_mod.Value, output_size: VecElemSize, shift_amt: u8, high: bool, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_ushll");
     const src_reg = try getValueReg(ctx, val);
 
@@ -1203,7 +1212,7 @@ pub fn aarch64_ushll(val: lower_mod.Value, output_size: Inst.VecElemSize, shift_
 
 /// Constructor: Combined SQXTN + SQXTN2 - Signed saturating narrow.
 /// Narrows x to low half and y to high half of output vector.
-pub fn aarch64_sqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_size: Inst.VecElemSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_sqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_size: VecElemSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_sqxtn_combined");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
@@ -1228,7 +1237,7 @@ pub fn aarch64_sqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_siz
 }
 
 /// Constructor: Combined SQXTUN + SQXTUN2 - Signed to unsigned saturating narrow.
-pub fn aarch64_sqxtun_combined(x: lower_mod.Value, y: lower_mod.Value, output_size: Inst.VecElemSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_sqxtun_combined(x: lower_mod.Value, y: lower_mod.Value, output_size: VecElemSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_sqxtun_combined");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
@@ -1251,7 +1260,7 @@ pub fn aarch64_sqxtun_combined(x: lower_mod.Value, y: lower_mod.Value, output_si
 }
 
 /// Constructor: Combined UQXTN + UQXTN2 - Unsigned saturating narrow.
-pub fn aarch64_uqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_size: Inst.VecElemSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_uqxtn_combined(x: lower_mod.Value, y: lower_mod.Value, output_size: VecElemSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_uqxtn_combined");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
@@ -1462,16 +1471,18 @@ pub fn aarch64_fadd(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
     const y_reg = try getValueReg(ctx, y);
 
     if (ty == types.Type.F32) {
-        return Inst{ .fadd_s = .{
+        return Inst{ .fadd = .{
             .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
             .src1 = x_reg,
             .src2 = y_reg,
+            .size = .size32,
         } };
     } else { // F64
-        return Inst{ .fadd_d = .{
+        return Inst{ .fadd = .{
             .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
             .src1 = x_reg,
             .src2 = y_reg,
+            .size = .size64,
         } };
     }
 }
@@ -1483,16 +1494,18 @@ pub fn aarch64_fsub(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
     const y_reg = try getValueReg(ctx, y);
 
     if (ty == types.Type.F32) {
-        return Inst{ .fsub_s = .{
+        return Inst{ .fsub = .{
             .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
             .src1 = x_reg,
             .src2 = y_reg,
+            .size = .size32,
         } };
     } else { // F64
-        return Inst{ .fsub_d = .{
+        return Inst{ .fsub = .{
             .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
             .src1 = x_reg,
             .src2 = y_reg,
+            .size = .size64,
         } };
     }
 }
@@ -1504,16 +1517,18 @@ pub fn aarch64_fmul(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
     const y_reg = try getValueReg(ctx, y);
 
     if (ty == types.Type.F32) {
-        return Inst{ .fmul_s = .{
+        return Inst{ .fmul = .{
             .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
             .src1 = x_reg,
             .src2 = y_reg,
+            .size = .size32,
         } };
     } else { // F64
-        return Inst{ .fmul_d = .{
+        return Inst{ .fmul = .{
             .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
             .src1 = x_reg,
             .src2 = y_reg,
+            .size = .size64,
         } };
     }
 }
@@ -1525,16 +1540,18 @@ pub fn aarch64_fdiv(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
     const y_reg = try getValueReg(ctx, y);
 
     if (ty == types.Type.F32) {
-        return Inst{ .fdiv_s = .{
+        return Inst{ .fdiv = .{
             .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
             .src1 = x_reg,
             .src2 = y_reg,
+            .size = .size32,
         } };
     } else { // F64
-        return Inst{ .fdiv_d = .{
+        return Inst{ .fdiv = .{
             .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
             .src1 = x_reg,
             .src2 = y_reg,
+            .size = .size64,
         } };
     }
 }
@@ -1546,16 +1563,18 @@ pub fn aarch64_fmin(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
     const y_reg = try getValueReg(ctx, y);
 
     if (ty == types.Type.F32) {
-        return Inst{ .fmin_s = .{
+        return Inst{ .fmin = .{
             .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
             .src1 = x_reg,
             .src2 = y_reg,
+            .size = .size32,
         } };
     } else { // F64
-        return Inst{ .fmin_d = .{
+        return Inst{ .fmin = .{
             .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
             .src1 = x_reg,
             .src2 = y_reg,
+            .size = .size64,
         } };
     }
 }
@@ -1567,16 +1586,18 @@ pub fn aarch64_fmax(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
     const y_reg = try getValueReg(ctx, y);
 
     if (ty == types.Type.F32) {
-        return Inst{ .fmax_s = .{
+        return Inst{ .fmax = .{
             .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
             .src1 = x_reg,
             .src2 = y_reg,
+            .size = .size32,
         } };
     } else { // F64
-        return Inst{ .fmax_d = .{
+        return Inst{ .fmax = .{
             .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
             .src1 = x_reg,
             .src2 = y_reg,
+            .size = .size64,
         } };
     }
 }
@@ -1588,7 +1609,7 @@ pub fn aarch64_rotl_rr(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, c
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
 
-    const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
+    const size: OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
 
     // Negate the shift amount: neg_y = 0 - y
     const neg_y = lower_mod.WritableVReg.allocVReg(.int, ctx);
@@ -1613,14 +1634,7 @@ pub fn aarch64_splat(ty: types.Type, x: lower_mod.Value, ctx: *lower_mod.LowerCt
     recordRule("aarch64_splat");
     const x_reg = try getValueReg(ctx, x);
 
-    // Determine vector element size from type
-    const size: Inst.VecElemSize = switch (ty) {
-        types.Type.V8x16 => .size8x16,
-        types.Type.V16x8 => .size16x8,
-        types.Type.V32x4 => .size32x4,
-        types.Type.V64x2 => .size64x2,
-        else => return error.UnsupportedType,
-    };
+    const size = try tyToVecElemSize(ty);
 
     return Inst{ .vec_dup = .{
         .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
@@ -1631,10 +1645,10 @@ pub fn aarch64_splat(ty: types.Type, x: lower_mod.Value, ctx: *lower_mod.LowerCt
 
 /// VEC_DUP_FROM_FPU - Duplicate vector element to all lanes (DUP Vd.T, Vn.T[lane])
 pub fn vec_dup_from_fpu(src: lower_mod.Value, size_enum: VectorSize, lane: u8, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    const src_reg = try ctx.getValueReg(src, .vector);
+    const src_reg = try getValueRegVec(ctx, src);
 
     // Map ISLE VectorSize enum to VecElemSize
-    const size: Inst.VecElemSize = switch (size_enum) {
+    const size: VecElemSize = switch (size_enum) {
         .V8B => .size8x8,
         .V16B => .size8x16,
         .V4H => .size16x4,
@@ -1655,8 +1669,8 @@ pub fn vec_dup_from_fpu(src: lower_mod.Value, size_enum: VectorSize, lane: u8, c
 /// VEC_EXTRACT - Extract bytes and concatenate (EXT Vd, Vn, Vm, #index)
 /// Extracts consecutive bytes from concatenated pair: dst = (a:b)[index..index+16]
 pub fn vec_extract(a: lower_mod.Value, b: lower_mod.Value, index: u8, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    const a_reg = try ctx.getValueReg(a, .vector);
-    const b_reg = try ctx.getValueReg(b, .vector);
+    const a_reg = try getValueRegVec(ctx, a);
+    const b_reg = try getValueRegVec(ctx, b);
 
     return Inst{
         .vec_ext = .{
@@ -1669,8 +1683,8 @@ pub fn vec_extract(a: lower_mod.Value, b: lower_mod.Value, index: u8, ctx: *lowe
     };
 }
 
-/// Map ISLE VectorSize enum to Inst.VecElemSize
-fn vectorSizeToElemSize(size_enum: VectorSize) Inst.VecElemSize {
+/// Map ISLE VectorSize enum to VecElemSize
+fn vectorSizeToElemSize(size_enum: VectorSize) VecElemSize {
     return switch (size_enum) {
         .V8B => .size8x8,
         .V16B => .size8x16,
@@ -1682,100 +1696,105 @@ fn vectorSizeToElemSize(size_enum: VectorSize) Inst.VecElemSize {
     };
 }
 
+/// Map IR fixed vector Type to VecElemSize.
+fn tyToVecElemSize(ty: Type) !VecElemSize {
+    if (ty.isDynamicVector() or ty.laneCount() == 1) return error.UnsupportedType;
+
+    const lane_bits = ty.laneBits();
+    const lanes = ty.laneCount();
+
+    if (lane_bits == 8 and lanes == 8) return .size8x8;
+    if (lane_bits == 8 and lanes == 16) return .size8x16;
+    if (lane_bits == 16 and lanes == 4) return .size16x4;
+    if (lane_bits == 16 and lanes == 8) return .size16x8;
+    if (lane_bits == 32 and lanes == 2) return .size32x2;
+    if (lane_bits == 32 and lanes == 4) return .size32x4;
+    if (lane_bits == 64 and lanes == 2) return .size64x2;
+
+    return error.UnsupportedType;
+}
+
 /// VEC_UZP1 - De-interleave even lanes (UZP1 Vd, Vn, Vm)
 pub fn vec_uzp1(a: lower_mod.Value, b: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    const a_reg = try ctx.getValueReg(a, .vector);
-    const b_reg = try ctx.getValueReg(b, .vector);
+    const a_reg = try getValueRegVec(ctx, a);
+    const b_reg = try getValueRegVec(ctx, b);
     const size = vectorSizeToElemSize(size_enum);
     return Inst{ .uzp1 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src1 = a_reg, .src2 = b_reg, .size = size } };
 }
 
 /// VEC_UZP2 - De-interleave odd lanes (UZP2 Vd, Vn, Vm)
 pub fn vec_uzp2(a: lower_mod.Value, b: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    const a_reg = try ctx.getValueReg(a, .vector);
-    const b_reg = try ctx.getValueReg(b, .vector);
+    const a_reg = try getValueRegVec(ctx, a);
+    const b_reg = try getValueRegVec(ctx, b);
     const size = vectorSizeToElemSize(size_enum);
     return Inst{ .uzp2 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src1 = a_reg, .src2 = b_reg, .size = size } };
 }
 
 /// VEC_ZIP1 - Interleave low halves (ZIP1 Vd, Vn, Vm)
 pub fn vec_zip1(a: lower_mod.Value, b: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    const a_reg = try ctx.getValueReg(a, .vector);
-    const b_reg = try ctx.getValueReg(b, .vector);
+    const a_reg = try getValueRegVec(ctx, a);
+    const b_reg = try getValueRegVec(ctx, b);
     const size = vectorSizeToElemSize(size_enum);
     return Inst{ .zip1 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src1 = a_reg, .src2 = b_reg, .size = size } };
 }
 
 /// VEC_ZIP2 - Interleave high halves (ZIP2 Vd, Vn, Vm)
 pub fn vec_zip2(a: lower_mod.Value, b: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    const a_reg = try ctx.getValueReg(a, .vector);
-    const b_reg = try ctx.getValueReg(b, .vector);
+    const a_reg = try getValueRegVec(ctx, a);
+    const b_reg = try getValueRegVec(ctx, b);
     const size = vectorSizeToElemSize(size_enum);
     return Inst{ .zip2 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src1 = a_reg, .src2 = b_reg, .size = size } };
 }
 
 /// VEC_TRN1 - Transpose low halves (TRN1 Vd, Vn, Vm)
 pub fn vec_trn1(a: lower_mod.Value, b: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    const a_reg = try ctx.getValueReg(a, .vector);
-    const b_reg = try ctx.getValueReg(b, .vector);
+    const a_reg = try getValueRegVec(ctx, a);
+    const b_reg = try getValueRegVec(ctx, b);
     const size = vectorSizeToElemSize(size_enum);
     return Inst{ .trn1 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src1 = a_reg, .src2 = b_reg, .size = size } };
 }
 
 /// VEC_TRN2 - Transpose high halves (TRN2 Vd, Vn, Vm)
 pub fn vec_trn2(a: lower_mod.Value, b: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    const a_reg = try ctx.getValueReg(a, .vector);
-    const b_reg = try ctx.getValueReg(b, .vector);
+    const a_reg = try getValueRegVec(ctx, a);
+    const b_reg = try getValueRegVec(ctx, b);
     const size = vectorSizeToElemSize(size_enum);
     return Inst{ .trn2 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src1 = a_reg, .src2 = b_reg, .size = size } };
 }
 
 /// REV16 - Reverse bytes within 16-bit halfwords
 pub fn rev16(a: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    const a_reg = try ctx.getValueReg(a, .vector);
+    const a_reg = try getValueRegVec(ctx, a);
     const size = vectorSizeToElemSize(size_enum);
     return Inst{ .vec_rev16 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src = a_reg, .size = size } };
 }
 
 /// REV32 - Reverse bytes within 32-bit words
 pub fn rev32(a: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    const a_reg = try ctx.getValueReg(a, .vector);
+    const a_reg = try getValueRegVec(ctx, a);
     const size = vectorSizeToElemSize(size_enum);
     return Inst{ .vec_rev32 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src = a_reg, .size = size } };
 }
 
 /// REV64 - Reverse bytes within 64-bit doublewords
 pub fn rev64(a: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    const a_reg = try ctx.getValueReg(a, .vector);
+    const a_reg = try getValueRegVec(ctx, a);
     const size = vectorSizeToElemSize(size_enum);
     return Inst{ .vec_rev64 = .{ .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx), .src = a_reg, .size = size } };
 }
 
 /// EXTRACTLANE - Extract vector lane to scalar (UMOV)
-pub fn aarch64_extractlane(ty: types.Type, vec: lower_mod.Value, lane_val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_extractlane(ty: types.Type, vec: lower_mod.Value, lane: u32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_extractlane");
-    const vec_reg = try getValueReg(ctx, vec);
-
-    // Extract lane index from constant value
-    const lane_node = try ctx.getValue(lane_val);
-    const lane: u8 = switch (lane_node) {
-        .iconst => |c| @intCast(c.value),
-        else => return error.NonConstantLane,
-    };
-
-    // Determine vector element size from type
-    const size: Inst.VecElemSize = switch (ty) {
-        types.Type.V8x16 => .size8x16,
-        types.Type.V16x8 => .size16x8,
-        types.Type.V32x4 => .size32x4,
-        types.Type.V64x2 => .size64x2,
-        else => return error.UnsupportedType,
-    };
+    const vec_reg = try getValueRegVec(ctx, vec);
+    const size = try tyToVecElemSize(ty);
+    if (lane >= size.laneCount()) return error.InvalidLane;
+    const lane_u8: u8 = @intCast(lane);
 
     return Inst{ .vec_extract_lane = .{
         .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
         .src = vec_reg,
-        .lane = lane,
+        .lane = lane_u8,
         .size = size,
     } };
 }
@@ -1786,7 +1805,7 @@ pub fn aarch64_smin(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
     recordRule("aarch64_smin");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
-    const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
+    const size: OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
 
     // Compare x with y
     const cmp_inst = Inst{ .cmp_rr = .{
@@ -1812,7 +1831,7 @@ pub fn aarch64_umin(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
     recordRule("aarch64_umin");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
-    const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
+    const size: OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
 
     // Compare x with y
     const cmp_inst = Inst{ .cmp_rr = .{
@@ -1827,7 +1846,7 @@ pub fn aarch64_umin(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
         .dst = lower_mod.WritableVReg.allocVReg(.int, ctx),
         .src1 = x_reg,
         .src2 = y_reg,
-        .cond = .lo,
+        .cond = .cc,
         .size = size,
     } };
 }
@@ -1838,7 +1857,7 @@ pub fn aarch64_smax(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
     recordRule("aarch64_smax");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
-    const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
+    const size: OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
 
     // Compare x with y
     const cmp_inst = Inst{ .cmp_rr = .{
@@ -1864,7 +1883,7 @@ pub fn aarch64_umax(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx:
     recordRule("aarch64_umax");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
-    const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
+    const size: OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
 
     // Compare x with y
     const cmp_inst = Inst{ .cmp_rr = .{
@@ -1892,10 +1911,8 @@ pub fn aarch64_bitselect(c: lower_mod.Value, x: lower_mod.Value, y: lower_mod.Va
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
 
-    // Get type from one of the values
-    const x_node = try ctx.getValue(x);
-    const ty = x_node.getType();
-    const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
+    const ty = try ctx.getValueType(x);
+    const size: OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
 
     // tmp1 = x & c
     const tmp1 = lower_mod.WritableVReg.allocVReg(.int, ctx);
@@ -1932,7 +1949,7 @@ pub fn aarch64_fcopysign_32(x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_
     recordRule("aarch64_fcopysign_32");
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
-    const size: Inst.FpuOperandSize = .size32;
+    const size: FpuOperandSize = .size32;
 
     // abs_x = fabs(x)
     const abs_x = lower_mod.WritableVReg.allocVReg(.float, ctx);
@@ -2085,13 +2102,8 @@ pub fn min_fp_value(signed: bool, in_bits: u8, out_bits: u8, ctx: *lower_mod.Low
 
 /// Get type bit width (ISLE extractor)
 pub fn ty_bits(ty: types.Type) u8 {
-    return switch (ty) {
-        .I8 => 8,
-        .I16 => 16,
-        .I32, .F32 => 32,
-        .I64, .F64 => 64,
-        else => 64, // Default
-    };
+    const bits = ty.bits();
+    return std.math.cast(u8, bits) orelse 0;
 }
 
 /// Extractor: Match vector type, return (lane_bits, lane_count)
@@ -2163,7 +2175,7 @@ pub fn ty_vec128_int(ty: types.Type) ?types.Type {
 
 /// Extractor: Match everything except I64X2
 pub fn not_i64x2(ty: types.Type) ?types.Type {
-    if (ty == types.I64X2) {
+    if (ty == types.Type.I64X2) {
         return null;
     }
     return ty;
@@ -2195,32 +2207,34 @@ pub fn aarch64_trap(trap_code: TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
 
 pub fn aarch64_trapz(val: lower_mod.Value, trap_code: TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_trapz");
-    // Compare value with zero
-    const val_reg = try ctx.getValueReg(val, .int);
-    try ctx.emit(Inst{ .cmp_imm = .{ .rn = val_reg, .imm = 0, .is_64 = true } });
+    const ty = try ctx.getValueType(val);
+    const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+    const val_reg = Reg.fromVReg(try ctx.getValueReg(val, .int));
 
-    // Branch if non-zero (skip trap)
-    try ctx.emit(Inst{ .b_cond = .{ .cond = .ne, .target = .{ .offset = 4 } } });
+    // Skip trap if val != 0 (skip returned UDF).
+    try ctx.emit(Inst{ .cbnz = .{
+        .reg = val_reg,
+        .target = .{ .offset = 8 },
+        .size = size,
+    } });
 
-    // Trap if zero
-    try ctx.emit(Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } });
-
-    return Inst{ .invalid = {} };
+    return Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } };
 }
 
 pub fn aarch64_trapnz(val: lower_mod.Value, trap_code: TrapCode, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_trapnz");
-    // Compare value with zero
-    const val_reg = try ctx.getValueReg(val, .int);
-    try ctx.emit(Inst{ .cmp_imm = .{ .rn = val_reg, .imm = 0, .is_64 = true } });
+    const ty = try ctx.getValueType(val);
+    const size: OperandSize = if (ty.bits() <= 32) .size32 else .size64;
+    const val_reg = Reg.fromVReg(try ctx.getValueReg(val, .int));
 
-    // Branch if zero (skip trap)
-    try ctx.emit(Inst{ .b_cond = .{ .cond = .eq, .target = .{ .offset = 4 } } });
+    // Skip trap if val == 0 (skip returned UDF).
+    try ctx.emit(Inst{ .cbz = .{
+        .reg = val_reg,
+        .target = .{ .offset = 8 },
+        .size = size,
+    } });
 
-    // Trap if non-zero
-    try ctx.emit(Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } });
-
-    return Inst{ .invalid = {} };
+    return Inst{ .udf = .{ .imm = @intFromEnum(trap_code) } };
 }
 
 /// Calculate the maximum floating-point bound for conversion from float to integer.
@@ -2362,12 +2376,12 @@ pub fn aarch64_fcvtzs_32_trap(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)
 pub fn aarch64_iabs(ty: types.Type, x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_iabs");
     const x_reg = try getValueReg(ctx, x);
-    const size: Inst.OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
+    const size: OperandSize = if (ty == types.Type.I32 or ty == types.Type.I16 or ty == types.Type.I8) .size32 else .size64;
 
     // Compare x with 0
     const cmp_inst = Inst{ .cmp_imm = .{
         .src = x_reg,
-        .imm = 0,
+        .imm = .{ .bits = 0, .shift12 = false },
         .size = size,
     } };
     try ctx.emit(cmp_inst);
@@ -2392,32 +2406,19 @@ pub fn aarch64_iabs(ty: types.Type, x: lower_mod.Value, ctx: *lower_mod.LowerCtx
 }
 
 /// INSERTLANE - Insert scalar into vector lane (INS)
-pub fn aarch64_insertlane(ty: types.Type, vec: lower_mod.Value, x: lower_mod.Value, lane_val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+pub fn aarch64_insertlane(ty: types.Type, vec: lower_mod.Value, x: lower_mod.Value, lane: u32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_insertlane");
-    const vec_reg = try getValueReg(ctx, vec);
+    const vec_reg = try getValueRegVec(ctx, vec);
     const x_reg = try getValueReg(ctx, x);
-
-    // Extract lane index from constant value
-    const lane_node = try ctx.getValue(lane_val);
-    const lane: u8 = switch (lane_node) {
-        .iconst => |c| @intCast(c.value),
-        else => return error.NonConstantLane,
-    };
-
-    // Determine vector element size from type
-    const size: Inst.VecElemSize = switch (ty) {
-        types.Type.V8x16 => .size8x16,
-        types.Type.V16x8 => .size16x8,
-        types.Type.V32x4 => .size32x4,
-        types.Type.V64x2 => .size64x2,
-        else => return error.UnsupportedType,
-    };
+    const size = try tyToVecElemSize(ty);
+    if (lane >= size.laneCount()) return error.InvalidLane;
+    const lane_u8: u8 = @intCast(lane);
 
     return Inst{ .vec_insert_lane = .{
         .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
         .vec = vec_reg,
         .src = x_reg,
-        .lane = lane,
+        .lane = lane_u8,
         .size = size,
     } };
 }
@@ -2426,35 +2427,44 @@ pub fn aarch64_insertlane(ty: types.Type, vec: lower_mod.Value, x: lower_mod.Val
 /// Returns ValueRegs containing the two 64-bit halves
 pub fn aarch64_isplit(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
     recordRule("aarch64_isplit");
-    // Get the I128 value as ValueRegs (should already be a register pair)
-    const x_regs = try ctx.getValueRegs(x);
+    const def = ctx.func.dfg.valueDef(x) orelse return error.MissingDef;
+    const inst = def.inst() orelse return error.MissingDefInst;
+    const inst_data_ptr = ctx.func.dfg.insts.get(inst) orelse return error.MissingInstData;
 
-    // I128 is stored as two I64 registers: [0] = low, [1] = high
-    // Just return the existing register pair
-    return x_regs;
+    switch (inst_data_ptr.*) {
+        .binary => |data| {
+            if (data.opcode != .iconcat) return error.Unimplemented;
+            const lo = data.args[0];
+            const hi = data.args[1];
+            const lo_reg = try getValueReg(ctx, lo);
+            const hi_reg = try getValueReg(ctx, hi);
+            return lower_mod.ValueRegs.pair(lo_reg, hi_reg);
+        },
+        else => return error.Unimplemented,
+    }
 }
 
 /// Bitcast operations (ISLE constructors)
 pub fn aarch64_bitcast_noop(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_bitcast_noop");
-    // No-op: just return the value unchanged (type punning in same register file)
-    const reg = try ctx.getValueReg(x, .int);
-    return Inst{ .mov_rr = .{ .dst = lower_mod.WritableReg.fromReg(reg), .src = reg, .size = .size64 } };
+    // No-op bitcast in same register file: just copy into a new temp.
+    const src = try getValueReg(ctx, x);
+    return Inst{ .mov_rr = .{ .dst = ctx.newTempReg(.int), .src = src, .size = .size64 } };
 }
 
 pub fn aarch64_fmov_from_gpr(x: lower_mod.Value, in_ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_fmov_from_gpr");
-    const gpr = try ctx.getValueReg(x, .int);
+    const gpr = lower_mod.Reg.fromVReg(try ctx.getValueReg(x, .int));
     const fpr = lower_mod.WritableVReg.allocVReg(.float, ctx);
-    const size: emit.ScalarSize = if (in_ty.bits() == 32) .size32 else .size64;
+    const size: FpuOperandSize = if (in_ty.bits() == 32) .size32 else .size64;
     return Inst{ .fmov_from_gpr = .{ .dst = fpr, .src = gpr, .size = size } };
 }
 
 pub fn aarch64_fmov_to_gpr(x: lower_mod.Value, out_ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_fmov_to_gpr");
-    const fpr = try ctx.getValueReg(x, .float);
+    const fpr = lower_mod.Reg.fromVReg(try ctx.getValueReg(x, .float));
     const gpr = lower_mod.WritableReg.allocReg(.int, ctx);
-    const size: emit.ScalarSize = if (out_ty.bits() == 32) .size32 else .size64;
+    const size: FpuOperandSize = if (out_ty.bits() == 32) .size32 else .size64;
     return Inst{ .fmov_to_gpr = .{ .dst = gpr, .src = fpr, .size = size } };
 }
 
@@ -2504,23 +2514,24 @@ pub fn aarch64_landingpad(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
 pub fn aarch64_stack_switch(old_sp_addr: lower_mod.Value, new_sp_addr: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_stack_switch");
     // Stack switch sequence:
-    // 1. MOV X<tmp>, SP              - Save current SP
+    // 1. ADD X<tmp>, SP, #0          - Save current SP
     // 2. STR X<tmp>, [old_sp_addr]   - Store to old_sp_addr
     // 3. LDR X<new>, [new_sp_addr]   - Load from new_sp_addr
-    // 4. MOV SP, X<new>              - Switch to new SP
+    // 4. ADD SP, X<new>, #0          - Switch to new SP (MOV to SP alias)
 
     const sp = Reg.gpr(31); // SP register
     const tmp = lower_mod.WritableReg.allocReg(.int, ctx);
 
     // Save current SP to temporary
-    try ctx.emit(Inst{ .mov_rr = .{
+    try ctx.emit(Inst{ .add_imm = .{
         .dst = tmp,
-        .src = sp,
+        .src = sp, // reads SP when Rn=31
+        .imm = 0,
         .size = .size64,
     } });
 
     // Store old SP to memory
-    const old_addr_reg = try ctx.getValueReg(old_sp_addr, .int);
+    const old_addr_reg = Reg.fromVReg(try ctx.getValueReg(old_sp_addr, .int));
     try ctx.emit(Inst{ .str = .{
         .src = tmp.toReg(),
         .base = old_addr_reg,
@@ -2529,7 +2540,7 @@ pub fn aarch64_stack_switch(old_sp_addr: lower_mod.Value, new_sp_addr: lower_mod
     } });
 
     // Load new SP from memory
-    const new_addr_reg = try ctx.getValueReg(new_sp_addr, .int);
+    const new_addr_reg = Reg.fromVReg(try ctx.getValueReg(new_sp_addr, .int));
     const new_sp = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{ .ldr = .{
         .dst = new_sp,
@@ -2539,11 +2550,14 @@ pub fn aarch64_stack_switch(old_sp_addr: lower_mod.Value, new_sp_addr: lower_mod
     } });
 
     // Switch to new stack pointer
-    return Inst{ .mov_rr = .{
-        .dst = lower_mod.WritableReg.from(sp),
+    const inst = Inst{ .add_imm = .{
+        .dst = lower_mod.WritableReg.fromReg(sp),
         .src = new_sp.toReg(),
+        .imm = 0,
         .size = .size64,
     } };
+    try ctx.emit(inst);
+    return inst;
 }
 
 /// TLS operations (ISLE constructors)
@@ -2558,7 +2572,7 @@ pub fn tls_local_exec(offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     // Read thread pointer register
     try ctx.emit(Inst{ .mrs = .{
         .dst = dst,
-        .sysreg = Inst.SystemReg.tpidr_el0,
+        .sysreg = SystemReg.tpidr_el0,
     } });
 
     // Add TLS offset to get variable address
@@ -2630,7 +2644,7 @@ pub fn tls_init_exec(extname: ExternalName, ctx: *lower_mod.LowerCtx(Inst)) !Ins
     // MRS: Read thread pointer
     try ctx.emit(Inst{ .mrs = .{
         .dst = dst,
-        .sysreg = Inst.SystemReg.tpidr_el0,
+        .sysreg = SystemReg.tpidr_el0,
     } });
 
     // ADD: Add TLS offset to thread pointer to get variable address
@@ -2703,7 +2717,7 @@ pub fn tls_general_dynamic(extname: ExternalName, ctx: *lower_mod.LowerCtx(Inst)
     // MRS: Read thread pointer
     try ctx.emit(Inst{ .mrs = .{
         .dst = dst,
-        .sysreg = Inst.SystemReg.tpidr_el0,
+        .sysreg = SystemReg.tpidr_el0,
     } });
 
     // ADD: Add thread pointer to TLS offset (in X0) to get variable address
@@ -2725,19 +2739,23 @@ pub fn aarch64_dynamic_stack_addr(offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !
     // Compute address: ADD Xd, X19, #offset
     if (offset == 0) {
         // Just move the dynamic SP
-        return Inst{ .mov_rr = .{
+        const inst = Inst{ .mov_rr = .{
             .dst = dst,
             .src = dyn_sp,
             .size = .size64,
         } };
+        try ctx.emit(inst);
+        return inst;
     } else if (offset <= 0xFFF) {
         // Small offset fits in ADD immediate
-        return Inst{ .add_imm = .{
+        const inst = Inst{ .add_imm = .{
             .dst = dst,
             .src = dyn_sp,
             .imm = @intCast(offset),
             .size = .size64,
         } };
+        try ctx.emit(inst);
+        return inst;
     } else {
         // Large offset - load into register first
         const offset_reg = lower_mod.WritableReg.allocReg(.int, ctx);
@@ -2746,119 +2764,119 @@ pub fn aarch64_dynamic_stack_addr(offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !
             .imm = offset,
             .size = .size64,
         } });
-        return Inst{ .add_rr = .{
+        const inst = Inst{ .add_rr = .{
             .dst = dst,
             .src1 = dyn_sp,
             .src2 = offset_reg.toReg(),
             .size = .size64,
         } };
+        try ctx.emit(inst);
+        return inst;
     }
 }
 
 pub fn aarch64_dynamic_stack_load(ty: Type, offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    // Load from dynamic stack: LDR Xd/Vd, [X19, #offset]
-    const dyn_sp = Reg.gpr(19); // X19 - dynamic stack pointer
+    const addr_inst = try aarch64_dynamic_stack_addr(offset, ctx);
+    const addr_dst = switch (addr_inst) {
+        .mov_rr => |i| i.dst,
+        .add_imm => |i| i.dst,
+        .add_rr => |i| i.dst,
+        else => return error.UnexpectedDynStackAddrInst,
+    };
+    const base = addr_dst.toReg();
 
-    // Compute address first if offset doesn't fit in load immediate
-    const max_load_offset = 32760; // 12-bit scaled by 8 for 64-bit loads
-    if (offset > max_load_offset) {
-        // Compute address in temp register
-        const addr_reg = lower_mod.WritableReg.allocReg(.int, ctx);
-        try ctx.emit(try aarch64_dynamic_stack_addr(offset, ctx));
-        // Then load from [addr_reg, #0]
-        const load_base = addr_reg.toReg();
-        return switch (ty) {
-            .I8, .I16, .I32, .I64 => Inst{ .ldr = .{
-                .dst = lower_mod.WritableReg.allocReg(.int, ctx),
-                .base = load_base,
-                .offset = 0,
-                .size = typeToOperandSize(ty),
-            } },
-            .F32, .F64 => Inst{ .fldr = .{
-                .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
-                .base = load_base,
-                .offset = 0,
-                .size = typeToOperandSize(ty),
-            } },
-            else => unreachable,
-        };
+    const dst_class = typeToRegClass(ty);
+    const dst = lower_mod.WritableReg.allocReg(dst_class, ctx);
+    const bits = ty.bits();
+
+    const inst = if (ty.isInt()) blk: {
+        const size = typeToOperandSize(ty);
+        if (bits == 64 or bits == 32) break :blk Inst{ .ldr = .{
+            .dst = dst,
+            .base = base,
+            .offset = 0,
+            .size = size,
+        } };
+        if (bits == 16) break :blk Inst{ .ldrh = .{
+            .dst = dst,
+            .base = base,
+            .offset = 0,
+            .size = size,
+        } };
+        if (bits == 8) break :blk Inst{ .ldrb = .{
+            .dst = dst,
+            .base = base,
+            .offset = 0,
+            .size = size,
+        } };
+        return error.UnsupportedIntegerSize;
+    } else if (ty.isFloat() or ty.isVector()) blk: {
+        const fp_size = typeToFpuOperandSize(ty);
+        break :blk Inst{ .vldr = .{
+            .dst = dst,
+            .base = base,
+            .offset = 0,
+            .size = fp_size,
+        } };
+    } else if (ty.isDynamicVector()) {
+        return error.Unimplemented;
     } else {
-        // Direct load with offset
-        return switch (ty) {
-            .I8, .I16, .I32, .I64 => Inst{ .ldr = .{
-                .dst = lower_mod.WritableReg.allocReg(.int, ctx),
-                .base = dyn_sp,
-                .offset = @intCast(offset),
-                .size = typeToOperandSize(ty),
-            } },
-            .F32, .F64 => Inst{ .fldr = .{
-                .dst = lower_mod.WritableVReg.allocVReg(.float, ctx),
-                .base = dyn_sp,
-                .offset = @intCast(offset),
-                .size = typeToOperandSize(ty),
-            } },
-            else => unreachable,
-        };
-    }
+        return error.UnsupportedType;
+    };
+
+    try ctx.emit(inst);
+    return inst;
 }
 
 pub fn aarch64_dynamic_stack_store(ty: Type, val: lower_mod.Value, offset: u64, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
-    // Store to dynamic stack: STR Xs/Vs, [X19, #offset]
-    const dyn_sp = Reg.gpr(19); // X19 - dynamic stack pointer
+    const addr_inst = try aarch64_dynamic_stack_addr(offset, ctx);
+    const addr_dst = switch (addr_inst) {
+        .mov_rr => |i| i.dst,
+        .add_imm => |i| i.dst,
+        .add_rr => |i| i.dst,
+        else => return error.UnexpectedDynStackAddrInst,
+    };
+    const base = addr_dst.toReg();
 
-    // Compute address first if offset doesn't fit in store immediate
-    const max_store_offset = 32760; // 12-bit scaled by 8 for 64-bit stores
-    if (offset > max_store_offset) {
-        // Compute address in temp register
-        const addr_reg = lower_mod.WritableReg.allocReg(.int, ctx);
-        try ctx.emit(try aarch64_dynamic_stack_addr(offset, ctx));
-        // Then store to [addr_reg, #0]
-        const store_base = addr_reg.toReg();
-        return switch (ty) {
-            .I8, .I16, .I32, .I64 => {
-                const src = try ctx.getValueReg(val, .int);
-                return Inst{ .str = .{
-                    .src = src,
-                    .base = store_base,
-                    .offset = 0,
-                    .size = typeToOperandSize(ty),
-                } };
-            },
-            .F32, .F64 => {
-                const src = try ctx.getValueVReg(val, .float);
-                return Inst{ .fstr = .{
-                    .src = src,
-                    .base = store_base,
-                    .offset = 0,
-                    .size = typeToOperandSize(ty),
-                } };
-            },
-            else => unreachable,
-        };
+    const bits = ty.bits();
+    const src_class = typeToRegClass(ty);
+    const src = Reg.fromVReg(try ctx.getValueReg(val, src_class));
+
+    const inst = if (ty.isInt()) blk: {
+        const size = typeToOperandSize(ty);
+        if (bits == 64 or bits == 32) break :blk Inst{ .str = .{
+            .src = src,
+            .base = base,
+            .offset = 0,
+            .size = size,
+        } };
+        if (bits == 16) break :blk Inst{ .strh = .{
+            .src = src,
+            .base = base,
+            .offset = 0,
+        } };
+        if (bits == 8) break :blk Inst{ .strb = .{
+            .src = src,
+            .base = base,
+            .offset = 0,
+        } };
+        return error.UnsupportedIntegerSize;
+    } else if (ty.isFloat() or ty.isVector()) blk: {
+        const fp_size = typeToFpuOperandSize(ty);
+        break :blk Inst{ .vstr = .{
+            .src = src,
+            .base = base,
+            .offset = 0,
+            .size = fp_size,
+        } };
+    } else if (ty.isDynamicVector()) {
+        return error.Unimplemented;
     } else {
-        // Direct store with offset
-        return switch (ty) {
-            .I8, .I16, .I32, .I64 => {
-                const src = try ctx.getValueReg(val, .int);
-                return Inst{ .str = .{
-                    .src = src,
-                    .base = dyn_sp,
-                    .offset = @intCast(offset),
-                    .size = typeToOperandSize(ty),
-                } };
-            },
-            .F32, .F64 => {
-                const src = try ctx.getValueVReg(val, .float);
-                return Inst{ .fstr = .{
-                    .src = src,
-                    .base = dyn_sp,
-                    .offset = @intCast(offset),
-                    .size = typeToOperandSize(ty),
-                } };
-            },
-            else => unreachable,
-        };
-    }
+        return error.UnsupportedType;
+    };
+
+    try ctx.emit(inst);
+    return inst;
 }
 
 /// Debug operations (ISLE constructors)
@@ -2871,6 +2889,22 @@ pub fn aarch64_debugtrap(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
 
 pub fn aarch64_nop(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_nop");
+    _ = ctx;
+    return Inst{ .nop = {} };
+}
+
+/// emit_val: Discard a Value result while preserving any emitted side effects.
+/// Used by ISLE rules where `lower` returns an Inst but helper constructors return Value.
+pub fn emit_val(_: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("emit_val");
+    _ = ctx;
+    return Inst{ .nop = {} };
+}
+
+/// emit_regs: Discard a ValueRegs result while preserving any emitted side effects.
+/// Used by ISLE rules where `lower` returns an Inst but helper constructors return ValueRegs.
+pub fn emit_regs(_: lower_mod.ValueRegs, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
+    recordRule("emit_regs");
     _ = ctx;
     return Inst{ .nop = {} };
 }
@@ -2912,7 +2946,7 @@ pub fn constant_v128(imm: u128, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
             .dst = dst,
             .src1 = dst.toReg(),
             .src2 = dst.toReg(),
-            .size = Inst.FpuOperandSize.size128,
+            .size = FpuOperandSize.size128,
         } };
     }
 
@@ -2933,14 +2967,14 @@ pub fn constant_v128(imm: u128, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
         const tmp_gpr = lower_mod.WritableReg.allocReg(.int, ctx);
         try ctx.emit(Inst{ .mov_imm = .{
             .dst = tmp_gpr,
-            .imm = first_byte,
-            .is_64 = false,
+            .imm = @intCast(first_byte),
+            .size = .size32,
         } });
 
         return Inst{ .vec_dup = .{
             .dst = dst,
             .src = tmp_gpr.toReg(),
-            .size = Inst.VecElemSize.size8x16,
+            .size = VecElemSize.size8x16,
         } };
     }
 
@@ -3011,19 +3045,56 @@ pub fn aarch64_symbol_value(extname: ExternalName, offset: i64, ctx: *lower_mod.
     recordRule("aarch64_symbol_value");
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
 
-    // PC-relative addressing: ADRP + ADD
-    // ADRP loads page address, ADD adds page offset
-    try ctx.emit(Inst{ .adrp = .{
-        .dst = dst,
-        .symbol = extname,
-    } });
+    const sym = try extfunc.symName(ctx.allocator, extname);
 
-    return Inst{ .add_imm = .{
+    // Materialize symbol address via ADRP + ADD :lo12:
+    try ctx.emit(Inst{ .adrp_symbol = .{
         .dst = dst,
-        .rn = dst.toReg(),
-        .imm = @intCast(@mod(offset, 4096)),
-        .is_64 = true,
+        .symbol = sym,
+    } });
+    const base = Inst{ .add_symbol_lo12 = .{
+        .dst = dst,
+        .src = dst.toReg(),
+        .symbol = sym,
     } };
+    try ctx.emit(base);
+
+    if (offset == 0) return base;
+    if (offset > 0 and offset <= 0xfff) {
+        const inst = Inst{ .add_imm = .{
+            .dst = dst,
+            .src = dst.toReg(),
+            .imm = @intCast(offset),
+            .size = .size64,
+        } };
+        try ctx.emit(inst);
+        return inst;
+    }
+    if (offset < 0 and offset >= -0xfff) {
+        const inst = Inst{ .sub_imm = .{
+            .dst = dst,
+            .src = dst.toReg(),
+            .imm = @intCast(-offset),
+            .size = .size64,
+        } };
+        try ctx.emit(inst);
+        return inst;
+    }
+
+    const off_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .mov_imm = .{
+        .dst = off_reg,
+        .imm = @bitCast(offset),
+        .size = .size64,
+    } });
+    const inst = Inst{ .add_rr = .{
+        .dst = dst,
+        .src1 = dst.toReg(),
+        .src2 = off_reg.toReg(),
+        .size = .size64,
+    } };
+    try ctx.emit(inst);
+    return inst;
 }
 
 pub fn aarch64_func_addr(extname: ExternalName, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
@@ -3036,17 +3107,17 @@ pub fn aarch64_func_addr(extname: ExternalName, ctx: *lower_mod.LowerCtx(Inst)) 
 /// Returns ValueRegs: [result, overflow_flag]
 pub fn aarch64_uadd_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
     recordRule("aarch64_uadd_overflow");
-    const a_reg = try ctx.getValueReg(a, .int);
-    const b_reg = try ctx.getValueReg(b, .int);
+    const a_reg = Reg.fromVReg(try ctx.getValueReg(a, .int));
+    const b_reg = Reg.fromVReg(try ctx.getValueReg(b, .int));
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
-    const is_64 = ty.bits() == 64;
+    const size: OperandSize = if (ty.bits() == 64) .size64 else .size32;
 
     // ADDS: Add and set flags
-    try ctx.emit(Inst{ .add_s = .{
+    try ctx.emit(Inst{ .adds_rr = .{
         .dst = dst,
-        .rn = a_reg,
-        .rm = b_reg,
-        .is_64 = is_64,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = size,
     } });
 
     // CSET: Set register to 1 if carry, 0 otherwise
@@ -3054,26 +3125,27 @@ pub fn aarch64_uadd_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
     try ctx.emit(Inst{
         .cset = .{
             .dst = overflow_reg,
-            .cond = .hs, // HS = unsigned higher or same (carry set)
+            .cond = .cs, // CS = carry set (unsigned >=)
+            .size = size,
         },
     });
 
-    return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
+    return lower_mod.ValueRegs.pair(dst.toReg(), overflow_reg.toReg());
 }
 
 pub fn aarch64_usub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
     recordRule("aarch64_usub_overflow");
-    const a_reg = try ctx.getValueReg(a, .int);
-    const b_reg = try ctx.getValueReg(b, .int);
+    const a_reg = Reg.fromVReg(try ctx.getValueReg(a, .int));
+    const b_reg = Reg.fromVReg(try ctx.getValueReg(b, .int));
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
-    const is_64 = ty.bits() == 64;
+    const size: OperandSize = if (ty.bits() == 64) .size64 else .size32;
 
     // SUBS: Subtract and set flags
-    try ctx.emit(Inst{ .sub_s = .{
+    try ctx.emit(Inst{ .subs_rr = .{
         .dst = dst,
-        .rn = a_reg,
-        .rm = b_reg,
-        .is_64 = is_64,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = size,
     } });
 
     // CSET: Set register to 1 if borrow (carry clear), 0 otherwise
@@ -3081,26 +3153,27 @@ pub fn aarch64_usub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
     try ctx.emit(Inst{
         .cset = .{
             .dst = overflow_reg,
-            .cond = .lo, // LO = unsigned lower (borrow/carry clear)
+            .cond = .cc, // CC = carry clear (unsigned borrow)
+            .size = size,
         },
     });
 
-    return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
+    return lower_mod.ValueRegs.pair(dst.toReg(), overflow_reg.toReg());
 }
 
 pub fn aarch64_sadd_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
     recordRule("aarch64_sadd_overflow");
-    const a_reg = try ctx.getValueReg(a, .int);
-    const b_reg = try ctx.getValueReg(b, .int);
+    const a_reg = Reg.fromVReg(try ctx.getValueReg(a, .int));
+    const b_reg = Reg.fromVReg(try ctx.getValueReg(b, .int));
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
-    const is_64 = ty.bits() == 64;
+    const size: OperandSize = if (ty.bits() == 64) .size64 else .size32;
 
     // ADDS: Add and set flags
-    try ctx.emit(Inst{ .add_s = .{
+    try ctx.emit(Inst{ .adds_rr = .{
         .dst = dst,
-        .rn = a_reg,
-        .rm = b_reg,
-        .is_64 = is_64,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = size,
     } });
 
     // CSET: Set register to 1 if signed overflow (V flag), 0 otherwise
@@ -3109,25 +3182,26 @@ pub fn aarch64_sadd_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
         .cset = .{
             .dst = overflow_reg,
             .cond = .vs, // VS = signed overflow
+            .size = size,
         },
     });
 
-    return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
+    return lower_mod.ValueRegs.pair(dst.toReg(), overflow_reg.toReg());
 }
 
 pub fn aarch64_ssub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
     recordRule("aarch64_ssub_overflow");
-    const a_reg = try ctx.getValueReg(a, .int);
-    const b_reg = try ctx.getValueReg(b, .int);
+    const a_reg = Reg.fromVReg(try ctx.getValueReg(a, .int));
+    const b_reg = Reg.fromVReg(try ctx.getValueReg(b, .int));
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
-    const is_64 = ty.bits() == 64;
+    const size: OperandSize = if (ty.bits() == 64) .size64 else .size32;
 
     // SUBS: Subtract and set flags
-    try ctx.emit(Inst{ .sub_s = .{
+    try ctx.emit(Inst{ .subs_rr = .{
         .dst = dst,
-        .rn = a_reg,
-        .rm = b_reg,
-        .is_64 = is_64,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = size,
     } });
 
     // CSET: Set register to 1 if signed overflow (V flag), 0 otherwise
@@ -3136,10 +3210,11 @@ pub fn aarch64_ssub_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
         .cset = .{
             .dst = overflow_reg,
             .cond = .vs, // VS = signed overflow
+            .size = size,
         },
     });
 
-    return lower_mod.ValueRegs.two(dst.toReg(), overflow_reg.toReg());
+    return lower_mod.ValueRegs.pair(dst.toReg(), overflow_reg.toReg());
 }
 
 fn tcAddr(base: Reg, offset: u32, ctx: *lower_mod.LowerCtx(Inst)) !Reg {
@@ -3369,8 +3444,8 @@ pub fn aarch64_return_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args:
 /// Vector test operations (ISLE constructors)
 pub fn aarch64_vall_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_vall_true");
-    const x_reg = try ctx.getValueReg(x, .vector);
-    const vec_size = vectorSizeFromType(ty);
+    const x_reg = (try ctx.getValueReg(x, .vector)).toReg();
+    const vec_size = try vectorSizeFromType(ty);
 
     // Use UMINV to get minimum of all lanes
     const min_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
@@ -3382,29 +3457,29 @@ pub fn aarch64_vall_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.Low
 
     // Extract scalar and compare with 0
     const scalar_reg = lower_mod.WritableReg.allocReg(.int, ctx);
-    try ctx.emit(Inst{ .mov_from_vec = .{
+    try ctx.emit(Inst{ .vec_extract_lane = .{
         .dst = scalar_reg,
         .src = min_reg.toReg(),
         .lane = 0,
-        .size = .size64,
+        .size = vec_size,
     } });
 
     // Compare: all true if min != 0
     try ctx.emit(Inst{ .cmp_imm = .{
-        .rn = scalar_reg.toReg(),
-        .imm = 0,
-        .is_64 = true,
+        .src = scalar_reg.toReg(),
+        .imm = u8_into_imm12(0),
+        .size = .size64,
     } });
 
     // CSET: Set result to 1 if NE, 0 otherwise
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
-    return Inst{ .cset = .{ .dst = dst, .cond = .ne } };
+    return Inst{ .cset = .{ .dst = dst, .cond = .ne, .size = .size64 } };
 }
 
 pub fn aarch64_vany_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_vany_true");
-    const x_reg = try ctx.getValueReg(x, .vector);
-    const vec_size = vectorSizeFromType(ty);
+    const x_reg = (try ctx.getValueReg(x, .vector)).toReg();
+    const vec_size = try vectorSizeFromType(ty);
 
     // Use UMAXV to get maximum of all lanes
     const max_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
@@ -3416,28 +3491,28 @@ pub fn aarch64_vany_true(x: lower_mod.Value, ty: types.Type, ctx: *lower_mod.Low
 
     // Extract scalar and compare with 0
     const scalar_reg = lower_mod.WritableReg.allocReg(.int, ctx);
-    try ctx.emit(Inst{ .mov_from_vec = .{
+    try ctx.emit(Inst{ .vec_extract_lane = .{
         .dst = scalar_reg,
         .src = max_reg.toReg(),
         .lane = 0,
-        .size = .size64,
+        .size = vec_size,
     } });
 
     // Compare: any true if max != 0
     try ctx.emit(Inst{ .cmp_imm = .{
-        .rn = scalar_reg.toReg(),
-        .imm = 0,
-        .is_64 = true,
+        .src = scalar_reg.toReg(),
+        .imm = u8_into_imm12(0),
+        .size = .size64,
     } });
 
     // CSET: Set result to 1 if NE, 0 otherwise
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
-    return Inst{ .cset = .{ .dst = dst, .cond = .ne } };
+    return Inst{ .cset = .{ .dst = dst, .cond = .ne, .size = .size64 } };
 }
 
 pub fn aarch64_vhigh_bits(vec: lower_mod.Value, ty: types.Type, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_vhigh_bits");
-    const vec_reg = try ctx.getValueReg(vec, .vector);
+    const vec_reg = (try ctx.getValueReg(vec, .vector)).toReg();
     const lane_bits = ty.laneBits();
 
     // Extract high bit from each lane by shifting and accumulating
@@ -3446,11 +3521,12 @@ pub fn aarch64_vhigh_bits(vec: lower_mod.Value, ty: types.Type, ctx: *lower_mod.
 
     // SHL to move high bit to position
     const shifted = lower_mod.WritableVReg.allocVReg(.vector, ctx);
-    try ctx.emit(Inst{ .vec_shl_imm = .{
+    try ctx.emit(Inst{ .vec_shift_imm = .{
         .dst = shifted,
-        .src = vec_reg,
-        .shift = shift_amount,
-        .size = vectorSizeFromType(ty),
+        .rn = vec_reg,
+        .imm = shift_amount,
+        .op = .Shl,
+        .size = try vectorSizeFromType(ty),
     } });
 
     // ADDV to sum all lanes (creates bitmask)
@@ -3458,29 +3534,45 @@ pub fn aarch64_vhigh_bits(vec: lower_mod.Value, ty: types.Type, ctx: *lower_mod.
     try ctx.emit(Inst{ .vec_addv = .{
         .dst = sum_reg,
         .src = shifted.toReg(),
-        .size = vectorSizeFromType(ty),
+        .size = try vectorSizeFromType(ty),
     } });
 
     // Extract to GPR
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
-    return Inst{ .mov_from_vec = .{
+    return Inst{ .vec_extract_lane = .{
         .dst = dst,
         .src = sum_reg.toReg(),
         .lane = 0,
-        .size = .size64,
+        .size = try vectorSizeFromType(ty),
     } };
 }
 
-fn vectorSizeFromType(ty: types.Type) hoist.aarch64_inst.VecElemSize {
-    return switch (ty) {
-        .I8X8 => .size8x8,
-        .I8X16 => .size8x16,
-        .I16X4 => .size16x4,
-        .I16X8 => .size16x8,
-        .I32X2 => .size32x2,
-        .I32X4 => .size32x4,
-        .I64X2 => .size64x2,
-        else => .size8x16, // Default
+fn vectorSizeFromType(ty: types.Type) !VecElemSize {
+    if (!ty.isVector()) return error.ExpectedVectorType;
+    const elem_bits = ty.laneBits();
+    const lanes = ty.laneCount();
+
+    return switch (elem_bits) {
+        8 => switch (lanes) {
+            8 => .size8x8,
+            16 => .size8x16,
+            else => error.UnsupportedVectorType,
+        },
+        16 => switch (lanes) {
+            4 => .size16x4,
+            8 => .size16x8,
+            else => error.UnsupportedVectorType,
+        },
+        32 => switch (lanes) {
+            2 => .size32x2,
+            4 => .size32x4,
+            else => error.UnsupportedVectorType,
+        },
+        64 => switch (lanes) {
+            2 => .size64x2,
+            else => error.UnsupportedVectorType,
+        },
+        else => error.UnsupportedVectorType,
     };
 }
 
@@ -4136,7 +4228,8 @@ pub fn shuffle_dup8_from_imm(imm: u128) ?u8 {
     // Check if all 16 bytes are the same
     var i: u8 = 0;
     while (i < 16) : (i += 1) {
-        const byte: u8 = @truncate(imm >> (@as(u7, i) * 8));
+        const sh: u7 = @intCast(i * 8);
+        const byte: u8 = @truncate(imm >> sh);
         if (byte != lane) return null;
     }
 
@@ -4151,7 +4244,8 @@ pub fn shuffle_dup16_from_imm(imm: u128) ?u8 {
     // Check if all 8 halfwords are the same
     var i: u8 = 0;
     while (i < 8) : (i += 1) {
-        const hword: u16 = @truncate(imm >> (@as(u7, i) * 16));
+        const sh: u7 = @intCast(i * 16);
+        const hword: u16 = @truncate(imm >> sh);
         if (hword != lane16) return null;
     }
 
@@ -4166,7 +4260,8 @@ pub fn shuffle_dup32_from_imm(imm: u128) ?u8 {
     // Check if all 4 words are the same
     var i: u8 = 0;
     while (i < 4) : (i += 1) {
-        const word: u32 = @truncate(imm >> (@as(u7, i) * 32));
+        const sh: u7 = @intCast(i * 32);
+        const word: u32 = @truncate(imm >> sh);
         if (word != lane32) return null;
     }
 
@@ -4193,7 +4288,8 @@ pub fn vec_extract_imm4_from_immediate(imm: u128) ?u8 {
     var i: u8 = 0;
     while (i < 16) : (i += 1) {
         const expected: u8 = @truncate(@as(u16, first_byte) + i);
-        const actual: u8 = @truncate(imm >> (@as(u7, i) * 8));
+        const sh: u7 = @intCast(i * 8);
+        const actual: u8 = @truncate(imm >> sh);
         if (actual != expected) return null;
     }
 
@@ -4263,8 +4359,8 @@ pub fn shuffle64_from_imm(imm: u128) ?struct { u8, u8 } {
 /// Shuffle operations (ISLE constructor)
 pub fn aarch64_shuffle_tbl(a: lower_mod.Value, b: lower_mod.Value, mask: u128, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_shuffle_tbl");
-    const a_reg = try ctx.getValueReg(a, .vector);
-    const b_reg = try ctx.getValueReg(b, .vector);
+    const a_reg = try getValueRegVec(ctx, a);
+    const b_reg = try getValueRegVec(ctx, b);
 
     // Load 128-bit mask into vector register
     const mask_reg = lower_mod.WritableVReg.allocVReg(.vector, ctx);
@@ -4280,13 +4376,13 @@ pub fn aarch64_shuffle_tbl(a: lower_mod.Value, b: lower_mod.Value, mask: u128, c
     try ctx.emit(Inst{ .mov_imm = .{
         .dst = tmp_lo,
         .imm = @bitCast(mask_lo),
-        .is_64 = true,
+        .size = .size64,
     } });
 
     try ctx.emit(Inst{ .mov_imm = .{
         .dst = tmp_hi,
         .imm = @bitCast(mask_hi),
-        .is_64 = true,
+        .size = .size64,
     } });
 
     // Move to vector register (INS or FMOV)
@@ -4301,17 +4397,32 @@ pub fn aarch64_shuffle_tbl(a: lower_mod.Value, b: lower_mod.Value, mask: u128, c
         .vec = mask_reg.toReg(),
         .src = tmp_hi.toReg(),
         .lane = 1,
-        .size = .Size64x2,
+        .size = .size64x2,
     } });
 
-    // TBL2: Two-register table lookup
-    // Concatenates a and b as 256-bit table, indexes with mask
-    const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
-    return Inst{ .vec_tbl2 = .{
-        .dst = dst,
+    // TBL with two table registers requires consecutive registers. Use the
+    // reserved scratch vector regs v16-v17 as the table base.
+    const tbl0 = Reg.fromPReg(PReg.new(.vector, 16));
+    const tbl1 = Reg.fromPReg(PReg.new(.vector, 17));
+    try ctx.emit(Inst{ .vec_orr = .{
+        .dst = lower_mod.WritableReg.fromReg(tbl0),
         .src1 = a_reg,
+        .src2 = a_reg,
+        .size = .size128,
+    } });
+    try ctx.emit(Inst{ .vec_orr = .{
+        .dst = lower_mod.WritableReg.fromReg(tbl1),
+        .src1 = b_reg,
         .src2 = b_reg,
-        .idx = mask_reg.toReg(),
+        .size = .size128,
+    } });
+
+    const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    return Inst{ .tbl = .{
+        .dst = dst,
+        .table = tbl0,
+        .indices = mask_reg.toReg(),
+        .table_regs = 1, // 2 consecutive regs: v16-v17
     } };
 }
 
@@ -4326,39 +4437,22 @@ pub fn vec_rrr_mod(
     size_enum: VectorSize,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.Value {
-    const addend_reg = try ctx.getValueReg(addend, .vector);
-    const mul1_reg = try ctx.getValueReg(multiplicand1, .vector);
-    const mul2_reg = try ctx.getValueReg(multiplicand2, .vector);
+    const addend_reg = try getValueRegVec(ctx, addend);
+    const mul1_reg = try getValueRegVec(ctx, multiplicand1);
+    const mul2_reg = try getValueRegVec(ctx, multiplicand2);
 
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
 
-    // Convert ISLE VectorSize to inst.VectorSize
-    const size: Inst.VectorSize = switch (size_enum) {
-        .V8B => .V8B,
-        .V16B => .V16B,
-        .V4H => .V4H,
-        .V8H => .V8H,
-        .V2S => .V2S,
-        .V4S => .V4S,
-        .V2D => .V2D,
-    };
-
-    // Convert ISLE VecALUModOp to inst.VecALUModOp
-    const inst_op: Inst.VecALUModOp = switch (op) {
-        .Fmla => .Fmla,
-        .Fmls => .Fmls,
-    };
-
     try ctx.emit(Inst{ .vec_rrr_mod = .{
-        .op = inst_op,
+        .op = op,
         .dst = dst,
         .ri = addend_reg,
         .rn = mul1_reg,
         .rm = mul2_reg,
-        .size = size,
+        .size = size_enum,
     } });
 
-    return ctx.getValueFromReg(dst.toReg(), .vector);
+    return try ctx.getValueFromReg(dst.toReg(), .vector);
 }
 
 /// vec_rrr: Binary vector operation (VecRRR - 3 registers)
@@ -4370,74 +4464,19 @@ pub fn vec_rrr(
     size_enum: VectorSize,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.Value {
-    const src1_reg = try ctx.getValueReg(src1, .vector);
-    const src2_reg = try ctx.getValueReg(src2, .vector);
+    const src1_reg = try getValueRegVec(ctx, src1);
+    const src2_reg = try getValueRegVec(ctx, src2);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
 
-    const size: Inst.VectorSize = switch (size_enum) {
-        .V8B => .V8B,
-        .V16B => .V16B,
-        .V4H => .V4H,
-        .V8H => .V8H,
-        .V2S => .V2S,
-        .V4S => .V4S,
-        .V2D => .V2D,
-    };
-
-    const inst_op: Inst.VecALUOp = switch (op) {
-        .Sqadd => .Sqadd,
-        .Uqadd => .Uqadd,
-        .Sqsub => .Sqsub,
-        .Uqsub => .Uqsub,
-        .Cmeq => .Cmeq,
-        .Cmge => .Cmge,
-        .Cmgt => .Cmgt,
-        .Cmhs => .Cmhs,
-        .Cmhi => .Cmhi,
-        .Fcmeq => .Fcmeq,
-        .Fcmgt => .Fcmgt,
-        .Fcmge => .Fcmge,
-        .And => .And,
-        .Bic => .Bic,
-        .Orr => .Orr,
-        .Orn => .Orn,
-        .Eor => .Eor,
-        .Add => .Add,
-        .Sub => .Sub,
-        .Mul => .Mul,
-        .Sshl => .Sshl,
-        .Ushl => .Ushl,
-        .Umin => .Umin,
-        .Smin => .Smin,
-        .Umax => .Umax,
-        .Smax => .Smax,
-        .Umaxp => .Umaxp,
-        .Urhadd => .Urhadd,
-        .Fadd => .Fadd,
-        .Fsub => .Fsub,
-        .Fdiv => .Fdiv,
-        .Fmax => .Fmax,
-        .Fmin => .Fmin,
-        .Fmul => .Fmul,
-        .Addp => .Addp,
-        .Zip1 => .Zip1,
-        .Zip2 => .Zip2,
-        .Uzp1 => .Uzp1,
-        .Uzp2 => .Uzp2,
-        .Trn1 => .Trn1,
-        .Trn2 => .Trn2,
-        .Sqrdmulh => .Sqrdmulh,
-    };
-
     try ctx.emit(Inst{ .vec_rrr = .{
-        .op = inst_op,
+        .op = op,
         .dst = dst,
         .rn = src1_reg,
         .rm = src2_reg,
-        .size = size,
+        .size = size_enum,
     } });
 
-    return ctx.getValueFromReg(dst.toReg(), .vector);
+    return try ctx.getValueFromReg(dst.toReg(), .vector);
 }
 
 /// vec_misc: Unary vector operation (VecMisc - 2 registers)
@@ -4448,58 +4487,17 @@ pub fn vec_misc(
     size_enum: VectorSize,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.Value {
-    const src_reg = try ctx.getValueReg(src, .vector);
+    const src_reg = try getValueRegVec(ctx, src);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
 
-    const size: Inst.VectorSize = switch (size_enum) {
-        .V8B => .V8B,
-        .V16B => .V16B,
-        .V4H => .V4H,
-        .V8H => .V8H,
-        .V2S => .V2S,
-        .V4S => .V4S,
-        .V2D => .V2D,
-    };
-
-    const inst_op: Inst.VecMisc2 = switch (op) {
-        .Not => .Not,
-        .Neg => .Neg,
-        .Abs => .Abs,
-        .Fabs => .Fabs,
-        .Fneg => .Fneg,
-        .Fsqrt => .Fsqrt,
-        .Rev16 => .Rev16,
-        .Rev32 => .Rev32,
-        .Rev64 => .Rev64,
-        .Fcvtzs => .Fcvtzs,
-        .Fcvtzu => .Fcvtzu,
-        .Scvtf => .Scvtf,
-        .Ucvtf => .Ucvtf,
-        .Frintn => .Frintn,
-        .Frintz => .Frintz,
-        .Frintm => .Frintm,
-        .Frintp => .Frintp,
-        .Cnt => .Cnt,
-        .Cmeq0 => .Cmeq0,
-        .Cmge0 => .Cmge0,
-        .Cmgt0 => .Cmgt0,
-        .Cmle0 => .Cmle0,
-        .Cmlt0 => .Cmlt0,
-        .Fcmeq0 => .Fcmeq0,
-        .Fcmge0 => .Fcmge0,
-        .Fcmgt0 => .Fcmgt0,
-        .Fcmle0 => .Fcmle0,
-        .Fcmlt0 => .Fcmlt0,
-    };
-
     try ctx.emit(Inst{ .vec_misc = .{
-        .op = inst_op,
+        .op = op,
         .dst = dst,
         .rn = src_reg,
-        .size = size,
+        .size = size_enum,
     } });
 
-    return ctx.getValueFromReg(dst.toReg(), .vector);
+    return try ctx.getValueFromReg(dst.toReg(), .vector);
 }
 
 /// vec_fmla_elem: Vector FMA element-indexed form
@@ -4513,40 +4511,23 @@ pub fn vec_fmla_elem(
     idx: u8,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.Value {
-    const addend_reg = try ctx.getValueReg(addend, .vector);
-    const mul1_reg = try ctx.getValueReg(multiplicand1, .vector);
-    const mul2_reg = try ctx.getValueReg(multiplicand2, .vector);
+    const addend_reg = try getValueRegVec(ctx, addend);
+    const mul1_reg = try getValueRegVec(ctx, multiplicand1);
+    const mul2_reg = try getValueRegVec(ctx, multiplicand2);
 
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
 
-    // Convert ISLE VectorSize to inst.VectorSize
-    const size: Inst.VectorSize = switch (size_enum) {
-        .V8B => .V8B,
-        .V16B => .V16B,
-        .V4H => .V4H,
-        .V8H => .V8H,
-        .V2S => .V2S,
-        .V4S => .V4S,
-        .V2D => .V2D,
-    };
-
-    // Convert ISLE VecALUModOp to inst.VecALUModOp
-    const inst_op: Inst.VecALUModOp = switch (op) {
-        .Fmla => .Fmla,
-        .Fmls => .Fmls,
-    };
-
     try ctx.emit(Inst{ .vec_fmla_elem = .{
-        .op = inst_op,
+        .op = op,
         .dst = dst,
         .ri = addend_reg,
         .rn = mul1_reg,
         .rm = mul2_reg,
-        .size = size,
+        .size = size_enum,
         .idx = idx,
     } });
 
-    return ctx.getValueFromReg(dst.toReg(), .vector);
+    return try ctx.getValueFromReg(dst.toReg(), .vector);
 }
 
 /// float_cc_cmp_zero_to_vec_misc_op: Map FloatCC to VecMisc2 for zero comparison
@@ -4655,7 +4636,7 @@ pub fn fpu_csel(
 
     const aarch_cond = intccToCondCode(cond);
 
-    const size: Inst.ScalarSize = if (ty.eql(Type.f32()))
+    const size: Inst.ScalarSize = if (ty.eql(Type.F32))
         .Size32
     else
         .Size64;
@@ -4690,22 +4671,35 @@ pub fn put_in_regs(
     val: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.ValueRegs {
-    const ty = ctx.getValueType(val);
+    const ty = try ctx.getValueType(val);
 
-    if (ty.eql(Type.i128())) {
-        // For I128, split into two I64 registers
-        const regs = try ctx.getValueRegs(val);
-        return regs;
+    if (ty.eql(Type.I128)) {
+        const def = ctx.func.dfg.valueDef(val) orelse return error.MissingDef;
+        const inst = def.inst() orelse return error.MissingDefInst;
+        const inst_data_ptr = ctx.func.dfg.insts.get(inst) orelse return error.MissingInstData;
+
+        switch (inst_data_ptr.*) {
+            .binary => |data| {
+                if (data.opcode != .iconcat) return error.Unimplemented;
+                const lo = data.args[0];
+                const hi = data.args[1];
+                const lo_reg = try getValueReg(ctx, lo);
+                const hi_reg = try getValueReg(ctx, hi);
+                return lower_mod.ValueRegs.pair(lo_reg, hi_reg);
+            },
+            else => return error.Unimplemented,
+        }
     } else {
-        // For other types, single register
-        const reg = try ctx.getValueReg(val, .int);
-        return lower_mod.ValueRegs.one(reg);
+        const class = typeToRegClass(ty);
+        const vreg = try ctx.getValueReg(val, class);
+        return lower_mod.ValueRegs.single(lower_mod.Reg.fromVReg(vreg));
     }
 }
 
 /// value_regs_get: Extract register from ValueRegs at index
-pub fn value_regs_get(regs: lower_mod.ValueRegs, idx: u8) Reg {
-    return regs.get(idx);
+pub fn value_regs_get(regs: lower_mod.ValueRegs, idx: u8) !Reg {
+    if (regs.get(idx)) |r| return r;
+    return error.NoMatch;
 }
 
 /// consumes_flags_two_csel: Consume flags with two CSELs for I128
@@ -4746,23 +4740,28 @@ pub fn put_in_reg_zext32(
     val: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Reg {
-    const ty = ctx.getValueType(val);
-    const reg = try ctx.getValueReg(val, .int);
+    const ty = try ctx.getValueType(val);
+    const src = lower_mod.Reg.fromVReg(try ctx.getValueReg(val, .int));
 
     // If already 32-bit, return as-is
     if (ty.bits() == 32) {
-        return reg;
+        return src;
     }
 
-    // For smaller types, zero-extend to 32 bits
+    if (ty.bits() > 32) return error.Unimplemented;
+
+    // For smaller types, zero-extend to 32 bits.
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
-    try ctx.emit(Inst.Extend{
-        .rd = dst,
-        .rn = reg,
-        .from_bits = @intCast(ty.bits()),
-        .to_bits = 32,
-        .signed = false,
-    });
+    switch (ty.bits()) {
+        8 => try ctx.emit(Inst{ .zext8 = .{ .dst = dst, .src = src, .size = .size32 } }),
+        16 => try ctx.emit(Inst{ .zext16 = .{ .dst = dst, .src = src, .size = .size32 } }),
+        else => {
+            const bits: u6 = @intCast(ty.bits());
+            const mask: u64 = (@as(u64, 1) << bits) - 1;
+            const imm = ImmLogic.maybeFromU64(mask, .size32) orelse return error.UnsupportedLogicalImmediate;
+            try ctx.emit(Inst{ .and_imm = .{ .dst = dst, .src = src, .imm = imm } });
+        },
+    }
 
     return dst.toReg();
 }
@@ -4773,23 +4772,27 @@ pub fn put_in_reg_sext32(
     val: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Reg {
-    const ty = ctx.getValueType(val);
-    const reg = try ctx.getValueReg(val, .int);
+    const ty = try ctx.getValueType(val);
+    const src = lower_mod.Reg.fromVReg(try ctx.getValueReg(val, .int));
 
     // If already 32-bit, return as-is
     if (ty.bits() == 32) {
-        return reg;
+        return src;
     }
 
-    // For smaller types, sign-extend to 32 bits
+    if (ty.bits() > 32) return error.Unimplemented;
+
+    // For smaller types, sign-extend to 32 bits.
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
-    try ctx.emit(Inst.Extend{
-        .rd = dst,
-        .rn = reg,
-        .from_bits = @intCast(ty.bits()),
-        .to_bits = 32,
-        .signed = true,
-    });
+    switch (ty.bits()) {
+        8 => try ctx.emit(Inst{ .sxtb = .{ .dst = dst, .src = src, .dst_size = .size32 } }),
+        16 => try ctx.emit(Inst{ .sxth = .{ .dst = dst, .src = src, .dst_size = .size32 } }),
+        else => {
+            const sh: u8 = @intCast(32 - ty.bits());
+            try ctx.emit(Inst{ .lsl_imm = .{ .dst = dst, .src = src, .imm = sh, .size = .size32 } });
+            try ctx.emit(Inst{ .asr_imm = .{ .dst = dst, .src = dst.toReg(), .imm = sh, .size = .size32 } });
+        },
+    }
 
     return dst.toReg();
 }
@@ -4797,23 +4800,33 @@ pub fn put_in_reg_zext64(
     val: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Reg {
-    const ty = ctx.getValueType(val);
-    const reg = try ctx.getValueReg(val, .int);
+    const ty = try ctx.getValueType(val);
+    const reg = try getValueReg(ctx, val);
 
     // If already 64-bit, return as-is
     if (ty.bits() == 64) {
         return reg;
     }
 
-    // For smaller types, zero-extend to 64 bits
+    if (ty.bits() > 32) return error.Unimplemented;
+
+    // For smaller types, zero-extend to 64 bits.
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
-    try ctx.emit(Inst.Extend{
-        .rd = dst,
-        .rn = reg,
-        .from_bits = @intCast(ty.bits()),
-        .to_bits = 64,
-        .signed = false,
-    });
+    if (ty.bits() == 32) {
+        try ctx.emit(Inst{ .zext32 = .{ .dst = dst, .src = reg } });
+        return dst.toReg();
+    }
+
+    switch (ty.bits()) {
+        8 => try ctx.emit(Inst{ .zext8 = .{ .dst = dst, .src = reg, .size = .size32 } }),
+        16 => try ctx.emit(Inst{ .zext16 = .{ .dst = dst, .src = reg, .size = .size32 } }),
+        else => {
+            const bits: u6 = @intCast(ty.bits());
+            const mask: u64 = (@as(u64, 1) << bits) - 1;
+            const imm = ImmLogic.maybeFromU64(mask, .size32) orelse return error.UnsupportedLogicalImmediate;
+            try ctx.emit(Inst{ .and_imm = .{ .dst = dst, .src = reg, .imm = imm } });
+        },
+    }
 
     return dst.toReg();
 }
@@ -4825,19 +4838,10 @@ pub fn cmp(
     rm: Reg,
     _: *lower_mod.LowerCtx(Inst),
 ) !isle_types.ProducesFlags {
-    const size: Inst.OperandSize = if (ty.bits() == 32)
-        .Size32
-    else
-        .Size64;
+    const size: OperandSize = if (ty.bits() == 32) .size32 else .size64;
 
     return isle_types.ProducesFlags.producesFlagsSideEffect(
-        Inst.AluRRR{
-            .alu_op = .Sub,
-            .size = size,
-            .rd = lower_mod.WritableReg.zero(),
-            .rn = rn,
-            .rm = rm,
-        },
+        Inst{ .cmp_rr = .{ .src1 = rn, .src2 = rm, .size = size } },
     );
 }
 
@@ -4851,7 +4855,7 @@ pub fn aarch64_ldr(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_ldr");
-    const base = try ctx.getValueReg(addr, .int);
+    const base = try getValueReg(ctx, addr);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
     const size = typeToOperandSize(ty);
 
@@ -4873,7 +4877,7 @@ pub fn aarch64_ldr_imm(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_ldr_imm");
-    const base = try ctx.getValueReg(base_val, .int);
+    const base = try getValueReg(ctx, base_val);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
     const size = typeToOperandSize(ty);
     const offset_i16: i16 = @intCast(offset);
@@ -4896,8 +4900,8 @@ pub fn aarch64_ldr_reg(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_ldr_reg");
-    const base = try ctx.getValueReg(base_val, .int);
-    const offset = try ctx.getValueReg(offset_val, .int);
+    const base = try getValueReg(ctx, base_val);
+    const offset = try getValueReg(ctx, offset_val);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
     const size = typeToOperandSize(ty);
 
@@ -4920,8 +4924,8 @@ pub fn aarch64_ldr_ext(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_ldr_ext");
-    const base = try ctx.getValueReg(base_val, .int);
-    const offset = try ctx.getValueReg(offset_val, .int);
+    const base = try getValueReg(ctx, base_val);
+    const offset = try getValueReg(ctx, offset_val);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
     const size = typeToOperandSize(ty);
 
@@ -4945,8 +4949,8 @@ pub fn aarch64_ldr_shifted(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_ldr_shifted");
-    const base = try ctx.getValueReg(base_val, .int);
-    const offset = try ctx.getValueReg(offset_val, .int);
+    const base = try getValueReg(ctx, base_val);
+    const offset = try getValueReg(ctx, offset_val);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
     const size = typeToOperandSize(ty);
     const shift_u8: u8 = @intCast(shift);
@@ -4971,7 +4975,8 @@ pub fn aarch64_ldr_pre(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_ldr_pre");
-    const base = try ctx.getValueReg(base_val, .int);
+    const base_vreg = try ctx.getValueReg(base_val, .int);
+    const base = lower_mod.WritableReg.fromVReg(base_vreg);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
     const size = typeToOperandSize(ty);
     const offset_i16: i16 = @intCast(offset);
@@ -4994,7 +4999,8 @@ pub fn aarch64_ldr_post(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_ldr_post");
-    const base = try ctx.getValueReg(base_val, .int);
+    const base_vreg = try ctx.getValueReg(base_val, .int);
+    const base = lower_mod.WritableReg.fromVReg(base_vreg);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
     const size = typeToOperandSize(ty);
     const offset_i16: i16 = @intCast(offset);
@@ -5016,7 +5022,7 @@ pub fn aarch64_uload8x8(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_uload8x8");
-    const addr = try ctx.getValueReg(addr_val, .int);
+    const addr = try getValueReg(ctx, addr_val);
     const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
 
@@ -5034,7 +5040,7 @@ pub fn aarch64_uload8x8(
     return Inst{
         .vec_ushll = .{
             .dst = dst,
-            .src = tmp.toVReg(),
+            .src = tmp.toReg(),
             .shift_amt = 0,
             .size = .size8x8, // 8 bytes -> 8 halfwords
             .high = false, // Use low half of source
@@ -5049,7 +5055,7 @@ pub fn aarch64_sload8x8(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_sload8x8");
-    const addr = try ctx.getValueReg(addr_val, .int);
+    const addr = try getValueReg(ctx, addr_val);
     const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
 
@@ -5067,7 +5073,7 @@ pub fn aarch64_sload8x8(
     return Inst{
         .vec_sshll = .{
             .dst = dst,
-            .src = tmp.toVReg(),
+            .src = tmp.toReg(),
             .shift_amt = 0,
             .size = .size8x8,
             .high = false,
@@ -5082,7 +5088,7 @@ pub fn aarch64_uload16x4(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_uload16x4");
-    const addr = try ctx.getValueReg(addr_val, .int);
+    const addr = try getValueReg(ctx, addr_val);
     const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
 
@@ -5100,7 +5106,7 @@ pub fn aarch64_uload16x4(
     return Inst{
         .vec_ushll = .{
             .dst = dst,
-            .src = tmp.toVReg(),
+            .src = tmp.toReg(),
             .shift_amt = 0,
             .size = .size16x4,
             .high = false,
@@ -5115,7 +5121,7 @@ pub fn aarch64_sload16x4(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_sload16x4");
-    const addr = try ctx.getValueReg(addr_val, .int);
+    const addr = try getValueReg(ctx, addr_val);
     const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
 
@@ -5133,7 +5139,7 @@ pub fn aarch64_sload16x4(
     return Inst{
         .vec_sshll = .{
             .dst = dst,
-            .src = tmp.toVReg(),
+            .src = tmp.toReg(),
             .shift_amt = 0,
             .size = .size16x4,
             .high = false,
@@ -5148,7 +5154,7 @@ pub fn aarch64_uload32x2(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_uload32x2");
-    const addr = try ctx.getValueReg(addr_val, .int);
+    const addr = try getValueReg(ctx, addr_val);
     const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
 
@@ -5166,7 +5172,7 @@ pub fn aarch64_uload32x2(
     return Inst{
         .vec_ushll = .{
             .dst = dst,
-            .src = tmp.toVReg(),
+            .src = tmp.toReg(),
             .shift_amt = 0,
             .size = .size32x2,
             .high = false,
@@ -5181,7 +5187,7 @@ pub fn aarch64_sload32x2(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_sload32x2");
-    const addr = try ctx.getValueReg(addr_val, .int);
+    const addr = try getValueReg(ctx, addr_val);
     const tmp = lower_mod.WritableVReg.allocVReg(.vector, ctx);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
 
@@ -5199,7 +5205,7 @@ pub fn aarch64_sload32x2(
     return Inst{
         .vec_sshll = .{
             .dst = dst,
-            .src = tmp.toVReg(),
+            .src = tmp.toReg(),
             .shift_amt = 0,
             .size = .size32x2,
             .high = false,
@@ -5215,8 +5221,8 @@ pub fn aarch64_istore8(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_istore8");
-    const base = try ctx.getValueReg(addr, .int);
-    const src = try ctx.getValueReg(val, .int);
+    const base = try getValueReg(ctx, addr);
+    const src = try getValueReg(ctx, val);
 
     return Inst{
         .strb = .{
@@ -5234,8 +5240,8 @@ pub fn aarch64_istore16(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_istore16");
-    const base = try ctx.getValueReg(addr, .int);
-    const src = try ctx.getValueReg(val, .int);
+    const base = try getValueReg(ctx, addr);
+    const src = try getValueReg(ctx, val);
 
     return Inst{
         .strh = .{
@@ -5253,8 +5259,8 @@ pub fn aarch64_istore32(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_istore32");
-    const base = try ctx.getValueReg(addr, .int);
-    const src = try ctx.getValueReg(val, .int);
+    const base = try getValueReg(ctx, addr);
+    const src = try getValueReg(ctx, val);
 
     return Inst{
         .str = .{
@@ -5272,9 +5278,9 @@ pub fn aarch64_str(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_str");
-    const base = try ctx.getValueReg(addr, .int);
-    const src = try ctx.getValueReg(val, .int);
-    const ty = ctx.valueType(val);
+    const base = try getValueReg(ctx, addr);
+    const src = try getValueReg(ctx, val);
+    const ty = try ctx.getValueType(val);
     const size = typeToOperandSize(ty);
 
     return Inst{
@@ -5295,9 +5301,9 @@ pub fn aarch64_str_imm(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_str_imm");
-    const base = try ctx.getValueReg(base_val, .int);
-    const src = try ctx.getValueReg(val, .int);
-    const ty = ctx.valueType(val);
+    const base = try getValueReg(ctx, base_val);
+    const src = try getValueReg(ctx, val);
+    const ty = try ctx.getValueType(val);
     const size = typeToOperandSize(ty);
     const offset_i16: i16 = @intCast(offset);
 
@@ -5319,10 +5325,10 @@ pub fn aarch64_str_reg(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_str_reg");
-    const base = try ctx.getValueReg(base_val, .int);
-    const offset = try ctx.getValueReg(offset_val, .int);
-    const src = try ctx.getValueReg(val, .int);
-    const ty = ctx.valueType(val);
+    const base = try getValueReg(ctx, base_val);
+    const offset = try getValueReg(ctx, offset_val);
+    const src = try getValueReg(ctx, val);
+    const ty = try ctx.getValueType(val);
     const size = typeToOperandSize(ty);
 
     return Inst{
@@ -5344,10 +5350,10 @@ pub fn aarch64_str_ext(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_str_ext");
-    const base = try ctx.getValueReg(base_val, .int);
-    const offset = try ctx.getValueReg(offset_val, .int);
-    const src = try ctx.getValueReg(val, .int);
-    const ty = ctx.valueType(val);
+    const base = try getValueReg(ctx, base_val);
+    const offset = try getValueReg(ctx, offset_val);
+    const src = try getValueReg(ctx, val);
+    const ty = try ctx.getValueType(val);
     const size = typeToOperandSize(ty);
 
     return Inst{
@@ -5370,10 +5376,10 @@ pub fn aarch64_str_shifted(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_str_shifted");
-    const base = try ctx.getValueReg(base_val, .int);
-    const offset = try ctx.getValueReg(offset_val, .int);
-    const src = try ctx.getValueReg(val, .int);
-    const ty = ctx.valueType(val);
+    const base = try getValueReg(ctx, base_val);
+    const offset = try getValueReg(ctx, offset_val);
+    const src = try getValueReg(ctx, val);
+    const ty = try ctx.getValueType(val);
     const size = typeToOperandSize(ty);
     const shift_u8: u8 = @intCast(shift);
 
@@ -5397,9 +5403,10 @@ pub fn aarch64_str_pre(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_str_pre");
-    const base = try ctx.getValueReg(base_val, .int);
-    const src = try ctx.getValueReg(val, .int);
-    const ty = ctx.valueType(val);
+    const base_vreg = try ctx.getValueReg(base_val, .int);
+    const base = lower_mod.WritableReg.fromVReg(base_vreg);
+    const src = try getValueReg(ctx, val);
+    const ty = try ctx.getValueType(val);
     const size = typeToOperandSize(ty);
     const offset_i16: i16 = @intCast(offset);
 
@@ -5421,9 +5428,10 @@ pub fn aarch64_str_post(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_str_post");
-    const base = try ctx.getValueReg(base_val, .int);
-    const src = try ctx.getValueReg(val, .int);
-    const ty = ctx.valueType(val);
+    const base_vreg = try ctx.getValueReg(base_val, .int);
+    const base = lower_mod.WritableReg.fromVReg(base_vreg);
+    const src = try getValueReg(ctx, val);
+    const ty = try ctx.getValueType(val);
     const size = typeToOperandSize(ty);
     const offset_i16: i16 = @intCast(offset);
 
@@ -5444,7 +5452,7 @@ pub fn aarch64_vldr(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_vldr");
-    const base = try ctx.getValueReg(addr, .int);
+    const base = try getValueReg(ctx, addr);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
     const fp_size = typeToFpuOperandSize(ty);
 
@@ -5465,9 +5473,9 @@ pub fn aarch64_vstr(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_vstr");
-    const base = try ctx.getValueReg(addr, .int);
-    const src = try ctx.getValueReg(val, .vector);
-    const ty = ctx.valueType(val);
+    const base = try getValueReg(ctx, addr);
+    const src = try getValueRegVec(ctx, val);
+    const ty = try ctx.getValueType(val);
     const fp_size = typeToFpuOperandSize(ty);
 
     return Inst{
@@ -5485,14 +5493,14 @@ pub fn aarch64_uload8(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_uload8");
-    const base = try ctx.getValueReg(addr, .int);
+    const base = try getValueReg(ctx, addr);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
         .ldrb = .{
             .dst = dst,
             .base = base,
             .offset = 0,
-            .size = .Size64,
+            .size = .size64,
         },
     };
 }
@@ -5503,14 +5511,14 @@ pub fn aarch64_uload16(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_uload16");
-    const base = try ctx.getValueReg(addr, .int);
+    const base = try getValueReg(ctx, addr);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
         .ldrh = .{
             .dst = dst,
             .base = base,
             .offset = 0,
-            .size = .Size64,
+            .size = .size64,
         },
     };
 }
@@ -5521,14 +5529,14 @@ pub fn aarch64_uload32(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_uload32");
-    const base = try ctx.getValueReg(addr, .int);
+    const base = try getValueReg(ctx, addr);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
         .ldr = .{
             .dst = dst,
             .base = base,
             .offset = 0,
-            .size = .Size32, // LDR Wd auto zero-extends to 64
+            .size = .size32, // LDR Wd auto zero-extends to 64
         },
     };
 }
@@ -5539,14 +5547,14 @@ pub fn aarch64_uload64(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_uload64");
-    const base = try ctx.getValueReg(addr, .int);
+    const base = try getValueReg(ctx, addr);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
         .ldr = .{
             .dst = dst,
             .base = base,
             .offset = 0,
-            .size = .Size64,
+            .size = .size64,
         },
     };
 }
@@ -5557,14 +5565,14 @@ pub fn aarch64_sload8(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_sload8");
-    const base = try ctx.getValueReg(addr, .int);
+    const base = try getValueReg(ctx, addr);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
         .ldrsb = .{
             .dst = dst,
             .base = base,
             .offset = 0,
-            .size = .Size64,
+            .size = .size64,
         },
     };
 }
@@ -5575,14 +5583,14 @@ pub fn aarch64_sload16(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_sload16");
-    const base = try ctx.getValueReg(addr, .int);
+    const base = try getValueReg(ctx, addr);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
         .ldrsh = .{
             .dst = dst,
             .base = base,
             .offset = 0,
-            .size = .Size64,
+            .size = .size64,
         },
     };
 }
@@ -5593,7 +5601,7 @@ pub fn aarch64_sload32(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_sload32");
-    const base = try ctx.getValueReg(addr, .int);
+    const base = try getValueReg(ctx, addr);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
         .ldrsw = .{
@@ -5622,49 +5630,46 @@ pub fn aarch64_umul_overflow_i16(
     // Multiply: out = a_ext * b_ext
     const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
-        .mul = .{
+        .mul_rr = .{
             .dst = out_dst,
             .src1 = a_ext,
             .src2 = b_ext,
-            .size = .Size32,
+            .size = .size32,
         },
     });
     const out = out_dst.toReg();
 
-    // Compare result with zero-extended version to detect overflow
-    // If the high 16 bits are non-zero, we overflowed
-    const cmp_dst = lower_mod.WritableReg.allocReg(.int, ctx);
-    try ctx.emit(Inst{
-        .Extend = .{
-            .rd = cmp_dst,
-            .rn = out,
-            .from_bits = @intCast(ty.bits()),
-            .to_bits = 32,
-            .signed = false,
+    // Truncate to the input bitwidth; overflow iff trunc != full product.
+    const trunc_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    switch (ty.bits()) {
+        8 => try ctx.emit(Inst{ .zext8 = .{ .dst = trunc_dst, .src = out, .size = .size32 } }),
+        16 => try ctx.emit(Inst{ .zext16 = .{ .dst = trunc_dst, .src = out, .size = .size32 } }),
+        else => {
+            if (ty.bits() >= 32) return error.Unimplemented;
+            const bits: u6 = @intCast(ty.bits());
+            const mask: u64 = (@as(u64, 1) << bits) - 1;
+            const imm = ImmLogic.maybeFromU64(mask, .size32) orelse return error.UnsupportedLogicalImmediate;
+            try ctx.emit(Inst{ .and_imm = .{ .dst = trunc_dst, .src = out, .imm = imm } });
         },
-    });
+    }
 
-    // Compare out vs cmp_dst, set overflow flag if !=
-    try ctx.emit(Inst{
-        .AluRRR = .{
-            .alu_op = .Sub,
-            .size = .Size32,
-            .rd = lower_mod.WritableReg.zero(),
-            .rn = out,
-            .rm = cmp_dst.toReg(),
-        },
-    });
+    try ctx.emit(Inst{ .cmp_rr = .{
+        .src1 = out,
+        .src2 = trunc_dst.toReg(),
+        .size = .size32,
+    } });
 
     // Set overflow bit based on comparison
     const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
         .cset = .{
-            .rd = of_dst,
+            .dst = of_dst,
             .cond = intccToCondCode(.ne),
+            .size = .size32,
         },
     });
 
-    return lower_mod.ValueRegs.two(out_dst.toReg(), of_dst.toReg());
+    return lower_mod.ValueRegs.pair(trunc_dst.toReg(), of_dst.toReg());
 }
 
 /// Unsigned multiply overflow for I32
@@ -5675,8 +5680,8 @@ pub fn aarch64_umul_overflow_i32(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.ValueRegs {
     recordRule("aarch64_umul_overflow_i32");
-    const a_reg = try ctx.getValueReg(a, .int);
-    const b_reg = try ctx.getValueReg(b, .int);
+    const a_reg = try getValueReg(ctx, a);
+    const b_reg = try getValueReg(ctx, b);
 
     // UMULL: 64-bit result from 32-bit operands
     const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
@@ -5689,38 +5694,34 @@ pub fn aarch64_umul_overflow_i32(
     });
     const out = out_dst.toReg();
 
-    // Extend result back to see if high bits are set
+    // Extend low 32 bits and compare with full 64-bit product.
     const ext_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
-        .Extend = .{
-            .rd = ext_dst,
-            .rn = out,
-            .from_bits = 32,
-            .to_bits = 64,
-            .signed = false,
+        .uxtw = .{
+            .dst = ext_dst,
+            .src = out,
         },
     });
 
     // Compare: if out != extended version, we overflowed
     try ctx.emit(Inst{
-        .AluRRR = .{
-            .alu_op = .Sub,
-            .size = .Size64,
-            .rd = lower_mod.WritableReg.zero(),
-            .rn = out,
-            .rm = ext_dst.toReg(),
+        .cmp_rr = .{
+            .src1 = out,
+            .src2 = ext_dst.toReg(),
+            .size = .size64,
         },
     });
 
     const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
         .cset = .{
-            .rd = of_dst,
+            .dst = of_dst,
             .cond = intccToCondCode(.ne),
+            .size = .size32,
         },
     });
 
-    return lower_mod.ValueRegs.two(out, of_dst.toReg());
+    return lower_mod.ValueRegs.pair(ext_dst.toReg(), of_dst.toReg());
 }
 
 /// Unsigned multiply overflow for I64
@@ -5731,17 +5732,17 @@ pub fn aarch64_umul_overflow_i64(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.ValueRegs {
     recordRule("aarch64_umul_overflow_i64");
-    const a_reg = try ctx.getValueReg(a, .int);
-    const b_reg = try ctx.getValueReg(b, .int);
+    const a_reg = try getValueReg(ctx, a);
+    const b_reg = try getValueReg(ctx, b);
 
     // MUL: low 64 bits
     const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
-        .mul = .{
+        .mul_rr = .{
             .dst = out_dst,
             .src1 = a_reg,
             .src2 = b_reg,
-            .size = .Size64,
+            .size = .size64,
         },
     });
 
@@ -5756,23 +5757,25 @@ pub fn aarch64_umul_overflow_i64(
     });
 
     // Compare high bits with 0 - if non-zero, we overflowed
+    const imm0: Imm12 = .{ .bits = 0, .shift12 = false };
     try ctx.emit(Inst{
         .cmp_imm = .{
-            .size = .Size64,
-            .rn = high_dst.toReg(),
-            .imm = 0,
+            .src = high_dst.toReg(),
+            .imm = imm0,
+            .size = .size64,
         },
     });
 
     const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
         .cset = .{
-            .rd = of_dst,
+            .dst = of_dst,
             .cond = intccToCondCode(.ne),
+            .size = .size32,
         },
     });
 
-    return lower_mod.ValueRegs.two(out_dst.toReg(), of_dst.toReg());
+    return lower_mod.ValueRegs.pair(out_dst.toReg(), of_dst.toReg());
 }
 
 /// Signed multiply overflow for I16
@@ -5791,47 +5794,52 @@ pub fn aarch64_smul_overflow_i16(
     // Multiply
     const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
-        .mul = .{
+        .mul_rr = .{
             .dst = out_dst,
             .src1 = a_ext,
             .src2 = b_ext,
-            .size = .Size32,
+            .size = .size32,
         },
     });
     const out = out_dst.toReg();
 
-    // Sign-extend result back to check for overflow
-    const cmp_dst = lower_mod.WritableReg.allocReg(.int, ctx);
-    try ctx.emit(Inst{
-        .Extend = .{
-            .rd = cmp_dst,
-            .rn = out,
-            .from_bits = @intCast(ty.bits()),
-            .to_bits = 32,
-            .signed = true,
+    // Truncate to the input bitwidth; overflow iff sign-extended trunc != full product.
+    const trunc_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    switch (ty.bits()) {
+        8 => try ctx.emit(Inst{ .zext8 = .{ .dst = trunc_dst, .src = out, .size = .size32 } }),
+        16 => try ctx.emit(Inst{ .zext16 = .{ .dst = trunc_dst, .src = out, .size = .size32 } }),
+        else => {
+            if (ty.bits() >= 32) return error.Unimplemented;
+            const bits: u6 = @intCast(ty.bits());
+            const mask: u64 = (@as(u64, 1) << bits) - 1;
+            const imm = ImmLogic.maybeFromU64(mask, .size32) orelse return error.UnsupportedLogicalImmediate;
+            try ctx.emit(Inst{ .and_imm = .{ .dst = trunc_dst, .src = out, .imm = imm } });
         },
-    });
+    }
 
-    // Compare
-    try ctx.emit(Inst{
-        .AluRRR = .{
-            .alu_op = .Sub,
-            .size = .Size32,
-            .rd = lower_mod.WritableReg.zero(),
-            .rn = out,
-            .rm = cmp_dst.toReg(),
-        },
-    });
+    const sext_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    switch (ty.bits()) {
+        8 => try ctx.emit(Inst{ .sxtb = .{ .dst = sext_dst, .src = trunc_dst.toReg(), .dst_size = .size32 } }),
+        16 => try ctx.emit(Inst{ .sxth = .{ .dst = sext_dst, .src = trunc_dst.toReg(), .dst_size = .size32 } }),
+        else => return error.Unimplemented,
+    }
+
+    try ctx.emit(Inst{ .cmp_rr = .{
+        .src1 = out,
+        .src2 = sext_dst.toReg(),
+        .size = .size32,
+    } });
 
     const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
         .cset = .{
-            .rd = of_dst,
+            .dst = of_dst,
             .cond = intccToCondCode(.ne),
+            .size = .size32,
         },
     });
 
-    return lower_mod.ValueRegs.two(out_dst.toReg(), of_dst.toReg());
+    return lower_mod.ValueRegs.pair(trunc_dst.toReg(), of_dst.toReg());
 }
 
 /// Signed multiply overflow for I32
@@ -5842,8 +5850,8 @@ pub fn aarch64_smul_overflow_i32(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.ValueRegs {
     recordRule("aarch64_smul_overflow_i32");
-    const a_reg = try ctx.getValueReg(a, .int);
-    const b_reg = try ctx.getValueReg(b, .int);
+    const a_reg = try getValueReg(ctx, a);
+    const b_reg = try getValueReg(ctx, b);
 
     // SMULL: 64-bit result from signed 32-bit operands
     const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
@@ -5856,38 +5864,28 @@ pub fn aarch64_smul_overflow_i32(
     });
     const out = out_dst.toReg();
 
-    // Sign-extend result back
-    const ext_dst = lower_mod.WritableReg.allocReg(.int, ctx);
-    try ctx.emit(Inst{
-        .Extend = .{
-            .rd = ext_dst,
-            .rn = out,
-            .from_bits = 32,
-            .to_bits = 64,
-            .signed = true,
-        },
-    });
+    const sext_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .sxtw = .{ .dst = sext_dst, .src = out } });
 
-    // Compare
-    try ctx.emit(Inst{
-        .AluRRR = .{
-            .alu_op = .Sub,
-            .size = .Size64,
-            .rd = lower_mod.WritableReg.zero(),
-            .rn = out,
-            .rm = ext_dst.toReg(),
-        },
-    });
+    try ctx.emit(Inst{ .cmp_rr = .{
+        .src1 = out,
+        .src2 = sext_dst.toReg(),
+        .size = .size64,
+    } });
 
     const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
         .cset = .{
-            .rd = of_dst,
+            .dst = of_dst,
             .cond = intccToCondCode(.ne),
+            .size = .size32,
         },
     });
 
-    return lower_mod.ValueRegs.two(out, of_dst.toReg());
+    const prod_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .uxtw = .{ .dst = prod_dst, .src = out } });
+
+    return lower_mod.ValueRegs.pair(prod_dst.toReg(), of_dst.toReg());
 }
 
 /// Signed multiply overflow for I64
@@ -5898,17 +5896,17 @@ pub fn aarch64_smul_overflow_i64(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.ValueRegs {
     recordRule("aarch64_smul_overflow_i64");
-    const a_reg = try ctx.getValueReg(a, .int);
-    const b_reg = try ctx.getValueReg(b, .int);
+    const a_reg = try getValueReg(ctx, a);
+    const b_reg = try getValueReg(ctx, b);
 
     // MUL: low 64 bits
     const out_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
-        .mul = .{
+        .mul_rr = .{
             .dst = out_dst,
             .src1 = a_reg,
             .src2 = b_reg,
-            .size = .Size64,
+            .size = .size64,
         },
     });
     const out = out_dst.toReg();
@@ -5929,32 +5927,29 @@ pub fn aarch64_smul_overflow_i64(
         .asr_imm = .{
             .dst = sign_dst,
             .src = out,
-            .shift = 63,
-            .size = .Size64,
+            .imm = 63,
+            .size = .size64,
         },
     });
 
     // Compare high bits with sign extension
     // If they differ, we overflowed
-    try ctx.emit(Inst{
-        .AluRRR = .{
-            .alu_op = .Sub,
-            .size = .Size64,
-            .rd = lower_mod.WritableReg.zero(),
-            .rn = high_dst.toReg(),
-            .rm = sign_dst.toReg(),
-        },
-    });
+    try ctx.emit(Inst{ .cmp_rr = .{
+        .src1 = high_dst.toReg(),
+        .src2 = sign_dst.toReg(),
+        .size = .size64,
+    } });
 
     const of_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
         .cset = .{
-            .rd = of_dst,
+            .dst = of_dst,
             .cond = intccToCondCode(.ne),
+            .size = .size32,
         },
     });
 
-    return lower_mod.ValueRegs.two(out_dst.toReg(), of_dst.toReg());
+    return lower_mod.ValueRegs.pair(out_dst.toReg(), of_dst.toReg());
 }
 
 // I128 bit manipulation helpers
@@ -5979,7 +5974,7 @@ pub fn lower_clz128(
         .clz = .{
             .dst = hi_clz_dst,
             .src = hi,
-            .size = .Size64,
+            .size = .size64,
         },
     });
     const hi_clz = hi_clz_dst.toReg();
@@ -5989,7 +5984,7 @@ pub fn lower_clz128(
         .clz = .{
             .dst = lo_clz_dst,
             .src = lo,
-            .size = .Size64,
+            .size = .size64,
         },
     });
     const lo_clz = lo_clz_dst.toReg();
@@ -6001,7 +5996,7 @@ pub fn lower_clz128(
             .dst = tmp_dst,
             .src = hi_clz,
             .shift = 6,
-            .size = .Size64,
+            .size = .size64,
         },
     });
     const tmp = tmp_dst.toReg();
@@ -6015,7 +6010,7 @@ pub fn lower_clz128(
             .src1 = lo_clz,
             .src2 = tmp,
             .src3 = hi_clz,
-            .size = .Size64,
+            .size = .size64,
         },
     });
 
@@ -6038,7 +6033,7 @@ pub fn lower_cls128(
         .cls = .{
             .dst = lo_cls_dst,
             .src = lo,
-            .size = .Size64,
+            .size = .size64,
         },
     });
     const lo_cls = lo_cls_dst.toReg();
@@ -6048,7 +6043,7 @@ pub fn lower_cls128(
         .cls = .{
             .dst = hi_cls_dst,
             .src = hi,
-            .size = .Size64,
+            .size = .size64,
         },
     });
     const hi_cls = hi_cls_dst.toReg();
@@ -6060,7 +6055,7 @@ pub fn lower_cls128(
             .dst = sign_eq_eon_dst,
             .src1 = hi,
             .src2 = lo,
-            .size = .Size64,
+            .size = .size64,
         },
     });
     const sign_eq_eon = sign_eq_eon_dst.toReg();
@@ -6072,7 +6067,7 @@ pub fn lower_cls128(
             .dst = sign_eq_dst,
             .src = sign_eq_eon,
             .shift = 63,
-            .size = .Size64,
+            .size = .size64,
         },
     });
     const sign_eq = sign_eq_dst.toReg();
@@ -6085,17 +6080,18 @@ pub fn lower_cls128(
             .src1 = lo_cls,
             .src2 = sign_eq,
             .src3 = sign_eq,
-            .size = .Size64,
+            .size = .size64,
         },
     });
     const lo_sign_bits = lo_sign_bits_dst.toReg();
 
     // CMP hi_cls, #63
+    const imm63 = Imm12.maybeFromU64(63) orelse return error.InvalidImmediate;
     try ctx.emit(Inst{
         .cmp_imm = .{
-            .size = .Size64,
-            .rn = hi_cls,
-            .imm = 63,
+            .src = hi_cls,
+            .imm = imm63,
+            .size = .size64,
         },
     });
 
@@ -6118,7 +6114,7 @@ pub fn lower_cls128(
             .dst = result_dst,
             .src1 = maybe_lo,
             .src2 = hi_cls,
-            .size = .Size64,
+            .size = .size64,
         },
     });
 
@@ -6136,47 +6132,48 @@ pub fn lower_popcnt128(
     const hi = lower_mod.ValueRegs.getReg(val, 1);
 
     // Move lo to FPU (D register, lower half of Q)
-    const tmp_half_dst = lower_mod.WritableReg.allocReg(.fpu, ctx);
+    const tmp_half_dst = lower_mod.WritableReg.allocReg(.vector, ctx);
     try ctx.emit(Inst{
         .fmov_from_gpr = .{
             .dst = tmp_half_dst,
             .src = lo,
-            .size = .Size64,
+            .size = .size64,
         },
     });
     const tmp_half = tmp_half_dst.toReg();
 
     // Insert hi into upper half to make full 128-bit vector
-    const tmp_dst = lower_mod.WritableReg.allocReg(.fpu, ctx);
+    const tmp_dst = lower_mod.WritableReg.allocReg(.vector, ctx);
     try ctx.emit(Inst{
-        .vec_ins = .{
+        .vec_insert_lane = .{
             .dst = tmp_dst,
-            .src1 = tmp_half,
-            .src2 = hi,
+            .vec = tmp_half,
+            .src = hi,
             .lane = 1,
-            .size = .Size64x2,
+            .size = .size64x2,
         },
     });
     const tmp = tmp_dst.toReg();
 
     // CNT (count bits in each byte)
-    const nbits_dst = lower_mod.WritableReg.allocReg(.fpu, ctx);
+    const nbits_dst = lower_mod.WritableReg.allocReg(.vector, ctx);
     try ctx.emit(Inst{
-        .vec_cnt = .{
+        .vec_misc = .{
+            .op = .Cnt,
             .dst = nbits_dst,
-            .src = tmp,
-            .size = .Size8x16,
+            .rn = tmp,
+            .size = .V16B,
         },
     });
     const nbits = nbits_dst.toReg();
 
     // ADDV (sum all bytes across vector)
-    const added_dst = lower_mod.WritableReg.allocReg(.fpu, ctx);
+    const added_dst = lower_mod.WritableReg.allocReg(.vector, ctx);
     try ctx.emit(Inst{
         .vec_addv = .{
             .dst = added_dst,
             .src = nbits,
-            .size = .Size8x16,
+            .size = .size8x16,
         },
     });
     const added = added_dst.toReg();
@@ -6187,7 +6184,7 @@ pub fn lower_popcnt128(
         .fmov_to_gpr = .{
             .dst = result_dst,
             .src = added,
-            .size = .Size8,
+            .size = .size64,
         },
     });
 
@@ -6197,21 +6194,22 @@ pub fn lower_popcnt128(
 
 /// Vector shift by immediate
 pub fn aarch64_vec_shift_imm(
-    op: Inst.VecShiftImmOp,
+    op: VecShiftImmOp,
     imm: u8,
     src: lower_mod.Value,
-    size: Inst.VectorSize,
+    size: VectorSize,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_vec_shift_imm");
-    const src_reg = try ctx.getValueReg(src, .vec);
-    const dst = lower_mod.WritableReg.allocReg(.vec, ctx);
+    const src_reg = try getValueRegVec(ctx, src);
+    const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
+    const elem_size = vectorSizeToElemSize(size);
     return Inst{
         .vec_shift_imm = .{
             .op = op,
             .dst = dst,
             .rn = src_reg,
-            .size = size,
+            .size = elem_size,
             .imm = imm,
         },
     };
@@ -6232,7 +6230,7 @@ pub fn aarch64_vec_add(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value,
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
 
-    const elem_size: Inst.VecElemSize = switch (size) {
+    const elem_size: VecElemSize = switch (size) {
         .V8B => .size8x8,
         .V16B => .size8x16,
         .V4H => .size16x4,
@@ -6257,7 +6255,7 @@ pub fn aarch64_vec_sub(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value,
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
 
-    const elem_size: Inst.VecElemSize = switch (size) {
+    const elem_size: VecElemSize = switch (size) {
         .V8B => .size8x8,
         .V16B => .size8x16,
         .V4H => .size16x4,
@@ -6282,7 +6280,7 @@ pub fn aarch64_vec_mul(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value,
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
 
-    const elem_size: Inst.VecElemSize = switch (size) {
+    const elem_size: VecElemSize = switch (size) {
         .V8B => .size8x8,
         .V16B => .size8x16,
         .V4H => .size16x4,
@@ -6353,7 +6351,7 @@ pub fn aarch64_vec_fadd(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
 
-    const elem_size: Inst.VecElemSize = switch (size) {
+    const elem_size: VecElemSize = switch (size) {
         .V2S => .size32x2,
         .V4S => .size32x4,
         .V2D => .size64x2,
@@ -6375,7 +6373,7 @@ pub fn aarch64_vec_fsub(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
 
-    const elem_size: Inst.VecElemSize = switch (size) {
+    const elem_size: VecElemSize = switch (size) {
         .V2S => .size32x2,
         .V4S => .size32x4,
         .V2D => .size64x2,
@@ -6397,7 +6395,7 @@ pub fn aarch64_vec_fmul(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
 
-    const elem_size: Inst.VecElemSize = switch (size) {
+    const elem_size: VecElemSize = switch (size) {
         .V2S => .size32x2,
         .V4S => .size32x4,
         .V2D => .size64x2,
@@ -6419,7 +6417,7 @@ pub fn aarch64_vec_fdiv(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
 
-    const elem_size: Inst.VecElemSize = switch (size) {
+    const elem_size: VecElemSize = switch (size) {
         .V2S => .size32x2,
         .V4S => .size32x4,
         .V2D => .size64x2,
@@ -6439,7 +6437,7 @@ pub fn aarch64_vec_smin(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
-    const elem_size = try vectorSizeToElemSize(size);
+    const elem_size = vectorSizeToElemSize(size);
 
     return Inst{ .vec_smin = .{
         .dst = dst,
@@ -6454,7 +6452,7 @@ pub fn aarch64_vec_smax(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
-    const elem_size = try vectorSizeToElemSize(size);
+    const elem_size = vectorSizeToElemSize(size);
 
     return Inst{ .vec_smax = .{
         .dst = dst,
@@ -6469,7 +6467,7 @@ pub fn aarch64_vec_umin(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
-    const elem_size = try vectorSizeToElemSize(size);
+    const elem_size = vectorSizeToElemSize(size);
 
     return Inst{ .vec_umin = .{
         .dst = dst,
@@ -6484,7 +6482,7 @@ pub fn aarch64_vec_umax(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
     const x_reg = try getValueReg(ctx, x);
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
-    const elem_size = try vectorSizeToElemSize(size);
+    const elem_size = vectorSizeToElemSize(size);
 
     return Inst{ .vec_umax = .{
         .dst = dst,
@@ -6500,7 +6498,7 @@ pub fn aarch64_vec_fmin(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
 
-    const elem_size: Inst.VecElemSize = switch (size) {
+    const elem_size: VecElemSize = switch (size) {
         .V2S => .size32x2,
         .V4S => .size32x4,
         .V2D => .size64x2,
@@ -6521,7 +6519,7 @@ pub fn aarch64_vec_fmax(size: VectorSize, x: lower_mod.Value, y: lower_mod.Value
     const y_reg = try getValueReg(ctx, y);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
 
-    const elem_size: Inst.VecElemSize = switch (size) {
+    const elem_size: VecElemSize = switch (size) {
         .V2S => .size32x2,
         .V4S => .size32x4,
         .V2D => .size64x2,
@@ -6542,7 +6540,7 @@ pub fn aarch64_snarrow(size: VectorSize, x: lower_mod.Value, ctx: *lower_mod.Low
     recordRule("aarch64_snarrow");
     const x_reg = try getValueReg(ctx, x);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
-    const elem_size = try vectorSizeToElemSize(size);
+    const elem_size = vectorSizeToElemSize(size);
 
     return Inst{ .vec_sqxtn = .{
         .dst = dst,
@@ -6558,7 +6556,7 @@ pub fn aarch64_unarrow(size: VectorSize, x: lower_mod.Value, ctx: *lower_mod.Low
     recordRule("aarch64_unarrow");
     const x_reg = try getValueReg(ctx, x);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
-    const elem_size = try vectorSizeToElemSize(size);
+    const elem_size = vectorSizeToElemSize(size);
 
     return Inst{ .vec_sqxtun = .{
         .dst = dst,
@@ -6574,7 +6572,7 @@ pub fn aarch64_uunarrow(size: VectorSize, x: lower_mod.Value, ctx: *lower_mod.Lo
     recordRule("aarch64_uunarrow");
     const x_reg = try getValueReg(ctx, x);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
-    const elem_size = try vectorSizeToElemSize(size);
+    const elem_size = vectorSizeToElemSize(size);
 
     return Inst{ .vec_uqxtn = .{
         .dst = dst,
@@ -6630,14 +6628,7 @@ pub fn aarch64_ld1r(ty: types.Type, addr: lower_mod.Value, ctx: *lower_mod.Lower
     recordRule("aarch64_ld1r");
     const base_reg = try getValueReg(ctx, addr);
 
-    // Map Type to VecElemSize for LD1R instruction
-    const size: Inst.VecElemSize = switch (ty) {
-        types.Type.V8x16 => .size8x16, // 16 × 8-bit elements
-        types.Type.V16x8 => .size16x8, // 8 × 16-bit elements
-        types.Type.V32x4 => .size32x4, // 4 × 32-bit elements
-        types.Type.V64x2 => .size64x2, // 2 × 64-bit elements
-        else => return error.UnsupportedType,
-    };
+    const size = try tyToVecElemSize(ty);
 
     return Inst{ .ld1r = .{
         .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),

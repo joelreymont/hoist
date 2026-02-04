@@ -1909,6 +1909,16 @@ pub const Inst = union(enum) {
         size: VecElemSize,
     },
 
+    /// Two-register table lookup (TBL with 2 table regs).
+    /// Equivalent to: TBL Vd.16B, {Vn.16B, Vm.16B}, Vidx.16B
+    /// May be lowered using scratch regs if {Vn, Vm} are not consecutive.
+    vec_tbl2: struct {
+        dst: WritableReg,
+        src1: Reg,
+        src2: Reg,
+        idx: Reg,
+    },
+
     /// Table lookup (TBL).
     /// Lookup bytes in table using indices: dst[i] = table[indices[i]].
     /// If index >= table size, result byte is 0.
@@ -2546,6 +2556,7 @@ pub const Inst = union(enum) {
             .vec_dup_lane => |i| try writer.print("vec_dup_lane.{f} {f}, {f}[{}]", .{ i.size, i.dst, i.src, i.lane }),
             .vec_extract_lane => |i| try writer.print("vec_extract_lane.{f} {f}, {f}[{}]", .{ i.size, i.dst, i.src, i.lane }),
             .vec_insert_lane => |i| try writer.print("vec_insert_lane.{f} {f}[{}], {f}", .{ i.size, i.dst, i.lane, i.src }),
+            .vec_tbl2 => |i| try writer.print("tbl2 {f}, {{{f}, {f}}}, {f}", .{ i.dst, i.src1, i.src2, i.idx }),
             .tbl => |i| try writer.print("tbl {f}, {{{f}}}, {f}", .{ i.dst, i.table, i.indices }),
             .tbx => |i| try writer.print("tbx {f}, {{{f}}}, {f}", .{ i.dst, i.table, i.indices }),
             .zip1 => |i| try writer.print("zip1.{f} {f}, {f}, {f}", .{ i.size, i.dst, i.src1, i.src2 }),
@@ -2889,6 +2900,12 @@ pub const Inst = union(enum) {
             .vec_insert_lane => |*i| {
                 try collector.regUse(i.vec);
                 try collector.regUse(i.src);
+                try collector.regDef(i.dst);
+            },
+            .vec_tbl2 => |*i| {
+                try collector.regUse(i.src1);
+                try collector.regUse(i.src2);
+                try collector.regUse(i.idx);
                 try collector.regDef(i.dst);
             },
             .tbl => |*i| {

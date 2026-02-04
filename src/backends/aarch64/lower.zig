@@ -70,7 +70,7 @@ pub const Aarch64Lower = struct {
     ) !bool {
         // Try ISLE-generated lowering first
         var isle_ctx = isle_impl.IsleContext.init(ctx);
-        const value = ctx.func.dfg.firstResult(inst) orelse try ctx.func.dfg.appendInstResult(inst, types.Type.INVALID);
+        const value = ctx.func.dfg.firstResult(inst) orelse try ctx.func.dfg.appendInstResult(inst, types.Type.I8);
         _ = isle_lower.lower(&isle_ctx, value) catch |err| {
             if (err == error.NoMatch) return false;
             return err;

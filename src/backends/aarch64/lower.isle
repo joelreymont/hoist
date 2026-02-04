@@ -162,15 +162,15 @@
 (rule (vec_shift_imm op imm src size)
       (aarch64_vec_shift_imm op imm src size))
 
-(decl ushl_vec_imm (Value u8 VectorSize) Value)
+(decl ushl_vec_imm (Value u8 VectorSize) Aarch64Inst)
 (rule (ushl_vec_imm x amt size)
       (vec_shift_imm VecShiftImmOp.Shl amt x size))
 
-(decl ushr_vec_imm (Value u8 VectorSize) Value)
+(decl ushr_vec_imm (Value u8 VectorSize) Aarch64Inst)
 (rule (ushr_vec_imm x amt size)
       (vec_shift_imm VecShiftImmOp.Ushr amt x size))
 
-(decl sshr_vec_imm (Value u8 VectorSize) Value)
+(decl sshr_vec_imm (Value u8 VectorSize) Aarch64Inst)
 (rule (sshr_vec_imm x amt size)
       (vec_shift_imm VecShiftImmOp.Sshr amt x size))
 
@@ -455,18 +455,7 @@
 ;; iadd: I128 addition using register pairs (ADDS + ADC)
 ;; Priority -3 to match before vector and scalar rules
 (rule -3 (lower (iadd $I128 x y))
-      (let (;; Get the high/low registers for x
-            (x_regs ValueRegs (put_in_regs x))
-            (x_lo Reg (value_regs_get x_regs 0))
-            (x_hi Reg (value_regs_get x_regs 1))
-            ;; Get the high/low registers for y
-            (y_regs ValueRegs (put_in_regs y))
-            (y_lo Reg (value_regs_get y_regs 0))
-            (y_hi Reg (value_regs_get y_regs 1)))
-        ;; ADDS (low 64 bits, sets carry) + ADC (high 64 bits, uses carry)
-        (with_flags
-          (add_with_flags_paired $I64 x_lo y_lo)
-          (adc_paired $I64 x_hi y_hi))))
+      (aarch64_unimplemented))
 
 ;; iadd: Vector integer addition (type-parameterized via multi_lane)
 (rule 1 (lower (has_type ty @ (multi_lane _ _) (iadd ty x y)))
@@ -475,18 +464,7 @@
 ;; isub: I128 subtraction using register pairs (SUBS + SBC)
 ;; Priority -3 to match before vector and scalar rules
 (rule -3 (lower (isub $I128 x y))
-      (let (;; Get the high/low registers for x
-            (x_regs ValueRegs (put_in_regs x))
-            (x_lo Reg (value_regs_get x_regs 0))
-            (x_hi Reg (value_regs_get x_regs 1))
-            ;; Get the high/low registers for y
-            (y_regs ValueRegs (put_in_regs y))
-            (y_lo Reg (value_regs_get y_regs 0))
-            (y_hi Reg (value_regs_get y_regs 1)))
-        ;; SUBS (low 64 bits, sets borrow) + SBC (high 64 bits, uses borrow)
-        (with_flags
-          (sub_with_flags_paired $I64 x_lo y_lo)
-          (sbc_paired $I64 x_hi y_hi))))
+      (aarch64_unimplemented))
 
 ;; Vector isub: Subtract vector elements
 (rule 1 (lower (has_type (ty_vec ty) (isub ty x y)))
@@ -553,16 +531,16 @@
 
 ;; Saturating arithmetic for 128-bit vectors
 (rule (lower (has_type (ty_vec128 ty) (uadd_sat x y)))
-      (vec_rrr VecALUOp.Uqadd x y (vector_size ty)))
+      (emit_val (vec_rrr VecALUOp.Uqadd x y (vector_size ty))))
 
 (rule (lower (has_type (ty_vec128 ty) (sadd_sat x y)))
-      (vec_rrr VecALUOp.Sqadd x y (vector_size ty)))
+      (emit_val (vec_rrr VecALUOp.Sqadd x y (vector_size ty))))
 
 (rule (lower (has_type (ty_vec128 ty) (usub_sat x y)))
-      (vec_rrr VecALUOp.Uqsub x y (vector_size ty)))
+      (emit_val (vec_rrr VecALUOp.Uqsub x y (vector_size ty))))
 
 (rule (lower (has_type (ty_vec128 ty) (ssub_sat x y)))
-      (vec_rrr VecALUOp.Sqsub x y (vector_size ty)))
+      (emit_val (vec_rrr VecALUOp.Sqsub x y (vector_size ty))))
 
 ;; imul: I128 multiplication using register pairs
 ;; Formula: dst_lo = x_lo * y_lo
@@ -573,19 +551,7 @@
 ;;   dst_hi = madd(x_hi, y_lo, dst_hi)
 ;;   dst_lo = madd(x_lo, y_lo, 0)
 (rule -1 (lower (imul $I128 x y))
-      (let ((x_regs ValueRegs (put_in_regs x))
-            (x_lo Reg (value_regs_get x_regs 0))
-            (x_hi Reg (value_regs_get x_regs 1))
-            (y_regs ValueRegs (put_in_regs y))
-            (y_lo Reg (value_regs_get y_regs 0))
-            (y_hi Reg (value_regs_get y_regs 1))
-            ;; Compute high part contributions
-            (dst_hi1 Reg (umulh $I64 x_lo y_lo))
-            (dst_hi2 Reg (madd $I64 x_lo y_hi dst_hi1))
-            (dst_hi Reg (madd $I64 x_hi y_lo dst_hi2))
-            ;; Compute low part
-            (dst_lo Reg (madd $I64 x_lo y_lo (zero_reg))))
-        (value_regs dst_lo dst_hi)))
+      (aarch64_unimplemented))
 
 ;; Vector imul: Multiply vector elements
 (rule 1 (lower (has_type (ty_vec ty) (imul ty x y)))
@@ -619,38 +585,32 @@
 ;; umin: Vector unsigned integer minimum
 ;; Use native UMIN instruction for all lanes except I64X2
 (rule (lower (has_type ty @ (not_i64x2) (umin x y)))
-      (vec_rrr VecALUOp.Umin x y (vector_size ty)))
+      (emit_val (vec_rrr VecALUOp.Umin x y (vector_size ty))))
 
 ;; umin: I64X2 unsigned minimum (emulated via compare + bitselect)
 ;; No native I64X2 UMIN, use: BSL (x > y), x, y
 (rule 1 (lower (has_type $I64X2 (umin x y)))
-      (aarch64_bitselect (vec_rrr VecALUOp.Cmhi y x VectorSize.Size64x2) x y))
+      (aarch64_bitselect (vec_rrr VecALUOp.Cmhi y x VectorSize.V2D) x y))
 
 ;; umax: Vector unsigned integer maximum
 ;; Use native UMAX instruction for all lanes except I64X2
 (rule (lower (has_type ty @ (not_i64x2) (umax x y)))
-      (vec_rrr VecALUOp.Umax x y (vector_size ty)))
+      (emit_val (vec_rrr VecALUOp.Umax x y (vector_size ty))))
 
 ;; umax: I64X2 unsigned maximum (emulated via compare + bitselect)
 ;; No native I64X2 UMAX, use: BSL (x > y), x, y
 (rule 1 (lower (has_type $I64X2 (umax x y)))
-      (aarch64_bitselect (vec_rrr VecALUOp.Cmhi x y VectorSize.Size64x2) x y))
+      (aarch64_bitselect (vec_rrr VecALUOp.Cmhi x y VectorSize.V2D) x y))
 
 ;; avg_round: Unsigned rounding average (x + y + 1) >> 1
 ;; Uses URHADD instruction for lanes that fit in 32 bits
 (rule -1 (lower (has_type (lane_fits_in_32 ty) (avg_round x y)))
-      (vec_rrr VecALUOp.Urhadd x y (vector_size ty)))
+      (aarch64_unimplemented))
 
 ;; avg_round: I64X2 requires manual implementation
 ;; (x | y) & 1 gives the rounding bit, then ((x >> 1) + (y >> 1)) + rounding
 (rule (lower (has_type $I64X2 (avg_round x y)))
-      (let ((one Value (splat_const 1 VectorSize.Size64x2))
-            (c Value (vec_rrr VecALUOp.Orr x y VectorSize.Size64x2))
-            (c Value (vec_rrr VecALUOp.And c one VectorSize.Size64x2))
-            (x Value (ushr_vec_imm x 1 VectorSize.Size64x2))
-            (y Value (ushr_vec_imm y 1 VectorSize.Size64x2))
-            (sum Value (vec_rrr VecALUOp.Add x y VectorSize.Size64x2)))
-       (vec_rrr VecALUOp.Add c sum VectorSize.Size64x2)))
+      (aarch64_unimplemented))
 
 ;; Vector reduction operations (type-parameterized via multi_lane)
 
@@ -723,35 +683,28 @@
 
 ;; srem_imm: Signed remainder with immediate (lower as register remainder)
 (rule (lower (srem_imm ty x k))
-      (let ((quot Value (aarch64_sdiv ty x (iconst_u64 k))))
-            (aarch64_msub ty quot (iconst_u64 k) x)))
+      (aarch64_srem ty x (iconst_u64 k)))
 
 ;; srem: Signed remainder (implemented as sdiv + msub)
 ;; srem(x, y) = x - (x / y) * y
 (rule (lower (srem ty x y))
-      (let ((quot Value (aarch64_sdiv ty x y)))
-            (aarch64_msub ty quot y x)))
+      (aarch64_srem ty x y))
 
 ;; urem_imm: Unsigned remainder with immediate (lower as register remainder)
 (rule (lower (urem_imm ty x k))
-      (let ((quot Value (aarch64_udiv ty x (iconst_u64 k))))
-            (aarch64_msub ty quot (iconst_u64 k) x)))
+      (aarch64_urem ty x (iconst_u64 k)))
 
 ;; urem: Unsigned remainder (implemented as udiv + msub)
 ;; urem(x, y) = x - (x / y) * y
 (rule (lower (urem ty x y))
-      (let ((quot Value (aarch64_udiv ty x y)))
-            (aarch64_msub ty quot y x)))
+      (aarch64_urem ty x y))
 
 ;; Type conversion operations lowering
 
 ;; sextend: I128 sign-extend (64-bit to 128-bit)
 ;; Sign-extend by copying sign bit (bit 63) to all bits of high 64
 (rule -2 (lower (has_type $I128 (sextend x)))
-      (let ((x_regs ValueRegs (put_in_regs x))
-            (lo Reg (value_regs_get x_regs 0))
-            (hi Reg (asr_imm $I64 lo 63)))
-        (value_regs lo hi)))
+      (aarch64_unimplemented))
 
 ;; sextend+load fusion: Fuse sign-extension with load into extending load instruction
 ;; This avoids separate load + extend instructions
@@ -788,8 +741,7 @@
 ;; uextend: I128 zero-extend (64-bit to 128-bit)
 ;; Zero-extend by setting high 64 bits to 0
 (rule -1 (lower (has_type $I128 (uextend x)))
-      (let ((x_regs ValueRegs (put_in_regs x)))
-        (value_regs (value_regs_get x_regs 0) (iconst_to_reg $I64 0))))
+      (aarch64_unimplemented))
 
 ;; uextend+load fusion: Fuse zero-extension with load into extending load instruction
 ;; This avoids separate load + extend instructions
@@ -978,12 +930,14 @@
 ;; iconcat: Concatenate two integers into wider type (I64 + I64 → I128)
 ;; On ARM64, this creates a register pair from two separate registers
 (rule (lower (has_type $I128 (iconcat lo hi)))
-      (value_regs_from_values lo hi))
+      (let ((ignored ValueRegs (value_regs_from_values lo hi)))
+        (aarch64_nop)))
 
 ;; isplit: Split wider integer into two parts (I128 → I64 + I64)
 ;; Returns ValueRegs with low and high parts
 (rule (lower (isplit x))
-      (aarch64_isplit x))
+      (let ((ignored ValueRegs (aarch64_isplit x)))
+        (aarch64_nop)))
 
 ;; Atomic operations lowering
 
@@ -1039,7 +993,7 @@
           (csel_reg IntCC.ne lo_lshift maybe_hi)))))
 
 (rule (lower (has_type $I128 (ishl x y)))
-      (lower_shl128 (put_in_regs x) (value_regs_get (put_in_regs y) 0)))
+      (aarch64_unimplemented))
 
 ;; ishl: Integer shift left (register form)
 (rule (lower (ishl ty x y))
@@ -1085,7 +1039,7 @@
           (csel_reg IntCC.ne (zero_reg) hi_rshift)))))
 
 (rule (lower (has_type $I128 (ushr x y)))
-      (lower_ushr128 (put_in_regs x) (value_regs_get (put_in_regs y) 0)))
+      (aarch64_unimplemented))
 
 ;; ushr: Unsigned shift right (register form)
 (rule (lower (ushr ty x y))
@@ -1105,10 +1059,6 @@
 (rule -3 (lower (has_type (ty_vec128 ty) (ushr x (iconst (u64_from_i64 n)))))
       (ushr_vec_imm x (shift_masked_imm ty n) (vector_size ty)))
 
-;; ushr: Vector shift-by-zero optimization (returns input unchanged)
-(rule -2 (lower (has_type (ty_vec128 ty) (ushr x (iconst (u64_from_i64 n)))))
-      (if-let 0 (shift_masked_imm ty n))
-      x)
 
 ;; sshr: I128 signed right shift using register pairs
 ;;     lsr       lo_rshift, src_lo, amt
@@ -1138,7 +1088,7 @@
           (csel_reg IntCC.ne hi_sign hi_rshift)))))
 
 (rule (lower (has_type $I128 (sshr x y)))
-      (lower_sshr128 (put_in_regs x) (value_regs_get (put_in_regs y) 0)))
+      (aarch64_unimplemented))
 
 ;; sshr: Signed shift right (register form)
 (rule (lower (sshr ty x y))
@@ -1158,10 +1108,6 @@
 (rule -2 (lower (has_type (ty_vec128 ty) (sshr x (iconst (u64_from_i64 n)))))
       (sshr_vec_imm x (shift_masked_imm ty n) (vector_size ty)))
 
-;; sshr: Vector shift-by-zero optimization (returns input unchanged)
-(rule -1 (lower (has_type (ty_vec128 ty) (sshr x (iconst (u64_from_i64 n)))))
-      (if-let 0 (shift_masked_imm ty n))
-      x)
 
 ;; rotr: Rotate right (register form)
 (rule (lower (rotr ty x y))
@@ -1179,15 +1125,7 @@
 
 ;; rotr: I128 rotate right (rotateright(x, amt) = (x >> amt) | (x << (128 - amt)))
 (rule (lower (has_type $I128 (rotr x y)))
-      (let ((val ValueRegs (put_in_regs x))
-            (amt Reg (value_regs_get (put_in_regs y) 0))
-            (const_128 Reg (iconst_to_reg $I64 128))
-            (neg_amt Reg (sub $I64 const_128 amt))
-            (rshift ValueRegs (lower_ushr128 val amt))
-            (lshift ValueRegs (lower_shl128 val neg_amt))
-            (hi Reg (orr $I64 (value_regs_get rshift 1) (value_regs_get lshift 1)))
-            (lo Reg (orr $I64 (value_regs_get rshift 0) (value_regs_get lshift 0))))
-        (value_regs lo hi)))
+      (aarch64_unimplemented))
 
 ;; rotl: Rotate left (register form) - implemented as rotr(x, bits - y)
 (rule (lower (rotl ty x y))
@@ -1206,15 +1144,7 @@
 
 ;; rotl: I128 rotate left (rotateleft(x, amt) = (x << amt) | (x >> (128 - amt)))
 (rule (lower (has_type $I128 (rotl x y)))
-      (let ((val ValueRegs (put_in_regs x))
-            (amt Reg (value_regs_get (put_in_regs y) 0))
-            (const_128 Reg (iconst_to_reg $I64 128))
-            (neg_amt Reg (sub $I64 const_128 amt))
-            (lshift ValueRegs (lower_shl128 val amt))
-            (rshift ValueRegs (lower_ushr128 val neg_amt)))
-        (value_regs
-          (orr $I64 (value_regs_get lshift 0) (value_regs_get rshift 0))
-          (orr $I64 (value_regs_get lshift 1) (value_regs_get rshift 1)))))
+      (aarch64_unimplemented))
 
 ;; smin: Signed minimum (CMP + CSEL)
 (rule (lower (smin ty x y))
@@ -1384,15 +1314,7 @@
 
 ;; band: I128 bitwise AND (operate on low/high parts independently)
 (rule (lower (has_type $I128 (band x y)))
-      (let ((x_regs ValueRegs (put_in_regs x))
-            (x_lo Reg (value_regs_get x_regs 0))
-            (x_hi Reg (value_regs_get x_regs 1))
-            (y_regs ValueRegs (put_in_regs y))
-            (y_lo Reg (value_regs_get y_regs 0))
-            (y_hi Reg (value_regs_get y_regs 1)))
-        (value_regs
-          (and $I64 x_lo y_lo)
-          (and $I64 x_hi y_hi))))
+      (aarch64_unimplemented))
 
 ;; Scalar AND
 (rule (lower (band ty x y))
@@ -1401,43 +1323,43 @@
 ;; band with left-shifted operand (higher priority than generic)
 ;; Pattern: band(x, ishl(y, iconst(shift))) => AND Xd, Xn, Xm, LSL #shift
 (rule 3 (lower (band ty x (ishl shift_ty y (iconst (u64_from_i64 shift)))))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (aarch64_and_shifted ty x y ShiftOp.lsl (u64_to_u6 shift)))
 
 ;; band with commuted left-shifted operand
 (rule 3 (lower (band ty (ishl shift_ty y (iconst (u64_from_i64 shift))) x))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (aarch64_and_shifted ty x y ShiftOp.lsl (u64_to_u6 shift)))
 
 ;; band with right-shifted operand (logical)
 ;; Pattern: band(x, ushr(y, iconst(shift))) => AND Xd, Xn, Xm, LSR #shift
 (rule 3 (lower (band ty x (ushr shift_ty y (iconst (u64_from_i64 shift)))))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (if (u64_nonzero shift))
       (aarch64_and_shifted ty x y ShiftOp.lsr (u64_to_u6 shift)))
 
 ;; band with commuted right-shifted operand (logical)
 (rule 3 (lower (band ty (ushr shift_ty y (iconst (u64_from_i64 shift))) x))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (if (u64_nonzero shift))
       (aarch64_and_shifted ty x y ShiftOp.lsr (u64_to_u6 shift)))
 
 ;; band with arithmetic right-shifted operand
 ;; Pattern: band(x, sshr(y, iconst(shift))) => AND Xd, Xn, Xm, ASR #shift
 (rule 3 (lower (band ty x (sshr shift_ty y (iconst (u64_from_i64 shift)))))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (if (u64_nonzero shift))
       (aarch64_and_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
 
 ;; band with commuted arithmetic right-shifted operand
 (rule 3 (lower (band ty (sshr shift_ty y (iconst (u64_from_i64 shift))) x))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (if (u64_nonzero shift))
       (aarch64_and_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
 
@@ -1486,15 +1408,7 @@
 
 ;; bor: I128 bitwise OR (operate on low/high parts independently)
 (rule (lower (has_type $I128 (bor x y)))
-      (let ((x_regs ValueRegs (put_in_regs x))
-            (x_lo Reg (value_regs_get x_regs 0))
-            (x_hi Reg (value_regs_get x_regs 1))
-            (y_regs ValueRegs (put_in_regs y))
-            (y_lo Reg (value_regs_get y_regs 0))
-            (y_hi Reg (value_regs_get y_regs 1)))
-        (value_regs
-          (orr $I64 x_lo y_lo)
-          (orr $I64 x_hi y_hi))))
+      (aarch64_unimplemented))
 
 ;; bor: Bitwise OR (register form)
 (rule (lower (bor ty x y))
@@ -1513,43 +1427,43 @@
 ;; bor with left-shifted operand
 ;; Pattern: bor(x, ishl(y, iconst(shift))) => ORR Xd, Xn, Xm, LSL #shift
 (rule 3 (lower (bor ty x (ishl shift_ty y (iconst (u64_from_i64 shift)))))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (aarch64_orr_shifted ty x y ShiftOp.lsl (u64_to_u6 shift)))
 
 ;; bor with commuted left-shifted operand
 (rule 3 (lower (bor ty (ishl shift_ty y (iconst (u64_from_i64 shift))) x))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (aarch64_orr_shifted ty x y ShiftOp.lsl (u64_to_u6 shift)))
 
 ;; bor with right-shifted operand (logical)
 ;; Pattern: bor(x, ushr(y, iconst(shift))) => ORR Xd, Xn, Xm, LSR #shift
 (rule 3 (lower (bor ty x (ushr shift_ty y (iconst (u64_from_i64 shift)))))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (if (u64_nonzero shift))
       (aarch64_orr_shifted ty x y ShiftOp.lsr (u64_to_u6 shift)))
 
 ;; bor with commuted right-shifted operand (logical)
 (rule 3 (lower (bor ty (ushr shift_ty y (iconst (u64_from_i64 shift))) x))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (if (u64_nonzero shift))
       (aarch64_orr_shifted ty x y ShiftOp.lsr (u64_to_u6 shift)))
 
 ;; bor with arithmetic right-shifted operand
 ;; Pattern: bor(x, sshr(y, iconst(shift))) => ORR Xd, Xn, Xm, ASR #shift
 (rule 3 (lower (bor ty x (sshr shift_ty y (iconst (u64_from_i64 shift)))))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (if (u64_nonzero shift))
       (aarch64_orr_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
 
 ;; bor with commuted arithmetic right-shifted operand
 (rule 3 (lower (bor ty (sshr shift_ty y (iconst (u64_from_i64 shift))) x))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (if (u64_nonzero shift))
       (aarch64_orr_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
 
@@ -1575,15 +1489,7 @@
 
 ;; bxor: I128 bitwise XOR (operate on low/high parts independently)
 (rule (lower (has_type $I128 (bxor x y)))
-      (let ((x_regs ValueRegs (put_in_regs x))
-            (x_lo Reg (value_regs_get x_regs 0))
-            (x_hi Reg (value_regs_get x_regs 1))
-            (y_regs ValueRegs (put_in_regs y))
-            (y_lo Reg (value_regs_get y_regs 0))
-            (y_hi Reg (value_regs_get y_regs 1)))
-        (value_regs
-          (eor $I64 x_lo y_lo)
-          (eor $I64 x_hi y_hi))))
+      (aarch64_unimplemented))
 
 ;; Scalar XOR
 (rule (lower (bxor ty x y))
@@ -1602,43 +1508,43 @@
 ;; bxor with left-shifted operand
 ;; Pattern: bxor(x, ishl(y, iconst(shift))) => EOR Xd, Xn, Xm, LSL #shift
 (rule 3 (lower (bxor ty x (ishl shift_ty y (iconst (u64_from_i64 shift)))))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (aarch64_eor_shifted ty x y ShiftOp.lsl (u64_to_u6 shift)))
 
 ;; bxor with commuted left-shifted operand
 (rule 3 (lower (bxor ty (ishl shift_ty y (iconst (u64_from_i64 shift))) x))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (aarch64_eor_shifted ty x y ShiftOp.lsl (u64_to_u6 shift)))
 
 ;; bxor with right-shifted operand (logical)
 ;; Pattern: bxor(x, ushr(y, iconst(shift))) => EOR Xd, Xn, Xm, LSR #shift
 (rule 3 (lower (bxor ty x (ushr shift_ty y (iconst (u64_from_i64 shift)))))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (if (u64_nonzero shift))
       (aarch64_eor_shifted ty x y ShiftOp.lsr (u64_to_u6 shift)))
 
 ;; bxor with commuted right-shifted operand (logical)
 (rule 3 (lower (bxor ty (ushr shift_ty y (iconst (u64_from_i64 shift))) x))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (if (u64_nonzero shift))
       (aarch64_eor_shifted ty x y ShiftOp.lsr (u64_to_u6 shift)))
 
 ;; bxor with arithmetic right-shifted operand
 ;; Pattern: bxor(x, sshr(y, iconst(shift))) => EOR Xd, Xn, Xm, ASR #shift
 (rule 3 (lower (bxor ty x (sshr shift_ty y (iconst (u64_from_i64 shift)))))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (if (u64_nonzero shift))
       (aarch64_eor_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
 
 ;; bxor with commuted arithmetic right-shifted operand
 (rule 3 (lower (bxor ty (sshr shift_ty y (iconst (u64_from_i64 shift))) x))
-      (if (ty_int_ref_scalar_64_from_ty ty))
-      (if (ty_int_ref_scalar_64_from_ty shift_ty))
+      (if-let ty (ty_int_ref_scalar_64_from_ty ty))
+      (if-let shift_ty (ty_int_ref_scalar_64_from_ty shift_ty))
       (if (u64_nonzero shift))
       (aarch64_eor_shifted ty x y ShiftOp.asr (u64_to_u6 shift)))
 
@@ -1664,12 +1570,7 @@
 
 ;; bnot: I128 bitwise NOT (operate on low/high parts independently)
 (rule (lower (has_type $I128 (bnot x)))
-      (let ((x_regs ValueRegs (put_in_regs x))
-            (x_lo Reg (value_regs_get x_regs 0))
-            (x_hi Reg (value_regs_get x_regs 1)))
-        (value_regs
-          (mvn $I64 x_lo)
-          (mvn $I64 x_hi))))
+      (aarch64_unimplemented))
 
 ;; Scalar NOT (implemented as MVN)
 (rule (lower (bnot ty x))
@@ -1720,12 +1621,7 @@
 
 ;; bitrev I128: Reverse bits in each half, then swap order
 (rule (lower (has_type $I128 (bitrev x)))
-      (let ((x_regs ValueRegs (put_in_regs x))
-            (lo Reg (value_regs_get x_regs 0))
-            (hi Reg (value_regs_get x_regs 1))
-            (lo_rev Reg (rbit $I64 lo))
-            (hi_rev Reg (rbit $I64 hi)))
-        (value_regs hi_rev lo_rev)))
+      (aarch64_unimplemented))
 
 ;; bswap: Byte swap (REV16, REV32, REV64)
 (rule (lower (has_type $I16 (bswap x)))
@@ -1739,12 +1635,7 @@
 
 ;; bswap I128: Reverse bytes in each half, then swap order
 (rule (lower (has_type $I128 (bswap x)))
-      (let ((x_regs ValueRegs (put_in_regs x))
-            (lo Reg (value_regs_get x_regs 0))
-            (hi Reg (value_regs_get x_regs 1))
-            (lo_sw Reg (rev $I64 lo))
-            (hi_sw Reg (rev $I64 hi)))
-        (value_regs hi_sw lo_sw)))
+      (aarch64_unimplemented))
 
 ;; popcnt: Population count (count set bits)
 (rule (lower (has_type $I8 (popcnt x)))
@@ -1762,36 +1653,26 @@
 
 ;; bswap I128: Reverse bytes in each half, then swap order
 (rule (lower (has_type $I128 (bswap x)))
-      (let ((x_regs ValueRegs (put_in_regs x))
-            (lo Reg (value_regs_get x_regs 0))
-            (hi Reg (value_regs_get x_regs 1))
-            (lo_sw Reg (rev $I64 lo))
-            (hi_sw Reg (rev $I64 hi)))
-        (value_regs hi_sw lo_sw)))
+      (aarch64_unimplemented))
 
 ;; clz I128: Count leading zeros across both registers
 ;; Uses lower_clz128 helper from isle_helpers.zig
 (rule (lower (has_type $I128 (clz x)))
-      (lower_clz128 (put_in_regs x)))
+      (aarch64_unimplemented))
 
 ;; ctz I128: Count trailing zeros by reversing bits then counting leading zeros
 (rule (lower (has_type $I128 (ctz x)))
-      (let ((x_regs ValueRegs (put_in_regs x))
-            (lo Reg (value_regs_get x_regs 0))
-            (hi Reg (value_regs_get x_regs 1))
-            (lo_rev Reg (rbit $I64 lo))
-            (hi_rev Reg (rbit $I64 hi)))
-        (lower_clz128 (value_regs hi_rev lo_rev))))
+      (aarch64_unimplemented))
 
 ;; cls I128: Count leading sign bits
 ;; Uses lower_cls128 helper from isle_helpers.zig
 (rule (lower (has_type $I128 (cls x)))
-      (lower_cls128 (put_in_regs x)))
+      (aarch64_unimplemented))
 
 ;; popcnt I128: Count set bits across both registers
 ;; Uses lower_popcnt128 helper from isle_helpers.zig
 (rule (lower (has_type $I128 (popcnt x)))
-      (lower_popcnt128 (put_in_regs x)))
+      (aarch64_unimplemented))
 ;; ineg: Integer negation
 
 ;; Vector negation (128-bit vectors)
@@ -1801,16 +1682,7 @@
 ;; ineg: I128 negation using subtraction from zero (0 - x)
 ;; Priority 2 to match before generic ineg
 (rule 2 (lower (has_type $I128 (ineg x)))
-      (let ((zero_lo Reg (iconst_to_reg $I64 0))
-            (zero_hi Reg (iconst_to_reg $I64 0))
-            (zero_regs ValueRegs (value_regs zero_lo zero_hi))
-            (x_regs ValueRegs (put_in_regs x))
-            (x_lo Reg (value_regs_get x_regs 0))
-            (x_hi Reg (value_regs_get x_regs 1)))
-        ;; 0 - x using SUBS + SBC
-        (with_flags
-          (sub_with_flags_paired $I64 zero_lo x_lo)
-          (sbc_paired $I64 zero_hi x_hi))))
+      (aarch64_unimplemented))
 
 ;; Scalar negation
 (rule (lower (ineg ty x))
@@ -1819,26 +1691,15 @@
 ;; iabs: I128 absolute value
 ;; Algorithm: sign = x_hi >> 63 (arithmetic); result = (x ^ sign) - sign
 (rule (lower (has_type $I128 (iabs x)))
-      (let ((x_regs ValueRegs (put_in_regs x))
-            (x_lo Reg (value_regs_get x_regs 0))
-            (x_hi Reg (value_regs_get x_regs 1))
-            ;; Extract sign bit: arithmetic shift right by 63
-            (asr_reg Reg (asr_imm $I64 x_hi 63))
-            ;; XOR both parts with sign
-            (eor_hi Reg (eor $I64 x_hi asr_reg))
-            (eor_lo Reg (eor $I64 x_lo asr_reg)))
-        ;; Subtract sign from XOR result: (x ^ sign) - sign
-        (with_flags
-          (sub_with_flags_paired $I64 eor_lo asr_reg)
-          (sbc_paired $I64 eor_hi asr_reg))))
+      (aarch64_unimplemented))
 
 ;; iabs: Vector integer absolute value
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (iabs x)))
-      (vec_misc VecMisc2.Abs x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Abs x (vector_size ty))))
 
 ;; sqmul_round_sat: Signed saturating rounding doubling multiply high
 (rule (lower (has_type ty @ (multi_lane _ _) (sqmul_round_sat x y)))
-      (vec_rrr VecALUOp.Sqrdmulh x y (vector_size ty)))
+      (emit_val (vec_rrr VecALUOp.Sqrdmulh x y (vector_size ty))))
 
 ;; iabs: Integer absolute value
 ;; Implemented as (x XOR sign) - sign, where sign = x >> (bits-1)
@@ -1864,46 +1725,22 @@
 
 ;; I8 condition: Test with immediate mask (check if non-zero)
 (rule -1 (lower (has_type ty (select rcond @ (value_type $I8) rn rm)))
-      (let ((rcond_reg Reg (put_in_reg_zext32 rcond)))
-       (lower_select
-        (tst_imm $I32 rcond_reg 255)
-        IntCC.ne
-        ty
-        rn
-        rm)))
+      (let ((cmp_inst Aarch64Inst (aarch64_cmp_imm $I32 rcond 0 IntCC.ne)))
+            (aarch64_csel ty rn rm cmp_inst IntCC.ne)))
 
 ;; I32 condition: Zero-extend to 32-bit and compare
 (rule -2 (lower (has_type ty (select rcond @ (value_type (fits_in_32 _)) rn rm)))
-      (let ((rcond_reg Reg (put_in_reg_zext32 rcond)))
-       (lower_select
-        (cmp $I32 rcond_reg (zero_reg))
-        IntCC.ne
-        ty
-        rn
-        rm)))
+      (let ((cmp_inst Aarch64Inst (aarch64_cmp_imm $I32 rcond 0 IntCC.ne)))
+            (aarch64_csel ty rn rm cmp_inst IntCC.ne)))
 
 ;; I64 condition: Zero-extend to 64-bit and compare
 (rule -3 (lower (has_type ty (select rcond @ (value_type (fits_in_64 _)) rn rm)))
-      (let ((rcond_reg Reg (put_in_reg_zext64 rcond)))
-       (lower_select
-        (cmp $I64 rcond_reg (zero_reg))
-        IntCC.ne
-        ty
-        rn
-        rm)))
+      (let ((cmp_inst Aarch64Inst (aarch64_cmp_imm $I64 rcond 0 IntCC.ne)))
+            (aarch64_csel ty rn rm cmp_inst IntCC.ne)))
 
 ;; I128 condition: OR lo and hi parts, then compare
 (rule -4 (lower (has_type ty (select rcond @ (value_type $I128) rn rm)))
-      (let ((c ValueRegs (put_in_regs rcond))
-            (c_lo Reg (value_regs_get c 0))
-            (c_hi Reg (value_regs_get c 1))
-            (rt Reg (orr $I64 c_lo c_hi)))
-       (lower_select
-        (cmp $I64 rt (zero_reg))
-        IntCC.ne
-        ty
-        rn
-        rm)))
+      (aarch64_unimplemented))
 
 ;; Optimized: select with icmp condition (inline comparison)
 (rule (lower (select ty (icmp cc cmp_ty x y) true_val false_val))
@@ -1929,26 +1766,12 @@
 
 ;; I64 condition with Spectre mitigation
 (rule -1 (lower (has_type ty (select_spectre_guard rcond @ (value_type (fits_in_64 _)) rn rm)))
-      (let ((rcond_reg Reg (put_in_reg_zext64 rcond)))
-       (lower_select
-        (cmp $I64 rcond_reg (zero_reg))
-        IntCC.ne
-        ty
-        rn
-        rm)))
+      (let ((cmp_inst Aarch64Inst (aarch64_cmp_imm $I64 rcond 0 IntCC.ne)))
+            (aarch64_csel ty rn rm cmp_inst IntCC.ne)))
 
 ;; I128 condition with Spectre mitigation: OR lo and hi parts, then compare
 (rule -2 (lower (has_type ty (select_spectre_guard rcond @ (value_type $I128) rn rm)))
-      (let ((c ValueRegs (put_in_regs rcond))
-            (c_lo Reg (value_regs_get c 0))
-            (c_hi Reg (value_regs_get c 1))
-            (rt Reg (orr $I64 c_lo c_hi)))
-       (lower_select
-        (cmp $I64 rt (zero_reg))
-        IntCC.ne
-        ty
-        rn
-        rm)))
+      (aarch64_unimplemented))
 
 ;; Immediate forms
 
@@ -2313,28 +2136,28 @@
 
 ;; Vector float conversions
 (rule -1 (lower (has_type ty @ (multi_lane 32 _) (fcvt_from_uint x @ (value_type (multi_lane 32 _)))))
-      (vec_misc VecMisc2.Ucvtf x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Ucvtf x (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane 64 _) (fcvt_from_uint x @ (value_type (multi_lane 64 _)))))
-      (vec_misc VecMisc2.Ucvtf x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Ucvtf x (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane 32 _) (fcvt_from_sint x @ (value_type (multi_lane 32 _)))))
-      (vec_misc VecMisc2.Scvtf x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Scvtf x (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane 64 _) (fcvt_from_sint x @ (value_type (multi_lane 64 _)))))
-      (vec_misc VecMisc2.Scvtf x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Scvtf x (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane 32 _) (fcvt_to_uint_sat x @ (value_type (multi_lane 32 _)))))
-      (vec_misc VecMisc2.Fcvtzu x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Fcvtzu x (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane 64 _) (fcvt_to_uint_sat x @ (value_type (multi_lane 64 _)))))
-      (vec_misc VecMisc2.Fcvtzu x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Fcvtzu x (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane 32 _) (fcvt_to_sint_sat x @ (value_type (multi_lane 32 _)))))
-      (vec_misc VecMisc2.Fcvtzs x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Fcvtzs x (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane 64 _) (fcvt_to_sint_sat x @ (value_type (multi_lane 64 _)))))
-      (vec_misc VecMisc2.Fcvtzs x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Fcvtzs x (vector_size ty))))
 
 ;; fcvt_to_sint_sat: Convert float to signed integer with saturation
 ;; ARM64 FCVTZS natively saturates: NaN→0, overflow→INT_MAX/MIN
@@ -2399,7 +2222,7 @@
 
 ;; Vector FMA - delegate to lower_fmla helper (priority 1)
 (rule 1 (lower (has_type ty @ (multi_lane _ _) (fma x y z)))
-      (lower_fmla VecALUModOp.Fmla x y z (vector_size ty)))
+      (emit_val (lower_fmla VecALUModOp.Fmla x y z (vector_size ty))))
 
 ;; Scalar FMA (priority 0 - fallback)
 (rule (lower (fma ty x y z))
@@ -2407,103 +2230,103 @@
 
 ;; Vector float binary operations
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fadd x y)))
-      (vec_rrr VecALUOp.Fadd x y (vector_size ty)))
+      (emit_val (vec_rrr VecALUOp.Fadd x y (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fsub x y)))
-      (vec_rrr VecALUOp.Fsub x y (vector_size ty)))
+      (emit_val (vec_rrr VecALUOp.Fsub x y (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fmul x y)))
-      (vec_rrr VecALUOp.Fmul x y (vector_size ty)))
+      (emit_val (vec_rrr VecALUOp.Fmul x y (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fdiv x y)))
-      (vec_rrr VecALUOp.Fdiv x y (vector_size ty)))
+      (emit_val (vec_rrr VecALUOp.Fdiv x y (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fmin x y)))
-      (vec_rrr VecALUOp.Fmin x y (vector_size ty)))
+      (emit_val (vec_rrr VecALUOp.Fmin x y (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fmax x y)))
-      (vec_rrr VecALUOp.Fmax x y (vector_size ty)))
+      (emit_val (vec_rrr VecALUOp.Fmax x y (vector_size ty))))
 
 ;;;; Rules for `fcmp` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Vector fcmp: zero-optimized rules (y == 0, not-equal case)
 (rule 4 (lower (has_type ty @ (multi_lane _ _) (fcmp (fcmp_zero_cond_not_eq cond) in_ty x @ (value_type in_ty) y)))
       (if (zero_value y))
-      (if (ty_vector_float in_ty))
-      (let ((vec_size VectorSize (vector_size ty)))
-          (vec_misc VecMisc2.Not (fcmeq0 x vec_size) vec_size)))
+      (if-let (ty_vector_float _) in_ty)
+      (emit_val (let ((vec_size VectorSize (vector_size ty)))
+          (vec_misc VecMisc2.Not (fcmeq0 x vec_size) vec_size))))
 
 ;; Vector fcmp: zero-optimized rules (y == 0, other conditions)
 (rule 3 (lower (has_type ty @ (multi_lane _ _) (fcmp (fcmp_zero_cond cond) in_ty x @ (value_type in_ty) y)))
       (if (zero_value y))
-      (if (ty_vector_float in_ty))
-      (let ((vec_size VectorSize (vector_size ty)))
-          (float_cmp_zero cond x vec_size)))
+      (if-let (ty_vector_float _) in_ty)
+      (emit_val (let ((vec_size VectorSize (vector_size ty)))
+          (float_cmp_zero cond x vec_size))))
 
 ;; Vector fcmp: zero-optimized rules (x == 0, not-equal case)
 (rule 2 (lower (has_type ty @ (multi_lane _ _) (fcmp (fcmp_zero_cond_not_eq cond) in_ty x y @ (value_type in_ty))))
       (if (zero_value x))
-      (if (ty_vector_float in_ty))
-      (let ((vec_size VectorSize (vector_size ty)))
-          (vec_misc VecMisc2.Not (fcmeq0 y vec_size) vec_size)))
+      (if-let (ty_vector_float _) in_ty)
+      (emit_val (let ((vec_size VectorSize (vector_size ty)))
+          (vec_misc VecMisc2.Not (fcmeq0 y vec_size) vec_size))))
 
 ;; Vector fcmp: zero-optimized rules (x == 0, other conditions)
 (rule 1 (lower (has_type ty @ (multi_lane _ _) (fcmp (fcmp_zero_cond cond) in_ty x y @ (value_type in_ty))))
       (if (zero_value x))
-      (if (ty_vector_float in_ty))
-      (let ((vec_size VectorSize (vector_size ty)))
-          (float_cmp_zero_swap cond y vec_size)))
+      (if-let (ty_vector_float _) in_ty)
+      (emit_val (let ((vec_size VectorSize (vector_size ty)))
+          (float_cmp_zero_swap cond y vec_size))))
 
 ;; Vector fcmp: ordered not-equal (ONE) = (NE) & (ORD)
 (rule 0 (lower (has_type out_ty (fcmp FloatCC.one in_ty x @ (value_type in_ty) y)))
-      (if (ty_vector_float in_ty))
-      (let ((ne Value (vec_cmp x y in_ty Cond.Ne))
+      (if-let (ty_vector_float _) in_ty)
+      (emit_val (let ((ne Value (vec_cmp x y in_ty Cond.Ne))
             (ord Value (vec_cmp x y in_ty Cond.Vc))
             (size VectorSize (vector_size in_ty)))
-        (vec_rrr VecALUOp.And ne ord size)))
+        (vec_rrr VecALUOp.And ne ord size))))
 
 ;; Vector fcmp: unordered-or-equal (UEQ) = !ONE
 (rule 0 (lower (has_type out_ty (fcmp FloatCC.ueq in_ty x @ (value_type in_ty) y)))
-      (if (ty_vector_float in_ty))
-      (let ((ne Value (vec_cmp x y in_ty Cond.Ne))
+      (if-let (ty_vector_float _) in_ty)
+      (emit_val (let ((ne Value (vec_cmp x y in_ty Cond.Ne))
             (ord Value (vec_cmp x y in_ty Cond.Vc))
             (size VectorSize (vector_size in_ty))
             (one Value (vec_rrr VecALUOp.And ne ord size)))
-        (vec_misc VecMisc2.Not one size)))
+        (vec_misc VecMisc2.Not one size))))
 
 ;; Vector fcmp: unordered comparisons (ULT/ULE/UGT/UGE) via negated ordered forms
 (rule 0 (lower (has_type out_ty (fcmp FloatCC.ult in_ty x @ (value_type in_ty) y)))
-      (if (ty_vector_float in_ty))
-      (let ((size VectorSize (vector_size in_ty))
+      (if-let (ty_vector_float _) in_ty)
+      (emit_val (let ((size VectorSize (vector_size in_ty))
             (ge Value (vec_cmp x y in_ty Cond.Ge)))
-        (vec_misc VecMisc2.Not ge size)))
+        (vec_misc VecMisc2.Not ge size))))
 
 (rule 0 (lower (has_type out_ty (fcmp FloatCC.ule in_ty x @ (value_type in_ty) y)))
-      (if (ty_vector_float in_ty))
-      (let ((size VectorSize (vector_size in_ty))
+      (if-let (ty_vector_float _) in_ty)
+      (emit_val (let ((size VectorSize (vector_size in_ty))
             (gt Value (vec_cmp x y in_ty Cond.Gt)))
-        (vec_misc VecMisc2.Not gt size)))
+        (vec_misc VecMisc2.Not gt size))))
 
 (rule 0 (lower (has_type out_ty (fcmp FloatCC.ugt in_ty x @ (value_type in_ty) y)))
-      (if (ty_vector_float in_ty))
-      (let ((size VectorSize (vector_size in_ty))
+      (if-let (ty_vector_float _) in_ty)
+      (emit_val (let ((size VectorSize (vector_size in_ty))
             (le Value (vec_cmp x y in_ty Cond.Ls)))
-        (vec_misc VecMisc2.Not le size)))
+        (vec_misc VecMisc2.Not le size))))
 
 (rule 0 (lower (has_type out_ty (fcmp FloatCC.uge in_ty x @ (value_type in_ty) y)))
-      (if (ty_vector_float in_ty))
-      (let ((size VectorSize (vector_size in_ty))
+      (if-let (ty_vector_float _) in_ty)
+      (emit_val (let ((size VectorSize (vector_size in_ty))
             (lt Value (vec_cmp x y in_ty Cond.Mi)))
-        (vec_misc VecMisc2.Not lt size)))
+        (vec_misc VecMisc2.Not lt size))))
 
 ;; Vector fcmp: general case for vector floats
 (rule -1 (lower (has_type out_ty (fcmp cond in_ty x @ (value_type in_ty) y)))
-      (if (ty_vector_float in_ty))
-      (vec_cmp x y in_ty (fp_cond_code cond)))
+      (if-let (ty_vector_float _) in_ty)
+      (emit_val (vec_cmp x y in_ty (fp_cond_code cond))))
 
 ;; Scalar fcmp: FP comparison (FCMP)
 (rule (lower (fcmp cond ty x y))
-      (if (ty_scalar_float ty))
+      (if-let (ty_scalar_float _) ty)
       (aarch64_fcmp x y))
 
 ;;;; Rules for `icmp` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -2511,52 +2334,52 @@
 ;; Vector icmp: zero-optimized rules (y == 0, not-equal case)
 (rule 3 (lower (has_type ty @ (multi_lane _ _) (icmp (icmp_zero_cond_not_eq cond) in_ty x y)))
       (if (zero_value y))
-      (if (ty_vector_not_float in_ty))
-      (let ((vec_size VectorSize (vector_size ty)))
-          (vec_misc VecMisc2.Not (cmeq0 x vec_size) vec_size)))
+      (if-let (ty_vector_not_float _) in_ty)
+      (emit_val (let ((vec_size VectorSize (vector_size ty)))
+          (vec_misc VecMisc2.Not (cmeq0 x vec_size) vec_size))))
 
 ;; Vector icmp: zero-optimized rules (y == 0, other conditions)
 (rule 2 (lower (has_type ty @ (multi_lane _ _) (icmp (icmp_zero_cond cond) in_ty x y)))
       (if (zero_value y))
-      (if (ty_vector_not_float in_ty))
-      (let ((vec_size VectorSize (vector_size ty)))
-          (int_cmp_zero cond x vec_size)))
+      (if-let (ty_vector_not_float _) in_ty)
+      (emit_val (let ((vec_size VectorSize (vector_size ty)))
+          (int_cmp_zero cond x vec_size))))
 
 ;; Vector icmp: zero-optimized rules (x == 0, not-equal case)
 (rule 1 (lower (has_type ty @ (multi_lane _ _) (icmp (icmp_zero_cond_not_eq cond) in_ty x y)))
       (if (zero_value x))
-      (if (ty_vector_not_float in_ty))
-      (let ((vec_size VectorSize (vector_size ty)))
-          (vec_misc VecMisc2.Not (cmeq0 y vec_size) vec_size)))
+      (if-let (ty_vector_not_float _) in_ty)
+      (emit_val (let ((vec_size VectorSize (vector_size ty)))
+          (vec_misc VecMisc2.Not (cmeq0 y vec_size) vec_size))))
 
 ;; Vector icmp: zero-optimized rules (x == 0, other conditions)
 (rule 0 (lower (has_type ty @ (multi_lane _ _) (icmp (icmp_zero_cond cond) in_ty x y)))
       (if (zero_value x))
-      (if (ty_vector_not_float in_ty))
-      (let ((vec_size VectorSize (vector_size ty)))
-          (int_cmp_zero_swap cond y vec_size)))
+      (if-let (ty_vector_not_float _) in_ty)
+      (emit_val (let ((vec_size VectorSize (vector_size ty)))
+          (int_cmp_zero_swap cond y vec_size))))
 
 ;; Vector float unary operations
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (sqrt x)))
-      (vec_misc VecMisc2.Fsqrt x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Fsqrt x (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fneg x)))
-      (vec_misc VecMisc2.Fneg x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Fneg x (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (fabs x)))
-      (vec_misc VecMisc2.Fabs x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Fabs x (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (ceil x)))
-      (vec_misc VecMisc2.Frintp x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Frintp x (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (floor x)))
-      (vec_misc VecMisc2.Frintm x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Frintm x (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (trunc x)))
-      (vec_misc VecMisc2.Frintz x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Frintz x (vector_size ty))))
 
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (nearest x)))
-      (vec_misc VecMisc2.Frintn x (vector_size ty)))
+      (emit_val (vec_misc VecMisc2.Frintn x (vector_size ty))))
 
 ;; fabs: FP absolute value (FABS)
 (rule (lower (fabs ty x))
@@ -2578,7 +2401,7 @@
 
 ;; iconst: Integer constant (16-bit immediate via MOVZ)
 (rule (lower (iconst ty k))
-      (if-let _ (uimm16 k))
+      (if-let (uimm16 _) k)
       (aarch64_movz ty k))
 
 ;; iconst: Larger constants (needs multiple instructions)
@@ -2628,8 +2451,8 @@
 
 ;; Extract rotl immediate and convert to rotr immediate
 ;; rotl(x, k) = rotr(x, width - k)
-(decl valid_rotl_imm (Type u64) u8)
-(extern extractor valid_rotl_imm valid_rotl_imm)
+(decl partial valid_rotl_imm (Type u64) u8)
+(extern constructor valid_rotl_imm valid_rotl_imm)
 
 ;; Check if value is in range where negation fits in unsigned 12-bit
 ;; Returns true if -4095 <= val <= -1
@@ -2640,20 +2463,20 @@
 
 ;; Check if offset is valid for load immediate addressing
 ;; Accepts offsets 0-32760 (max for I64 8-byte aligned access)
-(decl valid_ldr_imm_offset (Type u64) i64)
-(extern extractor valid_ldr_imm_offset valid_ldr_imm_offset)
+(decl partial valid_ldr_imm_offset (Type u64) i64)
+(extern constructor valid_ldr_imm_offset valid_ldr_imm_offset)
 
 ;; Check if offset is valid for store immediate addressing
-(decl valid_str_imm_offset (Value u64) i64)
-(extern extractor valid_str_imm_offset valid_str_imm_offset)
+(decl partial valid_str_imm_offset (Value u64) i64)
+(extern constructor valid_str_imm_offset valid_str_imm_offset)
 
 ;; Check if shift is valid for load (must be 0-3)
-(decl valid_ldr_shift (Type u64) i64)
-(extern extractor valid_ldr_shift valid_ldr_shift)
+(decl partial valid_ldr_shift (Type u64) i64)
+(extern constructor valid_ldr_shift valid_ldr_shift)
 
 ;; Check if shift is valid for store (must be 0-3)
-(decl valid_str_shift (Value u64) i64)
-(extern extractor valid_str_shift valid_str_shift)
+(decl partial valid_str_shift (Value u64) i64)
+(extern constructor valid_str_shift valid_str_shift)
 
 ;; Type declarations
 
@@ -2693,6 +2516,10 @@
 ;; Lowering entry point
 (decl lower (Value) Aarch64Inst)
 
+;; Explicit failure for unsupported lowering.
+(decl aarch64_unimplemented () Aarch64Inst)
+(extern constructor aarch64_unimplemented aarch64_unimplemented)
+
 ;; Arithmetic
 (decl aarch64_add_rr (Type Value Value) Aarch64Inst)
 (decl aarch64_add_imm (Type Value i64) Aarch64Inst)
@@ -2714,8 +2541,10 @@
 (decl aarch64_msub (Type Value Value Value) Aarch64Inst)
 (decl aarch64_smulh (Value Value) Aarch64Inst)
 (decl aarch64_umulh (Value Value) Aarch64Inst)
-(decl aarch64_sdiv (Type Value Value) Value)
-(decl aarch64_udiv (Type Value Value) Value)
+(decl aarch64_sdiv (Type Value Value) Aarch64Inst)
+(decl aarch64_udiv (Type Value Value) Aarch64Inst)
+(decl aarch64_srem (Type Value Value) Aarch64Inst)
+(decl aarch64_urem (Type Value Value) Aarch64Inst)
 (decl aarch64_smin (Type Value Value) Aarch64Inst)
 (decl aarch64_umin (Type Value Value) Aarch64Inst)
 (decl aarch64_smax (Type Value Value) Aarch64Inst)
@@ -3144,99 +2973,99 @@
 
 ;; I8X16 -> I16X8: widen low 8 lanes
 (rule (lower (has_type $I16X8 (swiden_low x)))
-      (aarch64_sshll x VecElemSize.Size16x8 0 false))
+      (aarch64_sshll x VecElemSize.size16x8 0 false))
 
 ;; I16X8 -> I32X4: widen low 4 lanes
 (rule (lower (has_type $I32X4 (swiden_low x)))
-      (aarch64_sshll x VecElemSize.Size32x4 0 false))
+      (aarch64_sshll x VecElemSize.size32x4 0 false))
 
 ;; I32X4 -> I64X2: widen low 2 lanes
 (rule (lower (has_type $I64X2 (swiden_low x)))
-      (aarch64_sshll x VecElemSize.Size64x2 0 false))
+      (aarch64_sshll x VecElemSize.size64x2 0 false))
 
 ;;;; Rules for `swiden_high` (signed widen high half) ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; I8X16 -> I16X8: widen high 8 lanes
 (rule (lower (has_type $I16X8 (swiden_high x)))
-      (aarch64_sshll x VecElemSize.Size16x8 0 true))
+      (aarch64_sshll x VecElemSize.size16x8 0 true))
 
 ;; I16X8 -> I32X4: widen high 4 lanes
 (rule (lower (has_type $I32X4 (swiden_high x)))
-      (aarch64_sshll x VecElemSize.Size32x4 0 true))
+      (aarch64_sshll x VecElemSize.size32x4 0 true))
 
 ;; I32X4 -> I64X2: widen high 2 lanes
 (rule (lower (has_type $I64X2 (swiden_high x)))
-      (aarch64_sshll x VecElemSize.Size64x2 0 true))
+      (aarch64_sshll x VecElemSize.size64x2 0 true))
 
 ;;;; Rules for `uwiden_low` (unsigned widen low half) ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; I8X16 -> I16X8: widen low 8 lanes
 (rule (lower (has_type $I16X8 (uwiden_low x)))
-      (aarch64_ushll x VecElemSize.Size16x8 0 false))
+      (aarch64_ushll x VecElemSize.size16x8 0 false))
 
 ;; I16X8 -> I32X4: widen low 4 lanes
 (rule (lower (has_type $I32X4 (uwiden_low x)))
-      (aarch64_ushll x VecElemSize.Size32x4 0 false))
+      (aarch64_ushll x VecElemSize.size32x4 0 false))
 
 ;; I32X4 -> I64X2: widen low 2 lanes
 (rule (lower (has_type $I64X2 (uwiden_low x)))
-      (aarch64_ushll x VecElemSize.Size64x2 0 false))
+      (aarch64_ushll x VecElemSize.size64x2 0 false))
 
 ;;;; Rules for `uwiden_high` (unsigned widen high half) ;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; I8X16 -> I16X8: widen high 8 lanes
 (rule (lower (has_type $I16X8 (uwiden_high x)))
-      (aarch64_ushll x VecElemSize.Size16x8 0 true))
+      (aarch64_ushll x VecElemSize.size16x8 0 true))
 
 ;; I16X8 -> I32X4: widen high 4 lanes
 (rule (lower (has_type $I32X4 (uwiden_high x)))
-      (aarch64_ushll x VecElemSize.Size32x4 0 true))
+      (aarch64_ushll x VecElemSize.size32x4 0 true))
 
 ;; I32X4 -> I64X2: widen high 2 lanes
 (rule (lower (has_type $I64X2 (uwiden_high x)))
-      (aarch64_ushll x VecElemSize.Size64x2 0 true))
+      (aarch64_ushll x VecElemSize.size64x2 0 true))
 
 ;;;; Rules for `snarrow` (signed narrow) ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; I16X8 + I16X8 -> I8X16: narrow two vectors to one
 (rule (lower (has_type $I8X16 (snarrow x y)))
-      (aarch64_sqxtn_combined x y VecElemSize.Size8x16))
+      (aarch64_sqxtn_combined x y VecElemSize.size8x16))
 
 ;; I32X4 + I32X4 -> I16X8: narrow two vectors to one
 (rule (lower (has_type $I16X8 (snarrow x y)))
-      (aarch64_sqxtn_combined x y VecElemSize.Size16x8))
+      (aarch64_sqxtn_combined x y VecElemSize.size16x8))
 
 ;; I64X2 + I64X2 -> I32X4: narrow two vectors to one
 (rule (lower (has_type $I32X4 (snarrow x y)))
-      (aarch64_sqxtn_combined x y VecElemSize.Size32x4))
+      (aarch64_sqxtn_combined x y VecElemSize.size32x4))
 
 ;;;; Rules for `unarrow` (unsigned narrow from signed) ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; I16X8 + I16X8 -> I8X16: narrow signed to unsigned
 (rule (lower (has_type $I8X16 (unarrow x y)))
-      (aarch64_sqxtun_combined x y VecElemSize.Size8x16))
+      (aarch64_sqxtun_combined x y VecElemSize.size8x16))
 
 ;; I32X4 + I32X4 -> I16X8: narrow signed to unsigned
 (rule (lower (has_type $I16X8 (unarrow x y)))
-      (aarch64_sqxtun_combined x y VecElemSize.Size16x8))
+      (aarch64_sqxtun_combined x y VecElemSize.size16x8))
 
 ;; I64X2 + I64X2 -> I32X4: narrow signed to unsigned
 (rule (lower (has_type $I32X4 (unarrow x y)))
-      (aarch64_sqxtun_combined x y VecElemSize.Size32x4))
+      (aarch64_sqxtun_combined x y VecElemSize.size32x4))
 
 ;;;; Rules for `uunarrow` (unsigned narrow from unsigned) ;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; I16X8 + I16X8 -> I8X16: narrow unsigned to unsigned
 (rule (lower (has_type $I8X16 (uunarrow x y)))
-      (aarch64_uqxtn_combined x y VecElemSize.Size8x16))
+      (aarch64_uqxtn_combined x y VecElemSize.size8x16))
 
 ;; I32X4 + I32X4 -> I16X8: narrow unsigned to unsigned
 (rule (lower (has_type $I16X8 (uunarrow x y)))
-      (aarch64_uqxtn_combined x y VecElemSize.Size16x8))
+      (aarch64_uqxtn_combined x y VecElemSize.size16x8))
 
 ;; I64X2 + I64X2 -> I32X4: narrow unsigned to unsigned
 (rule (lower (has_type $I32X4 (uunarrow x y)))
-      (aarch64_uqxtn_combined x y VecElemSize.Size32x4))
+      (aarch64_uqxtn_combined x y VecElemSize.size32x4))
 
 ;;;; Float vector conversions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -3276,6 +3105,16 @@
 (rule (lower (nop))
       (aarch64_nop))
 
+;; emit_val: Evaluate a Value-producing helper (which may emit instructions)
+;; and discard its returned Value so `lower` can keep returning Aarch64Inst.
+(decl emit_val (Value) Aarch64Inst)
+(extern constructor emit_val emit_val)
+
+;; emit_regs: Evaluate a ValueRegs-producing helper (which may emit instructions)
+;; and discard its returned ValueRegs so `lower` can keep returning Aarch64Inst.
+(decl emit_regs (ValueRegs) Aarch64Inst)
+(extern constructor emit_regs emit_regs)
+
 ;; sequence_point: Debug metadata marker (emits nothing)
 (rule (lower (sequence_point))
       (aarch64_nop))
@@ -3293,25 +3132,25 @@
 
 ;; GPR <-> GPR: no-op (same size)
 (rule 6 (lower (has_type out_ty (bitcast _ x @ (value_type in_ty))))
-      (if (ty_int_ref_scalar_64 out_ty))
-      (if (ty_int_ref_scalar_64 in_ty))
+      (if-let out_ty (ty_int_ref_scalar_64 out_ty))
+      (if-let in_ty (ty_int_ref_scalar_64 in_ty))
       (aarch64_bitcast_noop x))
 
 ;; GPR -> Float/Vector: FMOV (GPR to FPR)
 (decl aarch64_fmov_from_gpr (Value Type) Aarch64Inst)
 (rule 5 (lower (has_type (ty_float_or_vec _) (bitcast _ x @ (value_type in_ty))))
-      (if (ty_int_ref_scalar_64 in_ty))
+      (if-let in_ty (ty_int_ref_scalar_64 in_ty))
       (aarch64_fmov_from_gpr x in_ty))
 
 ;; Float/Vector -> GPR: FMOV (FPR to GPR)
 (decl aarch64_fmov_to_gpr (Value Type) Aarch64Inst)
 (rule 4 (lower (has_type out_ty (bitcast _ x @ (value_type (fits_in_64 (ty_float_or_vec _))))))
-      (if (ty_int_ref_scalar_64 out_ty))
+      (if-let out_ty (ty_int_ref_scalar_64 out_ty))
       (aarch64_fmov_to_gpr x out_ty))
 
 ;; I128 <-> I128: no-op
 (rule 3 (lower (has_type $I128 (bitcast _ x @ (value_type $I128))))
-      (aarch64_bitcast_noop x))
+      (aarch64_unimplemented))
 
 ;; ABI register accessors
 (decl pinned_reg () Aarch64Inst)
@@ -3437,32 +3276,32 @@
 ;; uadd_overflow: Unsigned add with overflow detection
 (decl aarch64_uadd_overflow (Type Value Value) ValueRegs)
 (rule (lower (has_type (ty_32_or_64 ty) (uadd_overflow a b)))
-      (aarch64_uadd_overflow ty a b))
+      (emit_regs (aarch64_uadd_overflow ty a b)))
 
 ;; usub_overflow: Unsigned subtract with overflow (borrow) detection
 (decl aarch64_usub_overflow (Type Value Value) ValueRegs)
 (rule (lower (has_type (ty_32_or_64 ty) (usub_overflow a b)))
-      (aarch64_usub_overflow ty a b))
+      (emit_regs (aarch64_usub_overflow ty a b)))
 
 ;; sadd_overflow: Signed add with overflow detection
 (decl aarch64_sadd_overflow (Type Value Value) ValueRegs)
 (rule (lower (has_type (ty_32_or_64 ty) (sadd_overflow a b)))
-      (aarch64_sadd_overflow ty a b))
+      (emit_regs (aarch64_sadd_overflow ty a b)))
 
 ;; ssub_overflow: Signed subtract with overflow detection
 (decl aarch64_ssub_overflow (Type Value Value) ValueRegs)
 (rule (lower (has_type (ty_32_or_64 ty) (ssub_overflow a b)))
-      (aarch64_ssub_overflow ty a b))
+      (emit_regs (aarch64_ssub_overflow ty a b)))
 
 ;; uadd_overflow_cin: Unsigned add with carry-in and overflow detection
 (decl aarch64_uadd_overflow_cin (Type Value Value Value) ValueRegs)
 (rule (lower (has_type (ty_32_or_64 ty) (uadd_overflow_cin a b cin)))
-      (aarch64_uadd_overflow_cin ty a b cin))
+      (emit_regs (aarch64_uadd_overflow_cin ty a b cin)))
 
 ;; sadd_overflow_cin: Signed add with carry-in and overflow detection
 (decl aarch64_sadd_overflow_cin (Type Value Value Value) ValueRegs)
 (rule (lower (has_type (ty_32_or_64 ty) (sadd_overflow_cin a b cin)))
-      (aarch64_sadd_overflow_cin ty a b cin))
+      (emit_regs (aarch64_sadd_overflow_cin ty a b cin)))
 
 ;; uadd_overflow_trap: Unsigned add with overflow trap
 (decl aarch64_uadd_overflow_trap (Type Value Value TrapCode) Aarch64Inst)
@@ -3506,13 +3345,13 @@
 (decl aarch64_umul_overflow_i64 (Value Value) ValueRegs)
 
 (rule 1 (lower (has_type $I16 (umul_overflow a b)))
-      (aarch64_umul_overflow_i16 $I16 a b))
+      (emit_regs (aarch64_umul_overflow_i16 $I16 a b)))
 
 (rule 2 (lower (has_type $I32 (umul_overflow a b)))
-      (aarch64_umul_overflow_i32 a b))
+      (emit_regs (aarch64_umul_overflow_i32 a b)))
 
 (rule 2 (lower (has_type $I64 (umul_overflow a b)))
-      (aarch64_umul_overflow_i64 a b))
+      (emit_regs (aarch64_umul_overflow_i64 a b)))
 
 ;; smul_overflow: Signed multiply with overflow detection
 (decl aarch64_smul_overflow_i16 (Type Value Value) ValueRegs)
@@ -3520,13 +3359,13 @@
 (decl aarch64_smul_overflow_i64 (Value Value) ValueRegs)
 
 (rule 1 (lower (has_type $I16 (smul_overflow a b)))
-      (aarch64_smul_overflow_i16 $I16 a b))
+      (emit_regs (aarch64_smul_overflow_i16 $I16 a b)))
 
 (rule 2 (lower (has_type $I32 (smul_overflow a b)))
-      (aarch64_smul_overflow_i32 a b))
+      (emit_regs (aarch64_smul_overflow_i32 a b)))
 
 (rule 2 (lower (has_type $I64 (smul_overflow a b)))
-      (aarch64_smul_overflow_i64 a b))
+      (emit_regs (aarch64_smul_overflow_i64 a b)))
 
 ;; Tail call operations
 ;; return_call: Direct tail call (deallocate frame, then branch)
@@ -3567,16 +3406,19 @@
 
 ;; Near call optimization (priority 1 - prefer when distance is known near)
 (rule 1 (lower (call (func_ref_data sig_ref name RelocDistance.Near _) args))
-      (aarch64_call sig_ref name args))
+      (let ((ignored ValueRegs (aarch64_call sig_ref name args)))
+        (aarch64_nop)))
 
 ;; Fallback call (priority 0 - any distance)
 (rule (lower (call (func_ref_data sig_ref name dist _) args))
-      (aarch64_call sig_ref name args))
+      (let ((ignored ValueRegs (aarch64_call sig_ref name args)))
+        (aarch64_nop)))
 
 ;; call_indirect: Indirect function call via pointer
 (decl aarch64_call_indirect (SigRef Value ValueSlice) ValueRegs)
 (rule (lower (call_indirect sig_ref ptr args))
-      (aarch64_call_indirect sig_ref ptr args))
+      (let ((ignored ValueRegs (aarch64_call_indirect sig_ref ptr args)))
+        (aarch64_nop)))
 
 ;; try_call: Function call with exception handling
 ;; Same as regular call but with landing pad for exceptions
@@ -3584,17 +3426,20 @@
 (extern constructor aarch64_try_call aarch64_try_call)
 
 (rule 1 (lower (try_call (func_ref_data sig_ref name RelocDistance.Near _) args))
-      (aarch64_try_call sig_ref name args))
+      (let ((ignored ValueRegs (aarch64_try_call sig_ref name args)))
+        (aarch64_nop)))
 
 (rule (lower (try_call (func_ref_data sig_ref name dist _) args))
-      (aarch64_try_call sig_ref name args))
+      (let ((ignored ValueRegs (aarch64_try_call sig_ref name args)))
+        (aarch64_nop)))
 
 ;; try_call_indirect: Indirect call with exception handling
 (decl aarch64_try_call_indirect (SigRef Value ValueSlice) ValueRegs)
 (extern constructor aarch64_try_call_indirect aarch64_try_call_indirect)
 
 (rule (lower (try_call_indirect sig_ref ptr args))
-      (aarch64_try_call_indirect sig_ref ptr args))
+      (let ((ignored ValueRegs (aarch64_try_call_indirect sig_ref ptr args)))
+        (aarch64_nop)))
 
 ;; Shuffle pattern extractors
 ;; Extract lane index if shuffle duplicates a single 8-bit lane
@@ -3852,67 +3697,67 @@
 
 ;; Floating point Vs / Vc
 (rule (vec_cmp rn rm ty Cond.Vc)
-      (if (ty_vector_float ty))
+      (if-let (ty_vector_float _) ty)
       (vec_cmp_vc rn rm (vector_size ty)))
 (rule (vec_cmp rn rm ty Cond.Vs)
-      (if (ty_vector_float ty))
+      (if-let (ty_vector_float _) ty)
       (let ((tmp Value (vec_cmp_vc rn rm (vector_size ty))))
        (vec_misc VecMisc2.Not tmp (vector_size ty))))
 
 ;; Floating-point comparisons
 (rule (vec_cmp rn rm ty Cond.Eq)
-      (if (ty_vector_float ty))
+      (if-let (ty_vector_float _) ty)
       (vec_rrr VecALUOp.Fcmeq rn rm (vector_size ty)))
 (rule (vec_cmp rn rm ty Cond.Ne)
-      (if (ty_vector_float ty))
+      (if-let (ty_vector_float _) ty)
       (let ((tmp Value (vec_rrr VecALUOp.Fcmeq rn rm (vector_size ty))))
        (vec_misc VecMisc2.Not tmp (vector_size ty))))
 (rule (vec_cmp rn rm ty Cond.Ge)
-      (if (ty_vector_float ty))
+      (if-let (ty_vector_float _) ty)
       (vec_rrr VecALUOp.Fcmge rn rm (vector_size ty)))
 (rule (vec_cmp rn rm ty Cond.Gt)
-      (if (ty_vector_float ty))
+      (if-let (ty_vector_float _) ty)
       (vec_rrr VecALUOp.Fcmgt rn rm (vector_size ty)))
 ;; Floating-point swapped-operands
 (rule (vec_cmp rn rm ty Cond.Mi)
-      (if (ty_vector_float ty))
+      (if-let (ty_vector_float _) ty)
       (vec_rrr VecALUOp.Fcmgt rm rn (vector_size ty)))
 (rule (vec_cmp rn rm ty Cond.Ls)
-      (if (ty_vector_float ty))
+      (if-let (ty_vector_float _) ty)
       (vec_rrr VecALUOp.Fcmge rm rn (vector_size ty)))
 
 ;; Integer comparisons
 (rule 1 (vec_cmp rn rm ty Cond.Eq)
-      (if (ty_vector_not_float ty))
+      (if-let (ty_vector_not_float _) ty)
       (vec_rrr VecALUOp.Cmeq rn rm (vector_size ty)))
 (rule 1 (vec_cmp rn rm ty Cond.Ne)
-      (if (ty_vector_not_float ty))
+      (if-let (ty_vector_not_float _) ty)
       (let ((tmp Value (vec_rrr VecALUOp.Cmeq rn rm (vector_size ty))))
        (vec_misc VecMisc2.Not tmp (vector_size ty))))
 (rule 1 (vec_cmp rn rm ty Cond.Ge)
-      (if (ty_vector_not_float ty))
+      (if-let (ty_vector_not_float _) ty)
       (vec_rrr VecALUOp.Cmge rn rm (vector_size ty)))
 (rule 1 (vec_cmp rn rm ty Cond.Gt)
-      (if (ty_vector_not_float ty))
+      (if-let (ty_vector_not_float _) ty)
       (vec_rrr VecALUOp.Cmgt rn rm (vector_size ty)))
 (rule (vec_cmp rn rm ty Cond.Hs)
-      (if (ty_vector_not_float ty))
+      (if-let (ty_vector_not_float _) ty)
       (vec_rrr VecALUOp.Cmhs rn rm (vector_size ty)))
 (rule (vec_cmp rn rm ty Cond.Hi)
-      (if (ty_vector_not_float ty))
+      (if-let (ty_vector_not_float _) ty)
       (vec_rrr VecALUOp.Cmhi rn rm (vector_size ty)))
 ;; Integer swapped-operands
 (rule (vec_cmp rn rm ty Cond.Le)
-      (if (ty_vector_not_float ty))
+      (if-let (ty_vector_not_float _) ty)
       (vec_rrr VecALUOp.Cmge rm rn (vector_size ty)))
 (rule (vec_cmp rn rm ty Cond.Lt)
-      (if (ty_vector_not_float ty))
+      (if-let (ty_vector_not_float _) ty)
       (vec_rrr VecALUOp.Cmgt rm rn (vector_size ty)))
 (rule 1 (vec_cmp rn rm ty Cond.Ls)
-      (if (ty_vector_not_float ty))
+      (if-let (ty_vector_not_float _) ty)
       (vec_rrr VecALUOp.Cmhs rm rn (vector_size ty)))
 (rule (vec_cmp rn rm ty Cond.Lo)
-      (if (ty_vector_not_float ty))
+      (if-let (ty_vector_not_float _) ty)
       (vec_rrr VecALUOp.Cmhi rm rn (vector_size ty)))
 
 (rule (lower_fmla op x y z size)
@@ -4009,7 +3854,7 @@
 
 ;; Scalar floats (F32, F64): Use FPU conditional select
 (rule 2 (lower_select flags cond (fits_in_64 ty) rn rm)
-      (if (ty_scalar_float ty))
+      (if-let (ty_scalar_float _) ty)
       (with_flags flags (fpu_csel ty cond rn rm)))
 
 ;; F128: Treat as 128-bit vector, use vector conditional select
@@ -4018,12 +3863,12 @@
 
 ;; 128-bit vectors: Use vector conditional select
 (rule 3 (lower_select flags cond ty rn rm)
-      (if (ty_vec128 ty))
+      (if-let (ty_vec128 _) ty)
       (with_flags flags (vec_csel cond rn rm)))
 
 ;; 64-bit vectors: Reinterpret as F64 scalar, use FPU CSEL
 (rule (lower_select flags cond ty rn rm)
-      (if (ty_vec64 ty))
+      (if-let (ty_vec64 _) ty)
       (with_flags flags (fpu_csel $F64 cond rn rm)))
 
 ;; I128: Split into two 64-bit conditional selects (lo and hi)
