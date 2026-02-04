@@ -11,17 +11,35 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const al = gpa.allocator();
 
-    var args = try std.process.argsAlloc(al);
+    const args = try std.process.argsAlloc(al);
     defer std.process.argsFree(al, args);
 
     if (args.len < 2) {
-        std.debug.print("usage: baseline <bench>...\n", .{});
+        std.debug.print("usage: baseline [--out path] <bench>...\n", .{});
         return error.InvalidArgs;
     }
 
+    var benches = std.ArrayList([]const u8){};
+    defer benches.deinit(al);
+    var out_path_opt: ?[]const u8 = null;
+
+    var i: usize = 1;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "--out")) {
+            if (i + 1 >= args.len) return error.InvalidArgs;
+            out_path_opt = args[i + 1];
+            i += 1;
+            continue;
+        }
+        try benches.append(al, arg);
+    }
+
+    if (benches.items.len == 0) return error.InvalidArgs;
+
     const ts = std.time.timestamp();
     var path_buf: [128]u8 = undefined;
-    const out_path = try std.fmt.bufPrint(&path_buf, "/tmp/hoist-baseline-{d}.log", .{ts});
+    const out_path = out_path_opt orelse try std.fmt.bufPrint(&path_buf, "/tmp/hoist-baseline-{d}.log", .{ts});
 
     var file = try std.fs.createFileAbsolute(out_path, .{ .truncate = true });
     defer file.close();
@@ -30,7 +48,7 @@ pub fn main() !void {
     const header = try std.fmt.bufPrint(&buf, "Hoist baseline run {d}\n", .{ts});
     try file.writeAll(header);
 
-    for (args[1..]) |exe| {
+    for (benches.items) |exe| {
         const line = try std.fmt.bufPrint(&buf, "\n== {s} ==\n", .{exe});
         try file.writeAll(line);
         const out = try runBench(al, exe);

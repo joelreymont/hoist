@@ -1,9 +1,11 @@
 ---
 title: Add Bench Baseline
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.545680+01:00"
+created-at: "\"2026-02-02T21:35:56.545680+01:00\""
+closed-at: "2026-02-05T19:49:52.115427+01:00"
+close-reason: Added bench-log step and recorded /tmp/hoist-bench.log
 blocks:
   - hoist-add-baseline-checks-6731b0c3
 ---

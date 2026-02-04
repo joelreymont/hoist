@@ -539,6 +539,15 @@ pub fn build(b: *std.Build) void {
     run_baseline.addFileArg(bench_aarch64.getEmittedBin());
     baseline_step.dependOn(&run_baseline.step);
 
+    const bench_log_step = b.step("bench-log", "Run benchmarks and write /tmp/hoist-bench.log");
+    const run_bench_log = b.addRunArtifact(baseline);
+    run_bench_log.addArg("--out");
+    run_bench_log.addArg("/tmp/hoist-bench.log");
+    run_bench_log.addFileArg(bench_fib.getEmittedBin());
+    run_bench_log.addFileArg(bench_large.getEmittedBin());
+    run_bench_log.addFileArg(bench_aarch64.getEmittedBin());
+    bench_log_step.dependOn(&run_bench_log.step);
+
     // Fuzzing
     const fuzz_compile = b.addExecutable(.{
         .name = "fuzz_compile",

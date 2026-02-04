@@ -25,6 +25,7 @@
 - ABI and encoding tests
 - TLS and FP special values tests
 - Baseline benchmark step: `zig build baseline` writes `/tmp/hoist-baseline-*.log`
+- Bench baseline: `zig build bench-log` writes `/tmp/hoist-bench.log`
 
 ## Partially Implemented / In Progress
 
