@@ -1,9 +1,9 @@
 ---
 title: COFF writer
-status: open
+status: active
 priority: 1
 issue-type: task
-created-at: "2026-02-02T23:57:11.325116+01:00"
+created-at: "\"2026-02-02T23:57:11.325116+01:00\""
 blocks:
   - hoist-elf-writer-9a1193be
 ---
