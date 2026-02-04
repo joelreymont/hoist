@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 
 const sema = @import("../sema.zig");
 const trie = @import("../trie.zig");
+const ident = @import("ident.zig");
 
 /// Extractor code generator - emits pattern matching extraction functions.
 ///
@@ -89,7 +90,11 @@ pub const ExtractorCodegen = struct {
                 // Check primitive constant equality
                 const val_name = self.typeenv.symName(c.val);
                 try self.emitIndent(indent);
-                try writer.print("if (!std.meta.eql({s}, {s})) return null;\n", .{ source_expr, val_name });
+                try writer.writeAll("if (!std.meta.eql(");
+                try writer.writeAll(source_expr);
+                try writer.writeAll(", ");
+                try self.writeEnumLit(writer, val_name);
+                try writer.writeAll(")) return null;\n");
             },
             .term => |t| {
                 // Pattern match on term constructor/extractor
@@ -109,10 +114,13 @@ pub const ExtractorCodegen = struct {
                                 defer self.allocator.free(result_var);
 
                                 try self.emitIndent(indent);
-                                try writer.print(
-                                    "const {s} = (try extractor_{s}(ctx, {s})) orelse return null;\n",
-                                    .{ result_var, term_name, source_expr },
-                                );
+                                try writer.writeAll("const ");
+                                try writer.writeAll(result_var);
+                                try writer.writeAll(" = (try ");
+                                try self.writePref(writer, "extractor_", term_name);
+                                try writer.writeAll("(ctx, ");
+                                try writer.writeAll(source_expr);
+                                try writer.writeAll(")) orelse return null;\n");
 
                                 for (t.args, 0..) |arg_pat, i| {
                                     const field_expr = try std.fmt.allocPrint(
@@ -157,10 +165,13 @@ pub const ExtractorCodegen = struct {
                         defer self.allocator.free(result_var);
 
                         try self.emitIndent(indent);
-                        try writer.print(
-                            "const {s} = (try extractor_{s}(ctx, {s})) orelse return null;\n",
-                            .{ result_var, term_name, source_expr },
-                        );
+                        try writer.writeAll("const ");
+                        try writer.writeAll(result_var);
+                        try writer.writeAll(" = (try ");
+                        try self.writePref(writer, "extractor_", term_name);
+                        try writer.writeAll("(ctx, ");
+                        try writer.writeAll(source_expr);
+                        try writer.writeAll(")) orelse return null;\n");
 
                         // Match nested patterns against extracted fields
                         for (t.args, 0..) |arg_pat, i| {
@@ -214,17 +225,14 @@ pub const ExtractorCodegen = struct {
         try self.emitIndent(indent);
         try writer.print("switch ({s}) {{\n", .{source_expr});
         try self.emitIndent(indent + 4);
-        try writer.print(".{s} => |fields| {{\n", .{variant_name});
+        try self.writeEnumLit(writer, variant_name);
+        try writer.writeAll(" => |fields| {\n");
 
         // Match each field
         for (arg_patterns, 0..) |arg_pat, i| {
             const field = variant.fields[i];
             const field_name = self.typeenv.symName(field.name);
-            const field_expr = try std.fmt.allocPrint(
-                self.allocator,
-                "fields.{s}",
-                .{field_name},
-            );
+            const field_expr = try self.makeExpr("fields.", field_name);
             defer self.allocator.free(field_expr);
 
             try self.emitPatternMatch(arg_pat, field_expr, indent + 8);
@@ -278,6 +286,35 @@ pub const ExtractorCodegen = struct {
         };
     }
 
+    fn writeIdent(self: *const Self, writer: anytype, name: []const u8) Error!void {
+        _ = self;
+        try ident.writeIdent(writer, name);
+    }
+
+    fn writeTy(self: *const Self, writer: anytype, type_id: sema.TypeId) Error!void {
+        const name = try self.getTypeName(type_id);
+        try self.writeIdent(writer, name);
+    }
+
+    fn writePref(self: *const Self, writer: anytype, prefix: []const u8, name: []const u8) Error!void {
+        const full = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ prefix, name });
+        defer self.allocator.free(full);
+        try self.writeIdent(writer, full);
+    }
+
+    fn makeExpr(self: *const Self, prefix: []const u8, name: []const u8) Error![]const u8 {
+        var buf = std.ArrayList(u8){};
+        defer buf.deinit(self.allocator);
+        try buf.appendSlice(self.allocator, prefix);
+        try ident.writeIdent(buf.writer(self.allocator), name);
+        return try buf.toOwnedSlice(self.allocator);
+    }
+
+    fn writeEnumLit(self: *const Self, writer: anytype, name: []const u8) Error!void {
+        _ = self;
+        try ident.writeEnumLit(writer, name);
+    }
+
     /// Emit indentation.
     fn emitIndent(self: *Self, count: usize) Error!void {
         const writer = self.output.writer(self.allocator);
@@ -327,27 +364,23 @@ pub const ExtractorCodegen = struct {
 
         const writer = self.output.writer(self.allocator);
 
-        try writer.print(
-            \\/// Extractor for {s}
-            \\/// Returns null if pattern does not match
-            \\pub fn extractor_{s}(
-            \\    ctx: *Context,
-            \\    input: {s},
-            \\) !?
-        , .{
-            term_name,
-            term_name,
-            try self.getTypeName(extractor.ret_ty),
-        });
+        try writer.writeAll("/// Extractor for ");
+        try writer.writeAll(term_name);
+        try writer.writeAll("\n/// Returns null if pattern does not match\npub fn ");
+        try self.writePref(writer, "extractor_", term_name);
+        try writer.writeAll("(\n    ctx: *Context,\n    input: ");
+        try self.writeTy(writer, extractor.ret_ty);
+        try writer.writeAll(",\n) !?");
         try self.emitExtractorOutType(writer, extractor.arg_tys, extractor.ret_ty);
         try writer.writeAll(" {\n");
+        try self.emitIndent(4);
+        try writer.writeAll("_ = ctx;\n");
 
         for (bindings) |binding| {
             try self.emitIndent(4);
-            try writer.print(
-                "var b{d}: {s} = undefined;\n",
-                .{ binding.id, try self.getTypeName(binding.ty) },
-            );
+            try writer.print("var b{d}: ", .{binding.id});
+            try self.writeTy(writer, binding.ty);
+            try writer.writeAll(" = undefined;\n");
             try self.emitIndent(4);
             try writer.print("var b{d}_set = false;\n", .{binding.id});
         }
@@ -388,14 +421,15 @@ pub const ExtractorCodegen = struct {
         ret_ty: sema.TypeId,
     ) Error!void {
         if (arg_tys.len == 0) {
-            try writer.writeAll(try self.getTypeName(ret_ty));
+            try self.writeTy(writer, ret_ty);
             return;
         }
 
         try writer.writeAll("struct { ");
         for (arg_tys, 0..) |arg_ty, i| {
             if (i > 0) try writer.writeAll(", ");
-            try writer.print("arg{d}: {s}", .{ i, try self.getTypeName(arg_ty) });
+            try writer.print("arg{d}: ", .{i});
+            try self.writeTy(writer, arg_ty);
         }
         try writer.writeAll(" }");
     }

@@ -2,6 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
+const ident = @import("ident.zig");
 const sema = @import("../sema.zig");
 const trie = @import("../trie.zig");
 const match_compiler = @import("match.zig");
@@ -78,7 +79,9 @@ pub const ZigEmitter = struct {
             switch (term.kind) {
                 .extern_func => {
                     const name = self.typeenv.symName(term.name);
-                    try writer.print("    pub fn {s}(self: *Context) !void {{\n", .{name});
+                    try writer.writeAll("    pub fn ");
+                    try self.writeIdent(writer, name);
+                    try writer.writeAll("(self: *Context) !void {\n");
                     try writer.writeAll("        _ = self;\n");
                     try writer.writeAll("        return error.Unimplemented;\n");
                     try writer.writeAll("    }\n\n");
@@ -102,7 +105,11 @@ pub const ZigEmitter = struct {
         }
 
         // Function signature
-        try writer.print("pub fn {s}{s}(\n", .{ options.fn_prefix, term_name });
+        const full_name = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ options.fn_prefix, term_name });
+        defer self.allocator.free(full_name);
+        try writer.writeAll("pub fn ");
+        try self.writeIdent(writer, full_name);
+        try writer.writeAll("(\n");
         try writer.writeAll("    ctx: *Context,\n");
 
         // Parameters
@@ -171,81 +178,9 @@ pub const ZigEmitter = struct {
         };
     }
 
-    fn isKeyword(name: []const u8) bool {
-        const keywords = [_][]const u8{
-            "align",
-            "allowzero",
-            "and",
-            "anyframe",
-            "anytype",
-            "asm",
-            "async",
-            "await",
-            "break",
-            "catch",
-            "comptime",
-            "const",
-            "continue",
-            "defer",
-            "else",
-            "enum",
-            "errdefer",
-            "error",
-            "export",
-            "extern",
-            "false",
-            "for",
-            "if",
-            "inline",
-            "linksection",
-            "noalias",
-            "noinline",
-            "nosuspend",
-            "null",
-            "opaque",
-            "or",
-            "orelse",
-            "packed",
-            "pub",
-            "resume",
-            "return",
-            "struct",
-            "suspend",
-            "switch",
-            "test",
-            "threadlocal",
-            "true",
-            "try",
-            "union",
-            "unreachable",
-            "usingnamespace",
-            "var",
-            "volatile",
-            "while",
-        };
-        for (keywords) |kw| {
-            if (std.mem.eql(u8, name, kw)) return true;
-        }
-        return false;
-    }
-
-    fn isValidIdent(name: []const u8) bool {
-        if (name.len == 0) return false;
-        const first = name[0];
-        if (!(std.ascii.isAlphabetic(first) or first == '_')) return false;
-        for (name[1..]) |c| {
-            if (!(std.ascii.isAlphanumeric(c) or c == '_')) return false;
-        }
-        return !isKeyword(name);
-    }
-
     fn writeIdent(self: *const Self, writer: anytype, name: []const u8) !void {
         _ = self;
-        if (isValidIdent(name)) {
-            try writer.writeAll(name);
-        } else {
-            try writer.print("@\"{s}\"", .{name});
-        }
+        try ident.writeIdent(writer, name);
     }
 
     /// Emit a pattern match as Zig code.
@@ -319,7 +254,8 @@ pub const ZigEmitter = struct {
             .constructor => |ctor| {
                 const term = self.termenv.getTerm(ctor.term);
                 const name = self.typeenv.symName(term.name);
-                try writer.print("{s}(ctx", .{name});
+                try self.writeIdent(writer, name);
+                try writer.writeAll("(ctx");
                 for (ctor.parameters) |param_id| {
                     try writer.writeAll(", ");
                     const param = self.ruleset.bindings.items[param_id.index()];
@@ -357,7 +293,10 @@ pub const ZigEmitter = struct {
             .extractor => |ext| {
                 const term = self.termenv.getTerm(ext.term);
                 const name = self.typeenv.symName(term.name);
-                try writer.print("extractor_{s}(ctx", .{name});
+                const extractor_name = try std.fmt.allocPrint(self.allocator, "extractor_{s}", .{name});
+                defer self.allocator.free(extractor_name);
+                try self.writeIdent(writer, extractor_name);
+                try writer.writeAll("(ctx");
                 for (ext.parameters) |param_id| {
                     try writer.writeAll(", ");
                     const param = self.ruleset.bindings.items[param_id.index()];

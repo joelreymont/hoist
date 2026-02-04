@@ -522,10 +522,64 @@ pub const TermEnv = struct {
 
     /// Add a term definition.
     pub fn addTerm(self: *Self, term: Term) !TermId {
+        if (self.term_map.get(term.name)) |existing_id| {
+            const existing = self.getTerm(existing_id);
+            if (termSigEqual(existing, term)) {
+                freeTerm(self.allocator, term);
+                return existing_id;
+            }
+            freeTerm(self.allocator, term);
+            return error.DuplicateTerm;
+        }
         const term_id = TermId.new(@intCast(self.terms.items.len));
         try self.terms.append(self.allocator, term);
         try self.term_map.put(term.name, term_id);
         return term_id;
+    }
+
+    fn termSigEqual(a: Term, b: Term) bool {
+        if (std.meta.activeTag(a.kind) != std.meta.activeTag(b.kind)) return false;
+        return switch (a.kind) {
+            .decl => |ad| blk: {
+                const bd = b.kind.decl;
+                if (ad.arg_tys.len != bd.arg_tys.len) break :blk false;
+                for (ad.arg_tys, 0..) |ty, i| {
+                    if (ty.index() != bd.arg_tys[i].index()) break :blk false;
+                }
+                if (ad.ret_ty.index() != bd.ret_ty.index()) break :blk false;
+                if (ad.partial != bd.partial) break :blk false;
+                break :blk true;
+            },
+            .extractor => |ae| blk: {
+                const be = b.kind.extractor;
+                if (ae.arg_tys.len != be.arg_tys.len) break :blk false;
+                for (ae.arg_tys, 0..) |ty, i| {
+                    if (ty.index() != be.arg_tys[i].index()) break :blk false;
+                }
+                if (ae.ret_ty.index() != be.ret_ty.index()) break :blk false;
+                break :blk true;
+            },
+            .extern_func => |af| blk: {
+                const bf = b.kind.extern_func;
+                if (af.arg_tys.len != bf.arg_tys.len) break :blk false;
+                for (af.arg_tys, 0..) |ty, i| {
+                    if (ty.index() != bf.arg_tys[i].index()) break :blk false;
+                }
+                if (af.ret_ty.index() != bf.ret_ty.index()) break :blk false;
+                break :blk true;
+            },
+        };
+    }
+
+    fn freeTerm(allocator: Allocator, term: Term) void {
+        switch (term.kind) {
+            .decl => |d| if (d.arg_tys.len != 0) allocator.free(d.arg_tys),
+            .extractor => |e| {
+                if (e.arg_tys.len != 0) allocator.free(e.arg_tys);
+                deinitPattern(allocator, e.template);
+            },
+            .extern_func => |f| if (f.arg_tys.len != 0) allocator.free(f.arg_tys),
+        }
     }
 
     /// Lookup term by name.

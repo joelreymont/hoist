@@ -606,4 +606,35 @@ pub fn build(b: *std.Build) void {
     clif.root_module.addImport("hoist", lib.root_module);
     applyFlags(clif, enable_lto, debug_info, strip_debug, pic, single_threaded);
     b.installArtifact(clif);
+
+    const isle_dependents = &[_]*std.Build.Step{
+        &lib.step,
+        &tests.step,
+        &e2e_branches.step,
+        &e2e_loops.step,
+        &e2e_jit.step,
+        &compile_simple.step,
+        &egraph_opt.step,
+        &aarch64_tls.step,
+        &fp_special_values.step,
+        &aarch64_ccmp.step,
+        &riscv64_encoding.step,
+        &e2e_tail_calls.step,
+        &aarch64_stack_args.step,
+        &isle_coverage_tests.step,
+        &test_legalize_ops.step,
+        &value_range_tests.step,
+        &domtree_tests.step,
+        &interference_tests.step,
+        &atomic_stress_tests.step,
+        &filetest_tests.step,
+        &standalone_e2e.step,
+        &bench_fib.step,
+        &bench_large.step,
+        &bench_aarch64.step,
+        &fuzz_compile.step,
+        &fuzz_regalloc.step,
+        &clif.step,
+    };
+    for (isle_dependents) |dep| dep.dependOn(&isle_step.step);
 }

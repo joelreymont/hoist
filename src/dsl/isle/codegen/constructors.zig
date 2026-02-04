@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 
 const sema = @import("../sema.zig");
 const trie = @import("../trie.zig");
+const ident = @import("ident.zig");
 
 /// Constructor code generator for ISLE terms.
 ///
@@ -53,6 +54,7 @@ pub const ConstructorGen = struct {
         term_id: sema.TermId,
         ruleset: *const trie.RuleSet,
     ) ![]const u8 {
+        self.output.clearRetainingCapacity();
         const term = self.termenv.getTerm(term_id);
         const term_name = self.typeenv.symName(term.name);
 
@@ -66,8 +68,12 @@ pub const ConstructorGen = struct {
         defer self.current_term_name = null;
 
         // Function signature
-        try writer.print("\n/// Generated constructor for term `{s}`\n", .{term_name});
-        try writer.print("pub fn constructor_{s}(\n", .{term_name});
+        try writer.writeAll("\n/// Generated constructor for term `");
+        try writer.writeAll(term_name);
+        try writer.writeAll("`\n");
+        try writer.writeAll("pub fn ");
+        try self.writePref(writer, "constructor_", term_name);
+        try writer.writeAll("(\n");
         try self.indent(1);
         try writer.print("ctx: *Context,\n", .{});
 
@@ -77,25 +83,38 @@ pub const ConstructorGen = struct {
             const ty_name = self.getTypeName(arg_ty);
             const is_ref = self.isRefType(arg_ty);
             if (is_ref) {
-                try writer.print("arg{d}: *const {s},\n", .{ i, ty_name });
+                try writer.print("arg{d}: *const ", .{i});
+                try self.writeIdent(writer, ty_name);
+                try writer.writeAll(",\n");
             } else {
-                try writer.print("arg{d}: {s},\n", .{ i, ty_name });
+                try writer.print("arg{d}: ", .{i});
+                try self.writeIdent(writer, ty_name);
+                try writer.writeAll(",\n");
             }
         }
 
         // Return type
-        const ret_ty_name = self.getTypeName(decl.ret_ty);
         const is_partial = decl.partial;
 
         try writer.print(") ", .{});
         if (is_partial) {
-            try writer.print("!?{s} {{\n", .{ret_ty_name});
+            try writer.writeAll("!?");
+            try self.writeTy(writer, decl.ret_ty);
+            try writer.writeAll(" {\n");
         } else {
-            try writer.print("!{s} {{\n", .{ret_ty_name});
+            try writer.writeAll("!");
+            try self.writeTy(writer, decl.ret_ty);
+            try writer.writeAll(" {\n");
         }
 
         // Function body
         self.indent_level = 1;
+        try self.indent(self.indent_level);
+        try writer.writeAll("_ = ctx;\n");
+        for (decl.arg_tys, 0..) |_, i| {
+            try self.indent(self.indent_level);
+            try writer.print("_ = arg{d};\n", .{i});
+        }
         self.arg_tys = decl.arg_tys;
         self.prebound.clearRetainingCapacity();
         self.emitted.clearRetainingCapacity();
@@ -139,7 +158,7 @@ pub const ConstructorGen = struct {
         if (is_partial) {
             try writer.writeAll("return null;\n");
         } else {
-            try writer.writeAll("unreachable;\n");
+            try writer.writeAll("return error.NoMatch;\n");
         }
     }
 
@@ -280,13 +299,15 @@ pub const ConstructorGen = struct {
         switch (constraint) {
             .const_bool => |b| try writer.print("{}", .{b.val}),
             .const_int => |i| try writer.print("{d}", .{i.val}),
-            .const_prim => |p| try writer.print(".{s}", .{self.typeenv.symName(p.val)}),
+            .const_prim => |p| {
+                try self.writeEnumLit(writer, self.typeenv.symName(p.val));
+            },
             .variant => |v| {
                 const ty = self.typeenv.types.items[v.ty.index()];
                 switch (ty) {
                     .enum_type => |e| {
                         const variant = e.variants[@intCast(v.variant.variant_index)];
-                        try writer.print(".{s}", .{self.typeenv.symName(variant.name)});
+                        try self.writeEnumLit(writer, self.typeenv.symName(variant.name));
                     },
                     else => try writer.writeAll("_"),
                 }
@@ -351,7 +372,9 @@ pub const ConstructorGen = struct {
         switch (binding.*) {
             .const_bool => |b| try writer.print("{}", .{b.val}),
             .const_int => |i| try writer.print("{d}", .{i.val}),
-            .const_prim => |p| try writer.print(".{s}", .{self.typeenv.symName(p.val)}),
+            .const_prim => |p| {
+                try self.writeEnumLit(writer, self.typeenv.symName(p.val));
+            },
             .argument => |a| {
                 if (self.argType(a.index.value())) |arg_ty| {
                     try self.emitArgExpr(writer, a.index.value(), arg_ty);
@@ -362,7 +385,9 @@ pub const ConstructorGen = struct {
             .extractor => |e| {
                 const term = self.termenv.getTerm(e.term);
                 const name = self.typeenv.symName(term.name);
-                try writer.print("try extractor_{s}(ctx", .{name});
+                try writer.writeAll("try ");
+                try self.writePref(writer, "extractor_", name);
+                try writer.writeAll("(ctx");
                 for (e.parameters) |param| {
                     try writer.writeAll(", ");
                     try writer.print("v{d}", .{param.index()});
@@ -374,9 +399,13 @@ pub const ConstructorGen = struct {
                 const name = self.typeenv.symName(term.name);
                 const is_partial = term.kind == .decl and term.kind.decl.partial;
                 if (is_partial) {
-                    try writer.print("(try constructor_{s}(ctx", .{name});
+                    try writer.writeAll("(try ");
+                    try self.writePref(writer, "constructor_", name);
+                    try writer.writeAll("(ctx");
                 } else {
-                    try writer.print("try constructor_{s}(ctx", .{name});
+                    try writer.writeAll("try ");
+                    try self.writePref(writer, "constructor_", name);
+                    try writer.writeAll("(ctx");
                 }
                 for (c.parameters) |param| {
                     try writer.writeAll(", ");
@@ -394,7 +423,9 @@ pub const ConstructorGen = struct {
                 switch (ty) {
                     .enum_type => |e| {
                         const variant = e.variants[@intCast(v.variant.variant_index)];
-                        try writer.print(".{{ .{s} = .{{ ", .{self.typeenv.symName(variant.name)});
+                        try writer.writeAll(".{ .");
+                        try self.writeIdent(writer, self.typeenv.symName(variant.name));
+                        try writer.writeAll(" = .{ ");
                         for (v.fields, 0..) |f, i| {
                             if (i > 0) try writer.writeAll(", ");
                             try writer.print("v{d}", .{f.index()});
@@ -410,14 +441,10 @@ pub const ConstructorGen = struct {
                     const variant = ty.enum_type.variants[m.variant.variant_index];
                     if (m.field.value() < variant.fields.len) {
                         const field = variant.fields[m.field.value()];
-                        try writer.print(
-                            "v{d}.{s}.{s}",
-                            .{
-                                m.source.index(),
-                                self.typeenv.symName(variant.name),
-                                self.typeenv.symName(field.name),
-                            },
-                        );
+                        try writer.print("v{d}.", .{m.source.index()});
+                        try self.writeIdent(writer, self.typeenv.symName(variant.name));
+                        try writer.writeAll(".");
+                        try self.writeIdent(writer, self.typeenv.symName(field.name));
                     } else {
                         try writer.writeAll("undefined");
                     }
@@ -519,6 +546,7 @@ pub const ConstructorGen = struct {
         self: *Self,
         term_id: sema.TermId,
     ) ![]const u8 {
+        self.output.clearRetainingCapacity();
         const term = self.termenv.getTerm(term_id);
         const term_name = self.typeenv.symName(term.name);
 
@@ -530,26 +558,34 @@ pub const ConstructorGen = struct {
         const writer = self.output.writer(self.allocator);
 
         // Function signature for trait
-        try writer.print("    fn constructor_{s}(\n", .{term_name});
+        try writer.writeAll("    fn ");
+        try self.writePref(writer, "constructor_", term_name);
+        try writer.writeAll("(\n");
         try writer.writeAll("        self: *@This(),\n");
 
         // Parameters
         for (decl.arg_tys, 0..) |arg_ty, i| {
-            const ty_name = self.getTypeName(arg_ty);
             const is_ref = self.isRefType(arg_ty);
             if (is_ref) {
-                try writer.print("        arg{d}: *const {s},\n", .{ i, ty_name });
+                try writer.print("        arg{d}: *const ", .{i});
+                try self.writeTy(writer, arg_ty);
+                try writer.writeAll(",\n");
             } else {
-                try writer.print("        arg{d}: {s},\n", .{ i, ty_name });
+                try writer.print("        arg{d}: ", .{i});
+                try self.writeTy(writer, arg_ty);
+                try writer.writeAll(",\n");
             }
         }
 
         // Return type
-        const ret_ty_name = self.getTypeName(decl.ret_ty);
         if (decl.partial) {
-            try writer.print("    ) !?{s};\n", .{ret_ty_name});
+            try writer.writeAll("    ) !?");
+            try self.writeTy(writer, decl.ret_ty);
+            try writer.writeAll(";\n");
         } else {
-            try writer.print("    ) !{s};\n", .{ret_ty_name});
+            try writer.writeAll("    ) !");
+            try self.writeTy(writer, decl.ret_ty);
+            try writer.writeAll(";\n");
         }
 
         return self.output.items;
@@ -604,6 +640,27 @@ pub const ConstructorGen = struct {
         };
     }
 
+    fn writeIdent(self: *const Self, writer: anytype, name: []const u8) !void {
+        _ = self;
+        try ident.writeIdent(writer, name);
+    }
+
+    fn writeTy(self: *const Self, writer: anytype, type_id: sema.TypeId) !void {
+        const name = self.getTypeName(type_id);
+        try self.writeIdent(writer, name);
+    }
+
+    fn writePref(self: *const Self, writer: anytype, prefix: []const u8, name: []const u8) !void {
+        const full = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ prefix, name });
+        defer self.allocator.free(full);
+        try self.writeIdent(writer, full);
+    }
+
+    fn writeEnumLit(self: *const Self, writer: anytype, name: []const u8) !void {
+        _ = self;
+        try ident.writeEnumLit(writer, name);
+    }
+
     /// Check if a type should be passed by reference.
     fn isRefType(self: *const Self, type_id: sema.TypeId) bool {
         const ty = self.typeenv.types.items[type_id.index()];
@@ -635,7 +692,8 @@ pub const ConstructorGen = struct {
         const term_name = self.typeenv.symName(term.name);
         const writer = self.output.writer(self.allocator);
 
-        try writer.print("constructor_{s}(ctx", .{term_name});
+        try self.writePref(writer, "constructor_", term_name);
+        try writer.writeAll("(ctx");
         for (args, 0..) |arg, i| {
             try writer.print(", v{d}", .{arg.index()});
             _ = i;
@@ -648,6 +706,7 @@ pub const ConstructorGen = struct {
         self: *Self,
         term_id: sema.TermId,
     ) !void {
+        self.output.clearRetainingCapacity();
         const term = self.termenv.getTerm(term_id);
         const term_name = self.typeenv.symName(term.name);
         const writer = self.output.writer(self.allocator);
@@ -659,17 +718,23 @@ pub const ConstructorGen = struct {
 
         // Generate wrapper that calls external backend function
         try writer.print("\n/// Backend integration for `{s}`\n", .{term_name});
-        try writer.print("pub fn backend_{s}(\n", .{term_name});
+        try writer.writeAll("pub fn ");
+        try self.writePref(writer, "backend_", term_name);
+        try writer.writeAll("(\n");
         try writer.writeAll("    ctx: *Context,\n");
 
         for (extern_sig.arg_tys, 0..) |arg_ty, i| {
-            const ty_name = self.getTypeName(arg_ty);
-            try writer.print("    arg{d}: {s},\n", .{ i, ty_name });
+            try writer.print("    arg{d}: ", .{i});
+            try self.writeTy(writer, arg_ty);
+            try writer.writeAll(",\n");
         }
 
-        const ret_ty_name = self.getTypeName(extern_sig.ret_ty);
-        try writer.print(") {s} {{\n", .{ret_ty_name});
-        try writer.print("    return ctx.backend.{s}(", .{term_name});
+        try writer.writeAll(") ");
+        try self.writeTy(writer, extern_sig.ret_ty);
+        try writer.writeAll(" {\n");
+        try writer.writeAll("    return ctx.backend.");
+        try self.writeIdent(writer, term_name);
+        try writer.writeAll("(");
         for (extern_sig.arg_tys, 0..) |_, i| {
             if (i > 0) try writer.writeAll(", ");
             try writer.print("arg{d}", .{i});

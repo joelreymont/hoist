@@ -5,6 +5,8 @@
 
 const std = @import("std");
 
+pub const Immediate = u128;
+
 /// 64-bit immediate signed integer operand.
 pub const Imm64 = packed struct {
     value: i64,

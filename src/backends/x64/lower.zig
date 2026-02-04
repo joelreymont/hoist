@@ -10,7 +10,7 @@ const lower_mod = root.lower;
 const LowerCtx = lower_mod.LowerCtx;
 
 // Import ISLE-generated lowering code
-const isle_lower = @import("../../generated/x64_lower_generated.zig");
+const isle_lower = @import("../../generated/isle/x64_lower_generated.zig");
 
 /// X64 lowering backend implementation.
 /// This connects ISLE rules to actual instruction emission.

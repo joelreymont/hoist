@@ -13,7 +13,7 @@ const abi_mod = @import("abi.zig");
 const call_layout = @import("call_layout.zig");
 
 // Import ISLE-generated lowering code
-const isle_lower = @import("../../generated/aarch64_lower_generated.zig");
+const isle_lower = @import("../../generated/isle/aarch64_lower_generated.zig");
 
 /// Aarch64 lowering backend implementation.
 /// This connects ISLE rules to actual instruction emission.

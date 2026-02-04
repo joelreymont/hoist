@@ -8,6 +8,41 @@ const signature = @import("signature.zig");
 
 const SigRef = entities.SigRef;
 
+/// Relocation distance hint for external references.
+pub const RelocDistance = enum {
+    /// Short-range relocation.
+    Near,
+    /// Long-range relocation.
+    Far,
+
+    pub fn format(self: RelocDistance, writer: anytype) !void {
+        try writer.writeAll(@tagName(self));
+    }
+};
+
+/// External symbol reference for value materialization.
+pub const SymbolValueData = struct {
+    name: ExternalName,
+    dist: RelocDistance,
+    offset: i64,
+
+    pub fn init(name: ExternalName, dist: RelocDistance, offset: i64) SymbolValueData {
+        return .{ .name = name, .dist = dist, .offset = offset };
+    }
+};
+
+/// External function reference data.
+pub const FuncRefData = struct {
+    sig_ref: SigRef,
+    name: ExternalName,
+    dist: RelocDistance,
+    offset: i64,
+
+    pub fn init(sig_ref: SigRef, name: ExternalName, dist: RelocDistance, offset: i64) FuncRefData {
+        return .{ .sig_ref = sig_ref, .name = name, .dist = dist, .offset = offset };
+    }
+};
+
 /// TLS access model for thread-local storage variables.
 pub const TlsModel = enum {
     /// Local-Exec: TLS offset known at link time, executable only.

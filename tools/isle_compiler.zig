@@ -2,6 +2,37 @@ const std = @import("std");
 const isle = @import("isle");
 
 const prelude_path = "src/dsl/isle/ir_prelude.isle";
+const base_preamble =
+    \\const root = @import("root");
+    \\const Type = root.types.Type;
+    \\const Value = root.entities.Value;
+    \\const Inst = root.entities.Inst;
+    \\const Block = root.entities.Block;
+    \\const StackSlot = root.entities.StackSlot;
+    \\const GlobalValue = root.entities.GlobalValue;
+    \\const JumpTable = root.entities.JumpTable;
+    \\const SigRef = root.entities.SigRef;
+    \\const ExternalName = root.extfunc.ExternalName;
+    \\const RelocDistance = root.extfunc.RelocDistance;
+    \\const SymbolValueData = root.extfunc.SymbolValueData;
+    \\const FuncRefData = root.extfunc.FuncRefData;
+    \\const ValueSlice = root.lower.ValueSlice;
+    \\const Imm64 = root.immediates.Imm64;
+    \\const Ieee32 = root.immediates.Ieee32;
+    \\const Ieee64 = root.immediates.Ieee64;
+    \\const Offset32 = root.immediates.Offset32;
+    \\const Immediate = root.immediates.Immediate;
+    \\const MemFlags = root.memflags.MemFlags;
+    \\const TrapCode = root.trapcode.TrapCode;
+    \\const IntCC = root.condcodes.IntCC;
+    \\const FloatCC = root.condcodes.FloatCC;
+    \\const AtomicOrdering = root.atomics.AtomicOrdering;
+    \\const AtomicRmwOp = root.atomics.AtomicRmwOp;
+    \\const VecALUOp = root.aarch64_isle_types.VecALUOp;
+    \\const VecElemSize = root.aarch64_isle_types.VecElemSize;
+    \\const VecMisc2 = root.aarch64_isle_types.VecMisc2;
+    \\
+;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -48,6 +79,38 @@ pub fn main() !void {
     };
     defer allocator.free(input_content);
 
+    const arch_preamble = if (std.mem.indexOf(u8, input_path, "aarch64") != null)
+        \\const Aarch64Inst = root.aarch64_isle_types.Aarch64Inst;
+        \\const Reg = root.aarch64_isle_types.Reg;
+        \\const ImmLogic = root.aarch64_isle_types.ImmLogic;
+        \\const CondCode = root.aarch64_isle_types.CondCode;
+        \\const Cond = root.aarch64_isle_types.Cond;
+        \\const VecALUOp = root.aarch64_isle_types.VecALUOp;
+        \\const VecALUModOp = root.aarch64_isle_types.VecALUModOp;
+        \\const VecElemSize = root.aarch64_isle_types.VecElemSize;
+        \\const VecMisc2 = root.aarch64_isle_types.VecMisc2;
+        \\const VecShiftImmOp = root.aarch64_isle_types.VecShiftImmOp;
+        \\const VectorSize = root.aarch64_isle_types.VectorSize;
+        \\const SveElemSize = root.aarch64_isle_types.SveElemSize;
+        \\const ExtendOp = root.aarch64_isle_types.ExtendOp;
+        \\const ShiftOp = root.aarch64_isle_types.ShiftOp;
+        \\const SystemReg = root.aarch64_isle_types.SystemReg;
+        \\const ShareabilityDomain = root.aarch64_isle_types.ShareabilityDomain;
+        \\const ProducesFlags = root.aarch64_isle_types.ProducesFlags;
+        \\const ConsumesFlags = root.aarch64_isle_types.ConsumesFlags;
+        \\const ValueRegs = root.aarch64_isle_types.ValueRegs;
+        \\
+    else if (std.mem.indexOf(u8, input_path, "x64") != null)
+        \\const X64Inst = root.x64_inst.Inst;
+        \\
+    else if (std.mem.indexOf(u8, input_path, "riscv64") != null)
+        \\const Riscv64Inst = root.riscv64_inst.Inst;
+        \\
+    else
+        "";
+    const preamble = try std.fmt.allocPrint(allocator, "{s}{s}", .{ base_preamble, arch_preamble });
+    defer allocator.free(preamble);
+
     // Compile ISLE to Zig
     var result = isle.compile(
         allocator,
@@ -64,6 +127,7 @@ pub fn main() !void {
         .{
             // Debug comments can explode code size. Default off, opt-in via CLI.
             .debug_comments = debug_comments,
+            .preamble = preamble,
         },
     ) catch |err| {
         std.debug.print("ISLE compilation failed for {s}: {}\n", .{ input_path, err });

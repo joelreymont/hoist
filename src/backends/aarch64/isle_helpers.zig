@@ -10,14 +10,15 @@ else if (@hasDecl(root_mod, "entities"))
     root_mod
 else
     @import("../../root.zig");
-const Inst = hoist.aarch64_inst.Inst;
-const Reg = hoist.aarch64_inst.Reg;
+const isle_types = hoist.aarch64_isle_types;
+const Inst = isle_types.Aarch64Inst;
+const Reg = isle_types.Reg;
 const PReg = hoist.machinst.PReg;
 const Imm12 = hoist.aarch64_inst.Imm12;
-const ImmLogic = hoist.aarch64_inst.ImmLogic;
-const ExtendOp = hoist.aarch64_inst.ExtendOp;
-const VecALUOp = hoist.aarch64_inst.VecALUOp;
-const VecMisc2 = hoist.aarch64_inst.VecMisc2;
+const ImmLogic = isle_types.ImmLogic;
+const ExtendOp = isle_types.ExtendOp;
+const VecALUOp = isle_types.VecALUOp;
+const VecMisc2 = isle_types.VecMisc2;
 const OperandSize = hoist.aarch64_inst.OperandSize;
 const lower_mod = hoist.lower;
 const types = hoist.types;
@@ -37,28 +38,9 @@ const TrapCode = trapcode.TrapCode;
 const StackSlot = entities.StackSlot;
 const SigRef = entities.SigRef;
 const ExternalName = extfunc.ExternalName;
-const VectorSize = enum {
-    V8B,
-    V16B,
-    V4H,
-    V8H,
-    V2S,
-    V4S,
-    V2D,
-};
-
-const VecALUModOp = enum {
-    Fmla,
-    Fmls,
-};
-
-/// SVE element size for scalable vector operations
-const SveElemSize = enum {
-    B, // 8-bit
-    H, // 16-bit
-    S, // 32-bit
-    D, // 64-bit
-};
+const VectorSize = isle_types.VectorSize;
+const VecALUModOp = isle_types.VecALUModOp;
+const SveElemSize = isle_types.SveElemSize;
 
 // ISLE rule coverage tracking (optional, for testing)
 const isle_coverage_mod = @import("isle_coverage.zig");
@@ -4666,7 +4648,7 @@ pub fn fpu_csel(
     rn: lower_mod.Value,
     rm: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
-) !lower_mod.ConsumesFlags {
+) !isle_types.ConsumesFlags {
     const rn_reg = try ctx.getValueReg(rn, .float);
     const rm_reg = try ctx.getValueReg(rm, .float);
     const dst = lower_mod.WritableVReg.allocVReg(.float, ctx);
@@ -4678,7 +4660,7 @@ pub fn fpu_csel(
     else
         .Size64;
 
-    return lower_mod.ConsumesFlags.consumesFlagsReturnsReg(
+    return isle_types.ConsumesFlags.consumesFlagsReturnsReg(
         Inst.FpuCSel{ .size = size, .rd = dst, .cond = aarch_cond, .rn = rn_reg, .rm = rm_reg },
         dst.toReg(),
     );
@@ -4690,14 +4672,14 @@ pub fn vec_csel(
     rn: lower_mod.Value,
     rm: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
-) !lower_mod.ConsumesFlags {
+) !isle_types.ConsumesFlags {
     const rn_reg = try ctx.getValueReg(rn, .vector);
     const rm_reg = try ctx.getValueReg(rm, .vector);
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
 
     const aarch_cond = intccToCondCode(cond);
 
-    return lower_mod.ConsumesFlags.consumesFlagsReturnsReg(
+    return isle_types.ConsumesFlags.consumesFlagsReturnsReg(
         Inst.VecCSel{ .rd = dst, .cond = aarch_cond, .rn = rn_reg, .rm = rm_reg },
         dst.toReg(),
     );
@@ -4734,13 +4716,13 @@ pub fn consumes_flags_two_csel(
     rm_lo: Reg,
     rm_hi: Reg,
     ctx: *lower_mod.LowerCtx(Inst),
-) !lower_mod.ConsumesFlags {
+) !isle_types.ConsumesFlags {
     const dst_lo = lower_mod.WritableReg.allocReg(.int, ctx);
     const dst_hi = lower_mod.WritableReg.allocReg(.int, ctx);
 
     const aarch_cond = intccToCondCode(cond);
 
-    return lower_mod.ConsumesFlags.consumesFlagsTwiceReturnsValueRegs(
+    return isle_types.ConsumesFlags.consumesFlagsTwiceReturnsValueRegs(
         Inst.CSel{ .rd = dst_lo, .cond = aarch_cond, .rn = rn_lo, .rm = rm_lo },
         Inst.CSel{ .rd = dst_hi, .cond = aarch_cond, .rn = rn_hi, .rm = rm_hi },
         lower_mod.ValueRegs.two(dst_lo.toReg(), dst_hi.toReg()),
@@ -4842,13 +4824,13 @@ pub fn cmp(
     rn: Reg,
     rm: Reg,
     _: *lower_mod.LowerCtx(Inst),
-) !lower_mod.ProducesFlags {
+) !isle_types.ProducesFlags {
     const size: Inst.OperandSize = if (ty.bits() == 32)
         .Size32
     else
         .Size64;
 
-    return lower_mod.ProducesFlags.producesFlagsSideEffect(
+    return isle_types.ProducesFlags.producesFlagsSideEffect(
         Inst.AluRRR{
             .alu_op = .Sub,
             .size = size,
