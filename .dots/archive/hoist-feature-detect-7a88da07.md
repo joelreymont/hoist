@@ -1,9 +1,11 @@
 ---
 title: Feature detect
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.665934+01:00"
+created-at: "\"2026-02-02T21:35:56.665934+01:00\""
+closed-at: "2026-02-05T19:55:03.910184+01:00"
+close-reason: detectNative implemented and wired via initNative
 blocks:
   - hoist-trampoline-stubs-b4ca4f68
 ---
