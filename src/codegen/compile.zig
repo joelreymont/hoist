@@ -17,6 +17,7 @@ const Relocation = @import("context.zig").Relocation;
 const RelocKind = @import("context.zig").RelocKind;
 const Function = @import("../ir/function.zig").Function;
 const Block = @import("../ir/entities.zig").Block;
+const SigRef = @import("../ir/entities.zig").SigRef;
 const StackSlot = @import("../ir/entities.zig").StackSlot;
 const reg_mod = @import("../machinst/reg.zig");
 const lower_mod = @import("../machinst/lower.zig");
@@ -5834,36 +5835,10 @@ fn generateEhFrame(allocator: std.mem.Allocator, code: *const CompiledCode, func
         .offset = .{ .reg = .x29, .offset = -2 }, // -2 * data_align (-8) = +16 from CFA
     });
 
-    // Scan function for try_call instructions to populate LSDA
-    var has_try_calls = false;
+    // Scan function for try_call/try_call_indirect instructions to populate LSDA.
     var temp_lsda = unwind.LSDA.init(allocator);
     errdefer temp_lsda.deinit(allocator);
-
-    var block_iter = func.layout.blockIter();
-    while (block_iter.next()) |block| {
-        var inst_iter = func.layout.blockInsts(block);
-        while (inst_iter.next()) |inst| {
-            const inst_data_ptr = func.dfg.insts.get(inst) orelse continue;
-            if (inst_data_ptr.* == .try_call) {
-                const try_call_data = inst_data_ptr.try_call;
-                has_try_calls = true;
-
-                // Get PC offsets for try_call block and landing pad block
-                const try_call_offset: u32 = if (buffer.*.getBlockOffset(block)) |offset|
-                    @intCast(offset)
-                else
-                    0; // Block not found, use placeholder
-
-                const landing_pad_offset: u32 = if (buffer.*.getBlockOffset(try_call_data.exception_successor)) |offset|
-                    @intCast(offset)
-                else
-                    0; // Block not found, use placeholder
-
-                // Add call site entry (4 bytes for typical call instruction size)
-                try temp_lsda.addCallSite(allocator, try_call_offset, 4, landing_pad_offset);
-            }
-        }
-    }
+    const has_try_calls = try collectLsdaCallSites(allocator, func, buffer, &temp_lsda);
 
     // Attach LSDA to FDE if any try_call instructions found (heap-allocate for FDE ownership)
     if (has_try_calls) {
@@ -5884,6 +5859,57 @@ fn generateEhFrame(allocator: std.mem.Allocator, code: *const CompiledCode, func
     try eh_frame.appendNTimes(allocator, 0, fde_padding);
 
     return eh_frame;
+}
+
+fn addLsdaCallSite(
+    allocator: std.mem.Allocator,
+    buffer: *const MachBuffer,
+    source_block: Block,
+    exception_successor: Block,
+    lsda: *unwind.LSDA,
+) !void {
+    const try_call_offset: u32 = if (buffer.getBlockOffset(source_block)) |offset|
+        @intCast(offset)
+    else
+        0;
+
+    const landing_pad_offset: u32 = if (buffer.getBlockOffset(exception_successor)) |offset|
+        @intCast(offset)
+    else
+        0;
+
+    // Call size is one branch/call instruction in the current AArch64 lowering.
+    try lsda.addCallSite(allocator, try_call_offset, 4, landing_pad_offset);
+}
+
+fn collectLsdaCallSites(
+    allocator: std.mem.Allocator,
+    func: *const Function,
+    buffer: *const MachBuffer,
+    lsda: *unwind.LSDA,
+) !bool {
+    var has_try_calls = false;
+
+    var block_iter = func.layout.blockIter();
+    while (block_iter.next()) |block| {
+        var inst_iter = func.layout.blockInsts(block);
+        while (inst_iter.next()) |inst| {
+            const inst_data_ptr = func.dfg.insts.get(inst) orelse continue;
+            switch (inst_data_ptr.*) {
+                .try_call => |data| {
+                    has_try_calls = true;
+                    try addLsdaCallSite(allocator, buffer, block, data.exception_successor, lsda);
+                },
+                .try_call_indirect => |data| {
+                    has_try_calls = true;
+                    try addLsdaCallSite(allocator, buffer, block, data.exception_successor, lsda);
+                },
+                else => {},
+            }
+        }
+    }
+
+    return has_try_calls;
 }
 
 /// Convert MachBuffer relocation to output relocation kind.
@@ -6148,6 +6174,73 @@ test "assembleResult: with disassembly" {
     try testing.expect(result.disasm != null);
     const disasm = result.disasm.?;
     try testing.expect(disasm.items.len > 0);
+}
+
+test "compile: LSDA scan includes try_call_indirect" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    var func = try Function.init(testing.allocator, "lsda_try_call_indirect", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+
+    const block0 = try builder.createBlock();
+    const block1 = try builder.createBlock();
+    const block2 = try builder.createBlock();
+    try builder.appendBlock(block0);
+    try builder.appendBlock(block1);
+    try builder.appendBlock(block2);
+
+    var callee_sig = ir.Signature.init(testing.allocator, .fast);
+    try callee_sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    const sig_ref = SigRef.new(0);
+    try func.signatures.set(func.allocator, sig_ref, callee_sig);
+
+    builder.switchToBlock(block0);
+    const callee_ptr = try builder.iconst(ir.I64, 0);
+    const args = try builder.buildValueList(&.{callee_ptr});
+    const tc_inst = try func.dfg.makeInst(.{ .try_call_indirect = .{
+        .opcode = .try_call_indirect,
+        .sig_ref = sig_ref,
+        .args = args,
+        .normal_successor = block1,
+        .exception_successor = block2,
+    } });
+    try func.layout.appendInst(tc_inst, block0);
+    _ = try func.dfg.appendInstResult(tc_inst, ir.I64);
+    try builder.jump(block1);
+
+    builder.switchToBlock(block1);
+    const one = try builder.iconst(ir.I64, 1);
+    try builder.retValues(&.{one});
+
+    builder.switchToBlock(block2);
+    const two = try builder.iconst(ir.I64, 2);
+    try builder.retValues(&.{two});
+
+    var buffer = MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+    const label0 = try buffer.allocLabel();
+    const label2 = try buffer.allocLabel();
+
+    try buffer.bindLabel(label0);
+    try buffer.put4(0x14000000); // placeholder call-site instruction width (4 bytes)
+    try buffer.bindLabel(label2);
+    try buffer.registerBlockLabel(block0, label0);
+    try buffer.registerBlockLabel(block2, label2);
+
+    var lsda = unwind.LSDA.init(testing.allocator);
+    defer lsda.deinit(testing.allocator);
+
+    const has_sites = try collectLsdaCallSites(testing.allocator, &func, &buffer, &lsda);
+    try testing.expect(has_sites);
+    try testing.expectEqual(@as(usize, 1), lsda.call_sites.items.len);
+
+    const site = lsda.call_sites.items[0];
+    try testing.expectEqual(@as(u32, 0), site.start_offset);
+    try testing.expectEqual(@as(u32, 4), site.length);
+    try testing.expectEqual(@as(u32, 4), site.landing_pad_offset);
 }
 
 test "assembleResult: empty buffer" {
