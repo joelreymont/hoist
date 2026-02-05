@@ -2103,6 +2103,7 @@ fn lowerInstructionAArch64(
     const InstMod = @import("../backends/aarch64/inst.zig");
     const Inst = InstMod.Inst;
     const OperandSize = InstMod.OperandSize;
+    const target = ctx.target orelse return error.LoweringFailed;
 
     // Get instruction data from DFG
     const inst_data_ptr = ctx.func.dfg.insts.get(inst) orelse return error.LoweringFailed;
@@ -5145,6 +5146,7 @@ fn lowerInstructionAArch64(
             var tmp_vcode = vcode_mod.VCode(Inst).init(ctx.allocator);
             defer tmp_vcode.deinit();
             var tmp_ctx = lower_mod.LowerCtx(Inst).init(ctx.allocator, ctx.func, &tmp_vcode);
+            tmp_ctx.setFeatures(target.features);
             defer tmp_ctx.deinit();
 
             tmp_ctx.setOutStackMax(out_stack_max);
@@ -5185,6 +5187,7 @@ fn lowerInstructionAArch64(
             var tmp_vcode = vcode_mod.VCode(Inst).init(ctx.allocator);
             defer tmp_vcode.deinit();
             var tmp_ctx = lower_mod.LowerCtx(Inst).init(ctx.allocator, ctx.func, &tmp_vcode);
+            tmp_ctx.setFeatures(target.features);
             defer tmp_ctx.deinit();
 
             tmp_ctx.setOutStackMax(out_stack_max);
@@ -5223,6 +5226,7 @@ fn lowerInstructionAArch64(
             var tmp_vcode = vcode_mod.VCode(Inst).init(ctx.allocator);
             defer tmp_vcode.deinit();
             var tmp_ctx = lower_mod.LowerCtx(Inst).init(ctx.allocator, ctx.func, &tmp_vcode);
+            tmp_ctx.setFeatures(target.features);
             defer tmp_ctx.deinit();
 
             tmp_ctx.setOutStackMax(out_stack_max);
@@ -5255,6 +5259,7 @@ fn lowerInstructionAArch64(
             var tmp_vcode = vcode_mod.VCode(Inst).init(ctx.allocator);
             defer tmp_vcode.deinit();
             var tmp_ctx = lower_mod.LowerCtx(Inst).init(ctx.allocator, ctx.func, &tmp_vcode);
+            tmp_ctx.setFeatures(target.features);
             defer tmp_ctx.deinit();
 
             tmp_ctx.setOutStackMax(out_stack_max);

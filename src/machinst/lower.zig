@@ -3,6 +3,7 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
 const root = @import("../root.zig");
+const TargetFeatures = root.target.Features;
 const vcode_mod = @import("vcode.zig");
 const reg_mod = @import("reg.zig");
 const stackslots = @import("../ir/stackslots.zig");
@@ -93,6 +94,9 @@ pub fn LowerCtx(comptime MachInst: type) type {
         /// Max outgoing stack arg space (bytes).
         out_stack_max: u32,
 
+        /// Target CPU features for ISA selection.
+        features: TargetFeatures,
+
         /// Allocator.
         allocator: Allocator,
 
@@ -113,8 +117,13 @@ pub fn LowerCtx(comptime MachInst: type) type {
                 .next_tmp_val = @intCast(func.dfg.values.elems.items.len),
                 .value_uses = std.AutoHashMap(Value, ValueUseState).init(allocator),
                 .out_stack_max = 0,
+                .features = TargetFeatures.init(),
                 .allocator = allocator,
             };
+        }
+
+        pub fn setFeatures(self: *Self, features: TargetFeatures) void {
+            self.features = features;
         }
 
         pub fn deinit(self: *Self) void {
@@ -461,10 +470,21 @@ pub fn lowerFunction(
     func: *Function,
     backend: LowerBackend(MachInst),
 ) !vcode_mod.VCode(MachInst) {
+    return lowerFunctionWithFeatures(MachInst, allocator, func, backend, TargetFeatures.init());
+}
+
+pub fn lowerFunctionWithFeatures(
+    comptime MachInst: type,
+    allocator: Allocator,
+    func: *Function,
+    backend: LowerBackend(MachInst),
+    features: TargetFeatures,
+) !vcode_mod.VCode(MachInst) {
     var vcode = vcode_mod.VCode(MachInst).init(allocator);
     errdefer vcode.deinit();
 
     var ctx = LowerCtx(MachInst).init(allocator, func, &vcode);
+    ctx.setFeatures(features);
     defer ctx.deinit();
 
     // Pre-allocate VRegs for all SSA values

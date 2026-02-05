@@ -6,6 +6,7 @@ const Inst = root.aarch64_inst.Inst;
 const abi_mod = root.abi;
 const lower_mod = root.lower;
 const compile_mod = root.compile;
+const target_features = root.target;
 
 /// CPU feature flags for aarch64.
 /// Based on FEAT_* extensions in ARMv8 architecture.
@@ -51,6 +52,32 @@ pub const Features = packed struct {
 
     pub fn init() Features {
         return .{};
+    }
+
+    pub fn fromTargetFeatures(features: target_features.Features) Features {
+        var out = Features.init();
+        out.has_neon = features.has(target_features.AArch64Features.NEON) or
+            features.has(target_features.AArch64Features.FP);
+        out.has_lse = features.has(target_features.AArch64Features.LSE);
+        out.has_dotprod = features.has(target_features.AArch64Features.DOTPROD);
+        out.has_sve = features.has(target_features.AArch64Features.SVE) or
+            features.has(target_features.AArch64Features.SVE2);
+        out.has_crypto = features.has(target_features.AArch64Features.AES) or
+            features.has(target_features.AArch64Features.SHA2) or
+            features.has(target_features.AArch64Features.SHA3);
+        return out;
+    }
+
+    pub fn toTargetFeatures(self: Features) target_features.Features {
+        var features = target_features.AArch64Features.baseline();
+        if (self.has_lse) features.enable(target_features.AArch64Features.LSE);
+        if (self.has_dotprod) features.enable(target_features.AArch64Features.DOTPROD);
+        if (self.has_sve) features.enable(target_features.AArch64Features.SVE);
+        if (self.has_crypto) {
+            features.enable(target_features.AArch64Features.AES);
+            features.enable(target_features.AArch64Features.SHA2);
+        }
+        return features;
     }
 
     /// Detect native CPU features at runtime.
@@ -358,14 +385,16 @@ pub const Aarch64ISA = struct {
 
     /// Compile a function to machine code using this ISA.
     pub fn compileFunction(
+        self: Aarch64ISA,
         ctx: compile_mod.CompileCtx,
         func: *lower_mod.Function,
     ) !compile_mod.CompiledCode {
-        return compileWithRegalloc2(ctx, func);
+        return self.compileWithRegalloc2(ctx, func);
     }
 
     /// Compile function using regalloc2 for register allocation.
     fn compileWithRegalloc2(
+        self: Aarch64ISA,
         ctx: compile_mod.CompileCtx,
         func: *lower_mod.Function,
     ) !compile_mod.CompiledCode {
@@ -373,11 +402,12 @@ pub const Aarch64ISA = struct {
         const buffer_mod = @import("../../machinst/buffer.zig");
 
         // Phase 1: Lower IR to VCode
-        var vcode = try lower_mod.lowerFunction(
+        var vcode = try lower_mod.lowerFunctionWithFeatures(
             Inst,
             ctx.allocator,
             func,
             lower(),
+            self.features.toTargetFeatures(),
         );
         defer vcode.deinit();
 
@@ -1730,7 +1760,7 @@ test "Aarch64ISA compile function" {
 
     const ctx = compile_mod.CompileCtx.init(testing.allocator, "aarch64");
 
-    var code = try Aarch64ISA.compileFunction(ctx, &func);
+    var code = try Aarch64ISA.init().compileFunction(ctx, &func);
     defer code.deinit();
 
     // Empty function produces minimal code
@@ -1884,7 +1914,7 @@ test "Aarch64ISA compile function with regalloc2" {
 
     const ctx = compile_mod.CompileCtx.init(testing.allocator, "aarch64");
 
-    var code = try Aarch64ISA.compileFunction(ctx, &func);
+    var code = try Aarch64ISA.init().compileFunction(ctx, &func);
     defer code.deinit();
 
     // Empty function produces minimal code
