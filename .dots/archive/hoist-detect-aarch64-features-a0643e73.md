@@ -1,9 +1,11 @@
 ---
 title: Detect AArch64 features
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.806487+01:00"
+created-at: "\"2026-02-02T21:35:56.806487+01:00\""
+closed-at: "2026-02-05T19:54:24.546303+01:00"
+close-reason: Implemented detectNative with sysctl/auxv and added smoke test
 blocks:
   - hoist-wire-multi-return-65d02a73
 ---

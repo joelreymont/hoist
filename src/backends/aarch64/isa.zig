@@ -136,7 +136,6 @@ pub const Features = packed struct {
         feat.has_neon = true;
 
         const AT_HWCAP: u64 = 16;
-        const AT_HWCAP2: u64 = 26;
 
         const HWCAP_AES: u64 = 1 << 3;
         const HWCAP_SHA1: u64 = 1 << 5;
@@ -150,10 +149,7 @@ pub const Features = packed struct {
         const HWCAP_PACG: u64 = 1 << 31;
 
         var hwcap: u64 = 0;
-        var hwcap2: u64 = 0;
         if (readAuxv(AT_HWCAP)) |cap| hwcap = cap else |_| {}
-        if (readAuxv(AT_HWCAP2)) |cap| hwcap2 = cap else |_| {}
-        _ = hwcap2;
 
         if (hwcap & HWCAP_ATOMICS != 0) feat.has_lse = true;
         if (hwcap & HWCAP_ASIMDDP != 0) feat.has_dotprod = true;
@@ -1800,6 +1796,11 @@ test "TuningFlags validation - bti missing" {
     const features = Features{ .has_bti = false };
     const tuning = TuningFlags{ .use_bti = true };
     try testing.expectError(error.BtiNotAvailable, tuning.validate(features));
+}
+
+test "Aarch64 features detectNative smoke" {
+    const feat = Features.detectNative();
+    try testing.expect(feat.has_neon);
 }
 
 test "Aarch64ISA with features" {
