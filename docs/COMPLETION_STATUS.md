@@ -37,7 +37,8 @@
 - Multi-return ABI/emit
 
 ### Exception Handling ⚠️
-- try_call lowering exists, but exception edges, landing pads, and unwind info are incomplete
+- `try_call` / `try_call_indirect` lowering, CFG exception edges, and LSDA call-site scanning are implemented
+- Remaining: full runtime unwinder/landing-pad integration validation across full e2e workloads
 
 ### Feature Detection ⚠️
 - AArch64 runtime feature probing and plumbing
@@ -57,7 +58,7 @@
 
 ### Where Cranelift is Ahead
 - ABI completeness (tail calls, varargs, multi-return)
-- Exception handling (landing pads + unwind)
+- Exception runtime maturity (full landing-pad + unwind integration depth)
 - Feature detection and ISA gating
 - Optimization depth and testing infrastructure
 

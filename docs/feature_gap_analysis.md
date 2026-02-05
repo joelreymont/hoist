@@ -40,13 +40,13 @@ Hoist has broad opcode coverage and core lowering parity on AArch64. Remaining g
 - Peephole and load/store combining incomplete
 
 ### Exception Handling
-- try_call/try_call_indirect lowering exists, but exception edges/landing pads/wind info incomplete
+- `try_call` / `try_call_indirect` lowering, CFG exception edges, and LSDA scan paths are implemented
+- Remaining: full runtime unwinder and landing-pad integration hardening in end-to-end exception workloads
 
 ## ❌ Not Implemented / High Priority Gaps
 
 ### Exception Handling
-- Exception edge wiring in CFG/emit
-- Landing pad metadata and unwind info
+- End-to-end runtime unwinder/landing-pad integration maturity
 
 ### ABI Completeness
 - Tail-call ABI conformance
