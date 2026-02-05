@@ -217,6 +217,223 @@ pub const RegAllocBridge = struct {
                 try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
             },
 
+            .ldr => |ld| {
+                // dst = def, base = use
+                const base_vreg = try self.getVReg(ld.base);
+                const dst_vreg = try self.getVReg(ld.dst.toReg());
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+            },
+
+            .ldr_reg => |ld| {
+                // dst = def, base = use, offset = use
+                const base_vreg = try self.getVReg(ld.base);
+                const off_vreg = try self.getVReg(ld.offset);
+                const dst_vreg = try self.getVReg(ld.dst.toReg());
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(off_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+            },
+
+            .ldr_ext => |ld| {
+                // dst = def, base = use, offset = use
+                const base_vreg = try self.getVReg(ld.base);
+                const off_vreg = try self.getVReg(ld.offset);
+                const dst_vreg = try self.getVReg(ld.dst.toReg());
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(off_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+            },
+
+            .ldr_shifted => |ld| {
+                // dst = def, base = use, offset = use
+                const base_vreg = try self.getVReg(ld.base);
+                const off_vreg = try self.getVReg(ld.offset);
+                const dst_vreg = try self.getVReg(ld.dst.toReg());
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(off_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+            },
+
+            .ldrb => |ld| {
+                const base_vreg = try self.getVReg(ld.base);
+                const dst_vreg = try self.getVReg(ld.dst.toReg());
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+            },
+
+            .ldrh => |ld| {
+                const base_vreg = try self.getVReg(ld.base);
+                const dst_vreg = try self.getVReg(ld.dst.toReg());
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+            },
+
+            .ldrsb => |ld| {
+                const base_vreg = try self.getVReg(ld.base);
+                const dst_vreg = try self.getVReg(ld.dst.toReg());
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+            },
+
+            .ldrsh => |ld| {
+                const base_vreg = try self.getVReg(ld.base);
+                const dst_vreg = try self.getVReg(ld.dst.toReg());
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+            },
+
+            .ldrsw => |ld| {
+                const base_vreg = try self.getVReg(ld.base);
+                const dst_vreg = try self.getVReg(ld.dst.toReg());
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+            },
+
+            .ldr_pre => |ld| {
+                // dst = def, base = use_def
+                const base_vreg = try self.getVReg(ld.base.toReg());
+                const dst_vreg = try self.getVReg(ld.dst.toReg());
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use_def));
+                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+            },
+
+            .ldr_post => |ld| {
+                // dst = def, base = use_def
+                const base_vreg = try self.getVReg(ld.base.toReg());
+                const dst_vreg = try self.getVReg(ld.dst.toReg());
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use_def));
+                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+            },
+
+            .ldp => |ld| {
+                // dst1 = def, dst2 = def, base = use
+                const base_vreg = try self.getVReg(ld.base);
+                const dst1_vreg = try self.getVReg(ld.dst1.toReg());
+                const dst2_vreg = try self.getVReg(ld.dst2.toReg());
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(dst1_vreg, .any_reg, .def));
+                try self.adapter.addOperand(Operand.init(dst2_vreg, .any_reg, .def));
+            },
+
+            .ldp_post => |ld| {
+                // base = use_def, dst1 = def, dst2 = def
+                const base_vreg = try self.getVReg(ld.base.toReg());
+                const dst1_vreg = try self.getVReg(ld.dst1.toReg());
+                const dst2_vreg = try self.getVReg(ld.dst2.toReg());
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use_def));
+                try self.adapter.addOperand(Operand.init(dst1_vreg, .any_reg, .def));
+                try self.adapter.addOperand(Operand.init(dst2_vreg, .any_reg, .def));
+            },
+
+            .str => |st| {
+                // src = use, base = use
+                const src_vreg = try self.getVReg(st.src);
+                const base_vreg = try self.getVReg(st.base);
+                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+            },
+
+            .str_reg => |st| {
+                // src = use, base = use, offset = use
+                const src_vreg = try self.getVReg(st.src);
+                const base_vreg = try self.getVReg(st.base);
+                const off_vreg = try self.getVReg(st.offset);
+                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(off_vreg, .any_reg, .use));
+            },
+
+            .str_ext => |st| {
+                const src_vreg = try self.getVReg(st.src);
+                const base_vreg = try self.getVReg(st.base);
+                const off_vreg = try self.getVReg(st.offset);
+                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(off_vreg, .any_reg, .use));
+            },
+
+            .str_shifted => |st| {
+                const src_vreg = try self.getVReg(st.src);
+                const base_vreg = try self.getVReg(st.base);
+                const off_vreg = try self.getVReg(st.offset);
+                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(off_vreg, .any_reg, .use));
+            },
+
+            .strb => |st| {
+                const src_vreg = try self.getVReg(st.src);
+                const base_vreg = try self.getVReg(st.base);
+                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+            },
+
+            .strh => |st| {
+                const src_vreg = try self.getVReg(st.src);
+                const base_vreg = try self.getVReg(st.base);
+                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+            },
+
+            .str_pre => |st| {
+                // src = use, base = use_def
+                const src_vreg = try self.getVReg(st.src);
+                const base_vreg = try self.getVReg(st.base.toReg());
+                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use_def));
+            },
+
+            .str_post => |st| {
+                // src = use, base = use_def
+                const src_vreg = try self.getVReg(st.src);
+                const base_vreg = try self.getVReg(st.base.toReg());
+                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use_def));
+            },
+
+            .stp => |st| {
+                const src1_vreg = try self.getVReg(st.src1);
+                const src2_vreg = try self.getVReg(st.src2);
+                const base_vreg = try self.getVReg(st.base);
+                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+            },
+
+            .stp_pre => |st| {
+                // src1 = use, src2 = use, base = use_def
+                const src1_vreg = try self.getVReg(st.src1);
+                const src2_vreg = try self.getVReg(st.src2);
+                const base_vreg = try self.getVReg(st.base.toReg());
+                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use_def));
+            },
+
+            .stp_imm => |st| {
+                const src1_vreg = try self.getVReg(st.rt1);
+                const src2_vreg = try self.getVReg(st.rt2);
+                const base_vreg = try self.getVReg(st.rn);
+                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+            },
+
+            .vldr => |ld| {
+                const base_vreg = try self.getVReg(ld.base);
+                const dst_vreg = try self.getVReg(ld.dst.toReg());
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+            },
+
+            .vstr => |st| {
+                const src_vreg = try self.getVReg(st.src);
+                const base_vreg = try self.getVReg(st.base);
+                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+            },
+
             // Unsupported instructions must fail explicitly so lowering gaps are visible.
             else => return error.UnsupportedInstructionVariant,
         }
@@ -340,6 +557,147 @@ pub const RegAllocBridge = struct {
                 mul.dst = try self.allocateWritableReg(mul.dst);
                 mul.src1 = try self.allocateReg(mul.src1);
                 mul.src2 = try self.allocateReg(mul.src2);
+            },
+
+            .ldr => |*ld| {
+                ld.dst = try self.allocateWritableReg(ld.dst);
+                ld.base = try self.allocateReg(ld.base);
+            },
+
+            .ldr_reg => |*ld| {
+                ld.dst = try self.allocateWritableReg(ld.dst);
+                ld.base = try self.allocateReg(ld.base);
+                ld.offset = try self.allocateReg(ld.offset);
+            },
+
+            .ldr_ext => |*ld| {
+                ld.dst = try self.allocateWritableReg(ld.dst);
+                ld.base = try self.allocateReg(ld.base);
+                ld.offset = try self.allocateReg(ld.offset);
+            },
+
+            .ldr_shifted => |*ld| {
+                ld.dst = try self.allocateWritableReg(ld.dst);
+                ld.base = try self.allocateReg(ld.base);
+                ld.offset = try self.allocateReg(ld.offset);
+            },
+
+            .ldrb => |*ld| {
+                ld.dst = try self.allocateWritableReg(ld.dst);
+                ld.base = try self.allocateReg(ld.base);
+            },
+
+            .ldrh => |*ld| {
+                ld.dst = try self.allocateWritableReg(ld.dst);
+                ld.base = try self.allocateReg(ld.base);
+            },
+
+            .ldrsb => |*ld| {
+                ld.dst = try self.allocateWritableReg(ld.dst);
+                ld.base = try self.allocateReg(ld.base);
+            },
+
+            .ldrsh => |*ld| {
+                ld.dst = try self.allocateWritableReg(ld.dst);
+                ld.base = try self.allocateReg(ld.base);
+            },
+
+            .ldrsw => |*ld| {
+                ld.dst = try self.allocateWritableReg(ld.dst);
+                ld.base = try self.allocateReg(ld.base);
+            },
+
+            .ldr_pre => |*ld| {
+                ld.dst = try self.allocateWritableReg(ld.dst);
+                ld.base = try self.allocateWritableReg(ld.base);
+            },
+
+            .ldr_post => |*ld| {
+                ld.dst = try self.allocateWritableReg(ld.dst);
+                ld.base = try self.allocateWritableReg(ld.base);
+            },
+
+            .ldp => |*ld| {
+                ld.dst1 = try self.allocateWritableReg(ld.dst1);
+                ld.dst2 = try self.allocateWritableReg(ld.dst2);
+                ld.base = try self.allocateReg(ld.base);
+            },
+
+            .ldp_post => |*ld| {
+                ld.dst1 = try self.allocateWritableReg(ld.dst1);
+                ld.dst2 = try self.allocateWritableReg(ld.dst2);
+                ld.base = try self.allocateWritableReg(ld.base);
+            },
+
+            .str => |*st| {
+                st.src = try self.allocateReg(st.src);
+                st.base = try self.allocateReg(st.base);
+            },
+
+            .str_reg => |*st| {
+                st.src = try self.allocateReg(st.src);
+                st.base = try self.allocateReg(st.base);
+                st.offset = try self.allocateReg(st.offset);
+            },
+
+            .str_ext => |*st| {
+                st.src = try self.allocateReg(st.src);
+                st.base = try self.allocateReg(st.base);
+                st.offset = try self.allocateReg(st.offset);
+            },
+
+            .str_shifted => |*st| {
+                st.src = try self.allocateReg(st.src);
+                st.base = try self.allocateReg(st.base);
+                st.offset = try self.allocateReg(st.offset);
+            },
+
+            .strb => |*st| {
+                st.src = try self.allocateReg(st.src);
+                st.base = try self.allocateReg(st.base);
+            },
+
+            .strh => |*st| {
+                st.src = try self.allocateReg(st.src);
+                st.base = try self.allocateReg(st.base);
+            },
+
+            .str_pre => |*st| {
+                st.src = try self.allocateReg(st.src);
+                st.base = try self.allocateWritableReg(st.base);
+            },
+
+            .str_post => |*st| {
+                st.src = try self.allocateReg(st.src);
+                st.base = try self.allocateWritableReg(st.base);
+            },
+
+            .stp => |*st| {
+                st.src1 = try self.allocateReg(st.src1);
+                st.src2 = try self.allocateReg(st.src2);
+                st.base = try self.allocateReg(st.base);
+            },
+
+            .stp_pre => |*st| {
+                st.src1 = try self.allocateReg(st.src1);
+                st.src2 = try self.allocateReg(st.src2);
+                st.base = try self.allocateWritableReg(st.base);
+            },
+
+            .stp_imm => |*st| {
+                st.rt1 = try self.allocateReg(st.rt1);
+                st.rt2 = try self.allocateReg(st.rt2);
+                st.rn = try self.allocateReg(st.rn);
+            },
+
+            .vldr => |*ld| {
+                ld.dst = try self.allocateWritableReg(ld.dst);
+                ld.base = try self.allocateReg(ld.base);
+            },
+
+            .vstr => |*st| {
+                st.src = try self.allocateReg(st.src);
+                st.base = try self.allocateReg(st.base);
             },
 
             else => return error.UnsupportedInstructionVariant,
@@ -581,6 +939,94 @@ test "RegAllocBridge applyAllocations add_rr" {
     try testing.expectEqual(@as(u8, 10), inst.add_rr.src1.p.index);
     try testing.expectEqual(@as(u8, 11), inst.add_rr.src2.p.index);
     try testing.expectEqual(@as(u8, 12), inst.add_rr.dst.toReg().p.index);
+}
+
+test "RegAllocBridge extractOperands ldr and str_pre" {
+    var vcode = VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    const v0 = VReg.new(0, .int); // base
+    const v1 = VReg.new(1, .int); // loaded dst / store src
+
+    _ = try vcode.startBlock(&.{});
+    _ = try vcode.addInst(.{
+        .ldr = .{
+            .dst = reg_mod.WritableReg.init(Reg{ .v = v1 }),
+            .base = Reg{ .v = v0 },
+            .offset = 16,
+            .size = .size64,
+        },
+    });
+    _ = try vcode.addInst(.{
+        .str_pre = .{
+            .src = Reg{ .v = v1 },
+            .base = reg_mod.WritableReg.init(Reg{ .v = v0 }),
+            .offset = -16,
+            .size = .size64,
+        },
+    });
+    try vcode.finishBlock(0, &.{});
+
+    var bridge = RegAllocBridge.init(testing.allocator);
+    defer bridge.deinit();
+
+    try bridge.convertVCode(&vcode);
+
+    const ldr_ops = bridge.adapter.getOperands(0);
+    try testing.expectEqual(@as(usize, 2), ldr_ops.len);
+    try testing.expectEqual(OperandPos.use, ldr_ops[0].pos);
+    try testing.expectEqual(OperandPos.def, ldr_ops[1].pos);
+
+    const str_pre_ops = bridge.adapter.getOperands(1);
+    try testing.expectEqual(@as(usize, 2), str_pre_ops.len);
+    try testing.expectEqual(OperandPos.use, str_pre_ops[0].pos);
+    try testing.expectEqual(OperandPos.use_def, str_pre_ops[1].pos);
+}
+
+test "RegAllocBridge applyAllocations handles load/store variants" {
+    const PhysReg = regalloc2_types.PhysReg;
+    const Allocation = regalloc2_types.Allocation;
+
+    var vcode = VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    const v0 = VReg.new(0, .int); // base
+    const v1 = VReg.new(1, .int); // data
+
+    _ = try vcode.startBlock(&.{});
+    _ = try vcode.addInst(.{
+        .ldr = .{
+            .dst = reg_mod.WritableReg.init(Reg{ .v = v1 }),
+            .base = Reg{ .v = v0 },
+            .offset = 8,
+            .size = .size64,
+        },
+    });
+    _ = try vcode.addInst(.{
+        .str_post = .{
+            .src = Reg{ .v = v1 },
+            .base = reg_mod.WritableReg.init(Reg{ .v = v0 }),
+            .offset = 8,
+            .size = .size64,
+        },
+    });
+    try vcode.finishBlock(0, &.{});
+
+    var bridge = RegAllocBridge.init(testing.allocator);
+    defer bridge.deinit();
+
+    try bridge.adapter.setAllocation(v0, Allocation{ .reg = PhysReg.new(9) });
+    try bridge.adapter.setAllocation(v1, Allocation{ .reg = PhysReg.new(10) });
+
+    try bridge.applyAllocations(&vcode);
+
+    const ldr = vcode.getInst(0);
+    try testing.expectEqual(@as(u8, 10), ldr.ldr.dst.toReg().p.index);
+    try testing.expectEqual(@as(u8, 9), ldr.ldr.base.p.index);
+
+    const str_post = vcode.getInst(1);
+    try testing.expectEqual(@as(u8, 10), str_post.str_post.src.p.index);
+    try testing.expectEqual(@as(u8, 9), str_post.str_post.base.toReg().p.index);
 }
 
 test "RegAllocBridge convertVCode rejects unsupported instruction variant" {
