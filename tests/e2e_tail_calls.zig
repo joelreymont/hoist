@@ -409,3 +409,167 @@ test "tail call: mixed with regular calls" {
 
     try testing.expect(code.code.items.len > 0);
 }
+
+// Test 8: High-arity direct tail call stress
+// Validates: register + stack marshaling for large argument vectors.
+test "tail call: high-arity direct stress (20 i64 args)" {
+    const allocator = testing.allocator;
+
+    var caller_sig = Signature.init(allocator, .system_v);
+    for (0..20) |_| {
+        try caller_sig.params.append(allocator, AbiParam.new(Type.I64));
+    }
+    try caller_sig.returns.append(allocator, AbiParam.new(Type.I64));
+
+    var callee_sig = Signature.init(allocator, .system_v);
+    defer callee_sig.deinit();
+    for (0..20) |_| {
+        try callee_sig.params.append(allocator, AbiParam.new(Type.I64));
+    }
+    try callee_sig.returns.append(allocator, AbiParam.new(Type.I64));
+
+    var func = try Function.init(allocator, "tail_high_arity_direct", caller_sig);
+    defer func.deinit();
+
+    const entry = try func.dfg.makeBlock();
+    try func.layout.appendBlock(entry);
+
+    var params: [20]hoist.entities.Value = undefined;
+    for (0..20) |i| {
+        params[i] = try func.dfg.appendBlockParam(entry, Type.I64);
+    }
+
+    const callee_ref = try regExt(&func, allocator, "tail_high_arity_callee", &callee_sig);
+    var call_args = ValueList.default();
+    try func.dfg.value_lists.extend(&call_args, &params);
+
+    const tail_call = InstructionData{ .call = .{
+        .opcode = .return_call,
+        .func_ref = callee_ref,
+        .args = call_args,
+    } };
+    const tail_inst = try func.dfg.makeInst(tail_call);
+    try func.layout.appendInst(tail_inst, entry);
+
+    var builder = ContextBuilder.init(allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
+
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
+
+    try testing.expect(code.code.items.len > 32);
+    try testing.expect(code.relocs.items.len > 0);
+}
+
+// Test 9: High-arity indirect tail call stress
+// Validates: indirect tail call path with large argument vectors.
+test "tail call: high-arity indirect stress (20 i64 args)" {
+    const allocator = testing.allocator;
+
+    var caller_sig = Signature.init(allocator, .system_v);
+    try caller_sig.params.append(allocator, AbiParam.new(Type.I64)); // function pointer
+    for (0..20) |_| {
+        try caller_sig.params.append(allocator, AbiParam.new(Type.I64));
+    }
+    try caller_sig.returns.append(allocator, AbiParam.new(Type.I64));
+
+    var callee_sig = Signature.init(allocator, .system_v);
+    defer callee_sig.deinit();
+    for (0..20) |_| {
+        try callee_sig.params.append(allocator, AbiParam.new(Type.I64));
+    }
+    try callee_sig.returns.append(allocator, AbiParam.new(Type.I64));
+
+    var func = try Function.init(allocator, "tail_high_arity_indirect", caller_sig);
+    defer func.deinit();
+
+    const entry = try func.dfg.makeBlock();
+    try func.layout.appendBlock(entry);
+
+    var params: [21]hoist.entities.Value = undefined;
+    for (0..21) |i| {
+        params[i] = try func.dfg.appendBlockParam(entry, Type.I64);
+    }
+
+    const sig_ref = try addSig(&func, allocator, &callee_sig);
+    var call_args = ValueList.default();
+    try func.dfg.value_lists.extend(&call_args, &params);
+
+    const tail_call = InstructionData{ .call_indirect = .{
+        .opcode = .return_call_indirect,
+        .sig_ref = sig_ref,
+        .args = call_args,
+    } };
+    const tail_inst = try func.dfg.makeInst(tail_call);
+    try func.layout.appendInst(tail_inst, entry);
+
+    var builder = ContextBuilder.init(allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
+
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
+
+    try testing.expect(code.code.items.len > 32);
+}
+
+// Test 10: Mixed int/float direct tail call stress
+// Validates: concurrent GPR/FPR overflow handling in tail-call marshaling.
+test "tail call: mixed int/float stack stress" {
+    const allocator = testing.allocator;
+
+    var caller_sig = Signature.init(allocator, .system_v);
+    for (0..9) |_| {
+        try caller_sig.params.append(allocator, AbiParam.new(Type.I64));
+    }
+    for (0..9) |_| {
+        try caller_sig.params.append(allocator, AbiParam.new(Type.F64));
+    }
+    try caller_sig.returns.append(allocator, AbiParam.new(Type.I64));
+
+    var callee_sig = Signature.init(allocator, .system_v);
+    defer callee_sig.deinit();
+    for (0..9) |_| {
+        try callee_sig.params.append(allocator, AbiParam.new(Type.I64));
+    }
+    for (0..9) |_| {
+        try callee_sig.params.append(allocator, AbiParam.new(Type.F64));
+    }
+    try callee_sig.returns.append(allocator, AbiParam.new(Type.I64));
+
+    var func = try Function.init(allocator, "tail_mixed_stress", caller_sig);
+    defer func.deinit();
+
+    const entry = try func.dfg.makeBlock();
+    try func.layout.appendBlock(entry);
+
+    var args: [18]hoist.entities.Value = undefined;
+    for (0..9) |i| {
+        args[i] = try func.dfg.appendBlockParam(entry, Type.I64);
+    }
+    for (9..18) |i| {
+        args[i] = try func.dfg.appendBlockParam(entry, Type.F64);
+    }
+
+    const callee_ref = try regExt(&func, allocator, "tail_mixed_callee", &callee_sig);
+    var call_args = ValueList.default();
+    try func.dfg.value_lists.extend(&call_args, &args);
+
+    const tail_call = InstructionData{ .call = .{
+        .opcode = .return_call,
+        .func_ref = callee_ref,
+        .args = call_args,
+    } };
+    const tail_inst = try func.dfg.makeInst(tail_call);
+    try func.layout.appendInst(tail_inst, entry);
+
+    var builder = ContextBuilder.init(allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
+
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
+
+    try testing.expect(code.code.items.len > 32);
+}

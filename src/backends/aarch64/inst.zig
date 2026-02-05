@@ -2935,7 +2935,15 @@ pub const Inst = union(enum) {
             .ldr_literal => |*i| {
                 try collector.regDef(i.dst);
             },
+            .vldr => |*i| {
+                try collector.regUse(i.base);
+                try collector.regDef(i.dst);
+            },
             .str => |*i| {
+                try collector.regUse(i.src);
+                try collector.regUse(i.base);
+            },
+            .vstr => |*i| {
                 try collector.regUse(i.src);
                 try collector.regUse(i.base);
             },

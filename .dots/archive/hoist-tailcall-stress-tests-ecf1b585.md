@@ -1,9 +1,11 @@
 ---
 title: Tailcall stress tests
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.981686+01:00"
+created-at: "\"2026-02-02T21:35:56.981686+01:00\""
+closed-at: "2026-02-05T22:22:45.179480+01:00"
+close-reason: Added high-arity and mixed tailcall stress tests; fixed A64 regalloc operand collection for vldr/vstr.
 blocks:
   - hoist-status-e45ed634
 ---
