@@ -128,6 +128,15 @@ pub fn PeepholeOptimizer(comptime MachInst: type) type {
                     continue;
                 }
 
+                // Be conservative: if either load writes the base register,
+                // pairing could change effective-address semantics.
+                if (std.meta.eql(ldr1.dst.toReg(), ldr1.base) or
+                    std.meta.eql(ldr2.dst.toReg(), ldr1.base))
+                {
+                    i += 1;
+                    continue;
+                }
+
                 if (std.meta.eql(ldr1.dst.toReg(), ldr2.dst.toReg())) {
                     i += 1;
                     continue;

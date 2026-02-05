@@ -137,6 +137,80 @@ test "combineLoadPairs: loads with same destination - skip" {
     try testing.expectEqual(@as(u32, 0), optimizer.stats.load_pairs_formed);
 }
 
+test "combineLoadPairs: first load clobbers base - skip" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var optimizer = AArch64PeepholeOptimizer.init(allocator);
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x0_w = inst_mod.WritableReg.fromReg(x0);
+    const x1_w = inst_mod.WritableReg.fromReg(x1);
+
+    var insts: std.ArrayList(Inst) = .{};
+    defer insts.deinit(allocator);
+
+    // LDR X0, [X0, #0] - clobbers base
+    try insts.append(allocator, .{ .ldr = .{
+        .dst = x0_w,
+        .base = x0,
+        .offset = 0,
+        .size = .size64,
+    } });
+
+    // LDR X1, [X0, #8]
+    try insts.append(allocator, .{ .ldr = .{
+        .dst = x1_w,
+        .base = x0,
+        .offset = 8,
+        .size = .size64,
+    } });
+
+    const changed = try combineLoadPairs(&optimizer, &insts);
+
+    try testing.expect(!changed);
+    try testing.expectEqual(@as(usize, 2), insts.items.len);
+    try testing.expectEqual(@as(u32, 0), optimizer.stats.load_pairs_formed);
+}
+
+test "combineLoadPairs: second load clobbers base - skip" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var optimizer = AArch64PeepholeOptimizer.init(allocator);
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x1_w = inst_mod.WritableReg.fromReg(x1);
+    const x0_w = inst_mod.WritableReg.fromReg(x0);
+
+    var insts: std.ArrayList(Inst) = .{};
+    defer insts.deinit(allocator);
+
+    // LDR X1, [X0, #0]
+    try insts.append(allocator, .{ .ldr = .{
+        .dst = x1_w,
+        .base = x0,
+        .offset = 0,
+        .size = .size64,
+    } });
+
+    // LDR X0, [X0, #8] - clobbers base
+    try insts.append(allocator, .{ .ldr = .{
+        .dst = x0_w,
+        .base = x0,
+        .offset = 8,
+        .size = .size64,
+    } });
+
+    const changed = try combineLoadPairs(&optimizer, &insts);
+
+    try testing.expect(!changed);
+    try testing.expectEqual(@as(usize, 2), insts.items.len);
+    try testing.expectEqual(@as(u32, 0), optimizer.stats.load_pairs_formed);
+}
+
 test "combineStorePairs: adjacent stores with consecutive offsets" {
     const testing = std.testing;
     const allocator = testing.allocator;
