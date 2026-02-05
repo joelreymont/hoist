@@ -49,40 +49,38 @@ pub const RegAllocBridge = struct {
 
     /// Extract register operands from a single instruction.
     fn extractOperands(self: *Self, inst: Inst, inst_idx: u32) !void {
-        _ = inst_idx;
-
         switch (inst) {
             .mov_rr => |mov| {
                 // dst = def, src = use
                 const src_vreg = try self.getVReg(mov.src);
                 const dst_vreg = try self.getVReg(mov.dst.toReg());
 
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .mov_imm => |mov| {
                 // dst = def (no source registers)
                 const dst_vreg = try self.getVReg(mov.dst.toReg());
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .movz => |mov| {
                 // dst = def (no source registers)
                 const dst_vreg = try self.getVReg(mov.dst.toReg());
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .movk => |mov| {
                 // dst = use_def (read-modify-write)
                 const dst_vreg = try self.getVReg(mov.dst.toReg());
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .use_def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .use_def));
             },
 
             .movn => |mov| {
                 // dst = def
                 const dst_vreg = try self.getVReg(mov.dst.toReg());
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .add_rr => |add| {
@@ -91,9 +89,9 @@ pub const RegAllocBridge = struct {
                 const src2_vreg = try self.getVReg(add.src2);
                 const dst_vreg = try self.getVReg(add.dst.toReg());
 
-                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .add_imm => |add| {
@@ -101,8 +99,8 @@ pub const RegAllocBridge = struct {
                 const src_vreg = try self.getVReg(add.src);
                 const dst_vreg = try self.getVReg(add.dst.toReg());
 
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .add_extended => |add| {
@@ -111,9 +109,9 @@ pub const RegAllocBridge = struct {
                 const src2_vreg = try self.getVReg(add.src2);
                 const dst_vreg = try self.getVReg(add.dst.toReg());
 
-                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .sub_rr => |sub| {
@@ -122,9 +120,9 @@ pub const RegAllocBridge = struct {
                 const src2_vreg = try self.getVReg(sub.src2);
                 const dst_vreg = try self.getVReg(sub.dst.toReg());
 
-                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .sub_imm => |sub| {
@@ -132,8 +130,8 @@ pub const RegAllocBridge = struct {
                 const src_vreg = try self.getVReg(sub.src);
                 const dst_vreg = try self.getVReg(sub.dst.toReg());
 
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .mul_rr => |mul| {
@@ -142,9 +140,9 @@ pub const RegAllocBridge = struct {
                 const src2_vreg = try self.getVReg(mul.src2);
                 const dst_vreg = try self.getVReg(mul.dst.toReg());
 
-                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .madd => |madd| {
@@ -154,10 +152,10 @@ pub const RegAllocBridge = struct {
                 const addend_vreg = try self.getVReg(madd.addend);
                 const dst_vreg = try self.getVReg(madd.dst.toReg());
 
-                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(addend_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(addend_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .msub => |msub| {
@@ -167,10 +165,10 @@ pub const RegAllocBridge = struct {
                 const minuend_vreg = try self.getVReg(msub.minuend);
                 const dst_vreg = try self.getVReg(msub.dst.toReg());
 
-                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(minuend_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(minuend_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .smulh => |mul| {
@@ -179,9 +177,9 @@ pub const RegAllocBridge = struct {
                 const src2_vreg = try self.getVReg(mul.src2);
                 const dst_vreg = try self.getVReg(mul.dst.toReg());
 
-                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .umulh => |mul| {
@@ -190,9 +188,9 @@ pub const RegAllocBridge = struct {
                 const src2_vreg = try self.getVReg(mul.src2);
                 const dst_vreg = try self.getVReg(mul.dst.toReg());
 
-                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .smull => |mul| {
@@ -201,9 +199,9 @@ pub const RegAllocBridge = struct {
                 const src2_vreg = try self.getVReg(mul.src2);
                 const dst_vreg = try self.getVReg(mul.dst.toReg());
 
-                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .umull => |mul| {
@@ -212,17 +210,17 @@ pub const RegAllocBridge = struct {
                 const src2_vreg = try self.getVReg(mul.src2);
                 const dst_vreg = try self.getVReg(mul.dst.toReg());
 
-                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldr => |ld| {
                 // dst = def, base = use
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldr_reg => |ld| {
@@ -230,9 +228,9 @@ pub const RegAllocBridge = struct {
                 const base_vreg = try self.getVReg(ld.base);
                 const off_vreg = try self.getVReg(ld.offset);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(off_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(off_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldr_ext => |ld| {
@@ -240,9 +238,9 @@ pub const RegAllocBridge = struct {
                 const base_vreg = try self.getVReg(ld.base);
                 const off_vreg = try self.getVReg(ld.offset);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(off_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(off_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldr_shifted => |ld| {
@@ -250,60 +248,60 @@ pub const RegAllocBridge = struct {
                 const base_vreg = try self.getVReg(ld.base);
                 const off_vreg = try self.getVReg(ld.offset);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(off_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(off_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldrb => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldrh => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldrsb => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldrsh => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldrsw => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldr_pre => |ld| {
                 // dst = def, base = use_def
                 const base_vreg = try self.getVReg(ld.base.toReg());
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use_def));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use_def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldr_post => |ld| {
                 // dst = def, base = use_def
                 const base_vreg = try self.getVReg(ld.base.toReg());
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use_def));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use_def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldp => |ld| {
@@ -311,9 +309,9 @@ pub const RegAllocBridge = struct {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst1_vreg = try self.getVReg(ld.dst1.toReg());
                 const dst2_vreg = try self.getVReg(ld.dst2.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst1_vreg, .any_reg, .def));
-                try self.adapter.addOperand(Operand.init(dst2_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst1_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst2_vreg, .any_reg, .def));
             },
 
             .ldp_post => |ld| {
@@ -321,17 +319,17 @@ pub const RegAllocBridge = struct {
                 const base_vreg = try self.getVReg(ld.base.toReg());
                 const dst1_vreg = try self.getVReg(ld.dst1.toReg());
                 const dst2_vreg = try self.getVReg(ld.dst2.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use_def));
-                try self.adapter.addOperand(Operand.init(dst1_vreg, .any_reg, .def));
-                try self.adapter.addOperand(Operand.init(dst2_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use_def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst1_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst2_vreg, .any_reg, .def));
             },
 
             .str => |st| {
                 // src = use, base = use
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
             },
 
             .str_reg => |st| {
@@ -339,66 +337,66 @@ pub const RegAllocBridge = struct {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
                 const off_vreg = try self.getVReg(st.offset);
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(off_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(off_vreg, .any_reg, .use));
             },
 
             .str_ext => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
                 const off_vreg = try self.getVReg(st.offset);
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(off_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(off_vreg, .any_reg, .use));
             },
 
             .str_shifted => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
                 const off_vreg = try self.getVReg(st.offset);
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(off_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(off_vreg, .any_reg, .use));
             },
 
             .strb => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
             },
 
             .strh => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
             },
 
             .str_pre => |st| {
                 // src = use, base = use_def
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base.toReg());
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use_def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use_def));
             },
 
             .str_post => |st| {
                 // src = use, base = use_def
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base.toReg());
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use_def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use_def));
             },
 
             .stp => |st| {
                 const src1_vreg = try self.getVReg(st.src1);
                 const src2_vreg = try self.getVReg(st.src2);
                 const base_vreg = try self.getVReg(st.base);
-                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
             },
 
             .stp_pre => |st| {
@@ -406,225 +404,225 @@ pub const RegAllocBridge = struct {
                 const src1_vreg = try self.getVReg(st.src1);
                 const src2_vreg = try self.getVReg(st.src2);
                 const base_vreg = try self.getVReg(st.base.toReg());
-                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use_def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use_def));
             },
 
             .stp_imm => |st| {
                 const src1_vreg = try self.getVReg(st.rt1);
                 const src2_vreg = try self.getVReg(st.rt2);
                 const base_vreg = try self.getVReg(st.rn);
-                try self.adapter.addOperand(Operand.init(src1_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(src2_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src1_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src2_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
             },
 
             .vldr => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .vstr => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
             },
 
             .ldarb => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldarh => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldar_w => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldar => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .stlrb => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
             },
 
             .stlrh => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
             },
 
             .stlr_w => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
             },
 
             .stlr => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
             },
 
             .ldxrb => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldxrh => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldxr_w => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldxr => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .stxrb => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
                 const status_vreg = try self.getVReg(st.status.toReg());
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(status_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(status_vreg, .any_reg, .def));
             },
 
             .stxrh => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
                 const status_vreg = try self.getVReg(st.status.toReg());
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(status_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(status_vreg, .any_reg, .def));
             },
 
             .stxr_w => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
                 const status_vreg = try self.getVReg(st.status.toReg());
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(status_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(status_vreg, .any_reg, .def));
             },
 
             .stxr => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
                 const status_vreg = try self.getVReg(st.status.toReg());
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(status_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(status_vreg, .any_reg, .def));
             },
 
             .ldaxrb => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldaxrh => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldaxr_w => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .ldaxr => |ld| {
                 const base_vreg = try self.getVReg(ld.base);
                 const dst_vreg = try self.getVReg(ld.dst.toReg());
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .stlxrb => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
                 const status_vreg = try self.getVReg(st.status.toReg());
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(status_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(status_vreg, .any_reg, .def));
             },
 
             .stlxrh => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
                 const status_vreg = try self.getVReg(st.status.toReg());
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(status_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(status_vreg, .any_reg, .def));
             },
 
             .stlxr_w => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
                 const status_vreg = try self.getVReg(st.status.toReg());
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(status_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(status_vreg, .any_reg, .def));
             },
 
             .stlxr => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
                 const status_vreg = try self.getVReg(st.status.toReg());
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(status_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(status_vreg, .any_reg, .def));
             },
 
             .ldadd, .ldadda, .ldaddl, .ldaddal, .ldclr, .ldeor, .ldset, .ldsmax, .ldsmin, .ldumax, .ldumin, .swp => |st| {
                 const src_vreg = try self.getVReg(st.src);
                 const base_vreg = try self.getVReg(st.base);
                 const dst_vreg = try self.getVReg(st.dst.toReg());
-                try self.adapter.addOperand(Operand.init(src_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(src_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .cas, .casa, .casl, .casal => |cs| {
@@ -632,10 +630,10 @@ pub const RegAllocBridge = struct {
                 const swap_vreg = try self.getVReg(cs.swap);
                 const base_vreg = try self.getVReg(cs.base);
                 const dst_vreg = try self.getVReg(cs.dst.toReg());
-                try self.adapter.addOperand(Operand.init(cmp_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(swap_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(cmp_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(swap_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_vreg, .any_reg, .def));
             },
 
             .casp => |cs| {
@@ -646,13 +644,13 @@ pub const RegAllocBridge = struct {
                 const base_vreg = try self.getVReg(cs.base);
                 const dst_lo_vreg = try self.getVReg(cs.dst_lo.toReg());
                 const dst_hi_vreg = try self.getVReg(cs.dst_hi.toReg());
-                try self.adapter.addOperand(Operand.init(cmp_lo_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(cmp_hi_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(swap_lo_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(swap_hi_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(base_vreg, .any_reg, .use));
-                try self.adapter.addOperand(Operand.init(dst_lo_vreg, .any_reg, .def));
-                try self.adapter.addOperand(Operand.init(dst_hi_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(cmp_lo_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(cmp_hi_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(swap_lo_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(swap_hi_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(base_vreg, .any_reg, .use));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_lo_vreg, .any_reg, .def));
+                try self.adapter.addOperandForInst(inst_idx, Operand.init(dst_hi_vreg, .any_reg, .def));
             },
 
             .ret,

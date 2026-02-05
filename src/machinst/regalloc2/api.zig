@@ -14,6 +14,7 @@ pub const RegAllocAdapter = struct {
     num_vregs: u32,
     num_insts: u32,
     operands: std.ArrayList(Operand),
+    inst_operands: std.AutoHashMap(u32, std.ArrayList(Operand)),
     allocations: std.AutoHashMap(VReg, Allocation),
 
     pub fn init(allocator: Allocator) RegAllocAdapter {
@@ -22,11 +23,15 @@ pub const RegAllocAdapter = struct {
             .num_vregs = 0,
             .num_insts = 0,
             .operands = .{},
+            .inst_operands = std.AutoHashMap(u32, std.ArrayList(Operand)).init(allocator),
             .allocations = std.AutoHashMap(VReg, Allocation).init(allocator),
         };
     }
 
     pub fn deinit(self: *RegAllocAdapter) void {
+        var it = self.inst_operands.valueIterator();
+        while (it.next()) |ops| ops.deinit(self.allocator);
+        self.inst_operands.deinit();
         self.operands.deinit(self.allocator);
         self.allocations.deinit();
     }
@@ -40,15 +45,25 @@ pub const RegAllocAdapter = struct {
 
     /// Add an operand to the current instruction.
     pub fn addOperand(self: *RegAllocAdapter, operand: Operand) !void {
+        try self.addOperandForInst(0, operand);
+    }
+
+    /// Add an operand for a specific instruction index.
+    pub fn addOperandForInst(self: *RegAllocAdapter, inst: u32, operand: Operand) !void {
+        const gop = try self.inst_operands.getOrPut(inst);
+        if (!gop.found_existing) gop.value_ptr.* = .{};
+        try gop.value_ptr.append(self.allocator, operand);
         try self.operands.append(self.allocator, operand);
+
         const next_vreg = operand.vreg.index + 1;
         if (next_vreg > self.num_vregs) self.num_vregs = next_vreg;
+        if (inst + 1 > self.num_insts) self.num_insts = inst + 1;
     }
 
     /// Get operands for an instruction.
     pub fn getOperands(self: *const RegAllocAdapter, inst: u32) []const Operand {
-        _ = inst;
-        return self.operands.items;
+        if (self.inst_operands.getPtr(inst)) |ops| return ops.items;
+        return &[_]Operand{};
     }
 
     /// Set allocation result for a virtual register.
@@ -105,6 +120,26 @@ test "RegAllocAdapter addOperand tracks max vreg index" {
     try adapter.addOperand(Operand.init(high, .any_reg, .def));
 
     try testing.expectEqual(@as(u32, 38), adapter.num_vregs);
+}
+
+test "RegAllocAdapter addOperandForInst keeps operands separated" {
+    const allocator = testing.allocator;
+    var adapter = RegAllocAdapter.init(allocator);
+    defer adapter.deinit();
+
+    const v0 = VReg.new(0);
+    const v1 = VReg.new(1);
+    try adapter.addOperandForInst(0, Operand.init(v0, .any_reg, .use));
+    try adapter.addOperandForInst(1, Operand.init(v1, .any_reg, .def));
+
+    const ops0 = adapter.getOperands(0);
+    const ops1 = adapter.getOperands(1);
+    const ops2 = adapter.getOperands(2);
+
+    try testing.expectEqual(@as(usize, 1), ops0.len);
+    try testing.expectEqual(@as(usize, 1), ops1.len);
+    try testing.expectEqual(@as(usize, 0), ops2.len);
+    try testing.expectEqual(@as(u32, 2), adapter.num_insts);
 }
 
 test "RegAllocAdapter setAllocation" {
