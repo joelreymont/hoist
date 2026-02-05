@@ -12,6 +12,7 @@ const Signature = hoist.function.signature.Signature;
 const AbiParam = hoist.function.signature.AbiParam;
 const Type = hoist.types.Type;
 const InstructionData = hoist.instruction_data.InstructionData;
+const Opcode = hoist.opcodes.Opcode;
 const MemFlags = hoist.memflags.MemFlags;
 
 const aarch64_lower = hoist.aarch64_lower_generated;
@@ -463,6 +464,76 @@ test "ISLE coverage: load with offset" {
 
     try testing.expect(vcode.insns.items.len > 0);
     try testing.expect(coverage.uniqueRulesInvoked() > 0);
+}
+
+test "ISLE coverage: uload8x8 widening load" {
+    try expectWidenLoadRule(.uload8x8, Type.I16X8, "aarch64_uload8x8");
+}
+
+test "ISLE coverage: sload8x8 widening load" {
+    try expectWidenLoadRule(.sload8x8, Type.I16X8, "aarch64_sload8x8");
+}
+
+test "ISLE coverage: uload16x4 widening load" {
+    try expectWidenLoadRule(.uload16x4, Type.I32X4, "aarch64_uload16x4");
+}
+
+test "ISLE coverage: sload16x4 widening load" {
+    try expectWidenLoadRule(.sload16x4, Type.I32X4, "aarch64_sload16x4");
+}
+
+test "ISLE coverage: uload32x2 widening load" {
+    try expectWidenLoadRule(.uload32x2, Type.I64X2, "aarch64_uload32x2");
+}
+
+test "ISLE coverage: sload32x2 widening load" {
+    try expectWidenLoadRule(.sload32x2, Type.I64X2, "aarch64_sload32x2");
+}
+
+fn expectWidenLoadRule(opcode: Opcode, ret_ty: Type, rule_name: []const u8) !void {
+    const allocator = testing.allocator;
+
+    var coverage = isle_coverage.IsleRuleCoverage.init(allocator);
+    defer coverage.deinit();
+    isle_helpers.setIsleCoverageTracker(&coverage);
+    defer isle_helpers.setIsleCoverageTracker(null);
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.returns.append(allocator, AbiParam.new(ret_ty));
+
+    var func = try Function.init(allocator, "test_widen_load", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const ptr = try func.dfg.appendBlockParam(block0, Type.I64);
+    const load_data = InstructionData{ .load = .{
+        .opcode = opcode,
+        .flags = MemFlags.default(),
+        .arg = ptr,
+        .offset = 0,
+    } };
+    const load_inst = try func.dfg.makeInst(load_data);
+    try func.layout.appendInst(load_inst, block0);
+    const load_val = func.dfg.firstResult(load_inst).?;
+
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{
+        .opcode = .@"return",
+        .arg = load_val,
+    } });
+    try func.layout.appendInst(ret_inst, block0);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+    var vcode = try lower_mod.lowerFunction(Inst, allocator, &func, backend);
+    defer vcode.deinit();
+
+    try testing.expect(vcode.insns.items.len > 0);
+    try testing.expect(coverage.getCount(rule_name) > 0);
 }
 
 // Stub lowering functions
