@@ -1126,8 +1126,12 @@ pub const RegAllocBridge = struct {
     fn allocateReg(self: *Self, reg: Reg) !Reg {
         return switch (reg) {
             .v => |vreg| {
-                const phys = self.adapter.getPhysReg(vreg) orelse return error.VRegNotAllocated;
-                return Reg{ .p = phys };
+                const alloc = self.adapter.getAllocation(vreg) orelse return error.VRegNotAllocated;
+                return switch (alloc) {
+                    .reg => |phys| Reg{ .p = phys },
+                    .stack => error.StackAllocationUnsupported,
+                    .none => error.VRegNotAllocated,
+                };
             },
             .p => reg, // Already physical
         };
@@ -1595,6 +1599,35 @@ test "RegAllocBridge applyAllocations rejects unsupported instruction variant" {
     defer bridge.deinit();
 
     try testing.expectError(error.UnsupportedInstructionVariant, bridge.applyAllocations(&vcode));
+}
+
+test "RegAllocBridge applyAllocations rejects stack allocation" {
+    const Allocation = regalloc2_types.Allocation;
+    const SpillSlot = regalloc2_types.SpillSlot;
+
+    var vcode = VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+
+    _ = try vcode.startBlock(&.{});
+    _ = try vcode.addInst(.{
+        .mov_rr = .{
+            .dst = reg_mod.WritableReg.init(Reg{ .v = v1 }),
+            .src = Reg{ .v = v0 },
+            .size = .size64,
+        },
+    });
+    try vcode.finishBlock(0, &.{});
+
+    var bridge = RegAllocBridge.init(testing.allocator);
+    defer bridge.deinit();
+
+    try bridge.adapter.setAllocation(v0, Allocation{ .stack = SpillSlot.new(0) });
+    try bridge.adapter.setAllocation(v1, Allocation{ .reg = regalloc2_types.PhysReg.new(5) });
+
+    try testing.expectError(error.StackAllocationUnsupported, bridge.applyAllocations(&vcode));
 }
 
 test "RegAllocBridge passes through no-reg control variants" {
