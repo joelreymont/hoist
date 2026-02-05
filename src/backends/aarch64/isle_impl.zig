@@ -3303,6 +3303,7 @@ pub fn aarch64_istore8(
     val: Value,
     addr: Value,
 ) !Inst {
+    isle_helpers.recordRule("aarch64_istore8");
     const val_reg = try ctx.getValueReg(val, .int);
     const addr_reg = try ctx.getValueReg(addr, .int);
 
@@ -3321,6 +3322,7 @@ pub fn aarch64_istore16(
     val: Value,
     addr: Value,
 ) !Inst {
+    isle_helpers.recordRule("aarch64_istore16");
     const val_reg = try ctx.getValueReg(val, .int);
     const addr_reg = try ctx.getValueReg(addr, .int);
 
@@ -3339,6 +3341,7 @@ pub fn aarch64_istore32(
     val: Value,
     addr: Value,
 ) !Inst {
+    isle_helpers.recordRule("aarch64_istore32");
     const val_reg = try ctx.getValueReg(val, .int);
     const addr_reg = try ctx.getValueReg(addr, .int);
 
