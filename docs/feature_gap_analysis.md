@@ -27,7 +27,7 @@ Hoist has broad opcode coverage and core lowering parity on AArch64. Remaining g
 ### ABI / Calls
 - Tail calls (marshaling + frame teardown missing)
 - Varargs wiring (signature flags and lowering incomplete)
-- Struct returns/args (classification exists; marshaling incomplete)
+- Struct returns/args (classification + dedicated tests enabled; marshaling incomplete)
 - Multi-return (IR supports; ABI/emit incomplete)
 
 ### Feature Detection
@@ -85,4 +85,3 @@ Hoist has broad opcode coverage and core lowering parity on AArch64. Remaining g
 - Cranelift gap updates: `docs/cranelift_gap_analysis.md`
 - Completion status: `docs/COMPLETION_STATUS.md`
 - Active work items: `.dots/*.md`
-

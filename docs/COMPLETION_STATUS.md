@@ -24,6 +24,7 @@
 - End-to-end JIT tests
 - ABI and encoding tests
 - TLS and FP special values tests
+- AArch64 struct-arg ABI classification tests (`tests/aarch64_struct_args.zig`)
 - Baseline benchmark step: `zig build baseline` writes `/tmp/hoist-baseline-*.log`
 - Bench baseline: `zig build bench-log` writes `/tmp/hoist-bench.log`
 
@@ -32,7 +33,7 @@
 ### ABI / Calls ⚠️
 - Tail-call ABI conformance (return_call)
 - Varargs ABI + lowering
-- Struct returns/args (sret)
+- Struct returns/args (sret marshaling path still incomplete)
 - Multi-return ABI/emit
 
 ### Exception Handling ⚠️

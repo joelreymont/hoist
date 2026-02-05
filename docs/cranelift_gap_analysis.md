@@ -16,7 +16,7 @@ Opcode-level gaps that were previously listed here are now outdated. The current
 ### ABI / Calls (Correctness)
 - Tail-call ABI conformance and return_call lowering
 - Varargs ABI + lowering
-- Struct returns/args (sret) and multi-return ABI/emit
+- Struct returns/args (sret marshaling) and multi-return ABI/emit
 
 ### Exception Handling (Correctness)
 - Exception edges in CFG/emit
@@ -36,4 +36,3 @@ Opcode-level gaps that were previously listed here are now outdated. The current
 
 - Lowering coverage has expanded; remaining work is mostly **infrastructure and integration** rather than missing opcodes.
 - For a verified opcode list and remaining tasks, use `docs/arm64_parity_plan.md`.
-
