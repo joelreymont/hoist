@@ -1,9 +1,11 @@
 ---
 title: TLS vmctx
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.623336+01:00"
+created-at: "\"2026-02-02T21:35:56.623336+01:00\""
+closed-at: "2026-02-05T22:09:46.314993+01:00"
+close-reason: Added TLS constructor + trap sequencing tests and verified full test suite
 blocks:
   - hoist-add-mach-o-b3d199a0
 ---

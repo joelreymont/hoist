@@ -1112,6 +1112,166 @@ test "aarch64_fcvtzs_32_trap emits traps" {
     try testing.expectEqual(@as(usize, 3), bcond_idx);
 }
 
+test "tls_local_exec zero offset returns mrs passthrough" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const inst = try tls_local_exec(0, &ctx);
+    try testing.expectEqual(Inst.mov_rr, @as(std.meta.Tag(Inst), inst));
+    try testing.expectEqual(@as(usize, 1), vcode.insns.items.len);
+    try testing.expectEqual(Inst.mrs, @as(std.meta.Tag(Inst), vcode.insns.items[0]));
+    try testing.expectEqual(SystemReg.tpidr_el0, vcode.insns.items[0].mrs.sysreg);
+}
+
+test "tls_local_exec small offset returns add_imm" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const inst = try tls_local_exec(256, &ctx);
+    try testing.expectEqual(Inst.add_imm, @as(std.meta.Tag(Inst), inst));
+    try testing.expectEqual(@as(u12, 256), inst.add_imm.imm);
+    try testing.expectEqual(@as(usize, 1), vcode.insns.items.len);
+    try testing.expectEqual(Inst.mrs, @as(std.meta.Tag(Inst), vcode.insns.items[0]));
+    try testing.expectEqual(SystemReg.tpidr_el0, vcode.insns.items[0].mrs.sysreg);
+}
+
+test "tls_local_exec large offset materializes immediate register" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const inst = try tls_local_exec(0x5000, &ctx);
+    try testing.expectEqual(Inst.add_rr, @as(std.meta.Tag(Inst), inst));
+    try testing.expectEqual(@as(usize, 2), vcode.insns.items.len);
+    try testing.expectEqual(Inst.mrs, @as(std.meta.Tag(Inst), vcode.insns.items[0]));
+    try testing.expectEqual(SystemReg.tpidr_el0, vcode.insns.items[0].mrs.sysreg);
+    try testing.expectEqual(Inst.mov_imm, @as(std.meta.Tag(Inst), vcode.insns.items[1]));
+    try testing.expectEqual(@as(u64, 0x5000), vcode.insns.items[1].mov_imm.imm);
+}
+
+test "aarch64_trapz emits cbnz skip and udf" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const val_data = hoist.instruction_data.InstructionData{
+        .unary_imm = .{
+            .opcode = .iconst,
+            .imm = hoist.immediates.Imm64.new(1),
+        },
+    };
+    const val_inst = try func.dfg.makeInst(val_data);
+    const val = try func.dfg.appendInstResult(val_inst, types.Type.I32);
+    try func.layout.appendInst(val_inst, block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const inst = try aarch64_trapz(val, TrapCode.integer_overflow, &ctx);
+    try testing.expectEqual(Inst.udf, @as(std.meta.Tag(Inst), inst));
+    try testing.expectEqual(@as(usize, 1), vcode.insns.items.len);
+    try testing.expectEqual(Inst.cbnz, @as(std.meta.Tag(Inst), vcode.insns.items[0]));
+    try testing.expectEqual(@as(i32, 8), vcode.insns.items[0].cbnz.target.offset);
+    try testing.expectEqual(@intFromEnum(TrapCode.integer_overflow), inst.udf.imm);
+}
+
+test "aarch64_trapnz emits cbz skip and udf" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const val_data = hoist.instruction_data.InstructionData{
+        .unary_imm = .{
+            .opcode = .iconst,
+            .imm = hoist.immediates.Imm64.new(1),
+        },
+    };
+    const val_inst = try func.dfg.makeInst(val_data);
+    const val = try func.dfg.appendInstResult(val_inst, types.Type.I32);
+    try func.layout.appendInst(val_inst, block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const inst = try aarch64_trapnz(val, TrapCode.heap_out_of_bounds, &ctx);
+    try testing.expectEqual(Inst.udf, @as(std.meta.Tag(Inst), inst));
+    try testing.expectEqual(@as(usize, 1), vcode.insns.items.len);
+    try testing.expectEqual(Inst.cbz, @as(std.meta.Tag(Inst), vcode.insns.items[0]));
+    try testing.expectEqual(@as(i32, 8), vcode.insns.items[0].cbz.target.offset);
+    try testing.expectEqual(@intFromEnum(TrapCode.heap_out_of_bounds), inst.udf.imm);
+}
+
 test "aarch64_cmn_rr: creates compare negative instruction" {
     const testing = std.testing;
 
