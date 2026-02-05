@@ -1336,54 +1336,59 @@ pub fn buildIR(allocator: std.mem.Allocator, func: *Function) CodegenError!void 
 
 /// Legalize IR for target.
 fn legalize(ctx: *Context) CodegenError!void {
-    const TypeLegalizer = @import("legalize_types.zig").TypeLegalizer;
-    const OpLegalizer = @import("legalize_ops.zig").OpLegalizer;
+    const target = ctx.target orelse return error.LegalizationFailed;
+    const type_legalizer = selectTypeLegalizer(target);
+    const op_legalizer = selectOpLegalizer(target);
 
-    // Create type legalizer (TODO: make target-specific)
-    const type_legalizer = TypeLegalizer.default64();
-
-    // Create operation legalizer (TODO: make target-specific)
-    const op_legalizer = OpLegalizer.default64();
-
-    // Iterate over all values in the function
+    // Iterate over all values in the function and apply trivial
+    // legalization rewrites (narrow-scalar promotion). Non-trivial
+    // expansions stay explicit failures until dedicated passes exist.
     var value_iter = ctx.func.dfg.values.iterator();
     while (value_iter.next()) |entry| {
         const value = entry.key;
         const value_type = ctx.func.dfg.valueType(value) orelse continue;
-
-        // Check if type needs legalization
         const type_action = type_legalizer.legalize(value_type);
         switch (type_action.action) {
-            .legal => {}, // No action needed
-            .promote => {
-                // TODO: Widen narrow types to legal width
-            },
-            .expand => {
-                // TODO: Split wide types into multiple operations
-            },
-            .split_vector, .widen_vector => {
-                // TODO: Legalize vector types
-            },
+            .legal => {},
+            .promote => ctx.func.dfg.setValueType(value, type_action.target_type),
+            .expand, .split_vector, .widen_vector => return error.LegalizationFailed,
         }
     }
 
-    // Iterate over all instructions
+    // Iterate over all instructions and reject operations that require
+    // legalization strategies we have not lowered yet.
     var block_iter = ctx.func.layout.blockIter();
     while (block_iter.next()) |block| {
         var inst_iter = ctx.func.layout.blockInsts(block);
         while (inst_iter.next()) |inst| {
             const inst_data = ctx.func.dfg.insts.get(inst) orelse continue;
-
-            // Check if operation needs legalization based on opcode
-            // TODO: Map instruction data to operation type and check legalization
-            _ = inst_data;
-            _ = op_legalizer;
+            const result_ty = ctx.func.dfg.instResultType(inst) orelse continue;
+            const op_action = op_legalizer.legalize(inst_data.opcode(), result_ty);
+            switch (op_action.action) {
+                .legal, .expand => {},
+                .libcall, .custom => return error.LegalizationFailed,
+            }
         }
     }
+}
 
-    // Note: Full legalization will expand illegal operations and insert
-    // new instructions. For now, this is a framework that will be
-    // expanded as the IR instruction set is finalized.
+fn selectTypeLegalizer(target: *const Target) @import("legalize_types.zig").TypeLegalizer {
+    const TypeLegalizer = @import("legalize_types.zig").TypeLegalizer;
+    return switch (target.arch) {
+        .aarch64 => TypeLegalizer.aarch64(),
+        .x86_64 => TypeLegalizer.x86_64(),
+        .riscv64, .s390x => TypeLegalizer.default64(),
+    };
+}
+
+fn selectOpLegalizer(target: *const Target) @import("legalize_ops.zig").OpLegalizer {
+    const OpLegalizer = @import("legalize_ops.zig").OpLegalizer;
+    return switch (target.arch) {
+        .aarch64 => OpLegalizer.aarch64(),
+        .x86_64 => OpLegalizer.x86_64(),
+        .riscv64 => OpLegalizer.riscv64_minimal(),
+        .s390x => OpLegalizer.default64(),
+    };
 }
 
 /// Lower IR to VCode via ISLE.
@@ -6050,6 +6055,80 @@ test "optimize: remove constant phis" {
     const data = ctx.func.dfg.values.get(param) orelse return error.TestExpectedEqual;
     const aliased = data.aliasOriginal() orelse return error.TestExpectedEqual;
     try testing.expect(std.meta.eql(aliased, v0));
+}
+
+test "optimize: aarch64 keeps narrow integer values legal" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I8));
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I8));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I8));
+
+    var func = try Function.init(testing.allocator, "legalize_aarch64_i8", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+    const x = try builder.appendBlockParam(block, ir.Type.I8);
+    const y = try builder.appendBlockParam(block, ir.Type.I8);
+    const sum = try builder.iadd(ir.Type.I8, x, y);
+    try builder.retValues(&.{sum});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+
+    const x_ty = ctx.func.dfg.valueType(x) orelse return error.TestExpectedEqual;
+    const y_ty = ctx.func.dfg.valueType(y) orelse return error.TestExpectedEqual;
+    const sum_ty = ctx.func.dfg.valueType(sum) orelse return error.TestExpectedEqual;
+    try testing.expect(x_ty.eql(ir.Type.I8));
+    try testing.expect(y_ty.eql(ir.Type.I8));
+    try testing.expect(sum_ty.eql(ir.Type.I8));
+}
+
+test "optimize: x86_64 promotes narrow integer values" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I8));
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I8));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I8));
+
+    var func = try Function.init(testing.allocator, "legalize_x64_i8", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+    const x = try builder.appendBlockParam(block, ir.Type.I8);
+    const y = try builder.appendBlockParam(block, ir.Type.I8);
+    const sum = try builder.iadd(ir.Type.I8, x, y);
+    try builder.retValues(&.{sum});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.x86_64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+
+    const x_ty = ctx.func.dfg.valueType(x) orelse return error.TestExpectedEqual;
+    const y_ty = ctx.func.dfg.valueType(y) orelse return error.TestExpectedEqual;
+    const sum_ty = ctx.func.dfg.valueType(sum) orelse return error.TestExpectedEqual;
+    try testing.expect(x_ty.eql(ir.Type.I32));
+    try testing.expect(y_ty.eql(ir.Type.I32));
+    try testing.expect(sum_ty.eql(ir.Type.I32));
 }
 
 test "IRBuilder: initialization" {
