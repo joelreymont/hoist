@@ -1095,6 +1095,21 @@ test "aarch64_fcvtzs_32_trap emits traps" {
     try testing.expectEqual(@as(usize, 3), udf_count);
     try testing.expectEqual(@as(usize, 3), fcmp_count);
     try testing.expectEqual(@as(usize, 3), bcond_count);
+
+    var bcond_idx: usize = 0;
+    for (vcode.insns.items) |insn| {
+        if (insn == .b_cond) {
+            const cond = insn.b_cond.cond;
+            switch (bcond_idx) {
+                0 => try testing.expectEqual(hoist.aarch64_inst.CondCode.vc, cond),
+                1 => try testing.expectEqual(hoist.aarch64_inst.CondCode.ge, cond),
+                2 => try testing.expectEqual(hoist.aarch64_inst.CondCode.lt, cond),
+                else => unreachable,
+            }
+            bcond_idx += 1;
+        }
+    }
+    try testing.expectEqual(@as(usize, 3), bcond_idx);
 }
 
 test "aarch64_cmn_rr: creates compare negative instruction" {
@@ -2318,9 +2333,6 @@ pub fn max_fp_value(signed: bool, in_bits: u8, out_bits: u8, ctx: *lower_mod.Low
 
 /// FCVTZS with bounds checking (F32 -> I32).
 /// Traps on NaN, overflow, or underflow.
-/// NOTE: This is a simplified initial implementation that always uses saturating conversion.
-/// Full trap support requires trap blocks and control flow, which is complex.
-/// For now, this serves as a placeholder that compiles and provides the function signature.
 pub fn aarch64_fcvtzs_32_trap(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_fcvtzs_32_trap");
     const x_reg = try getValueRegFloat(ctx, x);
@@ -2337,7 +2349,7 @@ pub fn aarch64_fcvtzs_32_trap(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)
     } });
     try ctx.emit(Inst{ .udf = .{ .imm = @intFromEnum(TrapCode.bad_conversion_to_integer) } });
 
-    // Underflow check: FCMP x, min_fp_value; if GT then ok, else trap
+    // Underflow check: FCMP x, min_fp_value; if GE then ok, else trap
     const min_reg = try min_fp_value(true, 32, 32, ctx);
     try ctx.emit(Inst{ .fcmp = .{
         .src1 = x_reg,
@@ -2345,7 +2357,7 @@ pub fn aarch64_fcvtzs_32_trap(x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)
         .size = .size32,
     } });
     try ctx.emit(Inst{ .b_cond = .{
-        .cond = .gt,
+        .cond = .ge,
         .target = .{ .offset = 4 },
     } });
     try ctx.emit(Inst{ .udf = .{ .imm = @intFromEnum(TrapCode.bad_conversion_to_integer) } });
