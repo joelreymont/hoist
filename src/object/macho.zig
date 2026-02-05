@@ -633,11 +633,12 @@ test "MachoWriter init" {
     defer writer.deinit();
 }
 
-test "MachoWriter resolves reloc target" {
+test "MachoWriter resolves external reloc target symbol index" {
     const allocator = std.testing.allocator;
     var symtab = symbols_mod.SymbolTable.init(allocator);
     defer symtab.deinit();
     const func = try symtab.declareFunc("foo", module_mod.Linkage.@"export");
+    const ext = try symtab.declareFunc("bar_ext", module_mod.Linkage.import);
 
     var writer = MachoWriter.init(allocator, .x86_64);
     defer writer.deinit();
@@ -645,13 +646,15 @@ test "MachoWriter resolves reloc target" {
     const relocs = [_]ModuleReloc{.{
         .off = 0,
         .kind = .abs64,
-        .target = symbols_mod.RelocTarget.fromFuncId(func),
+        .target = symbols_mod.RelocTarget.fromFuncId(ext),
         .addend = 0,
     }};
     try writer.addFunc(func, "foo", &[_]u8{0xC3}, &relocs, &symtab);
 
     const sec = &writer.sections.items[0];
-    try std.testing.expectEqual(@as(u32, 0), sec.relocs.items[0].r_symbolnum);
+    try std.testing.expectEqual(@as(u32, 1), sec.relocs.items[0].r_symbolnum);
+    try std.testing.expectEqual(@as(usize, 2), writer.syms.items.len);
+    try std.testing.expectEqual(@as(u8, 0), writer.syms.items[1].n_sect);
 }
 
 test "MachoWriter finish basic" {
@@ -676,4 +679,38 @@ test "MachoWriter finish basic" {
     try std.testing.expect(ncmds > 0);
     try std.testing.expect(sizeofcmds > 0);
     try std.testing.expect(buf.items.len >= 32 + sizeofcmds);
+}
+
+test "MachoWriter finish encodes relocation symbol index" {
+    const allocator = std.testing.allocator;
+    var symtab = symbols_mod.SymbolTable.init(allocator);
+    defer symtab.deinit();
+    const func = try symtab.declareFunc("foo", module_mod.Linkage.@"export");
+    const ext = try symtab.declareFunc("bar_ext", module_mod.Linkage.import);
+
+    var writer = MachoWriter.init(allocator, .x86_64);
+    defer writer.deinit();
+
+    const relocs = [_]ModuleReloc{.{
+        .off = 0,
+        .kind = .abs64,
+        .target = symbols_mod.RelocTarget.fromFuncId(ext),
+        .addend = 0,
+    }};
+    try writer.addFunc(func, "foo", &[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0 }, &relocs, &symtab);
+
+    var buf = std.ArrayList(u8).init(allocator);
+    defer buf.deinit();
+    try writer.finish(&buf);
+
+    // First section header in first LC_SEGMENT_64 starts at 32 + 72.
+    const section_off: usize = 104;
+    const reloff = std.mem.readInt(u32, buf.items[section_off + 56 .. section_off + 60], .little);
+    const nreloc = std.mem.readInt(u32, buf.items[section_off + 60 .. section_off + 64], .little);
+    try std.testing.expectEqual(@as(u32, 1), nreloc);
+    try std.testing.expect(@as(usize, reloff + 8) <= buf.items.len);
+
+    const info = std.mem.readInt(u32, buf.items[reloff + 4 .. reloff + 8], .little);
+    const sym_idx = info & 0x00FFFFFF;
+    try std.testing.expectEqual(@as(u32, 1), sym_idx);
 }
