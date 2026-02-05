@@ -2049,6 +2049,7 @@ pub fn aarch64_uadd_overflow_cin(
     b: Value,
     cin: Value,
 ) !lower_mod.ValueRegs {
+    isle_helpers.recordRule("aarch64_uadd_overflow_cin");
     const a_reg = try ctx.getValueReg(a, .int);
     const b_reg = try ctx.getValueReg(b, .int);
     const cin_reg = try ctx.getValueReg(cin, .int);
@@ -2098,6 +2099,7 @@ pub fn aarch64_sadd_overflow_cin(
     b: Value,
     cin: Value,
 ) !lower_mod.ValueRegs {
+    isle_helpers.recordRule("aarch64_sadd_overflow_cin");
     const a_reg = try ctx.getValueReg(a, .int);
     const b_reg = try ctx.getValueReg(b, .int);
     const cin_reg = try ctx.getValueReg(cin, .int);
@@ -2147,6 +2149,7 @@ pub fn aarch64_usub_overflow_cin(
     b: Value,
     cin: Value,
 ) !lower_mod.ValueRegs {
+    isle_helpers.recordRule("aarch64_usub_overflow_cin");
     const size = ctx.typeToSize(ty);
     const a_reg = try ctx.getValueReg(a, .int);
     const b_reg = try ctx.getValueReg(b, .int);

@@ -6286,6 +6286,115 @@ test "compile: vector iadd lowers on aarch64" {
     try testing.expect(result.code.items.len > 0);
 }
 
+test "lower: uadd_overflow_cin emits ADCS" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+
+    var func = try Function.init(testing.allocator, "uadd_overflow_cin_adcs", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const x = try builder.appendBlockParam(block, ir.I64);
+    const y = try builder.appendBlockParam(block, ir.I64);
+    const cin = try builder.appendBlockParam(block, ir.I64);
+
+    const ov_inst = try func.dfg.makeInst(.{ .ternary = .{
+        .opcode = .uadd_overflow_cin,
+        .args = .{ x, y, cin },
+    } });
+    const sum = try func.dfg.appendInstResult(ov_inst, ir.I64);
+    _ = try func.dfg.appendInstResult(ov_inst, ir.I64);
+    try func.layout.appendInst(ov_inst, block);
+
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{ .opcode = .@"return", .arg = sum } });
+    try func.layout.appendInst(ret_inst, block);
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_adcs = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .adcs => saw_adcs = true,
+            else => {},
+        }
+    }
+    try testing.expect(saw_adcs);
+}
+
+test "lower: overflow_bin emits SBCS" {
+    try expectOverflowBinSbcs(.usub_overflow_bin);
+    try expectOverflowBinSbcs(.ssub_overflow_bin);
+}
+
+fn expectOverflowBinSbcs(opcode: Opcode) !void {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+
+    var func = try Function.init(testing.allocator, "overflow_bin_sbcs", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const x = try builder.appendBlockParam(block, ir.I64);
+    const y = try builder.appendBlockParam(block, ir.I64);
+    const bin = try builder.appendBlockParam(block, ir.I64);
+
+    const ov_inst = try func.dfg.makeInst(.{ .ternary = .{
+        .opcode = opcode,
+        .args = .{ x, y, bin },
+    } });
+    const diff = try func.dfg.appendInstResult(ov_inst, ir.I64);
+    _ = try func.dfg.appendInstResult(ov_inst, ir.I64);
+    try func.layout.appendInst(ov_inst, block);
+
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{ .opcode = .@"return", .arg = diff } });
+    try func.layout.appendInst(ret_inst, block);
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_sbcs = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .sbcs => saw_sbcs = true,
+            else => {},
+        }
+    }
+    try testing.expect(saw_sbcs);
+}
+
 // Comprehensive IRBuilder tests
 
 test "IRBuilder: create multiple blocks" {
