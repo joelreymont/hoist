@@ -1,9 +1,11 @@
 ---
 title: Fix Object Writers
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.565588+01:00"
+created-at: "\"2026-02-02T21:35:56.565588+01:00\""
+closed-at: "2026-02-05T21:52:50.907785+01:00"
+close-reason: Object writers now cover external relocation symbol index paths
 blocks:
   - hoist-wire-isle-lowering-9d324cc5
 ---
