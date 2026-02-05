@@ -798,6 +798,46 @@ test "MachBuffer backward label reference" {
     try testing.expectEqual(@as(u8, @bitCast(@as(i8, -3))), buf.data.items[fixup_offset]);
 }
 
+test "MachBuffer branch26 forward label reference" {
+    var buf = MachBuffer.init(testing.allocator);
+    defer buf.deinit();
+
+    const target = try buf.allocLabel();
+
+    // AArch64 B with placeholder imm26.
+    try buf.put4(0x14000000);
+    try buf.useLabelAtOffset(0, target, .branch26);
+
+    // One 4-byte instruction between branch and target.
+    try buf.put4(0xD503201F); // NOP
+    try buf.bindLabel(target);
+
+    try buf.finalize();
+
+    const patched = std.mem.readInt(u32, buf.data.items[0..4], .little);
+    try testing.expectEqual(@as(u32, 0x14000002), patched);
+}
+
+test "MachBuffer branch19 forward label reference" {
+    var buf = MachBuffer.init(testing.allocator);
+    defer buf.deinit();
+
+    const target = try buf.allocLabel();
+
+    // AArch64 B.cond EQ with placeholder imm19.
+    try buf.put4(0x54000000);
+    try buf.useLabelAtOffset(0, target, .branch19);
+
+    // One 4-byte instruction between branch and target.
+    try buf.put4(0xD503201F); // NOP
+    try buf.bindLabel(target);
+
+    try buf.finalize();
+
+    const patched = std.mem.readInt(u32, buf.data.items[0..4], .little);
+    try testing.expectEqual(@as(u32, 0x54000040), patched);
+}
+
 test "MachBuffer trap records" {
     var buf = MachBuffer.init(testing.allocator);
     defer buf.deinit();
