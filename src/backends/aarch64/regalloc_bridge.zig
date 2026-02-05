@@ -655,6 +655,29 @@ pub const RegAllocBridge = struct {
                 try self.adapter.addOperand(Operand.init(dst_hi_vreg, .any_reg, .def));
             },
 
+            .ret,
+            .ret_call,
+            .call,
+            .bl,
+            .b,
+            .b_cond,
+            .nop,
+            .dmb,
+            .dsb,
+            .fence,
+            .epilogue_placeholder,
+            .data,
+            .brk,
+            .udf,
+            .bti,
+            .csdb,
+            .isb,
+            .autiasp,
+            .paciasp,
+            .virtual_sp_offset_adj,
+            .unwind,
+            => {},
+
             // Unsupported instructions must fail explicitly so lowering gaps are visible.
             else => return error.UnsupportedInstructionVariant,
         }
@@ -1071,6 +1094,29 @@ pub const RegAllocBridge = struct {
                 cs.dst_hi = try self.allocateWritableReg(cs.dst_hi);
                 cs.base = try self.allocateReg(cs.base);
             },
+
+            .ret,
+            .ret_call,
+            .call,
+            .bl,
+            .b,
+            .b_cond,
+            .nop,
+            .dmb,
+            .dsb,
+            .fence,
+            .epilogue_placeholder,
+            .data,
+            .brk,
+            .udf,
+            .bti,
+            .csdb,
+            .isb,
+            .autiasp,
+            .paciasp,
+            .virtual_sp_offset_adj,
+            .unwind,
+            => {},
 
             else => return error.UnsupportedInstructionVariant,
         }
@@ -1505,8 +1551,19 @@ test "RegAllocBridge convertVCode rejects unsupported instruction variant" {
     var vcode = VCode(Inst).init(testing.allocator);
     defer vcode.deinit();
 
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+
     _ = try vcode.startBlock(&.{});
-    _ = try vcode.addInst(.nop);
+    _ = try vcode.addInst(.{
+        .sve_add = .{
+            .dst = reg_mod.WritableReg.init(Reg{ .v = v0 }),
+            .src1 = Reg{ .v = v1 },
+            .src2 = Reg{ .v = v2 },
+            .size = .D,
+        },
+    });
     try vcode.finishBlock(0, &.{});
 
     var bridge = RegAllocBridge.init(testing.allocator);
@@ -1519,12 +1576,58 @@ test "RegAllocBridge applyAllocations rejects unsupported instruction variant" {
     var vcode = VCode(Inst).init(testing.allocator);
     defer vcode.deinit();
 
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const v2 = VReg.new(2, .int);
+
     _ = try vcode.startBlock(&.{});
-    _ = try vcode.addInst(.nop);
+    _ = try vcode.addInst(.{
+        .sve_add = .{
+            .dst = reg_mod.WritableReg.init(Reg{ .v = v0 }),
+            .src1 = Reg{ .v = v1 },
+            .src2 = Reg{ .v = v2 },
+            .size = .D,
+        },
+    });
     try vcode.finishBlock(0, &.{});
 
     var bridge = RegAllocBridge.init(testing.allocator);
     defer bridge.deinit();
 
     try testing.expectError(error.UnsupportedInstructionVariant, bridge.applyAllocations(&vcode));
+}
+
+test "RegAllocBridge passes through no-reg control variants" {
+    var vcode = VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    _ = try vcode.startBlock(&.{});
+    _ = try vcode.addInst(.nop);
+    _ = try vcode.addInst(.ret);
+    _ = try vcode.addInst(.{
+        .b = .{ .target = .{ .label = 0 } },
+    });
+    _ = try vcode.addInst(.{
+        .dmb = .{ .option = .ish },
+    });
+    _ = try vcode.addInst(.{
+        .brk = .{ .imm = 1 },
+    });
+    _ = try vcode.addInst(.{
+        .data = .{ .bytes = &[_]u8{ 0xAA, 0xBB } },
+    });
+    try vcode.finishBlock(0, &.{});
+
+    var bridge = RegAllocBridge.init(testing.allocator);
+    defer bridge.deinit();
+
+    try bridge.convertVCode(&vcode);
+
+    var idx: usize = 0;
+    while (idx < 6) : (idx += 1) {
+        const ops = bridge.adapter.getOperands(idx);
+        try testing.expectEqual(@as(usize, 0), ops.len);
+    }
+
+    try bridge.applyAllocations(&vcode);
 }
