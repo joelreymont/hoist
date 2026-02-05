@@ -17,6 +17,7 @@ const Relocation = @import("context.zig").Relocation;
 const RelocKind = @import("context.zig").RelocKind;
 const Function = @import("../ir/function.zig").Function;
 const Block = @import("../ir/entities.zig").Block;
+const StackSlot = @import("../ir/entities.zig").StackSlot;
 const reg_mod = @import("../machinst/reg.zig");
 const lower_mod = @import("../machinst/lower.zig");
 const vcode_mod = @import("../machinst/vcode.zig");
@@ -1742,9 +1743,12 @@ fn emitReturnMovesAArch64(
     const WritableReg = @import("../machinst/reg.zig").WritableReg;
     const RegClass = @import("../machinst/reg.zig").RegClass;
 
-    if (values.len != ctx.func.sig.returns.items.len) {
-        return error.LoweringFailed;
+    const needs_sret = a64_abi.needsStructReturnPointer(ctx.func.sig.returns.items, &ctx.func.struct_store);
+    if (needs_sret) {
+        if (values.len != 0) return error.LoweringFailed;
+        return;
     }
+    if (values.len != ctx.func.sig.returns.items.len) return error.LoweringFailed;
 
     var int_idx: u8 = 0;
     var fp_idx: u8 = 0;
@@ -2082,6 +2086,29 @@ fn mapPinnedVReg(
         return error.LoweringFailed;
     const vreg = reg_mod.VReg.new(@intCast(value.index + reg_mod.Reg.PINNED_VREGS), class);
     try lower_ctx.value_to_reg.put(value, vreg);
+}
+
+fn stackSlotOffset(func: *Function, slot: StackSlot, out_stack_max: u32) i32 {
+    var offset: u32 = out_stack_max;
+    const slots = func.stack_slots.elems.items;
+    const slot_idx = slot.toIndex();
+
+    const limit = @min(slot_idx, slots.len);
+    for (slots[0..limit]) |slot_data| {
+        const alignment = slot_data.alignment();
+        const mask = alignment - 1;
+        offset = (offset + mask) & ~mask;
+        offset += slot_data.size;
+    }
+
+    if (slot_idx < slots.len) {
+        const slot_data = slots[slot_idx];
+        const alignment = slot_data.alignment();
+        const mask = alignment - 1;
+        offset = (offset + mask) & ~mask;
+    }
+
+    return @intCast(offset);
 }
 
 fn appendTmpInsns(builder: anytype, vcode: *vcode_mod.VCode(a64_inst.Inst)) CodegenError!void {
@@ -4638,6 +4665,132 @@ fn lowerInstructionAArch64(
                 });
             } else {
                 return error.LoweringFailed;
+            }
+        },
+        .stack_load => |data| {
+            const VReg = @import("../machinst/reg.zig").VReg;
+            const WritableReg = @import("../machinst/reg.zig").WritableReg;
+            const RegClass = @import("../machinst/reg.zig").RegClass;
+            const Reg = @import("../machinst/reg.zig").Reg;
+            const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+
+            const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+            const result_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+            const dst_class: RegClass = if (result_type.isVector())
+                .vector
+            else if (result_type.isFloat())
+                .float
+            else
+                .int;
+
+            const dst_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), dst_class);
+            const dst = WritableReg.fromVReg(dst_vreg);
+
+            const slot_off = stackSlotOffset(ctx.func, data.stack_slot, out_stack_max);
+            const total_off: i64 = @as(i64, slot_off) + @as(i64, data.offset);
+            const sp = Reg.gpr(31);
+
+            if (data.opcode == .stack_addr) {
+                if (total_off >= 0 and total_off <= 4095) {
+                    try builder.emit(Inst{ .add_imm = .{
+                        .dst = dst,
+                        .src = sp,
+                        .imm = @intCast(total_off),
+                        .size = .size64,
+                    } });
+                } else {
+                    const tmp_vreg = VReg.new(@intCast(next_tmp_vreg.*), RegClass.int);
+                    next_tmp_vreg.* += 1;
+                    const tmp = WritableReg.fromVReg(tmp_vreg);
+                    try builder.emit(Inst{ .mov_imm = .{
+                        .dst = tmp,
+                        .imm = @bitCast(total_off),
+                        .size = .size64,
+                    } });
+                    try builder.emit(Inst{ .add_rr = .{
+                        .dst = dst,
+                        .src1 = sp,
+                        .src2 = tmp.toReg(),
+                        .size = .size64,
+                    } });
+                }
+                return;
+            }
+
+            if (data.opcode != .stack_load) return error.LoweringFailed;
+
+            var base = sp;
+            var offset_i16: i16 = 0;
+            if (total_off >= 0 and total_off <= 4095) {
+                offset_i16 = @intCast(total_off);
+            } else {
+                const tmp_vreg = VReg.new(@intCast(next_tmp_vreg.*), RegClass.int);
+                next_tmp_vreg.* += 1;
+                const tmp = WritableReg.fromVReg(tmp_vreg);
+                try builder.emit(Inst{ .mov_imm = .{
+                    .dst = tmp,
+                    .imm = @bitCast(total_off),
+                    .size = .size64,
+                } });
+                try builder.emit(Inst{ .add_rr = .{
+                    .dst = tmp,
+                    .src1 = sp,
+                    .src2 = tmp.toReg(),
+                    .size = .size64,
+                } });
+                base = tmp.toReg();
+                offset_i16 = 0;
+            }
+
+            if (result_type.isVector() or result_type.isFloat()) {
+                const size: FpuOperandSize = switch (result_type.bits()) {
+                    32 => .size32,
+                    64 => .size64,
+                    128 => .size128,
+                    else => return error.LoweringFailed,
+                };
+                try builder.emit(Inst{ .vldr = .{
+                    .dst = dst,
+                    .base = base,
+                    .offset = offset_i16,
+                    .size = size,
+                } });
+            } else if (result_type.bits() == 64) {
+                try builder.emit(Inst{
+                    .ldr = .{
+                        .dst = dst,
+                        .base = base,
+                        .offset = offset_i16,
+                        .size = .size64,
+                    },
+                });
+            } else if (result_type.bits() == 32) {
+                try builder.emit(Inst{
+                    .ldr = .{
+                        .dst = dst,
+                        .base = base,
+                        .offset = offset_i16,
+                        .size = .size32,
+                    },
+                });
+            } else if (result_type.bits() == 16) {
+                try builder.emit(Inst{
+                    .ldrh = .{
+                        .dst = dst,
+                        .base = base,
+                        .offset = offset_i16,
+                        .size = .size32,
+                    },
+                });
+            } else {
+                try builder.emit(Inst{
+                    .ldrb = .{
+                        .dst = dst,
+                        .base = base,
+                        .offset = offset_i16,
+                        .size = .size32,
+                    },
+                });
             }
         },
         .load => |data| {

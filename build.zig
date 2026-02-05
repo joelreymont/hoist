@@ -292,20 +292,18 @@ pub fn build(b: *std.Build) void {
     const run_aarch64_return_marshaling = b.addRunArtifact(aarch64_return_marshaling);
     test_step.dependOn(&run_aarch64_return_marshaling.step);
 
-    // TODO: aarch64_indirect_return.zig needs struct type support in ir/types.zig
-    // TODO: aarch64_indirect_return.zig needs struct type support in ir/types.zig
-    // const aarch64_indirect_return = b.addTest(.{
-    //     .root_module = b.createModule(.{
-    //         .root_source_file = b.path("tests/aarch64_indirect_return.zig"),
-    //         .target = target,
-    //         .optimize = optimize,
-    //     }),
-    // });
-    // aarch64_indirect_return.root_module.addImport("hoist", lib.root_module);
-    // aarch64_indirect_return.root_module.addImport("zcheck", zcheck.module("zcheck"));
-    // applyFlags(aarch64_indirect_return, enable_lto, debug_info, strip_debug, pic, single_threaded);
-    // const run_aarch64_indirect_return = b.addRunArtifact(aarch64_indirect_return);
-    // test_step.dependOn(&run_aarch64_indirect_return.step);
+    const aarch64_indirect_return = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/aarch64_indirect_return.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    aarch64_indirect_return.root_module.addImport("hoist", lib.root_module);
+    aarch64_indirect_return.root_module.addImport("zcheck", zcheck.module("zcheck"));
+    applyFlags(aarch64_indirect_return, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_aarch64_indirect_return = b.addRunArtifact(aarch64_indirect_return);
+    test_step.dependOn(&run_aarch64_indirect_return.step);
 
     const isle_coverage_tests = b.addTest(.{
         .root_module = b.createModule(.{
