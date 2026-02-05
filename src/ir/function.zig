@@ -114,6 +114,10 @@ pub const Function = struct {
         return self.layout.entryBlock();
     }
 
+    pub fn addSignature(self: *Self, sig: Signature) !SigRef {
+        return self.signatures.push(sig);
+    }
+
     pub fn isLeaf(self: *const Self) bool {
         // A leaf function has no calls
         var iter = self.layout.blockIter();

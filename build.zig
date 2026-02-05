@@ -280,18 +280,17 @@ pub fn build(b: *std.Build) void {
     const run_aarch64_stack_args = b.addRunArtifact(aarch64_stack_args);
     test_step.dependOn(&run_aarch64_stack_args.step);
 
-    // TODO: aarch64_return_marshaling.zig needs makeSig API (removed/changed)
-    // const aarch64_return_marshaling = b.addTest(.{
-    //     .root_module = b.createModule(.{
-    //         .root_source_file = b.path("tests/aarch64_return_marshaling.zig"),
-    //         .target = target,
-    //         .optimize = optimize,
-    //     }),
-    // });
-    // aarch64_return_marshaling.root_module.addImport("hoist", lib.root_module);
-    // applyFlags(aarch64_return_marshaling, enable_lto, debug_info, strip_debug, pic, single_threaded);
-    // const run_aarch64_return_marshaling = b.addRunArtifact(aarch64_return_marshaling);
-    // test_step.dependOn(&run_aarch64_return_marshaling.step);
+    const aarch64_return_marshaling = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/aarch64_return_marshaling.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    aarch64_return_marshaling.root_module.addImport("hoist", lib.root_module);
+    applyFlags(aarch64_return_marshaling, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_aarch64_return_marshaling = b.addRunArtifact(aarch64_return_marshaling);
+    test_step.dependOn(&run_aarch64_return_marshaling.step);
 
     // TODO: aarch64_indirect_return.zig needs struct type support in ir/types.zig
     // TODO: aarch64_indirect_return.zig needs struct type support in ir/types.zig
