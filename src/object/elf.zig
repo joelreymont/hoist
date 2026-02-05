@@ -713,3 +713,38 @@ test "ElfWriter finish basic" {
     try std.testing.expect(shstrndx < shnum);
     try std.testing.expect(buf.items.len >= shoff + @as(u64, shnum) * 64);
 }
+
+test "ElfWriter finish encodes external relocation symbol index" {
+    const allocator = std.testing.allocator;
+    var symtab = symbols_mod.SymbolTable.init(allocator);
+    defer symtab.deinit();
+    const func = try symtab.declareFunc("foo", module_mod.Linkage.@"export");
+    const ext = try symtab.declareFunc("bar_ext", module_mod.Linkage.import);
+
+    var writer = ElfWriter.init(allocator, .x86_64);
+    defer writer.deinit();
+
+    const relocs = [_]ModuleReloc{.{
+        .off = 0,
+        .kind = .abs64,
+        .target = symbols_mod.RelocTarget.fromFuncId(ext),
+        .addend = 0,
+    }};
+    try writer.addFunc(func, "foo", &[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0 }, &relocs, &symtab);
+
+    var buf = std.ArrayList(u8).init(allocator);
+    defer buf.deinit();
+    try writer.finish(&buf);
+
+    const shoff = std.mem.readInt(u64, buf.items[40..48], .little);
+    const rela_sh_off: usize = @intCast(shoff + 2 * 64); // section #2 => .rela.text
+    const rela_typ = std.mem.readInt(u32, buf.items[rela_sh_off + 4 .. rela_sh_off + 8], .little);
+    try std.testing.expectEqual(@as(u32, 4), rela_typ); // SHT_RELA
+
+    const rela_off = std.mem.readInt(u64, buf.items[rela_sh_off + 24 .. rela_sh_off + 32], .little);
+    try std.testing.expect(@as(usize, rela_off + 24) <= buf.items.len);
+
+    const r_info = std.mem.readInt(u64, buf.items[rela_off + 8 .. rela_off + 16], .little);
+    const sym_idx: u32 = @intCast(r_info >> 32);
+    try std.testing.expectEqual(@as(u32, 2), sym_idx);
+}
