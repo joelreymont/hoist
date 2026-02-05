@@ -3,9 +3,9 @@ title: Wire multi-return
 status: closed
 priority: 2
 issue-type: task
-created-at: "\"\\\"2026-02-02T21:35:56.799253+01:00\\\"\""
-closed-at: "2026-02-05T20:47:21.226639+01:00"
-close-reason: Added call-side multi-return marshaling tests and verified full test suite
+created-at: "\"\\\"\\\\\\\"2026-02-02T21:35:56.799253+01:00\\\\\\\"\\\"\""
+closed-at: "2026-02-05T20:47:58.796279+01:00"
+close-reason: "Already implemented: multi-return lowering + ABI/e2e tests"
 blocks:
   - hoist-fix-impure-constructor-191bc4c5
 ---

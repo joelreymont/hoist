@@ -125,6 +125,138 @@ test "ISLE coverage: store i32" {
     try testing.expect(coverage.uniqueRulesInvoked() > 0);
 }
 
+test "ISLE coverage: istore8 lowers to STRB constructor" {
+    const allocator = testing.allocator;
+
+    var coverage = isle_coverage.IsleRuleCoverage.init(allocator);
+    defer coverage.deinit();
+    isle_helpers.setIsleCoverageTracker(&coverage);
+    defer isle_helpers.setIsleCoverageTracker(null);
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.params.append(allocator, AbiParam.new(Type.I32));
+
+    var func = try Function.init(allocator, "test_istore8", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const ptr = try func.dfg.appendBlockParam(block0, Type.I64);
+    const val = try func.dfg.appendBlockParam(block0, Type.I32);
+
+    const store_data = InstructionData{ .store = .{
+        .opcode = .istore8,
+        .flags = MemFlags.default(),
+        .args = .{ val, ptr },
+        .offset = 0,
+    } };
+    const store_inst = try func.dfg.makeInst(store_data);
+    try func.layout.appendInst(store_inst, block0);
+
+    const ret_inst = try func.dfg.makeInst(.{ .nullary = .{ .opcode = .@"return" } });
+    try func.layout.appendInst(ret_inst, block0);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+    var vcode = try lower_mod.lowerFunction(Inst, allocator, &func, backend);
+    defer vcode.deinit();
+
+    try testing.expect(vcode.insns.items.len > 0);
+    try testing.expect(coverage.getCount("aarch64_istore8") > 0);
+}
+
+test "ISLE coverage: istore16 lowers to STRH constructor" {
+    const allocator = testing.allocator;
+
+    var coverage = isle_coverage.IsleRuleCoverage.init(allocator);
+    defer coverage.deinit();
+    isle_helpers.setIsleCoverageTracker(&coverage);
+    defer isle_helpers.setIsleCoverageTracker(null);
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.params.append(allocator, AbiParam.new(Type.I32));
+
+    var func = try Function.init(allocator, "test_istore16", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const ptr = try func.dfg.appendBlockParam(block0, Type.I64);
+    const val = try func.dfg.appendBlockParam(block0, Type.I32);
+
+    const store_data = InstructionData{ .store = .{
+        .opcode = .istore16,
+        .flags = MemFlags.default(),
+        .args = .{ val, ptr },
+        .offset = 0,
+    } };
+    const store_inst = try func.dfg.makeInst(store_data);
+    try func.layout.appendInst(store_inst, block0);
+
+    const ret_inst = try func.dfg.makeInst(.{ .nullary = .{ .opcode = .@"return" } });
+    try func.layout.appendInst(ret_inst, block0);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+    var vcode = try lower_mod.lowerFunction(Inst, allocator, &func, backend);
+    defer vcode.deinit();
+
+    try testing.expect(vcode.insns.items.len > 0);
+    try testing.expect(coverage.getCount("aarch64_istore16") > 0);
+}
+
+test "ISLE coverage: istore32 lowers to STR size32 constructor" {
+    const allocator = testing.allocator;
+
+    var coverage = isle_coverage.IsleRuleCoverage.init(allocator);
+    defer coverage.deinit();
+    isle_helpers.setIsleCoverageTracker(&coverage);
+    defer isle_helpers.setIsleCoverageTracker(null);
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.params.append(allocator, AbiParam.new(Type.I32));
+
+    var func = try Function.init(allocator, "test_istore32", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const ptr = try func.dfg.appendBlockParam(block0, Type.I64);
+    const val = try func.dfg.appendBlockParam(block0, Type.I32);
+
+    const store_data = InstructionData{ .store = .{
+        .opcode = .istore32,
+        .flags = MemFlags.default(),
+        .args = .{ val, ptr },
+        .offset = 0,
+    } };
+    const store_inst = try func.dfg.makeInst(store_data);
+    try func.layout.appendInst(store_inst, block0);
+
+    const ret_inst = try func.dfg.makeInst(.{ .nullary = .{ .opcode = .@"return" } });
+    try func.layout.appendInst(ret_inst, block0);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+    var vcode = try lower_mod.lowerFunction(Inst, allocator, &func, backend);
+    defer vcode.deinit();
+
+    try testing.expect(vcode.insns.items.len > 0);
+    try testing.expect(coverage.getCount("aarch64_istore32") > 0);
+}
+
 test "ISLE coverage: sload8 (sign-extend i8)" {
     const allocator = testing.allocator;
 
