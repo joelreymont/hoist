@@ -1,9 +1,11 @@
 ---
 title: COFF writer
-status: active
+status: closed
 priority: 1
 issue-type: task
-created-at: "\"2026-02-02T23:57:11.325116+01:00\""
+created-at: "\"\\\"2026-02-02T23:57:11.325116+01:00\\\"\""
+closed-at: "2026-02-05T21:50:22.222051+01:00"
+close-reason: Added external-reloc and string-table COFF coverage tests
 blocks:
   - hoist-elf-writer-9a1193be
 ---

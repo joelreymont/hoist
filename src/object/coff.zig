@@ -490,11 +490,12 @@ test "CoffWriter init" {
     defer writer.deinit();
 }
 
-test "CoffWriter resolves reloc target" {
+test "CoffWriter resolves external reloc target symbol index" {
     const allocator = std.testing.allocator;
     var symtab = symbols_mod.SymbolTable.init(allocator);
     defer symtab.deinit();
     const func = try symtab.declareFunc("foo", module_mod.Linkage.@"export");
+    const ext = try symtab.declareFunc("bar_ext", module_mod.Linkage.import);
 
     var writer = CoffWriter.init(allocator, .x86_64);
     defer writer.deinit();
@@ -502,13 +503,15 @@ test "CoffWriter resolves reloc target" {
     const relocs = [_]ModuleReloc{.{
         .off = 0,
         .kind = .abs64,
-        .target = symbols_mod.RelocTarget.fromFuncId(func),
+        .target = symbols_mod.RelocTarget.fromFuncId(ext),
         .addend = 0,
     }};
     try writer.addFunc(func, "foo", &[_]u8{0xC3}, &relocs, &symtab);
 
     const sec = &writer.sections.items[0];
-    try std.testing.expectEqual(@as(u32, 0), sec.relocs.items[0].sym_idx);
+    try std.testing.expectEqual(@as(u32, 1), sec.relocs.items[0].sym_idx);
+    try std.testing.expectEqual(@as(usize, 2), writer.syms.items.len);
+    try std.testing.expectEqual(@as(i16, 0), writer.syms.items[1].section);
 }
 
 test "CoffWriter finish basic" {
@@ -532,4 +535,55 @@ test "CoffWriter finish basic" {
     try std.testing.expect(n_sections > 0);
     try std.testing.expect(n_syms > 0);
     try std.testing.expect(@as(usize, symtab_off) < buf.items.len);
+}
+
+test "CoffWriter long symbol names use string table" {
+    const allocator = std.testing.allocator;
+    var symtab = symbols_mod.SymbolTable.init(allocator);
+    defer symtab.deinit();
+
+    const long_name = "very_long_function_name_for_coff";
+    const func = try symtab.declareFunc(long_name, module_mod.Linkage.@"export");
+
+    var writer = CoffWriter.init(allocator, .x86_64);
+    defer writer.deinit();
+
+    try writer.addFunc(func, long_name, &[_]u8{0xC3}, &[_]ModuleReloc{}, &symtab);
+
+    try std.testing.expectEqual(@as(usize, 1), writer.syms.items.len);
+    try std.testing.expectEqual(@as(u32, 0), std.mem.readInt(u32, writer.syms.items[0].name[0..4], .little));
+    const str_off = std.mem.readInt(u32, writer.syms.items[0].name[4..8], .little);
+    try std.testing.expect(str_off >= 4);
+    try std.testing.expect(std.mem.indexOf(u8, writer.strtab.items, long_name) != null);
+}
+
+test "CoffWriter finish encodes relocation symbol index" {
+    const allocator = std.testing.allocator;
+    var symtab = symbols_mod.SymbolTable.init(allocator);
+    defer symtab.deinit();
+    const func = try symtab.declareFunc("foo", module_mod.Linkage.@"export");
+    const ext = try symtab.declareFunc("bar_ext", module_mod.Linkage.import);
+
+    var writer = CoffWriter.init(allocator, .x86_64);
+    defer writer.deinit();
+
+    const relocs = [_]ModuleReloc{.{
+        .off = 0,
+        .kind = .abs64,
+        .target = symbols_mod.RelocTarget.fromFuncId(ext),
+        .addend = 0,
+    }};
+    try writer.addFunc(func, "foo", &[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0 }, &relocs, &symtab);
+
+    var buf = std.ArrayList(u8).init(allocator);
+    defer buf.deinit();
+    try writer.finish(&buf);
+
+    const reloc_off = std.mem.readInt(u32, buf.items[44..48], .little);
+    const n_reloc = std.mem.readInt(u16, buf.items[52..54], .little);
+    try std.testing.expectEqual(@as(u16, 1), n_reloc);
+    try std.testing.expect(@as(usize, reloc_off + 10) <= buf.items.len);
+
+    const sym_idx = std.mem.readInt(u32, buf.items[reloc_off + 4 .. reloc_off + 8], .little);
+    try std.testing.expectEqual(@as(u32, 1), sym_idx);
 }
