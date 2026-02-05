@@ -56,22 +56,138 @@ pub const Features = packed struct {
     /// Detect native CPU features at runtime.
     /// Platform-specific feature detection.
     pub fn detectNative() Features {
-        // On macOS ARM64, most features are available
-        if (@import("builtin").target.os.tag == .macos) {
+        const os = @import("builtin").target.os.tag;
+        return switch (os) {
+            .macos, .ios, .tvos, .watchos => detectMacOS(),
+            .linux => detectLinux(),
+            else => init(),
+        };
+    }
+
+    fn detectMacOS() Features {
+        var feat = init();
+        feat.has_neon = true;
+
+        var any: bool = false;
+
+        if (sysctlBool("hw.optional.arm.FEAT_LSE")) |v| {
+            feat.has_lse = v;
+            any = true;
+        }
+        if (sysctlBool("hw.optional.arm.FEAT_PAuth")) |v| {
+            feat.has_pauth = v;
+            any = true;
+        }
+        if (sysctlBool("hw.optional.arm.FEAT_BTI")) |v| {
+            feat.has_bti = v;
+            any = true;
+        }
+        if (sysctlBool("hw.optional.arm.FEAT_FP16")) |v| {
+            feat.has_fp16 = v;
+            any = true;
+        }
+        if (sysctlBool("hw.optional.arm.FEAT_SVE")) |v| {
+            feat.has_sve = v;
+            any = true;
+        }
+        if (sysctlBool("hw.optional.arm.FEAT_SME")) |v| {
+            feat.has_sme = v;
+            any = true;
+        }
+        if (sysctlBool("hw.optional.arm.FEAT_DotProd")) |v| {
+            feat.has_dotprod = v;
+            any = true;
+        }
+
+        var crypto = false;
+        if (sysctlBool("hw.optional.arm.FEAT_AES")) |v| {
+            crypto = crypto or v;
+            any = true;
+        }
+        if (sysctlBool("hw.optional.arm.FEAT_SHA1")) |v| {
+            crypto = crypto or v;
+            any = true;
+        }
+        if (sysctlBool("hw.optional.arm.FEAT_SHA2")) |v| {
+            crypto = crypto or v;
+            any = true;
+        }
+        feat.has_crypto = crypto;
+
+        if (!any) {
             return .{
                 .has_neon = true,
                 .has_crypto = true,
                 .has_fp16 = true,
                 .has_lse = true,
-                .has_dotprod = true, // Apple Silicon supports FEAT_DotProd (ARMv8.2-A)
-                // Conservative defaults for security features
+                .has_dotprod = true,
                 .has_pauth = false,
                 .has_bti = false,
                 .has_sve = false,
                 .has_sme = false,
             };
         }
-        return init();
+
+        return feat;
+    }
+
+    fn detectLinux() Features {
+        var feat = init();
+        feat.has_neon = true;
+
+        const AT_HWCAP: u64 = 16;
+        const AT_HWCAP2: u64 = 26;
+
+        const HWCAP_AES: u64 = 1 << 3;
+        const HWCAP_SHA1: u64 = 1 << 5;
+        const HWCAP_SHA2: u64 = 1 << 6;
+        const HWCAP_ATOMICS: u64 = 1 << 8;
+        const HWCAP_FPHP: u64 = 1 << 9;
+        const HWCAP_ASIMDHP: u64 = 1 << 10;
+        const HWCAP_ASIMDDP: u64 = 1 << 20;
+        const HWCAP_SVE: u64 = 1 << 22;
+        const HWCAP_PACA: u64 = 1 << 30;
+        const HWCAP_PACG: u64 = 1 << 31;
+
+        var hwcap: u64 = 0;
+        var hwcap2: u64 = 0;
+        if (readAuxv(AT_HWCAP)) |cap| hwcap = cap else |_| {}
+        if (readAuxv(AT_HWCAP2)) |cap| hwcap2 = cap else |_| {}
+        _ = hwcap2;
+
+        if (hwcap & HWCAP_ATOMICS != 0) feat.has_lse = true;
+        if (hwcap & HWCAP_ASIMDDP != 0) feat.has_dotprod = true;
+        if (hwcap & HWCAP_SVE != 0) feat.has_sve = true;
+        if (hwcap & HWCAP_FPHP != 0 or hwcap & HWCAP_ASIMDHP != 0) feat.has_fp16 = true;
+        if (hwcap & HWCAP_AES != 0 or hwcap & HWCAP_SHA1 != 0 or hwcap & HWCAP_SHA2 != 0) feat.has_crypto = true;
+        if (hwcap & HWCAP_PACA != 0 or hwcap & HWCAP_PACG != 0) feat.has_pauth = true;
+
+        return feat;
+    }
+
+    fn sysctlBool(name: []const u8) ?bool {
+        var val: i32 = 0;
+        var len: usize = @sizeOf(i32);
+        const rc = std.c.sysctlbyname(name, &val, &len, null, 0);
+        if (rc != 0) return null;
+        return val != 0;
+    }
+
+    fn readAuxv(tag: u64) !u64 {
+        const auxv = try std.fs.openFileAbsolute("/proc/self/auxv", .{});
+        defer auxv.close();
+
+        var buf: [16]u8 = undefined;
+        while (true) {
+            const n = try auxv.read(&buf);
+            if (n < 16) break;
+
+            const key = std.mem.readInt(u64, buf[0..8], .little);
+            const val = std.mem.readInt(u64, buf[8..16], .little);
+            if (key == tag) return val;
+            if (key == 0) break;
+        }
+        return 0;
     }
 
     /// Check if LSE atomics are preferred.
