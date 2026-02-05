@@ -322,10 +322,11 @@ pub fn PeepholeOptimizer(comptime MachInst: type) type {
         }
 
         /// Eliminate redundant loads from the same address.
-        /// Pattern: LDR Ra, [Rb, #off]; ... no writes to [Rb, #off] ...; LDR Ra, [Rb, #off]
+        /// Pattern: LDR Ra, [Rb, #off]; ... safe insns ...; LDR Ra, [Rb, #off]
         /// Rewrite: LDR Ra, [Rb, #off]; ... no writes ...; (delete second LDR)
         ///
-        /// Requires: Alias analysis to prove no intervening writes
+        /// Conservative policy: only skip over known-safe move/nop instructions
+        /// that do not clobber the load base or destination registers.
         pub fn eliminateRedundantLoads(self: *Self, insts: *std.ArrayList(MachInst)) !bool {
             if (!@hasField(MachInst, "ldr")) {
                 return false;
@@ -334,40 +335,106 @@ pub fn PeepholeOptimizer(comptime MachInst: type) type {
             var changed = false;
             var i: usize = 0;
 
-            while (i + 1 < insts.items.len) {
+            while (i < insts.items.len) {
                 const inst1 = &insts.items[i];
-                const inst2 = &insts.items[i + 1];
-
-                if (inst1.* != .ldr or inst2.* != .ldr) {
+                if (inst1.* != .ldr) {
                     i += 1;
                     continue;
                 }
 
                 const ldr1 = inst1.ldr;
-                const ldr2 = inst2.ldr;
+                var j = i + 1;
+                var removed = false;
 
-                if (!std.meta.eql(ldr1.base, ldr2.base)) {
+                while (j < insts.items.len) {
+                    const inst2 = &insts.items[j];
+                    if (inst2.* == .ldr) {
+                        const ldr2 = inst2.ldr;
+                        if (std.meta.eql(ldr1.base, ldr2.base) and
+                            ldr1.offset == ldr2.offset and
+                            ldr1.size == ldr2.size and
+                            std.meta.eql(ldr1.dst.toReg(), ldr2.dst.toReg()))
+                        {
+                            _ = insts.orderedRemove(j);
+                            self.stats.redundant_loads_eliminated += 1;
+                            changed = true;
+                            removed = true;
+                        }
+                        break;
+                    }
+
+                    if (!isSafeBetweenLoads(inst2.*, ldr1.base, ldr1.dst.toReg())) {
+                        break;
+                    }
+
+                    j += 1;
+                }
+
+                if (removed) {
                     i += 1;
                     continue;
                 }
 
-                if (ldr1.offset != ldr2.offset or ldr1.size != ldr2.size) {
-                    i += 1;
-                    continue;
-                }
-
-                if (!std.meta.eql(ldr1.dst.toReg(), ldr2.dst.toReg())) {
-                    i += 1;
-                    continue;
-                }
-
-                _ = insts.orderedRemove(i + 1);
-                self.stats.redundant_loads_eliminated += 1;
-                changed = true;
                 i += 1;
             }
 
             return changed;
+        }
+
+        fn isSafeBetweenLoads(inst: MachInst, base_reg: anytype, dst_reg: anytype) bool {
+            if (@hasField(MachInst, "nop") and inst == .nop) {
+                return true;
+            }
+
+            if (@hasField(MachInst, "mov_rr") and inst == .mov_rr) {
+                const mov = inst.mov_rr;
+                const wr = mov.dst.toReg();
+                return !std.meta.eql(wr, base_reg) and !std.meta.eql(wr, dst_reg);
+            }
+
+            if (@hasField(MachInst, "fmov") and inst == .fmov) {
+                const mov = inst.fmov;
+                const wr = mov.dst.toReg();
+                return !std.meta.eql(wr, base_reg) and !std.meta.eql(wr, dst_reg);
+            }
+
+            if (@hasField(MachInst, "movss_rr") and inst == .movss_rr) {
+                const mov = inst.movss_rr;
+                const wr = mov.dst.toReg();
+                return !std.meta.eql(wr, base_reg) and !std.meta.eql(wr, dst_reg);
+            }
+
+            if (@hasField(MachInst, "movsd_rr") and inst == .movsd_rr) {
+                const mov = inst.movsd_rr;
+                const wr = mov.dst.toReg();
+                return !std.meta.eql(wr, base_reg) and !std.meta.eql(wr, dst_reg);
+            }
+
+            if (@hasField(MachInst, "movdqa_rr") and inst == .movdqa_rr) {
+                const mov = inst.movdqa_rr;
+                const wr = mov.dst.toReg();
+                return !std.meta.eql(wr, base_reg) and !std.meta.eql(wr, dst_reg);
+            }
+
+            if (@hasField(MachInst, "movdqu_rr") and inst == .movdqu_rr) {
+                const mov = inst.movdqu_rr;
+                const wr = mov.dst.toReg();
+                return !std.meta.eql(wr, base_reg) and !std.meta.eql(wr, dst_reg);
+            }
+
+            if (@hasField(MachInst, "movups_rr") and inst == .movups_rr) {
+                const mov = inst.movups_rr;
+                const wr = mov.dst.toReg();
+                return !std.meta.eql(wr, base_reg) and !std.meta.eql(wr, dst_reg);
+            }
+
+            if (@hasField(MachInst, "movupd_rr") and inst == .movupd_rr) {
+                const mov = inst.movupd_rr;
+                const wr = mov.dst.toReg();
+                return !std.meta.eql(wr, base_reg) and !std.meta.eql(wr, dst_reg);
+            }
+
+            return false;
         }
 
         /// Get optimization statistics.
@@ -541,6 +608,148 @@ test "eliminateRedundantLoads removes adjacent duplicate load" {
     try testing.expect(changed);
     try testing.expectEqual(@as(usize, 1), insts.items.len);
     try testing.expectEqual(@as(u32, 1), optimizer.stats.redundant_loads_eliminated);
+}
+
+test "eliminateRedundantLoads skips over safe move and nop" {
+    const testing = std.testing;
+
+    const TestReg = struct {
+        bits: u8,
+    };
+
+    const TestWritableReg = struct {
+        reg: TestReg,
+
+        pub fn toReg(self: @This()) TestReg {
+            return self.reg;
+        }
+    };
+
+    const TestSize = enum { size32, size64 };
+
+    const TestInst = union(enum) {
+        ldr: struct { dst: TestWritableReg, base: TestReg, offset: i32, size: TestSize },
+        mov_rr: struct { dst: TestWritableReg, src: TestReg },
+        nop: void,
+    };
+
+    var optimizer = PeepholeOptimizer(TestInst).init(testing.allocator);
+
+    const r0 = TestReg{ .bits = 0 };
+    const r1 = TestReg{ .bits = 1 };
+    const r2 = TestReg{ .bits = 2 };
+    const r3 = TestReg{ .bits = 3 };
+
+    var insts: std.ArrayList(TestInst) = .{};
+    defer insts.deinit(testing.allocator);
+
+    try insts.append(testing.allocator, .{ .ldr = .{
+        .dst = .{ .reg = r0 },
+        .base = r1,
+        .offset = 16,
+        .size = .size64,
+    } });
+    try insts.append(testing.allocator, .{ .mov_rr = .{
+        .dst = .{ .reg = r2 },
+        .src = r3,
+    } });
+    try insts.append(testing.allocator, .{ .nop = {} });
+    try insts.append(testing.allocator, .{ .ldr = .{
+        .dst = .{ .reg = r0 },
+        .base = r1,
+        .offset = 16,
+        .size = .size64,
+    } });
+
+    const changed = try optimizer.eliminateRedundantLoads(&insts);
+
+    try testing.expect(changed);
+    try testing.expectEqual(@as(usize, 3), insts.items.len);
+    try testing.expectEqual(@as(u32, 1), optimizer.stats.redundant_loads_eliminated);
+}
+
+test "eliminateRedundantLoads stops on clobber or store" {
+    const testing = std.testing;
+
+    const TestReg = struct {
+        bits: u8,
+    };
+
+    const TestWritableReg = struct {
+        reg: TestReg,
+
+        pub fn toReg(self: @This()) TestReg {
+            return self.reg;
+        }
+    };
+
+    const TestSize = enum { size32, size64 };
+
+    const TestInst = union(enum) {
+        ldr: struct { dst: TestWritableReg, base: TestReg, offset: i32, size: TestSize },
+        mov_rr: struct { dst: TestWritableReg, src: TestReg },
+        str: struct { src: TestReg, base: TestReg, offset: i32, size: TestSize },
+    };
+
+    var optimizer = PeepholeOptimizer(TestInst).init(testing.allocator);
+
+    const r0 = TestReg{ .bits = 0 };
+    const r1 = TestReg{ .bits = 1 };
+    const r2 = TestReg{ .bits = 2 };
+
+    var clobber_insts: std.ArrayList(TestInst) = .{};
+    defer clobber_insts.deinit(testing.allocator);
+
+    try clobber_insts.append(testing.allocator, .{ .ldr = .{
+        .dst = .{ .reg = r0 },
+        .base = r1,
+        .offset = 16,
+        .size = .size64,
+    } });
+    try clobber_insts.append(testing.allocator, .{
+        .mov_rr = .{
+            .dst = .{ .reg = r1 }, // clobbers base
+            .src = r2,
+        },
+    });
+    try clobber_insts.append(testing.allocator, .{ .ldr = .{
+        .dst = .{ .reg = r0 },
+        .base = r1,
+        .offset = 16,
+        .size = .size64,
+    } });
+
+    const changed1 = try optimizer.eliminateRedundantLoads(&clobber_insts);
+    try testing.expect(!changed1);
+    try testing.expectEqual(@as(usize, 3), clobber_insts.items.len);
+
+    optimizer.resetStats();
+
+    var store_insts: std.ArrayList(TestInst) = .{};
+    defer store_insts.deinit(testing.allocator);
+
+    try store_insts.append(testing.allocator, .{ .ldr = .{
+        .dst = .{ .reg = r0 },
+        .base = r1,
+        .offset = 16,
+        .size = .size64,
+    } });
+    try store_insts.append(testing.allocator, .{ .str = .{
+        .src = r2,
+        .base = r1,
+        .offset = 16,
+        .size = .size64,
+    } });
+    try store_insts.append(testing.allocator, .{ .ldr = .{
+        .dst = .{ .reg = r0 },
+        .base = r1,
+        .offset = 16,
+        .size = .size64,
+    } });
+
+    const changed2 = try optimizer.eliminateRedundantLoads(&store_insts);
+    try testing.expect(!changed2);
+    try testing.expectEqual(@as(usize, 3), store_insts.items.len);
 }
 
 // ============================================================================
