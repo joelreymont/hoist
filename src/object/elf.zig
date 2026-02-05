@@ -665,11 +665,12 @@ test "ElfWriter init" {
     defer writer.deinit();
 }
 
-test "ElfWriter resolves reloc target" {
+test "ElfWriter resolves external reloc target symbol index" {
     const allocator = std.testing.allocator;
     var symtab = symbols_mod.SymbolTable.init(allocator);
     defer symtab.deinit();
     const func = try symtab.declareFunc("foo", module_mod.Linkage.@"export");
+    const ext = try symtab.declareFunc("bar_ext", module_mod.Linkage.import);
 
     var writer = ElfWriter.init(allocator, .x86_64);
     defer writer.deinit();
@@ -677,7 +678,7 @@ test "ElfWriter resolves reloc target" {
     const relocs = [_]ModuleReloc{.{
         .off = 0,
         .kind = .abs64,
-        .target = symbols_mod.RelocTarget.fromFuncId(func),
+        .target = symbols_mod.RelocTarget.fromFuncId(ext),
         .addend = 0,
     }};
     try writer.addFunc(func, "foo", &[_]u8{0xC3}, &relocs, &symtab);
@@ -685,7 +686,7 @@ test "ElfWriter resolves reloc target" {
     const sec = &writer.sections.items[0];
     const ref = sec.relocs.items[0].sym;
     try std.testing.expectEqual(false, ref.local);
-    try std.testing.expectEqual(@as(u32, 0), ref.idx);
+    try std.testing.expectEqual(@as(u32, 1), ref.idx);
 }
 
 test "ElfWriter finish basic" {
