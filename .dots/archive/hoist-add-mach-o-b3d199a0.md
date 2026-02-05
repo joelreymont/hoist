@@ -1,9 +1,11 @@
 ---
 title: Add Mach-O Section Emission
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.615504+01:00"
+created-at: "\"2026-02-02T21:35:56.615504+01:00\""
+closed-at: "2026-02-05T21:54:48.700324+01:00"
+close-reason: Mach-O segment/section/symtab/reloc emission is implemented and tested
 blocks:
   - hoist-fix-mach-o-e88db236
 ---
