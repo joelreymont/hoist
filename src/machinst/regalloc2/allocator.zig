@@ -8,6 +8,8 @@ const PhysReg = types.PhysReg;
 const Allocation = types.Allocation;
 const RegAllocAdapter = api.RegAllocAdapter;
 const LivenessInfo = liveness.LivenessInfo;
+const SpillSlot = types.SpillSlot;
+const testing = std.testing;
 
 pub const Allocator = struct {
     mem: Allocator_mem,
@@ -69,7 +71,7 @@ pub const Allocator = struct {
                     const slot = self.next_spill;
                     self.next_spill += 8;
                     try self.spills.put(vreg, slot);
-                    try self.adapter.setAllocation(vreg, Allocation{ .stack = slot });
+                    try self.adapter.setAllocation(vreg, Allocation{ .stack = SpillSlot.new(slot) });
                 }
             } else {
                 if (self.active_int.count() < self.int_pregs.items.len) {
@@ -80,9 +82,50 @@ pub const Allocator = struct {
                     const slot = self.next_spill;
                     self.next_spill += 8;
                     try self.spills.put(vreg, slot);
-                    try self.adapter.setAllocation(vreg, Allocation{ .stack = slot });
+                    try self.adapter.setAllocation(vreg, Allocation{ .stack = SpillSlot.new(slot) });
                 }
             }
         }
     }
 };
+
+test "Allocator run allocates vregs discovered from operands" {
+    var adapter = RegAllocAdapter.init(testing.allocator);
+    defer adapter.deinit();
+
+    try adapter.addOperand(types.Operand.init(types.VReg.new(0), .any_reg, .use));
+    try adapter.addOperand(types.Operand.init(types.VReg.new(3), .any_reg, .def));
+
+    var live = LivenessInfo.init(testing.allocator);
+    defer live.deinit();
+
+    var alloc = try Allocator.init(testing.allocator, &adapter);
+    defer alloc.deinit();
+
+    try alloc.run(&live);
+
+    try testing.expectEqual(@as(u32, 4), adapter.num_vregs);
+    try testing.expect(adapter.getAllocation(types.VReg.new(0)) != null);
+    try testing.expect(adapter.getAllocation(types.VReg.new(3)) != null);
+}
+
+test "Allocator run spills when vregs exceed integer preg count" {
+    var adapter = RegAllocAdapter.init(testing.allocator);
+    defer adapter.deinit();
+
+    var i: u32 = 0;
+    while (i < 40) : (i += 1) {
+        try adapter.addOperand(types.Operand.init(types.VReg.new(i), .any_reg, .use));
+    }
+
+    var live = LivenessInfo.init(testing.allocator);
+    defer live.deinit();
+
+    var alloc = try Allocator.init(testing.allocator, &adapter);
+    defer alloc.deinit();
+
+    try alloc.run(&live);
+
+    try testing.expect(alloc.next_spill > 0);
+    try testing.expect(adapter.getAllocation(types.VReg.new(39)).?.isStack());
+}

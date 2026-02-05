@@ -41,6 +41,8 @@ pub const RegAllocAdapter = struct {
     /// Add an operand to the current instruction.
     pub fn addOperand(self: *RegAllocAdapter, operand: Operand) !void {
         try self.operands.append(self.allocator, operand);
+        const next_vreg = operand.vreg.index + 1;
+        if (next_vreg > self.num_vregs) self.num_vregs = next_vreg;
     }
 
     /// Get operands for an instruction.
@@ -89,6 +91,20 @@ test "RegAllocAdapter addOperand" {
 
     const ops = adapter.getOperands(0);
     try testing.expectEqual(@as(usize, 1), ops.len);
+    try testing.expectEqual(@as(u32, 1), adapter.num_vregs);
+}
+
+test "RegAllocAdapter addOperand tracks max vreg index" {
+    const allocator = testing.allocator;
+    var adapter = RegAllocAdapter.init(allocator);
+    defer adapter.deinit();
+
+    const low = VReg.new(2);
+    const high = VReg.new(37);
+    try adapter.addOperand(Operand.init(low, .any_reg, .use));
+    try adapter.addOperand(Operand.init(high, .any_reg, .def));
+
+    try testing.expectEqual(@as(u32, 38), adapter.num_vregs);
 }
 
 test "RegAllocAdapter setAllocation" {
