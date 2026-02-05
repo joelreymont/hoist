@@ -217,11 +217,8 @@ pub const RegAllocBridge = struct {
                 try self.adapter.addOperand(Operand.init(dst_vreg, .any_reg, .def));
             },
 
-            // TODO: Add remaining instruction variants as they are implemented
-            else => {
-                // For now, unsupported instructions are silently skipped.
-                // This allows partial implementation while backend is being built.
-            },
+            // Unsupported instructions must fail explicitly so lowering gaps are visible.
+            else => return error.UnsupportedInstructionVariant,
         }
     }
 
@@ -345,9 +342,7 @@ pub const RegAllocBridge = struct {
                 mul.src2 = try self.allocateReg(mul.src2);
             },
 
-            else => {
-                // Unsupported instructions unchanged
-            },
+            else => return error.UnsupportedInstructionVariant,
         }
     }
 
@@ -586,4 +581,32 @@ test "RegAllocBridge applyAllocations add_rr" {
     try testing.expectEqual(@as(u8, 10), inst.add_rr.src1.p.index);
     try testing.expectEqual(@as(u8, 11), inst.add_rr.src2.p.index);
     try testing.expectEqual(@as(u8, 12), inst.add_rr.dst.toReg().p.index);
+}
+
+test "RegAllocBridge convertVCode rejects unsupported instruction variant" {
+    var vcode = VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    _ = try vcode.startBlock(&.{});
+    _ = try vcode.addInst(.nop);
+    try vcode.finishBlock(0, &.{});
+
+    var bridge = RegAllocBridge.init(testing.allocator);
+    defer bridge.deinit();
+
+    try testing.expectError(error.UnsupportedInstructionVariant, bridge.convertVCode(&vcode));
+}
+
+test "RegAllocBridge applyAllocations rejects unsupported instruction variant" {
+    var vcode = VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    _ = try vcode.startBlock(&.{});
+    _ = try vcode.addInst(.nop);
+    try vcode.finishBlock(0, &.{});
+
+    var bridge = RegAllocBridge.init(testing.allocator);
+    defer bridge.deinit();
+
+    try testing.expectError(error.UnsupportedInstructionVariant, bridge.applyAllocations(&vcode));
 }
