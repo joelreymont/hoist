@@ -3,6 +3,7 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
 const machinst = @import("machinst.zig");
+const stubs_mod = @import("stubs.zig");
 pub const MachLabel = machinst.MachLabel;
 const Block = @import("../ir/entities.zig").Block;
 
@@ -255,8 +256,12 @@ pub const MachBuffer = struct {
     source_files: std.ArrayList([]const u8),
     /// Map from file path to file ID for deduplication.
     source_file_map: std.StringHashMap(u32),
+    /// Trampoline/veneer pool for far-branch fixups.
+    trampoline_pool: stubs_mod.TrampolinePool,
     /// Allocator for dynamic allocations.
     allocator: Allocator,
+    /// Test hook to force branch26 veneer emission on finalize.
+    force_branch26_veneers_for_test: bool = false,
 
     const UNKNOWN_OFFSET: CodeOffset = 0xFFFF_FFFF;
 
@@ -274,6 +279,7 @@ pub const MachBuffer = struct {
             .source_lines = std.ArrayList(SourceLineInfo){},
             .source_files = std.ArrayList([]const u8){},
             .source_file_map = std.StringHashMap(u32).init(allocator),
+            .trampoline_pool = stubs_mod.TrampolinePool.init(allocator),
             .allocator = allocator,
         };
     }
@@ -302,6 +308,7 @@ pub const MachBuffer = struct {
         }
         self.source_files.deinit(self.allocator);
         self.source_file_map.deinit();
+        self.trampoline_pool.deinit();
     }
 
     /// Get current code offset.
@@ -609,6 +616,28 @@ pub const MachBuffer = struct {
         std.mem.writeInt(u32, insn_bytes, insn, .little);
     }
 
+    /// Emit a direct-jump veneer and track it in the trampoline pool.
+    fn emitBranch26Veneer(self: *MachBuffer, target_label: MachLabel, target_offset: CodeOffset) !CodeOffset {
+        try self.alignTo(4);
+        const veneer_offset = self.curOffset();
+
+        var veneer_bytes: [4]u8 = undefined;
+        const patcher = stubs_mod.TrampolinePatcher.init(.aarch64);
+        _ = patcher.emitVeneer(&veneer_bytes, veneer_offset, target_offset) catch |err| switch (err) {
+            error.VeneerTargetOutOfRange => return error.BranchOutOfRange,
+        };
+        try self.putData(&veneer_bytes);
+
+        try self.trampoline_pool.addTrampoline(
+            .direct_jump,
+            veneer_offset,
+            .{ .label = target_label },
+            4,
+        );
+
+        return veneer_offset;
+    }
+
     /// Patch ADR instruction with 21-bit byte offset.
     fn patchAdr21(insn_bytes: *[4]u8, offset: i64) !void {
         var insn = std.mem.readInt(u32, insn_bytes, .little);
@@ -681,10 +710,22 @@ pub const MachBuffer = struct {
                         return error.UnalignedBranchTarget;
                     }
                     const offset_words = @divTrunc(delta_aarch64, 4);
-                    if (offset_words < -(1 << 25) or offset_words >= (1 << 25)) {
-                        return error.BranchOutOfRange;
+                    const out_of_range = offset_words < -(1 << 25) or offset_words >= (1 << 25);
+
+                    if (out_of_range or self.force_branch26_veneers_for_test) {
+                        const veneer_offset = try self.emitBranch26Veneer(fixup.label, label_offset);
+                        const veneer_delta: i64 = @as(i64, @intCast(veneer_offset)) - @as(i64, @intCast(pc_aarch64));
+                        if (@rem(veneer_delta, 4) != 0) {
+                            return error.UnalignedBranchTarget;
+                        }
+                        const veneer_words = @divTrunc(veneer_delta, 4);
+                        if (veneer_words < -(1 << 25) or veneer_words >= (1 << 25)) {
+                            return error.BranchOutOfRange;
+                        }
+                        try patchBranch26(self.data.items[fixup.offset..][0..4], veneer_words);
+                    } else {
+                        try patchBranch26(self.data.items[fixup.offset..][0..4], offset_words);
                     }
-                    try patchBranch26(self.data.items[fixup.offset..][0..4], offset_words);
                 },
                 .adr21 => {
                     // ADR: 21-bit signed byte offset
@@ -816,6 +857,38 @@ test "MachBuffer branch26 forward label reference" {
 
     const patched = std.mem.readInt(u32, buf.data.items[0..4], .little);
     try testing.expectEqual(@as(u32, 0x14000002), patched);
+}
+
+test "MachBuffer branch26 uses veneer trampoline when forced" {
+    var buf = MachBuffer.init(testing.allocator);
+    defer buf.deinit();
+
+    const target = try buf.allocLabel();
+
+    // AArch64 B with placeholder imm26.
+    try buf.put4(0x14000000);
+    try buf.useLabelAtOffset(0, target, .branch26);
+
+    // One 4-byte instruction between branch and target.
+    try buf.put4(0xD503201F); // NOP
+    try buf.bindLabel(target);
+
+    buf.force_branch26_veneers_for_test = true;
+    try buf.finalize();
+
+    // Original branch now targets veneer at offset 8.
+    const patched = std.mem.readInt(u32, buf.data.items[0..4], .little);
+    try testing.expectEqual(@as(u32, 0x14000002), patched);
+
+    // Veneer emitted at end (offset 8), branching to target at offset 8.
+    try testing.expectEqual(@as(usize, 12), buf.data.items.len);
+    const veneer = std.mem.readInt(u32, buf.data.items[8..12], .little);
+    try testing.expectEqual(@as(u32, 0x14000000), veneer);
+
+    const tramps = buf.trampoline_pool.getTrampolines();
+    try testing.expectEqual(@as(usize, 1), tramps.len);
+    try testing.expectEqual(stubs_mod.TrampolineKind.direct_jump, tramps[0].kind);
+    try testing.expectEqual(@as(CodeOffset, 8), tramps[0].offset);
 }
 
 test "MachBuffer branch19 forward label reference" {

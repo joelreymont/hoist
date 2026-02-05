@@ -2,8 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
-const buffer_mod = @import("buffer.zig");
-const CodeOffset = buffer_mod.CodeOffset;
+pub const CodeOffset = u32;
 const MachLabel = @import("machinst.zig").MachLabel;
 
 /// Trampoline type for indirect calls and far jumps.
