@@ -18,6 +18,7 @@ const Signature = root.signature.Signature;
 const AbiParam = root.signature.AbiParam;
 const ExternalName = root.extfunc.ExternalName;
 const Type = root.types.Type;
+const Imm128 = root.immediates.Imm128;
 const Block = root.entities.Block;
 const Value = root.entities.Value;
 const InstructionData = root.instruction_data.InstructionData;
@@ -355,12 +356,62 @@ test "lower istore32 emits str" {
     try expectStoreInst(&vcode, .str32);
 }
 
+test "lower shuffle dup8 emits vec_dup_lane" {
+    const mask = [_]u8{3} ** 16;
+    var vcode = try lowerShuffleVCode(mask);
+    defer vcode.deinit();
+    try expectShuffleInst(&vcode, .dup_lane);
+}
+
+test "lower shuffle ext emits vec_ext" {
+    const mask = maskExt(4);
+    var vcode = try lowerShuffleVCode(mask);
+    defer vcode.deinit();
+    try expectShuffleInst(&vcode, .ext);
+}
+
+test "lower shuffle uzp1 emits uzp1" {
+    const mask = maskBytesFromU128(0x1e1c_1a18_1614_1210_0e0c_0a08_0604_0200);
+    var vcode = try lowerShuffleVCode(mask);
+    defer vcode.deinit();
+    try expectShuffleInst(&vcode, .uzp1);
+}
+
+test "lower shuffle zip1 emits zip1" {
+    const mask = maskBytesFromU128(0x1707_1606_1505_1404_1303_1202_1101_1000);
+    var vcode = try lowerShuffleVCode(mask);
+    defer vcode.deinit();
+    try expectShuffleInst(&vcode, .zip1);
+}
+
+test "lower shuffle trn1 emits trn1" {
+    const mask = maskBytesFromU128(0x1e0e_1c0c_1a0a_1808_1606_1404_1202_1000);
+    var vcode = try lowerShuffleVCode(mask);
+    defer vcode.deinit();
+    try expectShuffleInst(&vcode, .trn1);
+}
+
+test "lower shuffle rev16 emits vec_rev16" {
+    const mask = maskBytesFromU128(0x0e0f_0c0d_0a0b_0809_0607_0405_0203_0001);
+    var vcode = try lowerShuffleVCode(mask);
+    defer vcode.deinit();
+    try expectShuffleInst(&vcode, .rev16);
+}
+
+test "lower shuffle fallback emits table lookup" {
+    const mask = [_]u8{ 0, 5, 10, 15, 16, 21, 26, 31, 3, 8, 13, 18, 23, 28, 1, 6 };
+    var vcode = try lowerShuffleVCode(mask);
+    defer vcode.deinit();
+    try expectShuffleInst(&vcode, .tbl);
+}
+
 // Helper wrappers to call generated lowering functions
 fn instValue(ctx: *lower_mod.LowerCtx(Inst), inst: lower_mod.Inst) !Value {
     return ctx.func.dfg.firstResult(inst) orelse try ctx.func.dfg.appendInstResult(inst, Type.I8);
 }
 
 const StoreKind = enum { strb, strh, str32 };
+const ShuffleKind = enum { dup_lane, ext, uzp1, zip1, trn1, rev16, tbl };
 
 fn lowerStoreVCode(opcode: root.opcodes.Opcode, val_ty: Type) !vcode_mod.VCode(Inst) {
     const allocator = testing.allocator;
@@ -398,6 +449,45 @@ fn lowerStoreVCode(opcode: root.opcodes.Opcode, val_ty: Type) !vcode_mod.VCode(I
     return try lower_mod.lowerFunction(Inst, allocator, &func, backend);
 }
 
+fn lowerShuffleVCode(mask_bytes: [16]u8) !vcode_mod.VCode(Inst) {
+    const allocator = testing.allocator;
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(Type.I8X16));
+    try sig.params.append(allocator, AbiParam.new(Type.I8X16));
+
+    var func = try Function.init(allocator, "test_shuffle_lowering", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const a = try func.dfg.appendBlockParam(block0, Type.I8X16);
+    const b = try func.dfg.appendBlockParam(block0, Type.I8X16);
+
+    const shuffle_data = InstructionData{ .shuffle = .{
+        .opcode = .shuffle,
+        .args = .{ a, b },
+        .mask = Imm128.new(mask_bytes),
+    } };
+    const shuffle_inst = try func.dfg.makeInst(shuffle_data);
+    try func.layout.appendInst(shuffle_inst, block0);
+    _ = try func.dfg.appendInstResult(shuffle_inst, Type.I8X16);
+
+    var vcode = vcode_mod.VCode(Inst).init(allocator);
+    errdefer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(allocator, &func, &vcode);
+    defer ctx.deinit();
+    try ctx.allocateSSAVRegs();
+    _ = try ctx.startBlock(block0);
+    defer ctx.endBlock();
+
+    const handled = try lowerInst(&ctx, shuffle_inst);
+    try testing.expect(handled);
+    return vcode;
+}
+
 fn expectStoreInst(vcode: *const vcode_mod.VCode(Inst), kind: StoreKind) !void {
     var found = false;
     for (vcode.insns.items) |inst| {
@@ -420,12 +510,70 @@ fn expectStoreInst(vcode: *const vcode_mod.VCode(Inst), kind: StoreKind) !void {
     try testing.expect(found);
 }
 
+fn expectShuffleInst(vcode: *const vcode_mod.VCode(Inst), kind: ShuffleKind) !void {
+    var found = false;
+    for (vcode.insns.items) |inst| {
+        switch (inst) {
+            .vec_dup_lane => if (kind == .dup_lane) {
+                found = true;
+                break;
+            },
+            .vec_ext => if (kind == .ext) {
+                found = true;
+                break;
+            },
+            .uzp1 => if (kind == .uzp1) {
+                found = true;
+                break;
+            },
+            .zip1 => if (kind == .zip1) {
+                found = true;
+                break;
+            },
+            .trn1 => if (kind == .trn1) {
+                found = true;
+                break;
+            },
+            .vec_rev16 => if (kind == .rev16) {
+                found = true;
+                break;
+            },
+            .tbl, .vec_tbl2 => if (kind == .tbl) {
+                found = true;
+                break;
+            },
+            else => {},
+        }
+    }
+    try testing.expect(found);
+}
+
+fn maskBytesFromU128(mask: u128) [16]u8 {
+    var bytes: [16]u8 = undefined;
+    var i: usize = 0;
+    while (i < 16) : (i += 1) {
+        const shift: u7 = @intCast(i * 8);
+        bytes[i] = @truncate(mask >> shift);
+    }
+    return bytes;
+}
+
+fn maskExt(start: u8) [16]u8 {
+    var bytes: [16]u8 = undefined;
+    var i: usize = 0;
+    while (i < 16) : (i += 1) {
+        bytes[i] = @truncate(@as(u16, start) + @as(u16, @intCast(i)));
+    }
+    return bytes;
+}
+
 fn lowerInst(ctx: *lower_mod.LowerCtx(Inst), inst: lower_mod.Inst) !bool {
     var isle_ctx = isle_impl.IsleContext.init(ctx);
-    _ = aarch64_lower.lower(&isle_ctx, try instValue(ctx, inst)) catch |err| {
+    const lowered = aarch64_lower.lower(&isle_ctx, try instValue(ctx, inst)) catch |err| {
         if (err == error.NoMatch) return false;
         return err;
     };
+    try ctx.emit(lowered);
     return true;
 }
 

@@ -3502,6 +3502,9 @@
 ;; u128 constant extractor for pattern matching
 (decl u128_from_immediate (Immediate) Immediate)
 (extern extractor u128_from_immediate u128_from_immediate)
+;; Extractor for masks that must take TBL fallback (i.e. non-specialized masks).
+(decl shuffle_tbl_fallback_mask (Immediate) Immediate)
+(extern extractor shuffle_tbl_fallback_mask shuffle_tbl_fallback_mask)
 
 ;; UZP1/UZP2 patterns - de-interleave even/odd lanes
 (decl vec_uzp1 (Value Value VectorSize) Aarch64Inst)
@@ -3591,6 +3594,8 @@
 
 ;; TBL fallback: handles all shuffle patterns via table lookup
 (decl aarch64_shuffle_tbl (Value Value Immediate) Aarch64Inst)
+(rule 2 (lower (shuffle a b (shuffle_tbl_fallback_mask mask)))
+      (aarch64_shuffle_tbl a b mask))
 (rule 0 (lower (has_type ty (shuffle a b mask)))
       (aarch64_shuffle_tbl a b mask))
 

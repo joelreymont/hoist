@@ -1962,7 +1962,14 @@ pub fn rev64(a: lower_mod.Value, size_enum: VectorSize, ctx: *lower_mod.LowerCtx
 pub fn aarch64_extractlane(ty: types.Type, vec: lower_mod.Value, lane: u32, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_extractlane");
     const vec_reg = try getValueRegVec(ctx, vec);
-    const size = try tyToVecElemSize(ty);
+    // Some lowering paths pass vector ty, others pass scalar lane ty.
+    const size = blk: {
+        if (ty.isVector()) break :blk try tyToVecElemSize(ty);
+        const vec_ty = try ctx.getValueType(vec);
+        const vec_size = try tyToVecElemSize(vec_ty);
+        if (ty.bits() != vec_size.bits()) return error.UnsupportedType;
+        break :blk vec_size;
+    };
     if (lane >= size.laneCount()) return error.InvalidLane;
     const lane_u8: u8 = @intCast(lane);
 
@@ -4480,6 +4487,46 @@ test "u128_from_immediate returns value" {
     const testing = std.testing;
     const value: u128 = 0x1e1c_1a18_1614_1210_0e0c_0a08_0604_0200;
     try testing.expectEqual(value, u128_from_immediate(value).?);
+}
+
+/// shuffle_tbl_fallback_mask - Return mask only for non-specialized shuffle masks.
+/// This avoids overmatching in the constant-pattern chain and routes unmatched
+/// masks to TBL fallback first.
+pub fn shuffle_tbl_fallback_mask(actual: u128) ?u128 {
+    return switch (actual) {
+        // UZP patterns.
+        0x1e1c_1a18_1614_1210_0e0c_0a08_0604_0200,
+        0x1f1d_1b19_1715_1311_0f0d_0b09_0705_0301,
+        0x1d1c_1918_1514_1110_0d0c_0908_0504_0100,
+        0x1f1e_1b1a_1716_1312_0f0e_0b0a_0706_0302,
+        0x1b1a1918_13121110_0b0a0908_03020100,
+        0x1f1e1d1c_17161514_0f0e0d0c_07060504,
+        0x1716151413121110_0706050403020100,
+        0x1f1e1d1c1b1a1918_0f0e0d0c0b0a0908,
+        // ZIP patterns.
+        0x1707_1606_1505_1404_1303_1202_1101_1000,
+        0x1f0f_1e0e_1d0d_1c0c_1b0b_1a0a_1909_1808,
+        0x1716_0706_1514_0504_1312_0302_1110_0100,
+        0x1f1e_0f0e_1d1c_0d0c_1b1a_0b0a_1918_0908,
+        0x17161514_07060504_13121110_03020100,
+        0x1f1e1d1c_0f0e0d0c_1b1a1918_0b0a0908,
+        // TRN patterns.
+        0x1e0e_1c0c_1a0a_1808_1606_1404_1202_1000,
+        0x1f0f_1d0d_1b0b_1909_1707_1505_1303_1101,
+        0x1d1c_0d0c_1918_0908_1514_0504_1110_0100,
+        0x1f1e_0f0e_1b1a_0b0a_1716_0706_1312_0302,
+        0x1b1a1918_0b0a0908_13121110_03020100,
+        0x1f1e1d1c_0f0e0d0c_17161514_07060504,
+        // REV patterns.
+        0x0e0f_0c0d_0a0b_0809_0607_0405_0203_0001,
+        0x0c0d0e0f_08090a0b_04050607_00010203,
+        0x0d0c0f0e_09080b0a_05040706_01000302,
+        0x08090a0b0c0d0e0f_0001020304050607,
+        0x09080b0a0d0c0f0e_0100030205040706,
+        0x0b0a09080f0e0d0c_0302010007060504,
+        => null,
+        else => actual,
+    };
 }
 
 /// Helper: Check if bytes form a valid lane index
