@@ -260,12 +260,12 @@ test "lower try_call direct" {
     try builder.sealBlock(block0);
 
     builder.switchToBlock(block1);
-    try builder.retValues(&.{ call_res });
+    try builder.retValues(&.{call_res});
     try builder.sealBlock(block1);
 
     builder.switchToBlock(block2);
     const zero = try builder.iconst(Type.I64, 0);
-    try builder.retValues(&.{ zero });
+    try builder.retValues(&.{zero});
     try builder.sealBlock(block2);
 
     const backend = lower_mod.LowerBackend(Inst){
@@ -303,7 +303,7 @@ test "lower try_call indirect" {
 
     builder.switchToBlock(block0);
     const callee_ptr = try builder.iconst(Type.I64, 0);
-    const args_list = try builder.buildValueList(&.{ callee_ptr });
+    const args_list = try builder.buildValueList(&.{callee_ptr});
 
     const inst_data = InstructionData{ .try_call_indirect = .{
         .opcode = .try_call_indirect,
@@ -318,12 +318,12 @@ test "lower try_call indirect" {
     try builder.sealBlock(block0);
 
     builder.switchToBlock(block1);
-    try builder.retValues(&.{ call_res });
+    try builder.retValues(&.{call_res});
     try builder.sealBlock(block1);
 
     builder.switchToBlock(block2);
     const zero = try builder.iconst(Type.I64, 0);
-    try builder.retValues(&.{ zero });
+    try builder.retValues(&.{zero});
     try builder.sealBlock(block2);
 
     const backend = lower_mod.LowerBackend(Inst){
@@ -405,6 +405,18 @@ test "lower shuffle fallback emits table lookup" {
     try expectShuffleInst(&vcode, .tbl);
 }
 
+test "lower signed dotprod pattern emits vec_sdot when enabled" {
+    var vcode = try lowerDotprodPatternVCode(true, true);
+    defer vcode.deinit();
+    try expectDotprodInst(&vcode, .sdot, true);
+}
+
+test "lower unsigned dotprod pattern emits vec_udot when enabled" {
+    var vcode = try lowerDotprodPatternVCode(false, true);
+    defer vcode.deinit();
+    try expectDotprodInst(&vcode, .udot, true);
+}
+
 // Helper wrappers to call generated lowering functions
 fn instValue(ctx: *lower_mod.LowerCtx(Inst), inst: lower_mod.Inst) !Value {
     return ctx.func.dfg.firstResult(inst) orelse try ctx.func.dfg.appendInstResult(inst, Type.I8);
@@ -412,6 +424,7 @@ fn instValue(ctx: *lower_mod.LowerCtx(Inst), inst: lower_mod.Inst) !Value {
 
 const StoreKind = enum { strb, strh, str32 };
 const ShuffleKind = enum { dup_lane, ext, uzp1, zip1, trn1, rev16, tbl };
+const DotprodKind = enum { sdot, udot };
 
 fn lowerStoreVCode(opcode: root.opcodes.Opcode, val_ty: Type) !vcode_mod.VCode(Inst) {
     const allocator = testing.allocator;
@@ -488,6 +501,120 @@ fn lowerShuffleVCode(mask_bytes: [16]u8) !vcode_mod.VCode(Inst) {
     return vcode;
 }
 
+fn lowerDotprodPatternVCode(is_signed: bool, enable_dotprod: bool) !vcode_mod.VCode(Inst) {
+    const allocator = testing.allocator;
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(Type.I32X4));
+    try sig.params.append(allocator, AbiParam.new(Type.I8X16));
+    try sig.params.append(allocator, AbiParam.new(Type.I8X16));
+    try sig.returns.append(allocator, AbiParam.new(Type.I32X4));
+
+    var func = try Function.init(allocator, "test_dotprod_lowering", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const acc = try func.dfg.appendBlockParam(block0, Type.I32X4);
+    const x = try func.dfg.appendBlockParam(block0, Type.I8X16);
+    const y = try func.dfg.appendBlockParam(block0, Type.I8X16);
+
+    const widen_low_op: root.opcodes.Opcode = if (is_signed) .swiden_low else .uwiden_low;
+    const widen_high_op: root.opcodes.Opcode = if (is_signed) .swiden_high else .uwiden_high;
+
+    const x_low_inst = try func.dfg.makeInst(.{ .unary = .{
+        .opcode = widen_low_op,
+        .arg = x,
+    } });
+    try func.layout.appendInst(x_low_inst, block0);
+    const x_low = try func.dfg.appendInstResult(x_low_inst, Type.I16X8);
+
+    const y_low_inst = try func.dfg.makeInst(.{ .unary = .{
+        .opcode = widen_low_op,
+        .arg = y,
+    } });
+    try func.layout.appendInst(y_low_inst, block0);
+    const y_low = try func.dfg.appendInstResult(y_low_inst, Type.I16X8);
+
+    const mul_low_inst = try func.dfg.makeInst(.{ .binary = .{
+        .opcode = .imul,
+        .args = .{ x_low, y_low },
+    } });
+    try func.layout.appendInst(mul_low_inst, block0);
+    const mul_low = try func.dfg.appendInstResult(mul_low_inst, Type.I16X8);
+
+    const pair_low_inst = try func.dfg.makeInst(.{ .unary = .{
+        .opcode = .iadd_pairwise,
+        .arg = mul_low,
+    } });
+    try func.layout.appendInst(pair_low_inst, block0);
+    const pair_low = try func.dfg.appendInstResult(pair_low_inst, Type.I32X4);
+
+    const x_high_inst = try func.dfg.makeInst(.{ .unary = .{
+        .opcode = widen_high_op,
+        .arg = x,
+    } });
+    try func.layout.appendInst(x_high_inst, block0);
+    const x_high = try func.dfg.appendInstResult(x_high_inst, Type.I16X8);
+
+    const y_high_inst = try func.dfg.makeInst(.{ .unary = .{
+        .opcode = widen_high_op,
+        .arg = y,
+    } });
+    try func.layout.appendInst(y_high_inst, block0);
+    const y_high = try func.dfg.appendInstResult(y_high_inst, Type.I16X8);
+
+    const mul_high_inst = try func.dfg.makeInst(.{ .binary = .{
+        .opcode = .imul,
+        .args = .{ x_high, y_high },
+    } });
+    try func.layout.appendInst(mul_high_inst, block0);
+    const mul_high = try func.dfg.appendInstResult(mul_high_inst, Type.I16X8);
+
+    const pair_high_inst = try func.dfg.makeInst(.{ .unary = .{
+        .opcode = .iadd_pairwise,
+        .arg = mul_high,
+    } });
+    try func.layout.appendInst(pair_high_inst, block0);
+    const pair_high = try func.dfg.appendInstResult(pair_high_inst, Type.I32X4);
+
+    const pair_sum_inst = try func.dfg.makeInst(.{ .binary = .{
+        .opcode = .iadd,
+        .args = .{ pair_low, pair_high },
+    } });
+    try func.layout.appendInst(pair_sum_inst, block0);
+    const pair_sum = try func.dfg.appendInstResult(pair_sum_inst, Type.I32X4);
+
+    const final_inst = try func.dfg.makeInst(.{ .binary = .{
+        .opcode = .iadd,
+        .args = .{ acc, pair_sum },
+    } });
+    try func.layout.appendInst(final_inst, block0);
+    const result = try func.dfg.appendInstResult(final_inst, Type.I32X4);
+
+    var features = root.target.AArch64Features.baseline();
+    if (enable_dotprod) {
+        features.enable(root.target.AArch64Features.DOTPROD);
+    }
+
+    var vcode = vcode_mod.VCode(Inst).init(allocator);
+    errdefer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(allocator, &func, &vcode);
+    defer ctx.deinit();
+    ctx.setFeatures(features);
+    try ctx.allocateSSAVRegs();
+    _ = try ctx.startBlock(block0);
+    defer ctx.endBlock();
+
+    const handled = try lowerInst(&ctx, final_inst);
+    try testing.expect(handled);
+    _ = result;
+
+    return vcode;
+}
+
 fn expectStoreInst(vcode: *const vcode_mod.VCode(Inst), kind: StoreKind) !void {
     var found = false;
     for (vcode.insns.items) |inst| {
@@ -546,6 +673,24 @@ fn expectShuffleInst(vcode: *const vcode_mod.VCode(Inst), kind: ShuffleKind) !vo
         }
     }
     try testing.expect(found);
+}
+
+fn expectDotprodInst(vcode: *const vcode_mod.VCode(Inst), kind: DotprodKind, expected: bool) !void {
+    var found = false;
+    for (vcode.insns.items) |inst| {
+        switch (inst) {
+            .vec_sdot => if (kind == .sdot) {
+                found = true;
+                break;
+            },
+            .vec_udot => if (kind == .udot) {
+                found = true;
+                break;
+            },
+            else => {},
+        }
+    }
+    try testing.expectEqual(expected, found);
 }
 
 fn maskBytesFromU128(mask: u128) [16]u8 {

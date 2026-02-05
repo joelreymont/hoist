@@ -746,6 +746,54 @@ pub fn Externs(comptime Ctx: type) type {
             }
         }
 
+        pub fn swiden_low_ext(ctx: *Ctx, input: Value) !?struct { arg0: Value } {
+            const inst = valInst(ctx, input) orelse return null;
+            const data = instData(ctx, inst) orelse return null;
+            switch (data.*) {
+                .unary => |u| {
+                    if (u.opcode != .swiden_low) return null;
+                    return .{ .arg0 = u.arg };
+                },
+                else => return null,
+            }
+        }
+
+        pub fn swiden_high_ext(ctx: *Ctx, input: Value) !?struct { arg0: Value } {
+            const inst = valInst(ctx, input) orelse return null;
+            const data = instData(ctx, inst) orelse return null;
+            switch (data.*) {
+                .unary => |u| {
+                    if (u.opcode != .swiden_high) return null;
+                    return .{ .arg0 = u.arg };
+                },
+                else => return null,
+            }
+        }
+
+        pub fn uwiden_low_ext(ctx: *Ctx, input: Value) !?struct { arg0: Value } {
+            const inst = valInst(ctx, input) orelse return null;
+            const data = instData(ctx, inst) orelse return null;
+            switch (data.*) {
+                .unary => |u| {
+                    if (u.opcode != .uwiden_low) return null;
+                    return .{ .arg0 = u.arg };
+                },
+                else => return null,
+            }
+        }
+
+        pub fn uwiden_high_ext(ctx: *Ctx, input: Value) !?struct { arg0: Value } {
+            const inst = valInst(ctx, input) orelse return null;
+            const data = instData(ctx, inst) orelse return null;
+            switch (data.*) {
+                .unary => |u| {
+                    if (u.opcode != .uwiden_high) return null;
+                    return .{ .arg0 = u.arg };
+                },
+                else => return null,
+            }
+        }
+
         pub fn iadd_pairwise_ext(ctx: *Ctx, input: Value) !?struct { arg0: Type, arg1: Value } {
             const inst = valInst(ctx, input) orelse return null;
             const data = instData(ctx, inst) orelse return null;

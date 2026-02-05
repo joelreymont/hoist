@@ -634,6 +634,76 @@
 (rule 1 (lower (has_type ty @ (multi_lane _ _) (reduce_umax x)))
       (reduce_umax_vec x (vector_size ty)))
 
+;; Dot-product fusion patterns (higher priority than scalar/vector madd fusion)
+;;
+;; Signed pattern:
+;;   acc + pairwise_add(swiden_low(x) * swiden_low(y))
+;;       + pairwise_add(swiden_high(x) * swiden_high(y))
+;; => SDOT acc, x, y
+(rule 6 (lower (iadd $I32X4 acc
+                     (iadd $I32X4
+                           (iadd_pairwise $I32X4 (imul $I16X8 (swiden_low x) (swiden_low y)))
+                           (iadd_pairwise $I32X4 (imul $I16X8 (swiden_high x) (swiden_high y))))))
+      (if-let true (has_dotprod_for acc))
+      (aarch64_vec_sdot acc x y))
+
+(rule 6 (lower (iadd $I32X4
+                     (iadd $I32X4
+                           (iadd_pairwise $I32X4 (imul $I16X8 (swiden_low x) (swiden_low y)))
+                           (iadd_pairwise $I32X4 (imul $I16X8 (swiden_high x) (swiden_high y))))
+                     acc))
+      (if-let true (has_dotprod_for acc))
+      (aarch64_vec_sdot acc x y))
+
+(rule 6 (lower (iadd $I32X4 acc
+                     (iadd $I32X4
+                           (iadd_pairwise $I32X4 (imul $I16X8 (swiden_high x) (swiden_high y)))
+                           (iadd_pairwise $I32X4 (imul $I16X8 (swiden_low x) (swiden_low y))))))
+      (if-let true (has_dotprod_for acc))
+      (aarch64_vec_sdot acc x y))
+
+(rule 6 (lower (iadd $I32X4
+                     (iadd $I32X4
+                           (iadd_pairwise $I32X4 (imul $I16X8 (swiden_high x) (swiden_high y)))
+                           (iadd_pairwise $I32X4 (imul $I16X8 (swiden_low x) (swiden_low y))))
+                     acc))
+      (if-let true (has_dotprod_for acc))
+      (aarch64_vec_sdot acc x y))
+
+;; Unsigned pattern:
+;;   acc + pairwise_add(uwiden_low(x) * uwiden_low(y))
+;;       + pairwise_add(uwiden_high(x) * uwiden_high(y))
+;; => UDOT acc, x, y
+(rule 6 (lower (iadd $I32X4 acc
+                     (iadd $I32X4
+                           (iadd_pairwise $I32X4 (imul $I16X8 (uwiden_low x) (uwiden_low y)))
+                           (iadd_pairwise $I32X4 (imul $I16X8 (uwiden_high x) (uwiden_high y))))))
+      (if-let true (has_dotprod_for acc))
+      (aarch64_vec_udot acc x y))
+
+(rule 6 (lower (iadd $I32X4
+                     (iadd $I32X4
+                           (iadd_pairwise $I32X4 (imul $I16X8 (uwiden_low x) (uwiden_low y)))
+                           (iadd_pairwise $I32X4 (imul $I16X8 (uwiden_high x) (uwiden_high y))))
+                     acc))
+      (if-let true (has_dotprod_for acc))
+      (aarch64_vec_udot acc x y))
+
+(rule 6 (lower (iadd $I32X4 acc
+                     (iadd $I32X4
+                           (iadd_pairwise $I32X4 (imul $I16X8 (uwiden_high x) (uwiden_high y)))
+                           (iadd_pairwise $I32X4 (imul $I16X8 (uwiden_low x) (uwiden_low y))))))
+      (if-let true (has_dotprod_for acc))
+      (aarch64_vec_udot acc x y))
+
+(rule 6 (lower (iadd $I32X4
+                     (iadd $I32X4
+                           (iadd_pairwise $I32X4 (imul $I16X8 (uwiden_high x) (uwiden_high y)))
+                           (iadd_pairwise $I32X4 (imul $I16X8 (uwiden_low x) (uwiden_low y))))
+                     acc))
+      (if-let true (has_dotprod_for acc))
+      (aarch64_vec_udot acc x y))
+
 ;; Multiply-add fusion patterns (highest priority - fuse before generic ops)
 ;; iadd(a, imul(x, y)) => madd(x, y, a)
 (rule 3 (lower (iadd ty (imul ty x y) a))
@@ -2477,6 +2547,11 @@
 ;; Check if shift is valid for store (must be 0-3)
 (decl partial valid_str_shift (Value u64) i64)
 (extern constructor valid_str_shift valid_str_shift)
+
+;; Feature predicates
+;; Check if FEAT_DotProd is enabled for current lowering context.
+(decl pure has_dotprod_for (Value) bool)
+(extern constructor has_dotprod_for has_dotprod_for)
 
 ;; Type declarations
 

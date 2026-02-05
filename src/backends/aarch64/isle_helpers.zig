@@ -45,6 +45,7 @@ const VectorSize = isle_types.VectorSize;
 const VecALUModOp = isle_types.VecALUModOp;
 const VecShiftImmOp = isle_types.VecShiftImmOp;
 const SveElemSize = isle_types.SveElemSize;
+const target_features = hoist.target;
 
 // ISLE rule coverage tracking (optional, for testing)
 const isle_coverage_mod = @import("isle_coverage.zig");
@@ -60,6 +61,16 @@ pub fn recordRule(rule_name: []const u8) void {
     if (global_isle_coverage) |tracker| {
         tracker.record(rule_name) catch {}; // Ignore errors in coverage tracking
     }
+}
+
+/// Predicate: true if FEAT_DotProd is available for current target.
+pub fn has_dotprod(ctx: *const lower_mod.LowerCtx(Inst)) bool {
+    return ctx.features.has(target_features.AArch64Features.DOTPROD);
+}
+
+/// Predicate helper used in ISLE guards where a value operand is already bound.
+pub fn has_dotprod_for(_: lower_mod.Value, ctx: *const lower_mod.LowerCtx(Inst)) bool {
+    return has_dotprod(ctx);
 }
 
 /// Extractor: Try to extract Imm12 from u64.
@@ -112,8 +123,6 @@ pub fn u8_into_imm12(val: u8) Imm12 {
 pub fn u64_to_u6(val: u64) u6 {
     return @intCast(val & 0x3F);
 }
-
-
 
 /// Constructor: Create ImmLogic from u64 for given type.
 pub fn imm_logic_from_u64(ty: types.Type, val: u64) ?ImmLogic {
@@ -980,7 +989,6 @@ test "imm12_from_u64" {
     try testing.expectEqual(@as(u16, 16), imm3.bits);
     try testing.expectEqual(true, imm3.shift12);
 }
-
 
 test "u8_into_imm12" {
     const testing = std.testing;
@@ -2311,8 +2319,7 @@ test "multi_lane returns bits and lanes" {
         }
     };
 
-    try oh.snap(
-        @src(),
+    try oh.snap(@src(),
         \\8:16
     ).expectEqualFmt(Fmt{ .lane = got.? });
 }
@@ -2702,12 +2709,14 @@ pub fn aarch64_stack_switch(old_sp_addr: lower_mod.Value, new_sp_addr: lower_mod
     const tmp = lower_mod.WritableReg.allocReg(.int, ctx);
 
     // Save current SP to temporary
-    try ctx.emit(Inst{ .add_imm = .{
-        .dst = tmp,
-        .src = sp, // reads SP when Rn=31
-        .imm = 0,
-        .size = .size64,
-    } });
+    try ctx.emit(Inst{
+        .add_imm = .{
+            .dst = tmp,
+            .src = sp, // reads SP when Rn=31
+            .imm = 0,
+            .size = .size64,
+        },
+    });
 
     // Store old SP to memory
     const old_addr_reg = Reg.fromVReg(try ctx.getValueReg(old_sp_addr, .int));
@@ -4004,8 +4013,8 @@ test "call layout stack ops for struct spill" {
     const block0 = try func.dfg.makeBlock();
     try func.layout.appendBlock(block0);
     const param_tys = [_]Type{
-        Type.I64, Type.I64, Type.I64, Type.I64,
-        Type.I64, Type.I64, Type.I64, Type.I64,
+        Type.I64,  Type.I64, Type.I64, Type.I64,
+        Type.I64,  Type.I64, Type.I64, Type.I64,
         struct_ty,
     };
     try func.dfg.setBlockParams(block0, &param_tys);
@@ -4070,8 +4079,8 @@ test "tailcall uses call layout for struct stack args" {
     const block0 = try func.dfg.makeBlock();
     try func.layout.appendBlock(block0);
     const param_tys = [_]Type{
-        Type.I64, Type.I64, Type.I64, Type.I64,
-        Type.I64, Type.I64, Type.I64, Type.I64,
+        Type.I64,  Type.I64, Type.I64, Type.I64,
+        Type.I64,  Type.I64, Type.I64, Type.I64,
         struct_ty,
     };
     try func.dfg.setBlockParams(block0, &param_tys);
@@ -4637,12 +4646,14 @@ pub fn aarch64_shuffle_tbl(a: lower_mod.Value, b: lower_mod.Value, mask: u128, c
     } });
 
     const dst = lower_mod.WritableVReg.allocVReg(.vector, ctx);
-    return Inst{ .tbl = .{
-        .dst = dst,
-        .table = tbl0,
-        .indices = mask_reg.toReg(),
-        .table_regs = 1, // 2 consecutive regs: v16-v17
-    } };
+    return Inst{
+        .tbl = .{
+            .dst = dst,
+            .table = tbl0,
+            .indices = mask_reg.toReg(),
+            .table_regs = 1, // 2 consecutive regs: v16-v17
+        },
+    };
 }
 
 /// FMA constructors (ISLE constructors)
@@ -6528,9 +6539,10 @@ pub fn aarch64_vec_sdot(acc: lower_mod.Value, x: lower_mod.Value, y: lower_mod.V
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
 
     // Emit mov to copy accumulator to dst (3-operand form requires explicit copy)
-    try ctx.emit(Inst{ .mov64 = .{
+    try ctx.emit(Inst{ .fmov = .{
         .dst = dst,
         .src = acc_reg,
+        .size = .size128,
     } });
 
     return Inst{ .vec_sdot = .{
@@ -6551,9 +6563,10 @@ pub fn aarch64_vec_udot(acc: lower_mod.Value, x: lower_mod.Value, y: lower_mod.V
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
 
     // Emit mov to copy accumulator to dst (3-operand form requires explicit copy)
-    try ctx.emit(Inst{ .mov64 = .{
+    try ctx.emit(Inst{ .fmov = .{
         .dst = dst,
         .src = acc_reg,
+        .size = .size128,
     } });
 
     return Inst{ .vec_udot = .{
