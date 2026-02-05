@@ -5,7 +5,41 @@ const Allocator = std.mem.Allocator;
 const lower_mod = @import("lower.zig");
 const vcode_mod = @import("vcode.zig");
 const buffer_mod = @import("buffer.zig");
-const regalloc_mod = @import("regalloc.zig");
+const reg_mod = @import("reg.zig");
+const regalloc2_api_mod = @import("regalloc2/api.zig");
+const regalloc2_types_mod = @import("regalloc2/types.zig");
+const regalloc2_liveness_mod = @import("regalloc2/liveness.zig");
+const regalloc2_allocator_mod = @import("regalloc2/allocator.zig");
+
+fn alignTo16(bytes: u32) u32 {
+    return (bytes + 15) & ~@as(u32, 15);
+}
+
+fn collectRegalloc2Operands(
+    comptime MachInst: type,
+    allocator: Allocator,
+    vcode: *const vcode_mod.VCode(MachInst),
+    adapter: *regalloc2_api_mod.RegAllocAdapter,
+) !void {
+    if (!@hasDecl(MachInst, "getDefs") or !@hasDecl(MachInst, "getUses")) return;
+
+    for (vcode.insns.items) |inst| {
+        var inst_copy = inst;
+        const defs = try inst_copy.getDefs(allocator);
+        defer allocator.free(defs);
+        for (defs) |def_vreg| {
+            const vreg = regalloc2_types_mod.VReg.new(def_vreg.index());
+            try adapter.addOperand(regalloc2_types_mod.Operand.init(vreg, .any_reg, .def));
+        }
+
+        const uses = try inst_copy.getUses(allocator);
+        defer allocator.free(uses);
+        for (uses) |use_vreg| {
+            const vreg = regalloc2_types_mod.VReg.new(use_vreg.index());
+            try adapter.addOperand(regalloc2_types_mod.Operand.init(vreg, .any_reg, .use));
+        }
+    }
+}
 
 /// Compiled machine code output.
 pub const CompiledCode = struct {
@@ -114,30 +148,17 @@ pub fn compile(
     );
     defer vcode.deinit();
 
-    // Phase 2: Register allocation
-    // For now, use simple linear scan allocator
-    // TODO: Integrate regalloc2 for production-quality allocation
-    var allocator = regalloc_mod.LinearScanAllocator.init(ctx.allocator);
-    defer allocator.deinit();
+    // Phase 2: Register allocation via regalloc2 adapter + allocator.
+    var regalloc_adapter = regalloc2_api_mod.RegAllocAdapter.init(ctx.allocator);
+    defer regalloc_adapter.deinit();
+    try collectRegalloc2Operands(MachInst, ctx.allocator, &vcode, &regalloc_adapter);
 
-    // Initialize with available registers (x64 example - should come from ISA)
-    const int_regs = [_]@import("reg.zig").PReg{
-        @import("reg.zig").PReg.new(.int, 0), // RAX
-        @import("reg.zig").PReg.new(.int, 1), // RCX
-        @import("reg.zig").PReg.new(.int, 2), // RDX
-        @import("reg.zig").PReg.new(.int, 3), // RBX
-        @import("reg.zig").PReg.new(.int, 6), // RSI
-        @import("reg.zig").PReg.new(.int, 7), // RDI
-        @import("reg.zig").PReg.new(.int, 8), // R8
-        @import("reg.zig").PReg.new(.int, 9), // R9
-        @import("reg.zig").PReg.new(.int, 10), // R10
-        @import("reg.zig").PReg.new(.int, 11), // R11
-    };
-    try allocator.initRegs(&int_regs, &.{}, &.{});
+    var regalloc_liveness = regalloc2_liveness_mod.LivenessInfo.init(ctx.allocator);
+    defer regalloc_liveness.deinit();
 
-    // Perform allocation (simplified - real version walks VCode)
-    var allocation = regalloc_mod.Allocation.init(ctx.allocator);
-    defer allocation.deinit();
+    var regalloc_allocator = try regalloc2_allocator_mod.Allocator.init(ctx.allocator, &regalloc_adapter);
+    defer regalloc_allocator.deinit();
+    try regalloc_allocator.run(&regalloc_liveness);
 
     // Phase 3: Emit machine code
     var buffer = buffer_mod.MachBuffer.init(ctx.allocator);
@@ -180,11 +201,8 @@ pub fn compile(
         };
     }
 
-    // Compute stack frame size from spill slots
-    // Each spill slot is 8 bytes (pointer size), aligned to 16 bytes
-    const num_spills = allocation.spills.count();
-    const spill_bytes = num_spills * 8;
-    const stack_frame_size: u32 = @intCast((spill_bytes + 15) & ~@as(usize, 15)); // Align to 16 bytes
+    // Compute stack frame size from regalloc2 spill bytes and keep ABI alignment.
+    const stack_frame_size = alignTo16(regalloc_allocator.next_spill);
 
     return CompiledCode{
         .code = code,
@@ -206,6 +224,48 @@ const TestInst = struct {
         writer: anytype,
     ) !void {
         try writer.print("inst_{d}", .{self.opcode});
+    }
+};
+
+const TestInstWithRegs = struct {
+    opcode: u32,
+    def: ?reg_mod.VReg = null,
+    use1: ?reg_mod.VReg = null,
+    use2: ?reg_mod.VReg = null,
+
+    pub fn format(
+        self: @This(),
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try writer.print("inst_{d}", .{self.opcode});
+    }
+
+    pub fn getDefs(self: *const @This(), allocator: Allocator) ![]reg_mod.VReg {
+        if (self.def) |def_vreg| {
+            var defs = try allocator.alloc(reg_mod.VReg, 1);
+            defs[0] = def_vreg;
+            return defs;
+        }
+        return allocator.alloc(reg_mod.VReg, 0);
+    }
+
+    pub fn getUses(self: *const @This(), allocator: Allocator) ![]reg_mod.VReg {
+        var count: usize = 0;
+        if (self.use1 != null) count += 1;
+        if (self.use2 != null) count += 1;
+
+        var uses = try allocator.alloc(reg_mod.VReg, count);
+        var i: usize = 0;
+        if (self.use1) |use_vreg| {
+            uses[i] = use_vreg;
+            i += 1;
+        }
+        if (self.use2) |use_vreg| {
+            uses[i] = use_vreg;
+        }
+        return uses;
     }
 };
 
@@ -265,6 +325,42 @@ test "compile basic" {
     try testing.expect(code.code.len == 0); // Empty function -> empty code
     try testing.expectEqual(@as(usize, 0), code.relocations.len);
     try testing.expectEqual(@as(usize, 0), code.traps.len);
+}
+
+test "collectRegalloc2Operands tracks max vreg and spill bytes" {
+    var vcode = vcode_mod.VCode(TestInstWithRegs).init(testing.allocator);
+    defer vcode.deinit();
+
+    const v0 = reg_mod.VReg.new(0, .int);
+    const v40 = reg_mod.VReg.new(40, .int);
+
+    _ = try vcode.startBlock(&.{});
+    _ = try vcode.addInst(.{
+        .opcode = 1,
+        .def = v0,
+    });
+    _ = try vcode.addInst(.{
+        .opcode = 2,
+        .def = v40,
+        .use1 = v0,
+    });
+    try vcode.finishBlock(0, &.{});
+
+    var adapter = regalloc2_api_mod.RegAllocAdapter.init(testing.allocator);
+    defer adapter.deinit();
+    try collectRegalloc2Operands(TestInstWithRegs, testing.allocator, &vcode, &adapter);
+
+    try testing.expectEqual(@as(u32, 41), adapter.num_vregs);
+
+    var liveness = regalloc2_liveness_mod.LivenessInfo.init(testing.allocator);
+    defer liveness.deinit();
+
+    var allocator = try regalloc2_allocator_mod.Allocator.init(testing.allocator, &adapter);
+    defer allocator.deinit();
+    try allocator.run(&liveness);
+
+    try testing.expect(allocator.next_spill > 0);
+    try testing.expectEqual(@as(u32, 0), alignTo16(allocator.next_spill) % 16);
 }
 
 test "TrapCode values" {
