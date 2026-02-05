@@ -1,6 +1,6 @@
 ### Reference
 - Cranelift: `~/Work/wasmtime/cranelift/`
-- Parity plan: `~/.claude/plans/fuzzy-sniffing-shamir.md` (261 dots)
+- Parity plan: `/Users/joel/Work/hoist/PLAN.md` (merged canonical)
 - Status: `docs/COMPLETION_STATUS.md`
 - Zig docs (global): `~/.agents/docs/zig.md` (update with new Zig API info)
 - Dot tasks: use `dot` CLI/skill (dot skill) for `.dots/*.md` (no manual edits)
