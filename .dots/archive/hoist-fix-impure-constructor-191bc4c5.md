@@ -1,9 +1,11 @@
 ---
 title: Fix impure constructor instances
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.791725+01:00"
+created-at: "\"2026-02-02T21:35:56.791725+01:00\""
+closed-at: "2026-02-05T20:43:46.343790+01:00"
+close-reason: "Already implemented: instance counter increments; tests present"
 blocks:
   - hoist-legalize-types-ab02b4f7
 ---

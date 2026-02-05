@@ -263,6 +263,110 @@ test "Call marshaling: external call with f64 return" {
     try testing.expect(code.code.items.len > 0);
 }
 
+// Test call with multi-return: two i32 values in X0 and X1
+test "Call marshaling: external call with multi i32 returns" {
+    var sig = Signature.init(testing.allocator, .fast);
+    try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
+    try sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
+
+    var func = try Function.init(testing.allocator, "test_call_multi_i32_ret", sig);
+    defer func.deinit();
+
+    const entry = try func.dfg.makeBlock();
+    try func.layout.appendBlock(entry);
+
+    var call_sig = Signature.init(testing.allocator, .fast);
+    try call_sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
+    try call_sig.returns.append(testing.allocator, AbiParam.new(Type.I32));
+
+    const call_sig_ref = try func.addSignature(call_sig);
+    const call_name = try ExternalName.fromTestcase(testing.allocator, "ext_call_multi_i32");
+    const func_ref = try func.func_metadata.registerExternalFunc(call_name, call_sig_ref, .import);
+    const call_data = InstructionData{
+        .call = .{
+            .opcode = .call,
+            .func_ref = func_ref,
+            .args = .{},
+        },
+    };
+    const call_inst = try func.dfg.makeInst(call_data);
+    const call_result0 = try func.dfg.appendInstResult(call_inst, Type.I32);
+    const call_result1 = try func.dfg.appendInstResult(call_inst, Type.I32);
+    try func.layout.appendInst(call_inst, entry);
+
+    var ret_args = hoist.value_list.ValueList.default();
+    try func.dfg.value_lists.extend(&ret_args, &.{ call_result0, call_result1 });
+    const ret_data = InstructionData{
+        .@"return" = .{
+            .opcode = .@"return",
+            .args = ret_args,
+        },
+    };
+    const ret_inst = try func.dfg.makeInst(ret_data);
+    try func.layout.appendInst(ret_inst, entry);
+
+    var builder = ContextBuilder.init(testing.allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
+
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
+
+    try testing.expect(code.code.items.len > 0);
+}
+
+// Test call with multi-return: i64 in X0 and f64 in V0
+test "Call marshaling: external call with mixed i64+f64 returns" {
+    var sig = Signature.init(testing.allocator, .fast);
+    try sig.returns.append(testing.allocator, AbiParam.new(Type.I64));
+    try sig.returns.append(testing.allocator, AbiParam.new(Type.F64));
+
+    var func = try Function.init(testing.allocator, "test_call_mixed_ret", sig);
+    defer func.deinit();
+
+    const entry = try func.dfg.makeBlock();
+    try func.layout.appendBlock(entry);
+
+    var call_sig = Signature.init(testing.allocator, .fast);
+    try call_sig.returns.append(testing.allocator, AbiParam.new(Type.I64));
+    try call_sig.returns.append(testing.allocator, AbiParam.new(Type.F64));
+
+    const call_sig_ref = try func.addSignature(call_sig);
+    const call_name = try ExternalName.fromTestcase(testing.allocator, "ext_call_mixed_ret");
+    const func_ref = try func.func_metadata.registerExternalFunc(call_name, call_sig_ref, .import);
+    const call_data = InstructionData{
+        .call = .{
+            .opcode = .call,
+            .func_ref = func_ref,
+            .args = .{},
+        },
+    };
+    const call_inst = try func.dfg.makeInst(call_data);
+    const call_int = try func.dfg.appendInstResult(call_inst, Type.I64);
+    const call_fp = try func.dfg.appendInstResult(call_inst, Type.F64);
+    try func.layout.appendInst(call_inst, entry);
+
+    var ret_args = hoist.value_list.ValueList.default();
+    try func.dfg.value_lists.extend(&ret_args, &.{ call_int, call_fp });
+    const ret_data = InstructionData{
+        .@"return" = .{
+            .opcode = .@"return",
+            .args = ret_args,
+        },
+    };
+    const ret_inst = try func.dfg.makeInst(ret_data);
+    try func.layout.appendInst(ret_inst, entry);
+
+    var builder = ContextBuilder.init(testing.allocator);
+    _ = try builder.targetNative();
+    var ctx = builder.optLevel(.none).build();
+
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
+
+    try testing.expect(code.code.items.len > 0);
+}
+
 // Test multi-return: two i32 values in X0 and X1
 test "Return marshaling: multi i32 in X0+X1" {
     var sig = Signature.init(testing.allocator, .fast);
