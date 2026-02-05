@@ -1,9 +1,11 @@
 ---
 title: Add dot-product ISLE patterns
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.940571+01:00"
+created-at: "\"2026-02-02T21:35:56.940571+01:00\""
+closed-at: "2026-02-06T00:00:08.907309+01:00"
+close-reason: Implemented dotprod ISLE patterns and lowering tests
 blocks:
   - hoist-exceptions-runtime-d1afab88
 ---
