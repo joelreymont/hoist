@@ -93,41 +93,25 @@
 - 7.3 New dot: `Finalize aarch64_try_call lowering`
   - `dot add "Finalize aarch64_try_call lowering" -d "Context: /Users/joel/Work/hoist/src/backends/aarch64/isle_helpers.zig:4191; cause: try_call helpers need final exception metadata/landing pad wiring; fix: complete call emission + exception metadata; deps: Wire try_call exception edges; verification: new aarch64 try_call e2e test"`
 
-### 8. Remaining Opcode Parity Dots
-- 8.1 New dot: `Verify istore8 lowering`
-  - `dot add "Verify istore8 lowering" -d "Context: /Users/joel/Work/hoist/src/codegen/compile.zig:4786; cause: ensure istore8 lowers to STRB; fix: correct lowering/inst variant if missing; deps: none; verification: add AArch64 store8 test + zig build test"`
-- 8.2 New dot: `Verify istore16 lowering`
-  - `dot add "Verify istore16 lowering" -d "Context: /Users/joel/Work/hoist/src/codegen/compile.zig:4795; cause: ensure istore16 lowers to STRH; fix: correct lowering/inst variant if missing; deps: none; verification: add AArch64 store16 test + zig build test"`
-- 8.3 New dot: `Verify istore32 lowering`
-  - `dot add "Verify istore32 lowering" -d "Context: /Users/joel/Work/hoist/src/codegen/compile.zig:4804; cause: ensure istore32 lowers to STR W-reg; fix: correct lowering/inst variant if missing; deps: none; verification: add AArch64 store32 test + zig build test"`
-- 8.4 New dot: `Verify uload8x8 lowering`
-  - `dot add "Verify uload8x8 lowering" -d "Context: /Users/joel/Work/hoist/src/backends/aarch64/lower.isle:1880; cause: ensure uload8x8 uses LD1+USHLL; fix: implement/adjust constructor in /Users/joel/Work/hoist/src/backends/aarch64/isle_impl.zig if missing; deps: none; verification: add SIMD widen-load test"`
-- 8.5 New dot: `Verify sload8x8 lowering`
-  - `dot add "Verify sload8x8 lowering" -d "Context: /Users/joel/Work/hoist/src/backends/aarch64/lower.isle:1887; cause: ensure sload8x8 uses LD1+SSHLL; fix: implement/adjust constructor; deps: none; verification: add SIMD widen-load test"`
-- 8.6 New dot: `Verify uload16x4 lowering`
-  - `dot add "Verify uload16x4 lowering" -d "Context: /Users/joel/Work/hoist/src/backends/aarch64/lower.isle:1891; cause: ensure uload16x4 uses LD1+USHLL; fix: implement/adjust constructor; deps: uload8x8/sload8x8 infra; verification: add SIMD widen-load test"`
-- 8.7 New dot: `Verify sload16x4 lowering`
-  - `dot add "Verify sload16x4 lowering" -d "Context: /Users/joel/Work/hoist/src/backends/aarch64/lower.isle:1891; cause: ensure sload16x4 uses LD1+SSHLL; fix: implement/adjust constructor; deps: uload8x8/sload8x8 infra; verification: add SIMD widen-load test"`
-- 8.8 New dot: `Verify uload32x2 lowering`
-  - `dot add "Verify uload32x2 lowering" -d "Context: /Users/joel/Work/hoist/src/backends/aarch64/lower.isle:1912; cause: ensure uload32x2 uses LD1+USHLL; fix: implement/adjust constructor; deps: uload8x8/sload8x8 infra; verification: add SIMD widen-load test"`
-- 8.9 New dot: `Verify sload32x2 lowering`
-  - `dot add "Verify sload32x2 lowering" -d "Context: /Users/joel/Work/hoist/src/backends/aarch64/lower.isle:1912; cause: ensure sload32x2 uses LD1+SSHLL; fix: implement/adjust constructor; deps: uload8x8/sload8x8 infra; verification: add SIMD widen-load test"`
-- 8.10 New dot: `Verify uadd_overflow_cin lowering`
-  - `dot add "Verify uadd_overflow_cin lowering" -d "Context: /Users/joel/Work/hoist/src/backends/aarch64/lower.isle:3296; cause: ensure ADDS+ADCS carry-in lowering exists; fix: add inst variant + constructor if missing; deps: none; verification: add carry-in arithmetic test"`
-- 8.11 New dot: `Verify sadd_overflow_cin lowering`
-  - `dot add "Verify sadd_overflow_cin lowering" -d "Context: /Users/joel/Work/hoist/src/backends/aarch64/lower.isle:3301; cause: ensure ADDS+ADCS signed carry-in lowering exists; fix: add inst variant + constructor if missing; deps: none; verification: add carry-in arithmetic test"`
-- 8.12 New dot: `Verify usub_overflow_bin lowering`
-  - `dot add "Verify usub_overflow_bin lowering" -d "Context: /Users/joel/Work/hoist/src/backends/aarch64/lower.isle:3281; cause: ensure SUBS+SBCS borrow-in lowering exists; fix: add inst variant + constructor if missing; deps: none; verification: add borrow-in arithmetic test"`
-- 8.13 New dot: `Verify ssub_overflow_bin lowering`
-  - `dot add "Verify ssub_overflow_bin lowering" -d "Context: /Users/joel/Work/hoist/src/backends/aarch64/lower.isle:3291; cause: ensure SUBS+SBCS signed borrow-in lowering exists; fix: add inst variant + constructor if missing; deps: none; verification: add borrow-in arithmetic test"`
-- 8.14 New dot: `Verify iadd_imm lowering`
-  - `dot add "Verify iadd_imm lowering" -d "Context: /Users/joel/Work/hoist/src/backends/aarch64/lower.isle:1778; cause: ensure iadd_imm uses ADD imm12; fix: adjust lowering/inst variant if missing; deps: none; verification: add immediate-add test"`
-- 8.15 New dot: `Verify irsub_imm lowering`
-  - `dot add "Verify irsub_imm lowering" -d "Context: /Users/joel/Work/hoist/src/backends/aarch64/lower.isle:1807; cause: ensure irsub_imm uses SUB/NEG+ADD; fix: adjust lowering; deps: none; verification: add reverse-sub test"`
-- 8.16 New dot: `Verify imul_imm lowering`
-  - `dot add "Verify imul_imm lowering" -d "Context: /Users/joel/Work/hoist/src/backends/aarch64/lower.isle:560; cause: ensure imul_imm lowers via MOV+MUL/LSL; fix: implement helper if missing; deps: none; verification: add immediate-mul test"`
-- 8.17 New dot: `Verify try_call lowering semantics`
-  - `dot add "Verify try_call lowering semantics" -d "Context: /Users/joel/Work/hoist/src/backends/aarch64/lower.isle:3423; cause: ensure try_call/try_call_indirect propagate exception edges + return regs; fix: adjust lowering rules or helpers; deps: Wire try_call exception edges; verification: try_call e2e test"`
+### 8. Remaining Opcode Parity Dots (Reconciled 2026-02-05)
+- 8.1 `istore8/istore16/istore32` checks are complete and closed:
+  - `.dots/archive/hoist-verify-istore8-lowering-ecbda1cb.md`
+  - `.dots/archive/hoist-verify-istore16-lowering-5161cfef.md`
+  - `.dots/archive/hoist-verify-istore32-lowering-6d9179e9.md`
+- 8.2 Widening load checks (`uload8x8/sload8x8/uload16x4/sload16x4/uload32x2/sload32x2`) are complete:
+  - `.dots/archive/hoist-verify-simd-widen-b421e77a.md`
+  - `.dots/archive/hoist-47cd5e099b396670.md`
+- 8.3 Carry/borrow overflow checks (`uadd_overflow_cin/sadd_overflow_cin/usub_overflow_bin/ssub_overflow_bin`) are complete:
+  - `.dots/archive/hoist-verify-carry-in-2e75992f.md`
+- 8.4 Immediate arithmetic checks (`iadd_imm/irsub_imm/imul_imm`) are complete:
+  - `.dots/archive/hoist-47b24cff83e241b8.md`
+  - `.dots/archive/hoist-47b24cff91e9e2df.md`
+  - `.dots/archive/hoist-47b24cffaf5923e0.md`
+- 8.5 `try_call` lowering semantics check is complete:
+  - CFG exception reachability fix in `src/codegen/compile.zig`
+  - coverage in `tests/e2e_jit.zig`, `src/backends/aarch64/lower_test.zig`, `src/ir/flowgraph.zig`
+- 8.6 Evidence report for this reconciliation: `docs/aarch64_opcode_parity_report.md`
+- 8.7 Remaining unresolved opcode parity checks in this section: none
 
 ### 9. Object Emission and Relocations
 - 9.1 Existing dot: `hoist-obj-emission-ad51d2ad` (`/Users/joel/Work/hoist/.dots/hoist-obj-emission-ad51d2ad.md`)
