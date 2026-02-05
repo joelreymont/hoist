@@ -254,6 +254,107 @@ test "combineStorePairs: adjacent stores with consecutive offsets" {
     try testing.expectEqual(@as(i16, 16), stp.offset);
 }
 
+test "combineStorePairs: different base registers - skip" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var optimizer = AArch64PeepholeOptimizer.init(allocator);
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const x2 = Reg.fromPReg(PReg.new(.int, 2));
+    const sp = Reg.fromPReg(PReg.new(.int, 31));
+
+    var insts: std.ArrayList(Inst) = .{};
+    defer insts.deinit(allocator);
+
+    try insts.append(allocator, .{ .str = .{
+        .src = x0,
+        .base = sp,
+        .offset = 0,
+        .size = .size64,
+    } });
+    try insts.append(allocator, .{ .str = .{
+        .src = x1,
+        .base = x2,
+        .offset = 8,
+        .size = .size64,
+    } });
+
+    const changed = try combineStorePairs(&optimizer, &insts);
+
+    try testing.expect(!changed);
+    try testing.expectEqual(@as(usize, 2), insts.items.len);
+    try testing.expectEqual(@as(u32, 0), optimizer.stats.store_pairs_formed);
+}
+
+test "combineStorePairs: out-of-range pair offset - skip" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var optimizer = AArch64PeepholeOptimizer.init(allocator);
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const sp = Reg.fromPReg(PReg.new(.int, 31));
+
+    var insts: std.ArrayList(Inst) = .{};
+    defer insts.deinit(allocator);
+
+    // 512 is out of STP/LDP immediate range.
+    try insts.append(allocator, .{ .str = .{
+        .src = x0,
+        .base = sp,
+        .offset = 512,
+        .size = .size64,
+    } });
+    try insts.append(allocator, .{ .str = .{
+        .src = x1,
+        .base = sp,
+        .offset = 520,
+        .size = .size64,
+    } });
+
+    const changed = try combineStorePairs(&optimizer, &insts);
+
+    try testing.expect(!changed);
+    try testing.expectEqual(@as(usize, 2), insts.items.len);
+    try testing.expectEqual(@as(u32, 0), optimizer.stats.store_pairs_formed);
+}
+
+test "combineStorePairs: non-64-bit stores - skip" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var optimizer = AArch64PeepholeOptimizer.init(allocator);
+
+    const x0 = Reg.fromPReg(PReg.new(.int, 0));
+    const x1 = Reg.fromPReg(PReg.new(.int, 1));
+    const sp = Reg.fromPReg(PReg.new(.int, 31));
+
+    var insts: std.ArrayList(Inst) = .{};
+    defer insts.deinit(allocator);
+
+    try insts.append(allocator, .{ .str = .{
+        .src = x0,
+        .base = sp,
+        .offset = 0,
+        .size = .size32,
+    } });
+    try insts.append(allocator, .{ .str = .{
+        .src = x1,
+        .base = sp,
+        .offset = 8,
+        .size = .size32,
+    } });
+
+    const changed = try combineStorePairs(&optimizer, &insts);
+
+    try testing.expect(!changed);
+    try testing.expectEqual(@as(usize, 2), insts.items.len);
+    try testing.expectEqual(@as(u32, 0), optimizer.stats.store_pairs_formed);
+}
+
 test "eliminateDeadMoves: removes mov reg, reg" {
     const testing = std.testing;
     const allocator = testing.allocator;
