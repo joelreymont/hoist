@@ -632,6 +632,13 @@ test "try_call basic lowering" {
     };
     const try_call_inst = try func.dfg.makeInst(try_call_data);
     try func.layout.appendInst(try_call_inst, block0);
+
+    const jump_block1 = InstructionData{ .jump = .{
+        .opcode = .jump,
+        .destination = block1,
+    } };
+    const jump_block1_inst = try func.dfg.makeInst(jump_block1);
+    try func.layout.appendInst(jump_block1_inst, block0);
     // try_call has no result (returns void)
 
     // block0: jump to block1 (after try_call succeeds)
@@ -1067,6 +1074,13 @@ test "try_call with external function reference" {
     const try_call_inst = try func.dfg.makeInst(try_call_data);
     try func.layout.appendInst(try_call_inst, block0);
 
+    const jump_data = InstructionData{ .jump = .{
+        .opcode = .jump,
+        .destination = block1,
+    } };
+    const jump_inst = try func.dfg.makeInst(jump_data);
+    try func.layout.appendInst(jump_inst, block0);
+
     // block1: return v0
     const ret_data = InstructionData{ .unary = .{ .opcode = .@"return", .arg = v0 } };
     const ret_inst = try func.dfg.makeInst(ret_data);
@@ -1101,8 +1115,17 @@ test "try_call with external function reference" {
         else => return error.UnexpectedExternalName,
     }
 
-    // Test compilation would go here, but requires full lowering infrastructure
-    // For now, this validates the FuncRef system and IR building
+    var ctx_builder = ContextBuilder.init(allocator);
+    _ = try ctx_builder.targetNative();
+    var ctx = ctx_builder.optLevel(.none).build();
+
+    var code = try ctx.compileFunction(&func);
+    defer code.deinit();
+
+    try testing.expect(code.code.items.len > 0);
+    try testing.expect(code.eh_frame != null);
+    try testing.expect(code.eh_frame.?.items.len > 0);
+    try testing.expect(code.relocs.items.len > 0);
 }
 
 // JIT modules not yet implemented

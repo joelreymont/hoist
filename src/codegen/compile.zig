@@ -1222,6 +1222,14 @@ fn eliminateUnreachableCode(ctx: *Context) CodegenError!bool {
                 try worklist.append(ctx.allocator, succ);
             }
         }
+        // Keep landing pads and other exception-only blocks reachable.
+        var exc_iter = ctx.cfg.exceptionSuccIter(block);
+        while (exc_iter.next()) |succ| {
+            if (!reachable.contains(succ)) {
+                try reachable.put(succ, {});
+                try worklist.append(ctx.allocator, succ);
+            }
+        }
     }
 
     // Remove unreachable blocks
