@@ -3302,11 +3302,13 @@ pub fn aarch64_istore8(
     const val_reg = try ctx.getValueReg(val, .int);
     const addr_reg = try ctx.getValueReg(addr, .int);
 
-    return Inst{ .strb = .{
+    const inst = Inst{ .strb = .{
         .src = val_reg,
         .base = addr_reg,
         .offset = 0,
     } };
+    try ctx.emit(inst);
+    return inst;
 }
 
 /// Constructor: aarch64_istore16 - Store 16-bit value (STRH).
@@ -3318,11 +3320,13 @@ pub fn aarch64_istore16(
     const val_reg = try ctx.getValueReg(val, .int);
     const addr_reg = try ctx.getValueReg(addr, .int);
 
-    return Inst{ .strh = .{
+    const inst = Inst{ .strh = .{
         .src = val_reg,
         .base = addr_reg,
         .offset = 0,
     } };
+    try ctx.emit(inst);
+    return inst;
 }
 
 /// Constructor: aarch64_istore32 - Store 32-bit value (STR Wd).
@@ -3334,12 +3338,14 @@ pub fn aarch64_istore32(
     const val_reg = try ctx.getValueReg(val, .int);
     const addr_reg = try ctx.getValueReg(addr, .int);
 
-    return Inst{ .str = .{
+    const inst = Inst{ .str = .{
         .src = val_reg,
         .base = addr_reg,
         .offset = 0,
         .size = .size32,
     } };
+    try ctx.emit(inst);
+    return inst;
 }
 
 /// Constructor: aarch64_vstr - Store vector value (STR Qt/Dt).

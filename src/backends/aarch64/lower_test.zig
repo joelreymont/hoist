@@ -10,6 +10,7 @@ const lower_mod = root.lower;
 const aarch64_lower = @import("../../generated/isle/aarch64_lower_generated.zig");
 const isle_impl = root.aarch64_isle_impl;
 const inst_mod = @import("inst.zig");
+const vcode_mod = @import("../../machinst/vcode.zig");
 const Inst = inst_mod.Inst;
 
 const Function = root.function.Function;
@@ -336,9 +337,87 @@ test "lower try_call indirect" {
     try testing.expectEqual(@as(usize, 3), vcode.blocks.items.len);
 }
 
+test "lower istore8 emits strb" {
+    var vcode = try lowerStoreVCode(.istore8, Type.I32);
+    defer vcode.deinit();
+    try expectStoreInst(&vcode, .strb);
+}
+
+test "lower istore16 emits strh" {
+    var vcode = try lowerStoreVCode(.istore16, Type.I16);
+    defer vcode.deinit();
+    try expectStoreInst(&vcode, .strh);
+}
+
+test "lower istore32 emits str" {
+    var vcode = try lowerStoreVCode(.istore32, Type.I32);
+    defer vcode.deinit();
+    try expectStoreInst(&vcode, .str32);
+}
+
 // Helper wrappers to call generated lowering functions
 fn instValue(ctx: *lower_mod.LowerCtx(Inst), inst: lower_mod.Inst) !Value {
     return ctx.func.dfg.firstResult(inst) orelse try ctx.func.dfg.appendInstResult(inst, Type.I8);
+}
+
+const StoreKind = enum { strb, strh, str32 };
+
+fn lowerStoreVCode(opcode: root.opcodes.Opcode, val_ty: Type) !vcode_mod.VCode(Inst) {
+    const allocator = testing.allocator;
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.params.append(allocator, AbiParam.new(val_ty));
+
+    var func = try Function.init(allocator, "test_store_lowering", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const ptr = try func.dfg.appendBlockParam(block0, Type.I64);
+    const val = try func.dfg.appendBlockParam(block0, val_ty);
+
+    const store_data = InstructionData{ .store = .{
+        .opcode = opcode,
+        .flags = root.memflags.MemFlags.default(),
+        .args = .{ ptr, val },
+        .offset = 0,
+    } };
+    const store_inst = try func.dfg.makeInst(store_data);
+    try func.layout.appendInst(store_inst, block0);
+
+    const ret_inst = try func.dfg.makeInst(.{ .nullary = .{ .opcode = .@"return" } });
+    try func.layout.appendInst(ret_inst, block0);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+
+    return try lower_mod.lowerFunction(Inst, allocator, &func, backend);
+}
+
+fn expectStoreInst(vcode: *const vcode_mod.VCode(Inst), kind: StoreKind) !void {
+    var found = false;
+    for (vcode.insns.items) |inst| {
+        switch (inst) {
+            .strb => if (kind == .strb) {
+                found = true;
+                break;
+            },
+            .strh => if (kind == .strh) {
+                found = true;
+                break;
+            },
+            .str => |s| if (kind == .str32 and s.size == .size32) {
+                found = true;
+                break;
+            },
+            else => {},
+        }
+    }
+    try testing.expect(found);
 }
 
 fn lowerInst(ctx: *lower_mod.LowerCtx(Inst), inst: lower_mod.Inst) !bool {
