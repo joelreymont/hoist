@@ -1080,6 +1080,41 @@ test "aarch64_cmp_imm: creates compare immediate instruction" {
     try testing.expectEqual(@as(u64, 42), inst.cmp_imm.imm.toU64());
 }
 
+test "put_in_regs: i128 block param falls back to pinned pair" {
+    const testing = std.testing;
+
+    var sig = signature_mod.Signature.init(testing.allocator, .system_v);
+    try sig.params.append(testing.allocator, signature_mod.AbiParam.new(Type.I128));
+    var func = try lower_mod.Function.init(testing.allocator, "test_put_in_regs_i128", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+    const wide = try func.dfg.appendBlockParam(block0, Type.I128);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+
+    const regs = try put_in_regs(wide, &ctx);
+    try testing.expectEqual(@as(usize, 2), regs.len());
+
+    const got_lo = regs.get(0) orelse return error.TestUnexpectedResult;
+    const got_hi = regs.get(1) orelse return error.TestUnexpectedResult;
+
+    const expect_lo = lower_mod.Reg.fromVReg(
+        lower_mod.VReg.new(@intCast(wide.index + lower_mod.Reg.PINNED_VREGS), .int),
+    );
+    const expect_hi = lower_mod.Reg.fromVReg(
+        lower_mod.VReg.new(@intCast(wide.index + lower_mod.Reg.PINNED_VREGS + 1), .int),
+    );
+
+    try testing.expect(got_lo.eq(expect_lo));
+    try testing.expect(got_hi.eq(expect_hi));
+}
+
 test "aarch64_fcvtzs_32_trap emits traps" {
     const testing = std.testing;
 
@@ -5000,21 +5035,32 @@ pub fn put_in_regs(
     const ty = try ctx.getValueType(val);
 
     if (ty.eql(Type.I128)) {
-        const def = ctx.func.dfg.valueDef(val) orelse return error.MissingDef;
-        const inst = def.inst() orelse return error.MissingDefInst;
-        const inst_data_ptr = ctx.func.dfg.insts.get(inst) orelse return error.MissingInstData;
-
-        switch (inst_data_ptr.*) {
-            .binary => |data| {
-                if (data.opcode != .iconcat) return error.Unimplemented;
-                const lo = data.args[0];
-                const hi = data.args[1];
-                const lo_reg = try getValueReg(ctx, lo);
-                const hi_reg = try getValueReg(ctx, hi);
-                return lower_mod.ValueRegs.pair(lo_reg, hi_reg);
-            },
-            else => return error.Unimplemented,
+        if (ctx.func.dfg.valueDef(val)) |def| {
+            if (def.inst()) |inst| {
+                if (ctx.func.dfg.insts.get(inst)) |inst_data_ptr| {
+                    switch (inst_data_ptr.*) {
+                        .binary => |data| {
+                            if (data.opcode == .iconcat) {
+                                const lo = data.args[0];
+                                const hi = data.args[1];
+                                const lo_reg = try getValueReg(ctx, lo);
+                                const hi_reg = try getValueReg(ctx, hi);
+                                return lower_mod.ValueRegs.pair(lo_reg, hi_reg);
+                            }
+                        },
+                        else => {},
+                    }
+                }
+            }
         }
+
+        // Fallback mapping used by the codegen pipeline for non-iconcat I128 producers.
+        const lo_vreg = lower_mod.VReg.new(@intCast(val.index + lower_mod.Reg.PINNED_VREGS), .int);
+        const hi_vreg = lower_mod.VReg.new(@intCast(val.index + lower_mod.Reg.PINNED_VREGS + 1), .int);
+        return lower_mod.ValueRegs.pair(
+            lower_mod.Reg.fromVReg(lo_vreg),
+            lower_mod.Reg.fromVReg(hi_vreg),
+        );
     } else {
         const class = typeToRegClass(ty);
         const vreg = try ctx.getValueReg(val, class);
