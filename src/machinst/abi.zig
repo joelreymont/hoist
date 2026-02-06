@@ -532,9 +532,64 @@ pub fn ABIMachineSpec(comptime WordSize: type) type {
             var float_reg_idx: usize = 0;
 
             for (sig.rets) |ret_ty| {
-                const rc = ret_ty.regClass();
                 var slots = std.ArrayList(ABIArgSlot){};
                 errdefer slots.deinit(allocator);
+
+                // Handle AAPCS64 struct returns.
+                if (ret_ty == .@"struct") {
+                    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+                    const classification = aarch64_abi.classifyStruct(ret_ty);
+
+                    switch (classification.class) {
+                        .hfa, .hva => {
+                            const fields = ret_ty.@"struct";
+                            const count = fields.len;
+                            if (float_reg_idx + count <= self.float_ret_regs.len) {
+                                for (0..count) |i| {
+                                    const preg = self.float_ret_regs[float_reg_idx + i];
+                                    try slots.append(allocator, .{ .reg = .{
+                                        .preg = preg,
+                                        .ty = classification.elem_ty.?,
+                                        .extension = .none,
+                                    } });
+                                }
+                                float_reg_idx += count;
+                            } else {
+                                return error.TooManyReturns;
+                            }
+                        },
+                        .general => {
+                            const struct_size = ret_ty.bytes();
+                            const chunk_count: usize = @intCast((struct_size + 7) / 8);
+                            if (int_reg_idx + chunk_count <= self.int_ret_regs.len) {
+                                for (0..chunk_count) |i| {
+                                    const preg = self.int_ret_regs[int_reg_idx + i];
+                                    try slots.append(allocator, .{ .reg = .{
+                                        .preg = preg,
+                                        .ty = .i64,
+                                        .extension = .none,
+                                    } });
+                                }
+                                int_reg_idx += chunk_count;
+                            } else {
+                                return error.TooManyReturns;
+                            }
+                        },
+                        .indirect => {
+                            // Large aggregate returns are by-reference in X8.
+                            try slots.append(allocator, .{ .reg = .{
+                                .preg = PReg.new(.int, 8),
+                                .ty = .i64,
+                                .extension = .none,
+                            } });
+                        },
+                    }
+
+                    try rets.append(allocator, .{ .slots = try slots.toOwnedSlice(allocator) });
+                    continue;
+                }
+
+                const rc = ret_ty.regClass();
 
                 switch (rc) {
                     .int => {
@@ -1241,6 +1296,99 @@ test "AAPCS64 i128 return in register pair" {
     try testing.expect(ret_locs[0].slots[1] == .reg);
     try testing.expectEqual(PReg.new(.int, 1).index(), ret_locs[0].slots[1].reg.preg.index());
     try testing.expectEqual(Type.i64, ret_locs[0].slots[1].reg.ty);
+}
+
+test "AAPCS64 general struct return <=16 bytes uses X0/X1 chunks" {
+    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+    const abi = aarch64_abi.aapcs64();
+
+    const fields = [_]StructField{
+        .{ .ty = .i64, .offset = 0 },
+        .{ .ty = .i32, .offset = 8 },
+    };
+    const struct_ty = Type{ .@"struct" = &fields };
+    const rets = [_]Type{struct_ty};
+    const sig = ABISignature.init(&.{}, &rets, .aapcs64);
+
+    const ret_locs = try abi.computeRetLocs(sig, testing.allocator);
+    defer {
+        for (ret_locs) |ret| {
+            testing.allocator.free(ret.slots);
+        }
+        testing.allocator.free(ret_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 1), ret_locs.len);
+    try testing.expectEqual(@as(usize, 2), ret_locs[0].slots.len);
+
+    try testing.expect(ret_locs[0].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.int, 0).index(), ret_locs[0].slots[0].reg.preg.index());
+    try testing.expect(std.meta.eql(Type.i64, ret_locs[0].slots[0].reg.ty));
+
+    try testing.expect(ret_locs[0].slots[1] == .reg);
+    try testing.expectEqual(PReg.new(.int, 1).index(), ret_locs[0].slots[1].reg.preg.index());
+    try testing.expect(std.meta.eql(Type.i64, ret_locs[0].slots[1].reg.ty));
+}
+
+test "AAPCS64 HVA struct return uses V0/V1" {
+    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+    const abi = aarch64_abi.aapcs64();
+
+    const vec_ty = Type{ .v128 = .{ .elem_type = .f32, .lane_count = 4 } };
+    const fields = [_]StructField{
+        .{ .ty = vec_ty, .offset = 0 },
+        .{ .ty = vec_ty, .offset = 16 },
+    };
+    const hva_ty = Type{ .@"struct" = &fields };
+    const rets = [_]Type{hva_ty};
+    const sig = ABISignature.init(&.{}, &rets, .aapcs64);
+
+    const ret_locs = try abi.computeRetLocs(sig, testing.allocator);
+    defer {
+        for (ret_locs) |ret| {
+            testing.allocator.free(ret.slots);
+        }
+        testing.allocator.free(ret_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 1), ret_locs.len);
+    try testing.expectEqual(@as(usize, 2), ret_locs[0].slots.len);
+
+    try testing.expect(ret_locs[0].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 0).index(), ret_locs[0].slots[0].reg.preg.index());
+    try testing.expect(std.meta.eql(vec_ty, ret_locs[0].slots[0].reg.ty));
+
+    try testing.expect(ret_locs[0].slots[1] == .reg);
+    try testing.expectEqual(PReg.new(.float, 1).index(), ret_locs[0].slots[1].reg.preg.index());
+    try testing.expect(std.meta.eql(vec_ty, ret_locs[0].slots[1].reg.ty));
+}
+
+test "AAPCS64 large struct return uses X8 sret pointer" {
+    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+    const abi = aarch64_abi.aapcs64();
+
+    const fields = [_]StructField{
+        .{ .ty = .i64, .offset = 0 },
+        .{ .ty = .i64, .offset = 8 },
+        .{ .ty = .i64, .offset = 16 },
+    };
+    const large_ty = Type{ .@"struct" = &fields };
+    const rets = [_]Type{large_ty};
+    const sig = ABISignature.init(&.{}, &rets, .aapcs64);
+
+    const ret_locs = try abi.computeRetLocs(sig, testing.allocator);
+    defer {
+        for (ret_locs) |ret| {
+            testing.allocator.free(ret.slots);
+        }
+        testing.allocator.free(ret_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 1), ret_locs.len);
+    try testing.expectEqual(@as(usize, 1), ret_locs[0].slots.len);
+    try testing.expect(ret_locs[0].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.int, 8).index(), ret_locs[0].slots[0].reg.preg.index());
+    try testing.expect(std.meta.eql(Type.i64, ret_locs[0].slots[0].reg.ty));
 }
 
 test "AAPCS64 i128 argument in register pair" {
