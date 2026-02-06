@@ -5558,7 +5558,7 @@ fn lowerInstructionAArch64(
                     .cmp_imm = .{
                         .src = src,
                         .imm = Imm12{ .bits = @intCast(imm_val), .shift12 = false },
-                        .size = .size64,
+                        .size = size,
                     },
                 });
 
@@ -7875,6 +7875,11 @@ test "lower: iabs emits cmp_imm with matching width" {
     try expectIabsCmpImmSize(ir.I64, .size64);
 }
 
+test "lower: int_compare_imm emits cmp_imm with matching width" {
+    try expectIntCompareImmCmpSize(ir.I32, .size32);
+    try expectIntCompareImmCmpSize(ir.I64, .size64);
+}
+
 test "lower: uload8x8 emits vec_ushll" {
     try expectWidenLoadLowering(.uload8x8, ir.Type.I16X8, false, .size8x8);
 }
@@ -7919,6 +7924,57 @@ fn expectIabsCmpImmSize(ty: ir.Type, expected_size: a64_inst.OperandSize) !void 
     } });
     const result = try func.dfg.appendInstResult(abs_inst, ty);
     try func.layout.appendInst(abs_inst, block);
+    try builder.retValues(&.{result});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_expected = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .cmp_imm => |cmp| {
+                if (cmp.size == expected_size) saw_expected = true;
+            },
+            else => {},
+        }
+    }
+
+    try testing.expect(saw_expected);
+}
+
+fn expectIntCompareImmCmpSize(ty: ir.Type, expected_size: a64_inst.OperandSize) !void {
+    const IntCC = @import("../ir/condcodes.zig").IntCC;
+
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ty));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I32));
+
+    var func = try Function.init(testing.allocator, "icmp_imm_cmp_width", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const arg = try builder.appendBlockParam(block, ty);
+    const cmp_inst = try func.dfg.makeInst(.{ .int_compare_imm = .{
+        .opcode = .icmp_imm,
+        .cond = IntCC.eq,
+        .arg = arg,
+        .imm = ir.Imm64.new(7),
+    } });
+    const result = try func.dfg.appendInstResult(cmp_inst, ir.I32);
+    try func.layout.appendInst(cmp_inst, block);
     try builder.retValues(&.{result});
 
     var ctx = Context.init(testing.allocator);
