@@ -1369,6 +1369,65 @@ test "lower_bnot128 emits mvn_rr on both halves" {
     try testing.expect(hasInstTag(vcode.insns.items, .mvn_rr));
 }
 
+test "lower_sextend128 emits asr_imm for high half" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_sextend128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const out = try lower_sextend128(lower_mod.ValueRegs.single(lo), &ctx);
+
+    const out_lo = out.get(0) orelse return error.TestUnexpectedResult;
+    try testing.expect(out_lo.eq(lo));
+    try testing.expect(out.get(1) != null);
+    try testing.expect(hasInstTag(vcode.insns.items, .asr_imm));
+}
+
+test "lower_uextend128 reuses low half and zeros high half" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_uextend128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const out = try lower_uextend128(lower_mod.ValueRegs.single(lo), &ctx);
+
+    const out_lo = out.get(0) orelse return error.TestUnexpectedResult;
+    const out_hi = out.get(1) orelse return error.TestUnexpectedResult;
+    try testing.expect(out_lo.eq(lo));
+    try testing.expect(out_hi.eq(Reg.fromPReg(PReg.new(.int, 31))));
+    try testing.expectEqual(@as(usize, 0), vcode.insns.items.len);
+}
+
 test "fpu_csel returns fcsel consumes-flags payload" {
     const testing = std.testing;
 
@@ -6779,6 +6838,38 @@ pub fn aarch64_smul_overflow_i64(
 }
 
 // I128 arithmetic helpers
+
+/// Sign-extend a 64-bit scalar to an I128 register pair.
+/// Low half is reused, high half is arithmetic shift-right by 63.
+pub fn lower_sextend128(
+    val: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lo = val.get(0) orelse return error.NoMatch;
+
+    const out_hi = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .asr_imm = .{
+            .dst = out_hi,
+            .src = lo,
+            .imm = 63,
+            .size = .size64,
+        },
+    });
+
+    return lower_mod.ValueRegs.pair(lo, out_hi.toReg());
+}
+
+/// Zero-extend a 64-bit scalar to an I128 register pair.
+/// Low half is reused; high half is XZR.
+pub fn lower_uextend128(
+    val: lower_mod.ValueRegs,
+    _: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lo = val.get(0) orelse return error.NoMatch;
+    const zero = Reg.fromPReg(PReg.new(.int, 31));
+    return lower_mod.ValueRegs.pair(lo, zero);
+}
 
 /// Add two I128 values encoded as (lo, hi) register pairs.
 /// Emits ADDS for low half and ADCS for high half to propagate carry.

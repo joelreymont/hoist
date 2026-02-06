@@ -776,7 +776,7 @@
 ;; sextend: I128 sign-extend (64-bit to 128-bit)
 ;; Sign-extend by copying sign bit (bit 63) to all bits of high 64
 (rule -2 (lower (has_type $I128 (sextend x)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_sextend128 (put_in_regs x))))
 
 ;; sextend+load fusion: Fuse sign-extension with load into extending load instruction
 ;; This avoids separate load + extend instructions
@@ -813,7 +813,7 @@
 ;; uextend: I128 zero-extend (64-bit to 128-bit)
 ;; Zero-extend by setting high 64 bits to 0
 (rule -1 (lower (has_type $I128 (uextend x)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_uextend128 (put_in_regs x))))
 
 ;; uextend+load fusion: Fuse zero-extension with load into extending load instruction
 ;; This avoids separate load + extend instructions
@@ -2707,6 +2707,8 @@
 (decl lower_ctz128 (ValueRegs) ValueRegs)
 (decl lower_cls128 (ValueRegs) ValueRegs)
 (decl lower_popcnt128 (ValueRegs) ValueRegs)
+(decl lower_sextend128 (ValueRegs) ValueRegs)
+(decl lower_uextend128 (ValueRegs) ValueRegs)
 
 ;; Negation operations
 (decl aarch64_neg (Type Value) Aarch64Inst)
