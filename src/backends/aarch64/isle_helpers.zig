@@ -1231,6 +1231,44 @@ test "lower_isub128 emits subs_rr and sbcs sequence" {
     try testing.expect(hasInstTag(vcode.insns.items, .sbcs));
 }
 
+test "lower_imul128 emits umulh mads and mul_rr sequence" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_imul128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lhs_lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const lhs_hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const rhs_lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const rhs_hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+
+    const out = try lower_imul128(
+        lower_mod.ValueRegs.pair(lhs_lo, lhs_hi),
+        lower_mod.ValueRegs.pair(rhs_lo, rhs_hi),
+        &ctx,
+    );
+
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+    try testing.expect(hasInstTag(vcode.insns.items, .umulh));
+    try testing.expect(hasInstTag(vcode.insns.items, .madd));
+    try testing.expect(hasInstTag(vcode.insns.items, .mul_rr));
+}
+
 test "lower_band128 emits and_rr on both halves" {
     const testing = std.testing;
 
@@ -7191,6 +7229,54 @@ pub fn lower_isub128(
         .dst = out_hi,
         .src1 = lhs_hi,
         .src2 = rhs_hi,
+        .size = .size64,
+    } });
+
+    return lower_mod.ValueRegs.pair(out_lo.toReg(), out_hi.toReg());
+}
+
+/// Multiply two I128 values encoded as (lo, hi) register pairs.
+/// Computes the low 128 bits of the product with:
+/// lo = x_lo * y_lo
+/// hi = umulh(x_lo, y_lo) + x_lo*y_hi + x_hi*y_lo
+pub fn lower_imul128(
+    lhs: lower_mod.ValueRegs,
+    rhs: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lhs_lo = lhs.get(0) orelse return error.NoMatch;
+    const lhs_hi = lhs.get(1) orelse return error.NoMatch;
+    const rhs_lo = rhs.get(0) orelse return error.NoMatch;
+    const rhs_hi = rhs.get(1) orelse return error.NoMatch;
+
+    const out_hi = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .umulh = .{
+        .dst = out_hi,
+        .src1 = lhs_lo,
+        .src2 = rhs_lo,
+    } });
+
+    try ctx.emit(Inst{ .madd = .{
+        .dst = out_hi,
+        .src1 = lhs_lo,
+        .src2 = rhs_hi,
+        .addend = out_hi.toReg(),
+        .size = .size64,
+    } });
+
+    try ctx.emit(Inst{ .madd = .{
+        .dst = out_hi,
+        .src1 = lhs_hi,
+        .src2 = rhs_lo,
+        .addend = out_hi.toReg(),
+        .size = .size64,
+    } });
+
+    const out_lo = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .mul_rr = .{
+        .dst = out_lo,
+        .src1 = lhs_lo,
+        .src2 = rhs_lo,
         .size = .size64,
     } });
 

@@ -551,7 +551,7 @@
 ;;   dst_hi = madd(x_hi, y_lo, dst_hi)
 ;;   dst_lo = madd(x_lo, y_lo, 0)
 (rule -1 (lower (imul $I128 x y))
-      (aarch64_unimplemented))
+      (emit_regs (lower_imul128 (put_in_regs x) (put_in_regs y))))
 
 ;; Vector imul: Multiply vector elements
 (rule 1 (lower (has_type (ty_vec ty) (imul ty x y)))
@@ -2703,6 +2703,7 @@
 (decl aarch64_popcnt_64 (Value) Aarch64Inst)
 (decl lower_iadd128 (ValueRegs ValueRegs) ValueRegs)
 (decl lower_isub128 (ValueRegs ValueRegs) ValueRegs)
+(decl lower_imul128 (ValueRegs ValueRegs) ValueRegs)
 (decl lower_band128 (ValueRegs ValueRegs) ValueRegs)
 (decl lower_bor128 (ValueRegs ValueRegs) ValueRegs)
 (decl lower_bxor128 (ValueRegs ValueRegs) ValueRegs)
