@@ -1875,11 +1875,16 @@ fn emitUxth(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffe
     try buffer.put4(insn);
 }
 /// LDR Xt, [Xn, #offset]
+fn encodeSignedImm9(offset: i16) !u9 {
+    const imm9_signed = std.math.cast(i9, offset) orelse return error.OffsetOutOfRange;
+    return @bitCast(imm9_signed);
+}
+
 fn emitLdr(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
     const rt = try hwEnc(dst);
     const rn = try hwEnc(base);
-    const imm9: u9 = @truncate(@as(u16, @bitCast(offset)));
+    const imm9 = try encodeSignedImm9(offset);
 
     // LDR (immediate): sf|11|111|0|00|01|imm9|0|Rn|Rt
     const insn: u32 = (sf_bit << 31) |
@@ -1896,7 +1901,7 @@ fn emitStr(src: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_
     const sf_bit: u32 = @intCast(sf(size));
     const rt = try hwEnc(src);
     const rn = try hwEnc(base);
-    const imm9: u9 = @truncate(@as(u16, @bitCast(offset)));
+    const imm9 = try encodeSignedImm9(offset);
 
     // STR (immediate): sf|11|111|0|00|00|imm9|0|Rn|Rt
     const insn: u32 = (sf_bit << 31) |
@@ -2497,7 +2502,7 @@ fn emitLoadStoreImm9Indexed(
 fn emitLdrPre(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const rt = try hwEnc(dst);
     const rn = try hwEnc(base);
-    const imm9: u9 = @truncate(@as(u16, @bitCast(offset)));
+    const imm9 = try encodeSignedImm9(offset);
 
     // LDR (immediate, pre-index): size|111|0|00|01|imm9|11|Rn|Rt
     try emitLoadStoreImm9Indexed(rt, rn, imm9, size, 0b01, 0b11, buffer);
@@ -2513,7 +2518,7 @@ fn emitLdrPre(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buff
 fn emitLdrPost(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const rt = try hwEnc(dst);
     const rn = try hwEnc(base);
-    const imm9: u9 = @truncate(@as(u16, @bitCast(offset)));
+    const imm9 = try encodeSignedImm9(offset);
 
     // LDR (immediate, post-index): size|111|0|00|01|imm9|01|Rn|Rt
     try emitLoadStoreImm9Indexed(rt, rn, imm9, size, 0b01, 0b01, buffer);
@@ -2529,7 +2534,7 @@ fn emitLdrPost(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buf
 fn emitStrPre(src: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const rt = try hwEnc(src);
     const rn = try hwEnc(base);
-    const imm9: u9 = @truncate(@as(u16, @bitCast(offset)));
+    const imm9 = try encodeSignedImm9(offset);
 
     // STR (immediate, pre-index): size|111|0|00|00|imm9|11|Rn|Rt
     try emitLoadStoreImm9Indexed(rt, rn, imm9, size, 0b00, 0b11, buffer);
@@ -2545,7 +2550,7 @@ fn emitStrPre(src: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buff
 fn emitStrPost(src: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const rt = try hwEnc(src);
     const rn = try hwEnc(base);
-    const imm9: u9 = @truncate(@as(u16, @bitCast(offset)));
+    const imm9 = try encodeSignedImm9(offset);
 
     // STR (immediate, post-index): size|111|0|00|00|imm9|01|Rn|Rt
     try emitLoadStoreImm9Indexed(rt, rn, imm9, size, 0b00, 0b01, buffer);
@@ -10703,6 +10708,59 @@ test "emit ldr/str pre/post index boundary values" {
     insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     imm9 = (insn >> 12) & 0x1FF;
     try testing.expectEqual(@as(u32, 0), imm9);
+}
+
+test "emit ldr/str imm9 forms reject out-of-range offsets" {
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+    const wr1 = WritableReg.fromReg(r1);
+
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .ldr = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = 256,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .str = .{
+        .src = r0,
+        .base = r1,
+        .offset = -257,
+        .size = .size64,
+    } }, &buffer));
+
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .ldr_pre = .{
+        .dst = wr0,
+        .base = wr1,
+        .offset = 256,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .ldr_post = .{
+        .dst = wr0,
+        .base = wr1,
+        .offset = -257,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .str_pre = .{
+        .src = r0,
+        .base = wr1,
+        .offset = 256,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .str_post = .{
+        .src = r0,
+        .base = wr1,
+        .offset = -257,
+        .size = .size64,
+    } }, &buffer));
 }
 
 test "emit ldr/str pre/post verify opcode differences" {
