@@ -1,9 +1,11 @@
 ---
 title: Wire x64 lowering
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.715085+01:00"
+created-at: "\"\\\"2026-02-02T21:35:56.715085+01:00\\\"\""
+closed-at: "2026-02-06T17:36:24.373708+01:00"
+close-reason: Wired x64 lowering path and fixed x64 backend build/test issues
 blocks:
   - hoist-indirect-return-b3ed0b57
 ---

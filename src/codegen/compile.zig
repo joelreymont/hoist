@@ -5934,8 +5934,21 @@ fn lowerInstructionAArch64(
 
 /// Lower IR to x86-64 VCode.
 fn lowerX86_64(ctx: *Context) CodegenError!void {
-    // TODO: x86-64 lowering not yet implemented
-    _ = ctx;
+    const Inst = @import("../backends/x64/inst.zig").Inst;
+    const x64_lower = @import("../backends/x64/lower.zig").X64Lower;
+
+    var lowered = lower_mod.lowerFunction(
+        Inst,
+        ctx.allocator,
+        ctx.func,
+        x64_lower.backend(),
+    ) catch |err| return switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => error.LoweringFailed,
+    };
+    lowered.deinit();
+
+    // x64 lowering path is wired; register allocation and emission are still AArch64-only.
     return error.UnsupportedTarget;
 }
 

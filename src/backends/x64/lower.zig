@@ -70,7 +70,7 @@ pub const X64Lower = struct {
                 return true;
             },
             .binary_imm64 => |bimm| {
-                if (bimm.opcode != .iadd_imm and bimm.opcode != .isub_imm) return false;
+                if (bimm.opcode != .iadd_imm and bimm.opcode != .irsub_imm) return false;
                 if (bimm.imm.value < std.math.minInt(i32) or bimm.imm.value > std.math.maxInt(i32)) return false;
 
                 const result = ctx.func.dfg.firstResult(inst) orelse return false;
@@ -93,7 +93,12 @@ pub const X64Lower = struct {
                         .size = size,
                     } });
                 } else {
-                    try ctx.emit(Inst{ .sub_imm = .{
+                    // irsub_imm computes (imm - arg).
+                    try ctx.emit(Inst{ .neg = .{
+                        .dst = dst,
+                        .size = size,
+                    } });
+                    try ctx.emit(Inst{ .add_imm = .{
                         .dst = dst,
                         .imm = imm,
                         .size = size,
@@ -259,8 +264,14 @@ test "X64Lower backend creation" {
 test "X64Lower with stub function" {
     const backend = X64Lower.backend();
 
-    var func = lower_mod.Function.init(testing.allocator);
+    const sig = Signature.init(testing.allocator, .system_v);
+    var func = try lower_mod.Function.init(testing.allocator, "x64_stub", sig);
     defer func.deinit();
+
+    const block = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block);
+    const ret_inst = try func.dfg.makeInst(InstructionData{ .nullary = .{ .opcode = .@"return" } });
+    try func.layout.appendInst(ret_inst, block);
 
     var vcode = root.vcode.VCode(Inst).init(testing.allocator);
     defer vcode.deinit();
@@ -268,11 +279,12 @@ test "X64Lower with stub function" {
     var ctx = LowerCtx(Inst).init(testing.allocator, &func, &vcode);
     defer ctx.deinit();
 
-    const inst = lower_mod.Inst.new(0);
+    _ = try ctx.startBlock(block);
+    const inst = ret_inst;
     const handled = try backend.lowerInstFn(&ctx, inst);
+    ctx.endBlock();
 
-    // Stub returns false (not handled)
-    try testing.expectEqual(false, handled);
+    try testing.expectEqual(true, handled);
 }
 
 test "X64Lower lowers integer ALU + return" {

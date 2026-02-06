@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-const root = @import("root");
+const root = @import("../../root.zig");
 const Inst = root.x64_inst.Inst;
 const OperandSize = root.x64_inst.OperandSize;
 const Reg = root.x64_inst.Reg;
@@ -40,9 +40,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .jmp => |i| try emitJmp(i.target.label, buffer),
         .jmp_cond => |i| try emitJmpCond(@intFromEnum(i.cc), i.target.label, buffer),
         .call => |i| try emitCall(i.target, buffer),
-        .ret => try buffer.put(&[_]u8{0xC3}),
+        .ret => try buffer.putData(&[_]u8{0xC3}),
         .ret_imm => |i| try emitRetImm(i.imm, buffer),
-        .nop => try buffer.put(&[_]u8{0x90}),
+        .nop => try buffer.putData(&[_]u8{0x90}),
         .cmpxchg_mr => |i| try emitCmpxchg(i.dst, i.src, i.size, buffer),
         .xadd_mr => |i| try emitXadd(i.dst, i.src.toReg(), i.size, buffer),
         .xchg_mr => |i| try emitXchg(i.dst, i.src.toReg(), i.size, buffer),
@@ -51,9 +51,9 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .lock_and_mi => |i| try emitLockAluMI(4, i.dst, i.imm, i.size, buffer),
         .lock_or_mi => |i| try emitLockAluMI(1, i.dst, i.imm, i.size, buffer),
         .lock_xor_mi => |i| try emitLockAluMI(6, i.dst, i.imm, i.size, buffer),
-        .lfence => try buffer.put(&[_]u8{ 0x0F, 0xAE, 0xE8 }),
-        .sfence => try buffer.put(&[_]u8{ 0x0F, 0xAE, 0xF8 }),
-        .mfence => try buffer.put(&[_]u8{ 0x0F, 0xAE, 0xF0 }),
+        .lfence => try buffer.putData(&[_]u8{ 0x0F, 0xAE, 0xE8 }),
+        .sfence => try buffer.putData(&[_]u8{ 0x0F, 0xAE, 0xF8 }),
+        .mfence => try buffer.putData(&[_]u8{ 0x0F, 0xAE, 0xF0 }),
         // SIMD moves
         .movdqa_rr => |i| try emitSse2RR(0x6F, i.dst.toReg(), i.src, buffer),
         .movdqa_mr => |i| try emitSse2MR(0x7F, i.dst, i.src, buffer),
@@ -108,6 +108,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .mulpd_rr => |i| try emitSse2RR(0x59, i.dst.toReg(), i.src, buffer),
         .divps_rr => |i| try emitSseRR(0x5E, i.dst.toReg(), i.src, buffer),
         .divpd_rr => |i| try emitSse2RR(0x5E, i.dst.toReg(), i.src, buffer),
+        else => return error.UnsupportedInst,
     }
 }
 
@@ -127,7 +128,7 @@ fn emitRex(size: OperandSize, reg: ?Reg, rm: ?Reg, buffer: *buffer_mod.MachBuffe
         if (r.isVirtual()) {
             // Virtual regs don't have hw encoding - assume low regs for now
         } else {
-            const preg = r.toPReg();
+            const preg = r.toRealReg().?;
             if (preg.hwEnc() >= 8) {
                 rex |= 0x04; // REX.R
                 needs_rex = true;
@@ -140,7 +141,7 @@ fn emitRex(size: OperandSize, reg: ?Reg, rm: ?Reg, buffer: *buffer_mod.MachBuffe
         if (r.isVirtual()) {
             // Virtual regs don't have hw encoding
         } else {
-            const preg = r.toPReg();
+            const preg = r.toRealReg().?;
             if (preg.hwEnc() >= 8) {
                 rex |= 0x01; // REX.B
                 needs_rex = true;
@@ -149,7 +150,7 @@ fn emitRex(size: OperandSize, reg: ?Reg, rm: ?Reg, buffer: *buffer_mod.MachBuffe
     }
 
     if (needs_rex) {
-        try buffer.put(&[_]u8{rex});
+        try buffer.putData(&[_]u8{rex});
     }
 }
 
@@ -162,9 +163,9 @@ fn modrm(mod: u8, reg: u8, rm: u8) u8 {
 fn hwEnc(reg: Reg) u8 {
     if (reg.isVirtual()) {
         // For testing - map virtual regs to low physical regs
-        return @intCast(reg.toVReg().index() % 8);
+        return @intCast(reg.toVReg().?.index() % 8);
     } else {
-        return @intCast(reg.toPReg().hwEnc() & 0x07);
+        return @intCast(reg.toRealReg().?.hwEnc() & 0x07);
     }
 }
 
@@ -173,10 +174,10 @@ fn emitMovRR(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuff
     try emitRex(size, src, dst, buffer);
 
     // MOV opcode (0x89 for reg->reg)
-    try buffer.put(&[_]u8{0x89});
+    try buffer.putData(&[_]u8{0x89});
 
     // ModR/M: mod=11 (reg-reg), reg=src, rm=dst
-    try buffer.put(&[_]u8{modrm(0b11, hwEnc(src), hwEnc(dst))});
+    try buffer.putData(&[_]u8{modrm(0b11, hwEnc(src), hwEnc(dst))});
 }
 
 /// MOV reg, imm
@@ -185,40 +186,40 @@ fn emitMovImm(dst: Reg, imm: i64, size: OperandSize, buffer: *buffer_mod.MachBuf
 
     // MOV immediate opcode (0xB8 + reg for 32/64-bit)
     if (size == .size64 or size == .size32) {
-        try buffer.put(&[_]u8{0xB8 + hwEnc(dst)});
+        try buffer.putData(&[_]u8{0xB8 + hwEnc(dst)});
         // Emit 32-bit immediate (sign-extended to 64-bit if needed)
         const imm32: u32 = @intCast(@as(i32, @truncate(imm)));
-        try buffer.put(std.mem.asBytes(&imm32));
+        try buffer.putData(std.mem.asBytes(&imm32));
     } else {
         // 8-bit or 16-bit immediates (simplified)
-        try buffer.put(&[_]u8{0xB0 + hwEnc(dst)});
-        try buffer.put(&[_]u8{@intCast(@as(u8, @truncate(@as(u64, @bitCast(imm)))))});
+        try buffer.putData(&[_]u8{0xB0 + hwEnc(dst)});
+        try buffer.putData(&[_]u8{@intCast(@as(u8, @truncate(@as(u64, @bitCast(imm)))))});
     }
 }
 
 /// ALU operation reg, reg (ADD, SUB, etc.)
 fn emitAluRR(opcode: u8, dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     try emitRex(size, src, dst, buffer);
-    try buffer.put(&[_]u8{opcode});
-    try buffer.put(&[_]u8{modrm(0b11, hwEnc(src), hwEnc(dst))});
+    try buffer.putData(&[_]u8{opcode});
+    try buffer.putData(&[_]u8{modrm(0b11, hwEnc(src), hwEnc(dst))});
 }
 
 /// PUSH reg
 fn emitPush(src: Reg, buffer: *buffer_mod.MachBuffer) !void {
     // PUSH opcode (0x50 + reg)
-    try buffer.put(&[_]u8{0x50 + hwEnc(src)});
+    try buffer.putData(&[_]u8{0x50 + hwEnc(src)});
 }
 
 /// POP reg
 fn emitPop(dst: Reg, buffer: *buffer_mod.MachBuffer) !void {
     // POP opcode (0x58 + reg)
-    try buffer.put(&[_]u8{0x58 + hwEnc(dst)});
+    try buffer.putData(&[_]u8{0x58 + hwEnc(dst)});
 }
 
 /// JMP rel32
 fn emitJmp(label: u32, buffer: *buffer_mod.MachBuffer) !void {
     // JMP rel32 opcode
-    try buffer.put(&[_]u8{0xE9});
+    try buffer.putData(&[_]u8{0xE9});
 
     // Add label use for fixup
     try buffer.useLabel(
@@ -227,13 +228,13 @@ fn emitJmp(label: u32, buffer: *buffer_mod.MachBuffer) !void {
     );
 
     // Placeholder for rel32 (will be fixed up)
-    try buffer.put(&[_]u8{ 0x00, 0x00, 0x00, 0x00 });
+    try buffer.putData(&[_]u8{ 0x00, 0x00, 0x00, 0x00 });
 }
 
 /// Jcc rel32 (conditional jump)
 fn emitJmpCond(cc: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void {
     // Jcc rel32 opcode (0x0F 0x80+cc)
-    try buffer.put(&[_]u8{ 0x0F, 0x80 + cc });
+    try buffer.putData(&[_]u8{ 0x0F, 0x80 + cc });
 
     // Add label use for fixup
     try buffer.useLabel(
@@ -242,7 +243,7 @@ fn emitJmpCond(cc: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void {
     );
 
     // Placeholder for rel32
-    try buffer.put(&[_]u8{ 0x00, 0x00, 0x00, 0x00 });
+    try buffer.putData(&[_]u8{ 0x00, 0x00, 0x00, 0x00 });
 }
 
 /// Encode SIB byte.
@@ -278,64 +279,64 @@ fn emitModrmMem(reg: Reg, mem: Mem, buffer: *buffer_mod.MachBuffer) !void {
 
         if (needs_sib) {
             // Emit ModR/M with SIB indicator (rm = 100)
-            try buffer.put(&[_]u8{modrm(mod, reg_enc, 0b100)});
+            try buffer.putData(&[_]u8{modrm(mod, reg_enc, 0b100)});
 
             // Emit SIB byte
             if (mem.idx) |idx| {
                 const idx_enc = hwEnc(idx);
-                try buffer.put(&[_]u8{sib(mem.scale, idx_enc, base_enc)});
+                try buffer.putData(&[_]u8{sib(mem.scale, idx_enc, base_enc)});
             } else {
                 // No index - use RSP (100) as "no index" marker
-                try buffer.put(&[_]u8{sib(1, 0b100, base_enc)});
+                try buffer.putData(&[_]u8{sib(1, 0b100, base_enc)});
             }
         } else {
             // Direct ModR/M encoding (no SIB)
-            try buffer.put(&[_]u8{modrm(mod, reg_enc, base_enc)});
+            try buffer.putData(&[_]u8{modrm(mod, reg_enc, base_enc)});
         }
 
         // Emit displacement
         if (mod == 0b01) {
-            try buffer.put(&[_]u8{@intCast(@as(u8, @bitCast(@as(i8, @intCast(disp)))))});
+            try buffer.putData(&[_]u8{@intCast(@as(u8, @bitCast(@as(i8, @intCast(disp)))))});
         } else if (mod == 0b10 or base_enc == 5) {
             const disp32: u32 = @bitCast(@as(i32, @intCast(disp)));
-            try buffer.put(std.mem.asBytes(&disp32));
+            try buffer.putData(std.mem.asBytes(&disp32));
         }
     } else {
         // RIP-relative or absolute addressing
         // For now: disp32 only (mod=00, rm=101)
-        try buffer.put(&[_]u8{modrm(0b00, reg_enc, 0b101)});
+        try buffer.putData(&[_]u8{modrm(0b00, reg_enc, 0b101)});
         const disp32: u32 = @bitCast(mem.disp);
-        try buffer.put(std.mem.asBytes(&disp32));
+        try buffer.putData(std.mem.asBytes(&disp32));
     }
 }
 
 /// MOV reg, mem
 fn emitMovRM(dst: Reg, src: Mem, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     try emitRex(size, dst, src.base, buffer);
-    try buffer.put(&[_]u8{0x8B}); // MOV r, r/m
+    try buffer.putData(&[_]u8{0x8B}); // MOV r, r/m
     try emitModrmMem(dst, src, buffer);
 }
 
 /// MOV mem, reg
 fn emitMovMR(dst: Mem, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     try emitRex(size, src, dst.base, buffer);
-    try buffer.put(&[_]u8{0x89}); // MOV r/m, r
+    try buffer.putData(&[_]u8{0x89}); // MOV r/m, r
     try emitModrmMem(src, dst, buffer);
 }
 
 /// MOV mem, imm
 fn emitMovMI(dst: Mem, imm: i32, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     try emitRex(size, null, dst.base, buffer);
-    try buffer.put(&[_]u8{0xC7}); // MOV r/m, imm32
-    try emitModrmMem(Reg.fromPReg(PReg.rax()), dst, buffer); // Use /0 subopcode
+    try buffer.putData(&[_]u8{0xC7}); // MOV r/m, imm32
+    try emitModrmMem(Reg.fromPReg(PReg.new(.int, 0)), dst, buffer); // Use /0 subopcode
     const imm32: u32 = @bitCast(imm);
-    try buffer.put(std.mem.asBytes(&imm32));
+    try buffer.putData(std.mem.asBytes(&imm32));
 }
 
 /// LEA - Load Effective Address
 fn emitLea(dst: Reg, src: Mem, buffer: *buffer_mod.MachBuffer) !void {
     try emitRex(.size64, dst, src.base, buffer);
-    try buffer.put(&[_]u8{0x8D}); // LEA
+    try buffer.putData(&[_]u8{0x8D}); // LEA
     try emitModrmMem(dst, src, buffer);
 }
 
@@ -348,14 +349,14 @@ fn emitAluImm(subopcode: u8, dst: Reg, imm: i32, size: OperandSize, buffer: *buf
 
     if (fits_simm8 and size != .size8) {
         // Use 0x83 encoding with simm8
-        try buffer.put(&[_]u8{0x83});
-        try buffer.put(&[_]u8{modrm(0b11, subopcode, hwEnc(dst))});
-        try buffer.put(&[_]u8{@intCast(@as(u8, @bitCast(@as(i8, @intCast(imm)))))});
+        try buffer.putData(&[_]u8{0x83});
+        try buffer.putData(&[_]u8{modrm(0b11, subopcode, hwEnc(dst))});
+        try buffer.putData(&[_]u8{@intCast(@as(u8, @bitCast(@as(i8, @intCast(imm)))))});
     } else if (size == .size8) {
         // 8-bit operation
-        try buffer.put(&[_]u8{0x80});
-        try buffer.put(&[_]u8{modrm(0b11, subopcode, hwEnc(dst))});
-        try buffer.put(&[_]u8{@intCast(@as(u8, @bitCast(@as(i8, @intCast(imm)))))});
+        try buffer.putData(&[_]u8{0x80});
+        try buffer.putData(&[_]u8{modrm(0b11, subopcode, hwEnc(dst))});
+        try buffer.putData(&[_]u8{@intCast(@as(u8, @bitCast(@as(i8, @intCast(imm)))))});
     } else {
         // Full 32-bit immediate
         if (hwEnc(dst) == 0 and subopcode != 4) { // Special encoding for AL/AX/EAX/RAX, except AND
@@ -367,21 +368,21 @@ fn emitAluImm(subopcode: u8, dst: Reg, imm: i32, size: OperandSize, buffer: *buf
                 7 => 0x3D, // CMP
                 else => 0x81,
             };
-            try buffer.put(&[_]u8{base_opcode});
+            try buffer.putData(&[_]u8{base_opcode});
         } else {
-            try buffer.put(&[_]u8{0x81});
-            try buffer.put(&[_]u8{modrm(0b11, subopcode, hwEnc(dst))});
+            try buffer.putData(&[_]u8{0x81});
+            try buffer.putData(&[_]u8{modrm(0b11, subopcode, hwEnc(dst))});
         }
         const imm32: u32 = @bitCast(imm);
-        try buffer.put(std.mem.asBytes(&imm32));
+        try buffer.putData(std.mem.asBytes(&imm32));
     }
 }
 
 /// TEST reg, reg
 fn emitTest(lhs: Reg, rhs: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     try emitRex(size, rhs, lhs, buffer);
-    try buffer.put(&[_]u8{0x85}); // TEST r/m, r
-    try buffer.put(&[_]u8{modrm(0b11, hwEnc(rhs), hwEnc(lhs))});
+    try buffer.putData(&[_]u8{0x85}); // TEST r/m, r
+    try buffer.putData(&[_]u8{modrm(0b11, hwEnc(rhs), hwEnc(lhs))});
 }
 
 /// TEST reg, imm
@@ -390,17 +391,17 @@ fn emitTestImm(lhs: Reg, imm: i32, size: OperandSize, buffer: *buffer_mod.MachBu
 
     if (hwEnc(lhs) == 0) {
         // Special encoding for AL/AX/EAX/RAX
-        try buffer.put(&[_]u8{0xA9});
+        try buffer.putData(&[_]u8{0xA9});
     } else {
-        try buffer.put(&[_]u8{0xF7});
-        try buffer.put(&[_]u8{modrm(0b11, 0, hwEnc(lhs))});
+        try buffer.putData(&[_]u8{0xF7});
+        try buffer.putData(&[_]u8{modrm(0b11, 0, hwEnc(lhs))});
     }
 
     if (size == .size8) {
-        try buffer.put(&[_]u8{@intCast(@as(u8, @bitCast(@as(i8, @intCast(imm)))))});
+        try buffer.putData(&[_]u8{@intCast(@as(u8, @bitCast(@as(i8, @intCast(imm)))))});
     } else {
         const imm32: u32 = @bitCast(imm);
-        try buffer.put(std.mem.asBytes(&imm32));
+        try buffer.putData(std.mem.asBytes(&imm32));
     }
 }
 
@@ -409,47 +410,47 @@ fn emitCall(target: CallTarget, buffer: *buffer_mod.MachBuffer) !void {
     switch (target) {
         .direct => {
             // Direct call: E8 rel32
-            try buffer.put(&[_]u8{0xE8});
+            try buffer.putData(&[_]u8{0xE8});
             // Placeholder - would need symbol resolution
-            try buffer.put(&[_]u8{ 0x00, 0x00, 0x00, 0x00 });
+            try buffer.putData(&[_]u8{ 0x00, 0x00, 0x00, 0x00 });
         },
         .indirect => |reg| {
             // Indirect call: FF /2
             try emitRex(.size64, null, reg, buffer);
-            try buffer.put(&[_]u8{0xFF});
-            try buffer.put(&[_]u8{modrm(0b11, 2, hwEnc(reg))});
+            try buffer.putData(&[_]u8{0xFF});
+            try buffer.putData(&[_]u8{modrm(0b11, 2, hwEnc(reg))});
         },
     }
 }
 
 /// RET imm16
 fn emitRetImm(imm: u16, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{0xC2});
-    try buffer.put(std.mem.asBytes(&imm));
+    try buffer.putData(&[_]u8{0xC2});
+    try buffer.putData(std.mem.asBytes(&imm));
 }
 
 /// LOCK CMPXCHG mem, reg (0xF0 0x0F 0xB1 for 32/64-bit)
 fn emitCmpxchg(mem: Mem, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{0xF0}); // LOCK prefix
+    try buffer.putData(&[_]u8{0xF0}); // LOCK prefix
     try emitRex(size, src, mem.base, buffer);
 
     if (size == .size8) {
-        try buffer.put(&[_]u8{0x0F, 0xB0}); // CMPXCHG r/m8, r8
+        try buffer.putData(&[_]u8{0x0F, 0xB0}); // CMPXCHG r/m8, r8
     } else {
-        try buffer.put(&[_]u8{0x0F, 0xB1}); // CMPXCHG r/m, r
+        try buffer.putData(&[_]u8{0x0F, 0xB1}); // CMPXCHG r/m, r
     }
     try emitModrmMem(src, mem, buffer);
 }
 
 /// LOCK XADD mem, reg (0xF0 0x0F 0xC1 for 32/64-bit)
 fn emitXadd(mem: Mem, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{0xF0}); // LOCK prefix
+    try buffer.putData(&[_]u8{0xF0}); // LOCK prefix
     try emitRex(size, src, mem.base, buffer);
 
     if (size == .size8) {
-        try buffer.put(&[_]u8{0x0F, 0xC0}); // XADD r/m8, r8
+        try buffer.putData(&[_]u8{0x0F, 0xC0}); // XADD r/m8, r8
     } else {
-        try buffer.put(&[_]u8{0x0F, 0xC1}); // XADD r/m, r
+        try buffer.putData(&[_]u8{0x0F, 0xC1}); // XADD r/m, r
     }
     try emitModrmMem(src, mem, buffer);
 }
@@ -459,33 +460,33 @@ fn emitXchg(mem: Mem, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffe
     try emitRex(size, src, mem.base, buffer);
 
     if (size == .size8) {
-        try buffer.put(&[_]u8{0x86}); // XCHG r/m8, r8
+        try buffer.putData(&[_]u8{0x86}); // XCHG r/m8, r8
     } else {
-        try buffer.put(&[_]u8{0x87}); // XCHG r/m, r
+        try buffer.putData(&[_]u8{0x87}); // XCHG r/m, r
     }
     try emitModrmMem(src, mem, buffer);
 }
 
 /// LOCK ALU mem, imm (ADD/SUB/AND/OR/XOR with LOCK prefix)
 fn emitLockAluMI(subopcode: u8, mem: Mem, imm: i32, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{0xF0}); // LOCK prefix
+    try buffer.putData(&[_]u8{0xF0}); // LOCK prefix
     try emitRex(size, null, mem.base, buffer);
 
     const fits_simm8 = imm >= -128 and imm <= 127;
 
     if (fits_simm8 and size != .size8) {
-        try buffer.put(&[_]u8{0x83}); // ALU r/m, simm8
-        try emitModrmMem(Reg.fromPReg(PReg.new(@intCast(subopcode), reg_mod.RegClass.int)), mem, buffer);
-        try buffer.put(&[_]u8{@intCast(@as(u8, @bitCast(@as(i8, @intCast(imm)))))});
+        try buffer.putData(&[_]u8{0x83}); // ALU r/m, simm8
+        try emitModrmMem(Reg.fromPReg(PReg.new(.int, @intCast(subopcode))), mem, buffer);
+        try buffer.putData(&[_]u8{@intCast(@as(u8, @bitCast(@as(i8, @intCast(imm)))))});
     } else if (size == .size8) {
-        try buffer.put(&[_]u8{0x80}); // ALU r/m8, imm8
-        try emitModrmMem(Reg.fromPReg(PReg.new(@intCast(subopcode), reg_mod.RegClass.int)), mem, buffer);
-        try buffer.put(&[_]u8{@intCast(@as(u8, @bitCast(@as(i8, @intCast(imm)))))});
+        try buffer.putData(&[_]u8{0x80}); // ALU r/m8, imm8
+        try emitModrmMem(Reg.fromPReg(PReg.new(.int, @intCast(subopcode))), mem, buffer);
+        try buffer.putData(&[_]u8{@intCast(@as(u8, @bitCast(@as(i8, @intCast(imm)))))});
     } else {
-        try buffer.put(&[_]u8{0x81}); // ALU r/m, imm32
-        try emitModrmMem(Reg.fromPReg(PReg.new(@intCast(subopcode), reg_mod.RegClass.int)), mem, buffer);
+        try buffer.putData(&[_]u8{0x81}); // ALU r/m, imm32
+        try emitModrmMem(Reg.fromPReg(PReg.new(.int, @intCast(subopcode))), mem, buffer);
         const imm32: u32 = @bitCast(imm);
-        try buffer.put(std.mem.asBytes(&imm32));
+        try buffer.putData(std.mem.asBytes(&imm32));
     }
 }
 
@@ -642,126 +643,126 @@ test "emit sib encoding" {
 /// Emit SSE instruction (no prefix, 0x0F opcode map).
 fn emitSseRR(opcode: u8, dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
     try emitRex(.size64, dst, src, buffer);
-    try buffer.put(&[_]u8{ 0x0F, opcode });
-    try buffer.put(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
+    try buffer.putData(&[_]u8{ 0x0F, opcode });
+    try buffer.putData(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
 }
 
 fn emitSseMR(opcode: u8, dst: Mem, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
     try emitRex(.size64, src, dst.base, buffer);
-    try buffer.put(&[_]u8{ 0x0F, opcode });
+    try buffer.putData(&[_]u8{ 0x0F, opcode });
     try emitModrmMem(src, dst, buffer);
 }
 
 fn emitSseRM(opcode: u8, dst: Reg, src: Mem, buffer: *buffer_mod.MachBuffer) !void {
     try emitRex(.size64, dst, src.base, buffer);
-    try buffer.put(&[_]u8{ 0x0F, opcode });
+    try buffer.putData(&[_]u8{ 0x0F, opcode });
     try emitModrmMem(dst, src, buffer);
 }
 
 /// Emit SSE2 instruction (0x66 prefix, 0x0F opcode map).
 fn emitSse2RR(opcode: u8, dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{0x66}); // SSE2 prefix
+    try buffer.putData(&[_]u8{0x66}); // SSE2 prefix
     try emitRex(.size64, dst, src, buffer);
-    try buffer.put(&[_]u8{ 0x0F, opcode });
-    try buffer.put(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
+    try buffer.putData(&[_]u8{ 0x0F, opcode });
+    try buffer.putData(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
 }
 
 fn emitSse2MR(opcode: u8, dst: Mem, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{0x66}); // SSE2 prefix
+    try buffer.putData(&[_]u8{0x66}); // SSE2 prefix
     try emitRex(.size64, src, dst.base, buffer);
-    try buffer.put(&[_]u8{ 0x0F, opcode });
+    try buffer.putData(&[_]u8{ 0x0F, opcode });
     try emitModrmMem(src, dst, buffer);
 }
 
 fn emitSse2RM(opcode: u8, dst: Reg, src: Mem, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{0x66}); // SSE2 prefix
+    try buffer.putData(&[_]u8{0x66}); // SSE2 prefix
     try emitRex(.size64, dst, src.base, buffer);
-    try buffer.put(&[_]u8{ 0x0F, opcode });
+    try buffer.putData(&[_]u8{ 0x0F, opcode });
     try emitModrmMem(dst, src, buffer);
 }
 
 /// Emit SSE2 unaligned (0xF3 prefix for movdqu).
 fn emitSse2UnalignedRR(opcode: u8, dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{0xF3}); // Unaligned prefix
+    try buffer.putData(&[_]u8{0xF3}); // Unaligned prefix
     try emitRex(.size64, dst, src, buffer);
-    try buffer.put(&[_]u8{ 0x0F, opcode });
-    try buffer.put(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
+    try buffer.putData(&[_]u8{ 0x0F, opcode });
+    try buffer.putData(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
 }
 
 fn emitSse2UnalignedMR(opcode: u8, dst: Mem, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{0xF3}); // Unaligned prefix
+    try buffer.putData(&[_]u8{0xF3}); // Unaligned prefix
     try emitRex(.size64, src, dst.base, buffer);
-    try buffer.put(&[_]u8{ 0x0F, opcode });
+    try buffer.putData(&[_]u8{ 0x0F, opcode });
     try emitModrmMem(src, dst, buffer);
 }
 
 fn emitSse2UnalignedRM(opcode: u8, dst: Reg, src: Mem, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{0xF3}); // Unaligned prefix
+    try buffer.putData(&[_]u8{0xF3}); // Unaligned prefix
     try emitRex(.size64, dst, src.base, buffer);
-    try buffer.put(&[_]u8{ 0x0F, opcode });
+    try buffer.putData(&[_]u8{ 0x0F, opcode });
     try emitModrmMem(dst, src, buffer);
 }
 
 /// Emit SSE scalar instruction (F3/F2 prefix, 0x0F opcode map).
 fn emitSseScalarRR(prefix: u8, opcode: u8, dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{prefix});
+    try buffer.putData(&[_]u8{prefix});
     try emitRex(.size64, dst, src, buffer);
-    try buffer.put(&[_]u8{ 0x0F, opcode });
-    try buffer.put(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
+    try buffer.putData(&[_]u8{ 0x0F, opcode });
+    try buffer.putData(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
 }
 
 fn emitSseScalarMR(prefix: u8, opcode: u8, dst: Mem, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{prefix});
+    try buffer.putData(&[_]u8{prefix});
     try emitRex(.size64, src, dst.base, buffer);
-    try buffer.put(&[_]u8{ 0x0F, opcode });
+    try buffer.putData(&[_]u8{ 0x0F, opcode });
     try emitModrmMem(src, dst, buffer);
 }
 
 fn emitSseScalarRM(prefix: u8, opcode: u8, dst: Reg, src: Mem, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{prefix});
+    try buffer.putData(&[_]u8{prefix});
     try emitRex(.size64, dst, src.base, buffer);
-    try buffer.put(&[_]u8{ 0x0F, opcode });
+    try buffer.putData(&[_]u8{ 0x0F, opcode });
     try emitModrmMem(dst, src, buffer);
 }
 
 /// Emit SSE4.1 instruction (0x66 0x0F 0x38 prefix).
 fn emitSse41RR(opcode: u8, dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{0x66}); // SSE4.1 prefix
+    try buffer.putData(&[_]u8{0x66}); // SSE4.1 prefix
     try emitRex(.size64, dst, src, buffer);
-    try buffer.put(&[_]u8{ 0x0F, 0x38, opcode });
-    try buffer.put(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
+    try buffer.putData(&[_]u8{ 0x0F, 0x38, opcode });
+    try buffer.putData(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
 }
 
 /// Emit SSE4.2 instruction (0x66 0x0F 0x3A prefix).
 fn emitSse42RR(opcode: u8, dst: Reg, src: Reg, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{0x66}); // SSE4.2 prefix
+    try buffer.putData(&[_]u8{0x66}); // SSE4.2 prefix
     try emitRex(.size64, dst, src, buffer);
-    try buffer.put(&[_]u8{ 0x0F, 0x3A, opcode });
-    try buffer.put(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
+    try buffer.putData(&[_]u8{ 0x0F, 0x3A, opcode });
+    try buffer.putData(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
 }
 
 /// Emit SSE2 shift immediate.
 fn emitSse2ShiftImm(opcode: u8, subop: u8, dst: Reg, count: u8, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{0x66}); // SSE2 prefix
+    try buffer.putData(&[_]u8{0x66}); // SSE2 prefix
     try emitRex(.size64, null, dst, buffer);
-    try buffer.put(&[_]u8{ 0x0F, opcode });
-    try buffer.put(&[_]u8{modrm(0b11, subop, hwEnc(dst))});
-    try buffer.put(&[_]u8{count});
+    try buffer.putData(&[_]u8{ 0x0F, opcode });
+    try buffer.putData(&[_]u8{modrm(0b11, subop, hwEnc(dst))});
+    try buffer.putData(&[_]u8{count});
 }
 
 /// Emit SSE shuffle with immediate.
 fn emitSseShuffleRR(opcode: u8, dst: Reg, src: Reg, imm: u8, buffer: *buffer_mod.MachBuffer) !void {
     try emitRex(.size64, dst, src, buffer);
-    try buffer.put(&[_]u8{ 0x0F, opcode });
-    try buffer.put(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
-    try buffer.put(&[_]u8{imm});
+    try buffer.putData(&[_]u8{ 0x0F, opcode });
+    try buffer.putData(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
+    try buffer.putData(&[_]u8{imm});
 }
 
 /// Emit SSE2 shuffle with immediate.
 fn emitSse2ShuffleRR(opcode: u8, dst: Reg, src: Reg, imm: u8, buffer: *buffer_mod.MachBuffer) !void {
-    try buffer.put(&[_]u8{0x66}); // SSE2 prefix
+    try buffer.putData(&[_]u8{0x66}); // SSE2 prefix
     try emitRex(.size64, dst, src, buffer);
-    try buffer.put(&[_]u8{ 0x0F, opcode });
-    try buffer.put(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
-    try buffer.put(&[_]u8{imm});
+    try buffer.putData(&[_]u8{ 0x0F, opcode });
+    try buffer.putData(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
+    try buffer.putData(&[_]u8{imm});
 }

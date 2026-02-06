@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 
-const root = @import("root");
+const root = @import("../../root.zig");
 const abi_mod = root.abi;
 const Inst = root.x64_inst.Inst;
 const Reg = root.x64_inst.Reg;
@@ -64,6 +64,7 @@ pub fn windowsFastcall() abi_mod.ABIMachineSpec(u64) {
 
 /// Prologue/epilogue generation for x64 functions.
 pub const X64ABICallee = struct {
+    allocator: std.mem.Allocator,
     /// Function signature.
     sig: abi_mod.ABISignature,
     /// Calling convention.
@@ -80,12 +81,11 @@ pub const X64ABICallee = struct {
     sret_reg: ?PReg,
 
     pub fn init(
-        _allocator: std.mem.Allocator,
+        allocator: std.mem.Allocator,
         sig: abi_mod.ABISignature,
     ) X64ABICallee {
-        _ = _allocator;
         const abi = switch (sig.call_conv) {
-            .system_v => systemV(),
+            .system_v, .fast, .preserve_all, .cold => systemV(),
             .windows_fastcall => windowsFastcall(),
             .aapcs64 => unreachable,
         };
@@ -93,6 +93,7 @@ pub const X64ABICallee = struct {
         const shadow_sz: u32 = if (sig.call_conv == .windows_fastcall) 32 else 0;
 
         return .{
+            .allocator = allocator,
             .sig = sig,
             .abi = abi,
             .call_conv = null,
@@ -108,7 +109,7 @@ pub const X64ABICallee = struct {
             var cc_mut = cc;
             cc_mut.deinit();
         }
-        self.clobbered_callee_saves.deinit();
+        self.clobbered_callee_saves.deinit(self.allocator);
     }
 
     /// Compute calling convention and setup frame.
@@ -202,7 +203,7 @@ pub const X64ABICallee = struct {
         for (self.clobbered_callee_saves.items) |existing| {
             if (std.meta.eql(existing, preg)) return;
         }
-        try self.clobbered_callee_saves.append(preg);
+        try self.clobbered_callee_saves.append(self.allocator, preg);
     }
 };
 
@@ -286,7 +287,7 @@ pub fn needsStructReturn(params: []const @import("../../ir/signature.zig").AbiPa
 /// Win64: RCX (first int arg reg, hw_enc=1).
 pub fn sretReg(cc: abi_mod.CallConv) PReg {
     return switch (cc) {
-        .system_v => PReg.new(.int, 7), // RDI
+        .system_v, .fast, .preserve_all, .cold => PReg.new(.int, 7), // RDI
         .windows_fastcall => PReg.new(.int, 1), // RCX
         .aapcs64 => unreachable,
     };
@@ -298,12 +299,12 @@ test "needsStructReturn" {
     const Type = @import("../../ir/types.zig").Type;
 
     // No sret param
-    const args1 = [_]AbiParam{AbiParam.new(Type.i64)};
+    const args1 = [_]AbiParam{AbiParam.new(Type.I64)};
     try testing.expectEqual(false, needsStructReturn(&args1));
 
     // Explicit struct_return param
     const args2 = [_]AbiParam{
-        AbiParam.special(Type.i64, sig_mod.ArgumentPurpose.struct_return),
+        AbiParam.special(Type.I64, sig_mod.ArgumentPurpose.struct_return),
     };
     try testing.expectEqual(true, needsStructReturn(&args2));
 }
