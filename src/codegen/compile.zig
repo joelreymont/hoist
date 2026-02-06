@@ -6791,6 +6791,53 @@ test "compile: narrow vector iadd compiles on aarch64" {
     try testing.expect(result.code.items.len > 0);
 }
 
+test "lower: istore8 emits STRB" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64)); // address
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64)); // value
+
+    var func = try Function.init(testing.allocator, "istore8_strb", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const addr = try builder.appendBlockParam(block, ir.I64);
+    const val = try builder.appendBlockParam(block, ir.I64);
+
+    const store_inst = try func.dfg.makeInst(.{ .store = .{
+        .opcode = .istore8,
+        .flags = .{},
+        .args = .{ addr, val },
+        .offset = 0,
+    } });
+    try func.layout.appendInst(store_inst, block);
+    try builder.ret();
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_strb = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .strb => saw_strb = true,
+            else => {},
+        }
+    }
+    try testing.expect(saw_strb);
+}
+
 test "lower: uadd_overflow_cin emits ADCS" {
     var sig = ir.Signature.init(testing.allocator, .fast);
     try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
