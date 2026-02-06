@@ -6704,6 +6704,84 @@ test "lower: try_call emits GOT load, BLR, and marshals X0" {
     try testing.expect(saw_x0_move);
 }
 
+test "lower: try_call_indirect emits BLR and marshals X0" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    var func = try Function.init(testing.allocator, "lower_try_call_indirect", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+
+    const block0 = try builder.createBlock();
+    const block1 = try builder.createBlock();
+    const block2 = try builder.createBlock();
+    try builder.appendBlock(block0);
+    try builder.appendBlock(block1);
+    try builder.appendBlock(block2);
+
+    // Landing pad for exception successor.
+    func.dfg.blocks.getMut(block2).?.is_landing_pad = true;
+
+    var callee_sig = ir.Signature.init(testing.allocator, .fast);
+    try callee_sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    const sig_ref = SigRef.new(0);
+    try func.signatures.set(func.allocator, sig_ref, callee_sig);
+
+    builder.switchToBlock(block0);
+    const ptr = try builder.iconst(ir.I64, 0x1234);
+    const args = [_]ir.Value{ptr};
+    const args_list = try builder.buildValueList(&args);
+    const tc_inst = try func.dfg.makeInst(.{ .try_call_indirect = .{
+        .opcode = .try_call_indirect,
+        .sig_ref = sig_ref,
+        .args = args_list,
+        .normal_successor = block1,
+        .exception_successor = block2,
+    } });
+    const call_res = try func.dfg.appendInstResult(tc_inst, ir.I64);
+    try func.layout.appendInst(tc_inst, block0);
+    try builder.jump(block1);
+
+    builder.switchToBlock(block1);
+    try builder.retValues(&.{call_res});
+
+    builder.switchToBlock(block2);
+    const zero = try builder.iconst(ir.I64, 0);
+    try builder.retValues(&.{zero});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_blr = false;
+    var saw_x0_move = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .blr => saw_blr = true,
+            .mov_rr => |mv| {
+                if (mv.dst.toReg().toVReg() != null) {
+                    if (mv.src.toRealReg()) |src_real| {
+                        if (src_real.hwEnc() == 0 and mv.size == .size64) saw_x0_move = true;
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
+    try testing.expect(saw_blr);
+    try testing.expect(saw_x0_move);
+}
+
 test "assembleResult: empty buffer" {
     var buffer = MachBuffer.init(testing.allocator);
     defer buffer.deinit();
