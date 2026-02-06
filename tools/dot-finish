@@ -61,12 +61,7 @@ cd "$repo_root"
 zig build test -j1 --global-cache-dir .zig-global-cache --summary failures
 dot off "$dot_id" -r "$dot_reason"
 jj describe -m "$commit_msg"
-
-if jj bookmark list | grep -q '^codex/indirect-return'; then
-  jj bookmark set codex/indirect-return -r @ >/dev/null
-  jj git push --bookmark codex/indirect-return
-else
-  jj git push
-fi
+jj bookmark set codex/indirect-return -r @ >/dev/null
+jj git push --bookmark codex/indirect-return
 
 jj new -m "Track next parity task"
