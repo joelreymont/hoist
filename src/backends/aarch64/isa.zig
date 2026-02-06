@@ -542,7 +542,7 @@ pub const Aarch64ISA = struct {
                     if (def_vreg.index == vreg.index) {
                         // Insert spill store after this instruction
                         // STR Xn, [sp, #offset]
-                        const preg = result.getPhysReg(vreg) orelse continue;
+                        const preg = result.getPhysReg(vreg) orelse return error.RegisterAllocationFailed;
 
                         try insertions.append(.{
                             .position = @intCast(idx),
@@ -564,7 +564,7 @@ pub const Aarch64ISA = struct {
                     if (use_vreg.index == vreg.index) {
                         // Insert reload before this instruction
                         // LDR Xn, [sp, #offset]
-                        const preg = result.getPhysReg(vreg) orelse continue;
+                        const preg = result.getPhysReg(vreg) orelse return error.RegisterAllocationFailed;
 
                         try insertions.append(.{
                             .position = @intCast(idx),
@@ -1966,4 +1966,40 @@ test "Aarch64ISA frame size includes spill area" {
     // Frame size should account for all spilled registers
     // Each spill is 8 bytes, and we should have ~9 spills (40 vregs - 31 registers)
     try testing.expect(expected_frame_size >= 8 * 9);
+}
+
+test "Aarch64ISA spill insertion rejects spilled vreg without preg" {
+    const linear_scan_mod = @import("../../regalloc/linear_scan.zig");
+    const liveness_mod = @import("../../regalloc/liveness.zig");
+    const reg_mod = @import("../../machinst/reg.zig");
+    const vcode_mod = @import("../../machinst/vcode.zig");
+
+    var vcode = vcode_mod.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    const block = try vcode.startBlock(&.{});
+    const v0 = reg_mod.VReg.new(0, .int);
+    const v1 = reg_mod.VReg.new(1, .int);
+
+    _ = try vcode.addInst(.{
+        .add_rr = .{
+            .dst = reg_mod.WritableReg.fromVReg(v1),
+            .src1 = reg_mod.Reg.fromVReg(v0),
+            .src2 = reg_mod.Reg.fromVReg(v0),
+            .size = .size64,
+        },
+    });
+    try vcode.finishBlock(block, &.{});
+
+    var liveness_info = try liveness_mod.LivenessInfo.compute(Inst, testing.allocator, &vcode);
+    defer liveness_info.deinit();
+
+    var result = linear_scan_mod.RegAllocResult.init(testing.allocator);
+    defer result.deinit();
+    try result.assignSpillSlot(v0, linear_scan_mod.SpillSlot.init(0));
+
+    try testing.expectError(
+        error.RegisterAllocationFailed,
+        Aarch64ISA.insertSpillReloads(&vcode, &result, &liveness_info, testing.allocator),
+    );
 }
