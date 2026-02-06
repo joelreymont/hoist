@@ -21,9 +21,12 @@ const Block = ir_mod.Block;
 const Inst = ir_mod.Inst;
 const Value = ir_mod.Value;
 const Type = ir_mod.Type;
+const FuncRef = @import("../../ir/entities.zig").FuncRef;
 const Opcode = @import("../../ir/opcodes.zig").Opcode;
 const InstructionData = @import("../../ir/instruction_data.zig").InstructionData;
 const Signature = @import("../../ir/signature.zig").Signature;
+const ExternalName = @import("../../ir/extfunc.zig").ExternalName;
+const ValueList = @import("../../ir/value_list.zig").ValueList;
 
 /// Inlining configuration.
 pub const Config = struct {
@@ -95,24 +98,35 @@ pub const CallSite = struct {
     inst: Inst,
     /// Block containing the call.
     block: Block,
+    /// Referenced callee function handle.
+    func_ref: ?FuncRef = null,
     /// Called function (if known).
-    callee: ?*Function,
+    callee: ?*const Function = null,
     /// Arguments to the call.
-    args: []Value,
+    args: []const Value,
     /// Decision for this call site.
     decision: Decision = .no_inline,
 };
 
 /// Function inliner pass.
 pub const Inliner = struct {
+    const CalleeInfo = struct {
+        name: []const u8,
+        func: *const Function,
+    };
+
     allocator: Allocator,
     config: Config,
 
     /// Info for analyzed functions.
     func_info: std.StringHashMap(FunctionInfo),
+    /// Known functions by symbol name.
+    known_funcs: std.StringHashMap(*const Function),
 
     /// Call sites to potentially inline.
     call_sites: std.ArrayList(CallSite),
+    /// Mapping from function references to callee functions.
+    callee_by_ref: std.AutoHashMap(FuncRef, CalleeInfo),
 
     /// Current inlining depth (for recursion limiting).
     current_depth: u32 = 0,
@@ -127,13 +141,33 @@ pub const Inliner = struct {
             .allocator = allocator,
             .config = config,
             .func_info = std.StringHashMap(FunctionInfo).init(allocator),
-            .call_sites = std.ArrayList(CallSite).init(allocator),
+            .known_funcs = std.StringHashMap(*const Function).init(allocator),
+            .call_sites = std.ArrayList(CallSite){},
+            .callee_by_ref = std.AutoHashMap(FuncRef, CalleeInfo).init(allocator),
         };
     }
 
     pub fn deinit(self: *Inliner) void {
         self.func_info.deinit();
-        self.call_sites.deinit();
+        self.known_funcs.deinit();
+        self.call_sites.deinit(self.allocator);
+        var iter = self.callee_by_ref.valueIterator();
+        while (iter.next()) |entry| {
+            self.allocator.free(entry.name);
+        }
+        self.callee_by_ref.deinit();
+    }
+
+    /// Register a resolvable callee for direct call inlining.
+    pub fn registerCallee(self: *Inliner, func_ref: FuncRef, name: []const u8, callee: *const Function) !void {
+        const owned_name = try self.allocator.dupe(u8, name);
+        const old = try self.callee_by_ref.fetchPut(func_ref, .{
+            .name = owned_name,
+            .func = callee,
+        });
+        if (old) |prev| {
+            self.allocator.free(prev.value.name);
+        }
     }
 
     /// Analyze a function for inlining potential.
@@ -162,6 +196,11 @@ pub const Inliner = struct {
         info.cost = computeCost(info);
 
         try self.func_info.put(name, info);
+        try self.known_funcs.put(name, func);
+        if (!std.mem.eql(u8, name, func.name)) {
+            try self.func_info.put(func.name, info);
+            try self.known_funcs.put(func.name, func);
+        }
     }
 
     /// Collect call sites in a function.
@@ -176,15 +215,34 @@ pub const Inliner = struct {
                 const opcode = inst_data.opcode();
 
                 if (opcode == .call) {
-                    try self.call_sites.append(.{
+                    const call_data = inst_data.call;
+                    try self.call_sites.append(self.allocator, .{
                         .inst = inst,
                         .block = block,
-                        .callee = null, // Resolved later
-                        .args = &.{},
+                        .func_ref = call_data.func_ref,
+                        .args = func.dfg.value_lists.asSlice(call_data.args),
                     });
                 }
             }
         }
+    }
+
+    fn metadataNameKey(name: ExternalName, key_buf: []u8) ?[]const u8 {
+        return switch (name) {
+            .testcase => |n| n,
+            .user => |u| std.fmt.bufPrint(key_buf, "u{d}:{d}", .{ u.namespace, u.index }) catch null,
+        };
+    }
+
+    fn resolveCalleeFromMetadata(self: *Inliner, func: *const Function, func_ref: FuncRef) ?CalleeInfo {
+        const meta = func.func_metadata.getMetadata(func_ref) orelse return null;
+        var key_buf: [64]u8 = undefined;
+        const key = metadataNameKey(meta.name, &key_buf) orelse return null;
+        const callee = self.known_funcs.get(key) orelse return null;
+        return .{
+            .name = callee.name,
+            .func = callee,
+        };
     }
 
     /// Make inlining decision for a call site.
@@ -240,6 +298,7 @@ pub const Inliner = struct {
         var callee_block_iter = callee.layout.blockIter();
         while (callee_block_iter.next()) |callee_block| {
             const new_block = try caller.dfg.makeBlock();
+            try caller.layout.appendBlock(new_block);
             try block_map.put(callee_block, new_block);
         }
 
@@ -254,13 +313,13 @@ pub const Inliner = struct {
                 const opcode = inst_data.opcode();
 
                 // Handle return instruction specially
-                if (opcode == .return_value) {
+                if (opcode == .@"return") {
                     // Replace with assignment to call result and branch
                     continue;
                 }
 
                 // Clone instruction
-                const new_inst_data = remapInstructionOperands(inst_data, &value_map, &block_map);
+                const new_inst_data = remapInstructionOperands(inst_data.*, &value_map, &block_map);
                 const new_inst = try caller.dfg.makeInst(new_inst_data);
 
                 // Insert into new block
@@ -269,9 +328,13 @@ pub const Inliner = struct {
                 // Map results
                 const results = callee.dfg.instResults(inst);
                 if (results.len > 0) {
-                    const result_ty = callee.dfg.valueType(results[0]);
-                    const new_result = try caller.dfg.appendInstResult(new_inst, result_ty);
-                    try value_map.put(results[0], new_result);
+                    const result_ty_opt = callee.dfg.valueType(results[0]);
+                    if (result_ty_opt) |result_ty| {
+                        const new_result = try caller.dfg.appendInstResult(new_inst, result_ty);
+                        try value_map.put(results[0], new_result);
+                    } else {
+                        continue;
+                    }
                 }
 
                 self.insts_added += 1;
@@ -289,16 +352,16 @@ pub const Inliner = struct {
         try self.collectCallSites(func);
 
         for (self.call_sites.items) |*site| {
-            // TODO: Resolve callee from call instruction
-            // For now, skip unknown callees
-            if (site.callee == null) continue;
+            const func_ref = site.func_ref orelse continue;
+            const callee_info = self.callee_by_ref.get(func_ref) orelse self.resolveCalleeFromMetadata(func, func_ref) orelse continue;
+            site.callee = callee_info.func;
 
-            const decision = self.makeDecision(site, "callee"); // Need name lookup
+            const decision = self.makeDecision(site, callee_info.name);
             if (decision == .inline_call) {
                 self.current_depth += 1;
                 defer self.current_depth -= 1;
 
-                if (try self.inlineCallSite(func, site.*, site.callee.?)) {
+                if (try self.inlineCallSite(func, site.*, callee_info.func)) {
                     changed = true;
                 }
             }
@@ -361,18 +424,22 @@ fn remapInstructionOperands(
             }
         },
         .jump => |*j| {
-            if (block_map.get(j.dest)) |new_block| {
-                j.dest = new_block;
+            if (block_map.get(j.destination)) |new_block| {
+                j.destination = new_block;
             }
         },
         .branch => |*br| {
-            if (value_map.get(br.arg)) |new_val| {
-                br.arg = new_val;
+            if (value_map.get(br.condition)) |new_val| {
+                br.condition = new_val;
             }
-            // Remap block destinations
-            for (&br.dests) |*dest| {
-                if (block_map.get(dest.*)) |new_block| {
-                    dest.* = new_block;
+            if (br.then_dest) |dest| {
+                if (block_map.get(dest)) |new_block| {
+                    br.then_dest = new_block;
+                }
+            }
+            if (br.else_dest) |dest| {
+                if (block_map.get(dest)) |new_block| {
+                    br.else_dest = new_block;
                 }
             }
         },
@@ -415,4 +482,177 @@ test "Decision enum" {
     const testing = std.testing;
     const d: Decision = .inline_call;
     try testing.expect(d == .inline_call);
+}
+
+test "run resolves callee from function metadata" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var callee_sig = Signature.init(allocator, .fast);
+    try callee_sig.returns.append(allocator, .{ .value_type = Type.I64 });
+    var callee = try Function.init(allocator, "callee", callee_sig);
+    defer callee.deinit();
+
+    var callee_builder = try ir_mod.FunctionBuilder.init(allocator, &callee);
+    defer callee_builder.deinit();
+    const callee_block = try callee_builder.createBlock();
+    callee_builder.switchToBlock(callee_block);
+    const callee_val = try callee_builder.iconst(Type.I64, 7);
+    try callee_builder.retValues(&.{callee_val});
+
+    var caller_sig = Signature.init(allocator, .fast);
+    try caller_sig.returns.append(allocator, .{ .value_type = Type.I64 });
+    var caller = try Function.init(allocator, "caller", caller_sig);
+    defer caller.deinit();
+
+    var call_sig = Signature.init(allocator, .fast);
+    try call_sig.returns.append(allocator, .{ .value_type = Type.I64 });
+    const sig_ref = try caller.addSignature(call_sig);
+    const ext_name = try ExternalName.fromTestcase(allocator, "callee");
+    const callee_ref = try caller.func_metadata.registerExternalFunc(ext_name, sig_ref, .local);
+
+    var caller_builder = try ir_mod.FunctionBuilder.init(allocator, &caller);
+    defer caller_builder.deinit();
+    const caller_block = try caller_builder.createBlock();
+    caller_builder.switchToBlock(caller_block);
+    const call_args = try caller_builder.buildValueList(&.{});
+    const call_inst = try caller.dfg.makeInst(.{
+        .call = .{
+            .opcode = .call,
+            .func_ref = callee_ref,
+            .args = call_args,
+        },
+    });
+    try caller.layout.appendInst(call_inst, caller_block);
+    const call_result = try caller.dfg.appendInstResult(call_inst, Type.I64);
+    try caller_builder.retValues(&.{call_result});
+
+    var inliner = Inliner.init(allocator, .{});
+    defer inliner.deinit();
+    try inliner.analyzeFunction(&callee, "callee");
+
+    const changed = try inliner.run(&caller);
+    try testing.expect(changed);
+    try testing.expectEqual(@as(u32, 1), inliner.calls_analyzed);
+    try testing.expectEqual(@as(u32, 1), inliner.calls_inlined);
+}
+
+test "run skips unresolved function metadata entry" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    const caller_sig = Signature.init(allocator, .fast);
+    var caller = try Function.init(allocator, "caller", caller_sig);
+    defer caller.deinit();
+
+    const call_sig = Signature.init(allocator, .fast);
+    const sig_ref = try caller.addSignature(call_sig);
+    const ext_name = try ExternalName.fromTestcase(allocator, "missing");
+    const callee_ref = try caller.func_metadata.registerExternalFunc(ext_name, sig_ref, .import);
+
+    var caller_builder = try ir_mod.FunctionBuilder.init(allocator, &caller);
+    defer caller_builder.deinit();
+    const caller_block = try caller_builder.createBlock();
+    caller_builder.switchToBlock(caller_block);
+    const call_args = try caller_builder.buildValueList(&.{});
+    const call_inst = try caller.dfg.makeInst(.{
+        .call = .{
+            .opcode = .call,
+            .func_ref = callee_ref,
+            .args = call_args,
+        },
+    });
+    try caller.layout.appendInst(call_inst, caller_block);
+    try caller_builder.ret();
+
+    var inliner = Inliner.init(allocator, .{});
+    defer inliner.deinit();
+
+    const changed = try inliner.run(&caller);
+    try testing.expect(!changed);
+    try testing.expectEqual(@as(u32, 0), inliner.calls_analyzed);
+    try testing.expectEqual(@as(u32, 0), inliner.calls_inlined);
+}
+
+test "Inliner resolves callee and inlines direct call" {
+    const testing = std.testing;
+
+    const caller_sig = Signature.init(testing.allocator, .fast);
+    var caller = try Function.init(testing.allocator, "caller", caller_sig);
+    defer caller.deinit();
+
+    const caller_block = try caller.dfg.makeBlock();
+    try caller.layout.appendBlock(caller_block);
+
+    const callee_sig = Signature.init(testing.allocator, .fast);
+    var callee = try Function.init(testing.allocator, "callee", callee_sig);
+    defer callee.deinit();
+
+    const callee_block = try callee.dfg.makeBlock();
+    try callee.layout.appendBlock(callee_block);
+    const callee_ret = try callee.dfg.makeInst(.{ .@"return" = .{
+        .opcode = .@"return",
+        .args = ValueList.default(),
+    } });
+    try callee.layout.appendInst(callee_ret, callee_block);
+
+    const callee_ref = FuncRef.new(0);
+    const call_inst = try caller.dfg.makeInst(.{ .call = .{
+        .opcode = .call,
+        .func_ref = callee_ref,
+        .args = ValueList.default(),
+    } });
+    try caller.layout.appendInst(call_inst, caller_block);
+    _ = try caller.dfg.appendInstResult(call_inst, Type.I64);
+
+    const caller_ret = try caller.dfg.makeInst(.{ .@"return" = .{
+        .opcode = .@"return",
+        .args = ValueList.default(),
+    } });
+    try caller.layout.appendInst(caller_ret, caller_block);
+
+    var inliner = Inliner.init(testing.allocator, .{});
+    defer inliner.deinit();
+
+    try inliner.analyzeFunction(&callee, "callee");
+    try inliner.registerCallee(callee_ref, "callee", &callee);
+
+    const changed = try inliner.run(&caller);
+    try testing.expect(changed);
+
+    const stats = inliner.stats();
+    try testing.expectEqual(@as(u32, 1), stats.analyzed);
+    try testing.expectEqual(@as(u32, 1), stats.inlined);
+}
+
+test "Inliner skips unresolved callees" {
+    const testing = std.testing;
+
+    const caller_sig = Signature.init(testing.allocator, .fast);
+    var caller = try Function.init(testing.allocator, "caller", caller_sig);
+    defer caller.deinit();
+
+    const caller_block = try caller.dfg.makeBlock();
+    try caller.layout.appendBlock(caller_block);
+
+    const call_inst = try caller.dfg.makeInst(.{ .call = .{
+        .opcode = .call,
+        .func_ref = FuncRef.new(9),
+        .args = ValueList.default(),
+    } });
+    try caller.layout.appendInst(call_inst, caller_block);
+    _ = try caller.dfg.appendInstResult(call_inst, Type.I64);
+
+    const caller_ret = try caller.dfg.makeInst(.{ .@"return" = .{
+        .opcode = .@"return",
+        .args = ValueList.default(),
+    } });
+    try caller.layout.appendInst(caller_ret, caller_block);
+
+    var inliner = Inliner.init(testing.allocator, .{});
+    defer inliner.deinit();
+
+    const changed = try inliner.run(&caller);
+    try testing.expect(!changed);
+    try testing.expectEqual(@as(u32, 0), inliner.stats().inlined);
 }

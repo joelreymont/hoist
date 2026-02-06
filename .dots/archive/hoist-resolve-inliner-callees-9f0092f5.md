@@ -1,9 +1,11 @@
 ---
 title: Resolve inliner callees
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.926790+01:00"
+created-at: "\"\\\"\\\\\\\"2026-02-02T21:35:56.926790+01:00\\\\\\\"\\\"\""
+closed-at: "2026-02-06T10:10:49.700854+01:00"
+close-reason: Implemented metadata-based callee resolution and tests
 blocks:
   - hoist-implement-partial-loop-2c8a074d
 ---
