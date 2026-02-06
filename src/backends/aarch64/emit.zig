@@ -1880,6 +1880,17 @@ fn encodeSignedImm9(offset: i16) !u9 {
     return @bitCast(imm9_signed);
 }
 
+fn encodeUnsignedImm12Scaled(offset: i16, scale_shift: u4) !u12 {
+    if (offset < 0) return error.OffsetOutOfRange;
+
+    const unsigned_offset: u16 = @intCast(offset);
+    const scale: u16 = @as(u16, 1) << scale_shift;
+    if (@mod(unsigned_offset, scale) != 0) return error.OffsetNotAligned;
+
+    const scaled_offset: u16 = @divTrunc(unsigned_offset, scale);
+    return std.math.cast(u12, scaled_offset) orelse error.OffsetOutOfRange;
+}
+
 fn emitLdr(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
     const rt = try hwEnc(dst);
@@ -2248,7 +2259,7 @@ fn emitLdrb(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer
     _ = size; // Byte loads are always to W registers, size affects dest reg type only
     const rt = try hwEnc(dst);
     const rn = try hwEnc(base);
-    const imm12: u12 = @truncate(@as(u16, @bitCast(offset)));
+    const imm12 = try encodeUnsignedImm12Scaled(offset, 0);
 
     // LDRB (immediate, unsigned offset): size|111|V|00|opc|imm12|Rn|Rt
     // size=00 (8-bit), V=0 (GPR), opc=01 (unsigned load)
@@ -2269,8 +2280,8 @@ fn emitLdrh(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer
     _ = size; // Halfword loads are always to W registers, size affects dest reg type only
     const rt = try hwEnc(dst);
     const rn = try hwEnc(base);
-    // Offset is scaled by 2 for halfword
-    const imm12: u12 = @truncate(@as(u16, @bitCast(offset)) >> 1);
+    // Offset is scaled by 2 for halfword.
+    const imm12 = try encodeUnsignedImm12Scaled(offset, 1);
 
     // LDRH (immediate, unsigned offset): size|111|V|00|opc|imm12|Rn|Rt
     // size=01 (16-bit), V=0 (GPR), opc=01 (unsigned load)
@@ -2291,7 +2302,7 @@ fn emitLdrsb(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffe
     const opc: u2 = if (size == .size64) 0b10 else 0b11; // 10=64-bit dest, 11=32-bit dest
     const rt = try hwEnc(dst);
     const rn = try hwEnc(base);
-    const imm12: u12 = @truncate(@as(u16, @bitCast(offset)));
+    const imm12 = try encodeUnsignedImm12Scaled(offset, 0);
 
     // LDRSB (immediate, unsigned offset): size|111|V|00|opc|imm12|Rn|Rt
     // size=00 (8-bit), V=0 (GPR), opc=10/11 (signed, 64/32-bit dest)
@@ -2312,8 +2323,8 @@ fn emitLdrsh(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffe
     const opc: u2 = if (size == .size64) 0b10 else 0b11; // 10=64-bit dest, 11=32-bit dest
     const rt = try hwEnc(dst);
     const rn = try hwEnc(base);
-    // Offset is scaled by 2 for halfword
-    const imm12: u12 = @truncate(@as(u16, @bitCast(offset)) >> 1);
+    // Offset is scaled by 2 for halfword.
+    const imm12 = try encodeUnsignedImm12Scaled(offset, 1);
 
     // LDRSH (immediate, unsigned offset): 01|111|0|01|opc|imm12|Rn|Rt
     // size=01 (16-bit), VR=0, opc=10/11 (signed, 64/32-bit dest)
@@ -2330,8 +2341,8 @@ fn emitLdrsh(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffe
 fn emitLdrsw(dst: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !void {
     const rt = try hwEnc(dst);
     const rn = try hwEnc(base);
-    // Offset is scaled by 4 for word
-    const imm12: u12 = @truncate(@as(u16, @bitCast(offset)) >> 2);
+    // Offset is scaled by 4 for word.
+    const imm12 = try encodeUnsignedImm12Scaled(offset, 2);
 
     // LDRSW (immediate, unsigned offset): 10|111|0|01|10|imm12|Rn|Rt
     // size=10 (32-bit), VR=0, opc=10 (signed, 64-bit dest)
@@ -2348,7 +2359,7 @@ fn emitLdrsw(dst: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !
 fn emitStrb(src: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !void {
     const rt = try hwEnc(src);
     const rn = try hwEnc(base);
-    const imm12: u12 = @truncate(@as(u16, @bitCast(offset)));
+    const imm12 = try encodeUnsignedImm12Scaled(offset, 0);
 
     // STRB (immediate, unsigned offset): 00|111|0|01|00|imm12|Rn|Rt
     // size=00 (8-bit), VR=0, opc=00 (store)
@@ -2365,8 +2376,8 @@ fn emitStrb(src: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !v
 fn emitStrh(src: Reg, base: Reg, offset: i16, buffer: *buffer_mod.MachBuffer) !void {
     const rt = try hwEnc(src);
     const rn = try hwEnc(base);
-    // Offset is scaled by 2 for halfword
-    const imm12: u12 = @truncate(@as(u16, @bitCast(offset)) >> 1);
+    // Offset is scaled by 2 for halfword.
+    const imm12 = try encodeUnsignedImm12Scaled(offset, 1);
 
     // STRH (immediate, unsigned offset): 01|111|0|01|00|imm12|Rn|Rt
     // size=01 (16-bit), VR=0, opc=00 (store)
@@ -10761,6 +10772,137 @@ test "emit ldr/str imm9 forms reject out-of-range offsets" {
         .offset = -257,
         .size = .size64,
     } }, &buffer));
+}
+
+test "emit unsigned imm12 loads/stores reject bad offsets" {
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .ldrb = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = -1,
+        .size = .size32,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .ldrb = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = 4096,
+        .size = .size32,
+    } }, &buffer));
+    try testing.expectError(error.OffsetNotAligned, emit(.{ .ldrh = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = 1,
+        .size = .size32,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .ldrh = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = 8192,
+        .size = .size32,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .ldrsb = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = -1,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.OffsetNotAligned, emit(.{ .ldrsh = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = 3,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .ldrsw = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = 16384,
+    } }, &buffer));
+    try testing.expectError(error.OffsetNotAligned, emit(.{ .ldrsw = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = 2,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .strb = .{
+        .src = r0,
+        .base = r1,
+        .offset = -1,
+    } }, &buffer));
+    try testing.expectError(error.OffsetNotAligned, emit(.{ .strh = .{
+        .src = r0,
+        .base = r1,
+        .offset = 1,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .strh = .{
+        .src = r0,
+        .base = r1,
+        .offset = 8192,
+    } }, &buffer));
+}
+
+test "emit unsigned imm12 loads/stores encode max offsets" {
+    const VReg = inst_mod.VReg;
+    const WritableReg = inst_mod.WritableReg;
+
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = WritableReg.fromReg(r0);
+
+    try emit(.{ .ldrb = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = 4095,
+        .size = .size32,
+    } }, &buffer);
+    var insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    var imm12 = (insn >> 10) & 0xFFF;
+    try testing.expectEqual(@as(u32, 4095), imm12);
+
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .ldrh = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = 8190,
+        .size = .size32,
+    } }, &buffer);
+    insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    imm12 = (insn >> 10) & 0xFFF;
+    try testing.expectEqual(@as(u32, 4095), imm12);
+
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .ldrsw = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = 16380,
+    } }, &buffer);
+    insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    imm12 = (insn >> 10) & 0xFFF;
+    try testing.expectEqual(@as(u32, 4095), imm12);
+
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .strh = .{
+        .src = r0,
+        .base = r1,
+        .offset = 8190,
+    } }, &buffer);
+    insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    imm12 = (insn >> 10) & 0xFFF;
+    try testing.expectEqual(@as(u32, 4095), imm12);
 }
 
 test "emit ldr/str pre/post verify opcode differences" {
