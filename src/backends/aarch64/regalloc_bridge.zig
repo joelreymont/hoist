@@ -12,6 +12,8 @@ pub const VCode = vcode_mod.VCode;
 pub const VReg = reg_mod.VReg;
 pub const Reg = reg_mod.Reg;
 pub const Inst = inst_mod.Inst;
+const R2VReg = regalloc2_types.VReg;
+const R2RegClass = regalloc2_types.RegClass;
 
 pub const Operand = regalloc2_types.Operand;
 pub const Constraint = regalloc2_types.Operand.Constraint;
@@ -693,16 +695,29 @@ pub const RegAllocBridge = struct {
 
     /// Convert Reg to VReg.
     /// Physical registers are represented as high-index vregs.
-    fn getVReg(self: *Self, reg: Reg) !VReg {
-        _ = self;
+    fn getVReg(self: *Self, reg: Reg) !R2VReg {
         return switch (reg) {
-            .v => |vreg| vreg,
+            .v => |vreg| blk: {
+                const r2_vreg = R2VReg.new(vreg.index());
+                try self.adapter.setVRegClass(r2_vreg, mapRegClass(vreg.class()));
+                break :blk r2_vreg;
+            },
             .p => |_| {
                 // Physical registers should not appear in VCode before allocation.
                 // If they do, it indicates a fixed constraint (e.g., calling convention).
                 // For now, return error - proper handling requires fixed_reg constraints.
                 return error.UnexpectedPhysicalRegister;
             },
+        };
+    }
+
+    fn mapRegClass(class: reg_mod.RegClass) R2RegClass {
+        return switch (class) {
+            .int => .int,
+            .float => .float,
+            .vector => .vector,
+            .scalable_vector => .scalable_vector,
+            .predicate => .predicate,
         };
     }
 
@@ -1349,11 +1364,13 @@ test "RegAllocBridge basic mov_rr" {
     try testing.expectEqual(@as(u32, 0), ops[0].vreg.index);
     try testing.expectEqual(Constraint.any_reg, ops[0].constraint);
     try testing.expectEqual(OperandPos.use, ops[0].pos);
+    try testing.expectEqual(R2RegClass.int, bridge.adapter.getVRegClass(ops[0].vreg));
 
     // Second operand: dst (def)
     try testing.expectEqual(@as(u32, 1), ops[1].vreg.index);
     try testing.expectEqual(Constraint.any_reg, ops[1].constraint);
     try testing.expectEqual(OperandPos.def, ops[1].pos);
+    try testing.expectEqual(R2RegClass.int, bridge.adapter.getVRegClass(ops[1].vreg));
 }
 
 test "RegAllocBridge mov_imm" {

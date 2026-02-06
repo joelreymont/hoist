@@ -32,6 +32,15 @@ pub const PhysReg = struct {
     }
 };
 
+/// Register class for allocation and spill sizing.
+pub const RegClass = enum {
+    int,
+    float,
+    vector,
+    scalable_vector,
+    predicate,
+};
+
 /// Operand constraint for an instruction.
 pub const Operand = struct {
     /// Virtual register.

@@ -6,6 +6,7 @@ const Allocator_mem = std.mem.Allocator;
 const VReg = types.VReg;
 const PhysReg = types.PhysReg;
 const Allocation = types.Allocation;
+const RegClass = types.RegClass;
 const RegAllocAdapter = api.RegAllocAdapter;
 const LivenessInfo = liveness.LivenessInfo;
 const SpillSlot = types.SpillSlot;
@@ -60,16 +61,20 @@ pub const Allocator = struct {
         var vreg_idx: u32 = 0;
         while (vreg_idx < self.adapter.num_vregs) : (vreg_idx += 1) {
             const vreg = VReg.new(vreg_idx);
-            const is_fp = false;
+            const class = self.adapter.getVRegClass(vreg);
+            const use_fp_bank = switch (class) {
+                .float, .vector, .scalable_vector, .predicate => true,
+                .int => false,
+            };
 
-            if (is_fp) {
+            if (use_fp_bank) {
                 if (self.active_fp.count() < self.fp_pregs.items.len) {
                     const preg = self.fp_pregs.items[self.active_fp.count()];
                     try self.active_fp.put(vreg, preg);
                     try self.adapter.setAllocation(vreg, Allocation{ .reg = preg });
                 } else {
                     const slot = self.next_spill;
-                    self.next_spill += 8;
+                    self.next_spill += spillSlotSize(class);
                     try self.spills.put(vreg, slot);
                     try self.adapter.setAllocation(vreg, Allocation{ .stack = SpillSlot.new(slot) });
                 }
@@ -80,12 +85,19 @@ pub const Allocator = struct {
                     try self.adapter.setAllocation(vreg, Allocation{ .reg = preg });
                 } else {
                     const slot = self.next_spill;
-                    self.next_spill += 8;
+                    self.next_spill += spillSlotSize(class);
                     try self.spills.put(vreg, slot);
                     try self.adapter.setAllocation(vreg, Allocation{ .stack = SpillSlot.new(slot) });
                 }
             }
         }
+    }
+
+    fn spillSlotSize(class: RegClass) u32 {
+        return switch (class) {
+            .int, .float => 8,
+            .vector, .scalable_vector, .predicate => 16,
+        };
     }
 };
 
@@ -128,4 +140,52 @@ test "Allocator run spills when vregs exceed integer preg count" {
 
     try testing.expect(alloc.next_spill > 0);
     try testing.expect(adapter.getAllocation(types.VReg.new(39)).?.isStack());
+}
+
+test "Allocator run uses fp register bank for float class" {
+    var adapter = RegAllocAdapter.init(testing.allocator);
+    defer adapter.deinit();
+
+    const v0 = types.VReg.new(0);
+    try adapter.addOperand(types.Operand.init(v0, .any_reg, .use));
+    try adapter.setVRegClass(v0, .float);
+
+    var live = LivenessInfo.init(testing.allocator);
+    defer live.deinit();
+
+    var alloc = try Allocator.init(testing.allocator, &adapter);
+    defer alloc.deinit();
+
+    try alloc.run(&live);
+
+    const v0_alloc = adapter.getAllocation(v0).?;
+    try testing.expect(v0_alloc.isReg());
+    try testing.expect(v0_alloc.reg.index >= 32);
+}
+
+test "Allocator run uses 16-byte spill slots for vector class" {
+    var adapter = RegAllocAdapter.init(testing.allocator);
+    defer adapter.deinit();
+
+    var i: u32 = 0;
+    while (i < 40) : (i += 1) {
+        const vreg = types.VReg.new(i);
+        try adapter.addOperand(types.Operand.init(vreg, .any_reg, .use));
+        try adapter.setVRegClass(vreg, .vector);
+    }
+
+    var live = LivenessInfo.init(testing.allocator);
+    defer live.deinit();
+
+    var alloc = try Allocator.init(testing.allocator, &adapter);
+    defer alloc.deinit();
+
+    try alloc.run(&live);
+
+    const spill0 = adapter.getAllocation(types.VReg.new(32)).?;
+    const spill1 = adapter.getAllocation(types.VReg.new(33)).?;
+    try testing.expect(spill0.isStack());
+    try testing.expect(spill1.isStack());
+    try testing.expectEqual(@as(u32, 0), spill0.stack.index);
+    try testing.expectEqual(@as(u32, 16), spill1.stack.index);
 }

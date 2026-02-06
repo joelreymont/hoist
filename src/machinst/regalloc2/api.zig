@@ -3,6 +3,7 @@ const types = @import("types.zig");
 const Allocation = types.Allocation;
 const PhysReg = types.PhysReg;
 const VReg = types.VReg;
+const RegClass = types.RegClass;
 const Operand = types.Operand;
 const InstRange = types.InstRange;
 const testing = std.testing;
@@ -16,6 +17,7 @@ pub const RegAllocAdapter = struct {
     operands: std.ArrayList(Operand),
     inst_operands: std.AutoHashMap(u32, std.ArrayList(Operand)),
     allocations: std.AutoHashMap(VReg, Allocation),
+    vreg_classes: std.AutoHashMap(VReg, RegClass),
 
     pub fn init(allocator: Allocator) RegAllocAdapter {
         return .{
@@ -25,6 +27,7 @@ pub const RegAllocAdapter = struct {
             .operands = .{},
             .inst_operands = std.AutoHashMap(u32, std.ArrayList(Operand)).init(allocator),
             .allocations = std.AutoHashMap(VReg, Allocation).init(allocator),
+            .vreg_classes = std.AutoHashMap(VReg, RegClass).init(allocator),
         };
     }
 
@@ -34,6 +37,7 @@ pub const RegAllocAdapter = struct {
         self.inst_operands.deinit();
         self.operands.deinit(self.allocator);
         self.allocations.deinit();
+        self.vreg_classes.deinit();
     }
 
     /// Allocate a new virtual register.
@@ -67,19 +71,50 @@ pub const RegAllocAdapter = struct {
     }
 
     /// Set allocation result for a virtual register.
-    pub fn setAllocation(self: *RegAllocAdapter, vreg: VReg, alloc: Allocation) !void {
+    pub fn setAllocation(self: *RegAllocAdapter, vreg_any: anytype, alloc: Allocation) !void {
+        const vreg = normalizeVReg(vreg_any);
         try self.allocations.put(vreg, alloc);
     }
 
     /// Get allocation for a virtual register.
-    pub fn getAllocation(self: *const RegAllocAdapter, vreg: VReg) ?Allocation {
+    pub fn getAllocation(self: *const RegAllocAdapter, vreg_any: anytype) ?Allocation {
+        const vreg = normalizeVReg(vreg_any);
         return self.allocations.get(vreg);
     }
 
     /// Get physical register for a virtual register.
-    pub fn getPhysReg(self: *const RegAllocAdapter, vreg: VReg) ?PhysReg {
+    pub fn getPhysReg(self: *const RegAllocAdapter, vreg_any: anytype) ?PhysReg {
+        const vreg = normalizeVReg(vreg_any);
         const alloc = self.getAllocation(vreg) orelse return null;
         return if (alloc.isReg()) alloc.reg else null;
+    }
+
+    /// Record register class for a virtual register.
+    pub fn setVRegClass(self: *RegAllocAdapter, vreg_any: anytype, reg_class: RegClass) !void {
+        const vreg = normalizeVReg(vreg_any);
+        if (self.vreg_classes.get(vreg)) |existing| {
+            if (existing == reg_class) return;
+            return error.VRegClassConflict;
+        }
+        try self.vreg_classes.put(vreg, reg_class);
+    }
+
+    /// Get register class for a virtual register; defaults to integer.
+    pub fn getVRegClass(self: *const RegAllocAdapter, vreg_any: anytype) RegClass {
+        const vreg = normalizeVReg(vreg_any);
+        return self.vreg_classes.get(vreg) orelse .int;
+    }
+
+    fn normalizeVReg(vreg_any: anytype) VReg {
+        const T = @TypeOf(vreg_any);
+        if (T == VReg) return vreg_any;
+        if (@hasField(T, "index")) {
+            return VReg.new(@field(vreg_any, "index"));
+        }
+        if (@hasDecl(T, "index")) {
+            return VReg.new(vreg_any.index());
+        }
+        @compileError("Unsupported vreg type");
     }
 };
 
@@ -157,6 +192,17 @@ test "RegAllocAdapter setAllocation" {
     try testing.expect(result != null);
     try testing.expect(result.?.isReg());
     try testing.expectEqual(@as(u8, 5), result.?.reg.index);
+}
+
+test "RegAllocAdapter tracks explicit vreg class" {
+    const allocator = testing.allocator;
+    var adapter = RegAllocAdapter.init(allocator);
+    defer adapter.deinit();
+
+    const vreg = adapter.newVReg();
+    try adapter.setVRegClass(vreg, .float);
+
+    try testing.expectEqual(RegClass.float, adapter.getVRegClass(vreg));
 }
 
 test "RegAllocAdapter getPhysReg" {
