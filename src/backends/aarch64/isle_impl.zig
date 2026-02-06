@@ -1276,6 +1276,33 @@ test "aarch64_global_value vmctx uses abi reg" {
     try testing.expectEqual(expected.bits, mov.src.bits);
 }
 
+test "aarch64_global_value dyn_scale_target_const emits mov_imm scale" {
+    var func = try mkFunc(testing.allocator);
+    defer func.deinit();
+
+    const gv = try func.global_values.push(.{
+        .dyn_scale_target_const = .{
+            .vector_type = Type.I32X4,
+        },
+    });
+
+    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var lower_ctx = LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer lower_ctx.deinit();
+    _ = try lower_ctx.startBlock(lower_mod.Block.new(0));
+
+    var ctx = IsleContext.init(&lower_ctx);
+    _ = try aarch64_global_value(&ctx, gv);
+
+    try testing.expectEqual(@as(usize, 1), vcode.insns.items.len);
+    try testing.expectEqual(Inst.mov_imm, @as(std.meta.Tag(Inst), vcode.insns.items[0]));
+    const mov_imm = vcode.insns.items[0].mov_imm;
+    try testing.expectEqual(@as(u64, 1), mov_imm.imm);
+    try testing.expectEqual(OperandSize.size64, mov_imm.size);
+}
+
 test "aarch64_add_rr constructor" {
     var func = try mkFunc(testing.allocator);
     defer func.deinit();
@@ -1975,7 +2002,25 @@ fn gvInto(
             try ctx.emit(inst);
             break :blk inst;
         },
-        .dyn_scale_target_const => |_| error.Unimplemented,
+        .dyn_scale_target_const => |dyn_scale_data| blk: {
+            // Match Cranelift's legalizer semantics:
+            // scale = dynamic_vector_bytes / max(vector_type.bytes(), 16).
+            const vector_bytes = dyn_scale_data.vector_type.bytes();
+            if (vector_bytes > 16) return error.LoweringFailed;
+
+            const base_bytes: u32 = @max(vector_bytes, 16);
+            const dynamic_bytes: u32 = 16;
+            const scale: u64 = @intCast(dynamic_bytes / base_bytes);
+            if (scale == 0) return error.LoweringFailed;
+
+            const inst = Inst{ .mov_imm = .{
+                .dst = dst,
+                .imm = scale,
+                .size = .size64,
+            } };
+            try ctx.emit(inst);
+            break :blk inst;
+        },
     };
 }
 
