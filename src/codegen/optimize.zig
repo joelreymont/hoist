@@ -19,6 +19,7 @@ const instcombine = @import("opts/instcombine.zig");
 const strength = @import("opts/strength.zig");
 const peephole = @import("opts/peephole.zig");
 const copyprop = @import("opts/copyprop.zig");
+const loop_unroll = @import("opts/loop_unroll.zig");
 const licm = @import("opts/licm.zig");
 const simplifybranch = @import("opts/simplifybranch.zig");
 const sccp = @import("opts/sccp.zig");
@@ -80,6 +81,7 @@ pub const PassManager = struct {
         try self.runPass(func, "GVN", runGVN);
         try self.runPass(func, "CopyProp", runCopyProp);
         try self.runPass(func, "Strength", runStrength);
+        try self.runPass(func, "LoopUnroll", runLoopUnroll);
         try self.runPass(func, "LICM", runLICM);
         try self.runPass(func, "Spectre", runSpectre);
         try self.runPass(func, "Peephole", runPeephole);
@@ -183,6 +185,28 @@ fn runLICM(allocator: Allocator, func: *Function) !bool {
     return try pass.run(func, &loop_info, &domtree, &cfg);
 }
 
+/// Run loop unrolling pass.
+fn runLoopUnroll(allocator: Allocator, func: *Function) !bool {
+    var cfg = ControlFlowGraph.init(allocator);
+    defer cfg.deinit(allocator);
+    try cfg.compute(func);
+
+    const entry = func.entryBlock() orelse return false;
+
+    var domtree = DominatorTree.init(allocator);
+    defer domtree.deinit();
+    try domtree.compute(allocator, entry, &cfg);
+
+    var loop_info = LoopInfo.init(allocator);
+    defer loop_info.deinit(allocator);
+    try loop_info.compute(&cfg, &domtree);
+    if (loop_info.loops.items.len == 0) return false;
+
+    var pass = loop_unroll.LoopUnroll.init(allocator, .{});
+    defer pass.deinit();
+    return try pass.run(func, &loop_info);
+}
+
 /// Run SimplifyBranch pass.
 fn runSimplifyBranch(allocator: Allocator, func: *Function) !bool {
     var pass = simplifybranch.SimplifyBranch.init(allocator);
@@ -249,7 +273,7 @@ test "PassManager: statistics collection" {
 
     // Should have stats for all passes
     const stats = pm.getStats();
-    try testing.expectEqual(@as(usize, 11), stats.len);
+    try testing.expectEqual(@as(usize, 12), stats.len);
     try testing.expectEqualStrings("SCCP", stats[0].name);
     try testing.expectEqualStrings("SimplifyBranch", stats[1].name);
     try testing.expectEqualStrings("UCE", stats[2].name);
@@ -257,10 +281,11 @@ test "PassManager: statistics collection" {
     try testing.expectEqualStrings("GVN", stats[4].name);
     try testing.expectEqualStrings("CopyProp", stats[5].name);
     try testing.expectEqualStrings("Strength", stats[6].name);
-    try testing.expectEqualStrings("LICM", stats[7].name);
-    try testing.expectEqualStrings("Spectre", stats[8].name);
-    try testing.expectEqualStrings("Peephole", stats[9].name);
-    try testing.expectEqualStrings("DCE", stats[10].name);
+    try testing.expectEqualStrings("LoopUnroll", stats[7].name);
+    try testing.expectEqualStrings("LICM", stats[8].name);
+    try testing.expectEqualStrings("Spectre", stats[9].name);
+    try testing.expectEqualStrings("Peephole", stats[10].name);
+    try testing.expectEqualStrings("DCE", stats[11].name);
 }
 
 test "runLICM: no entry returns false" {
@@ -269,6 +294,15 @@ test "runLICM: no entry returns false" {
     defer func.deinit();
 
     const changed = try runLICM(testing.allocator, &func);
+    try testing.expect(!changed);
+}
+
+test "runLoopUnroll: no entry returns false" {
+    const sig = @import("../ir/signature.zig").Signature.init(testing.allocator, .fast);
+    var func = try Function.init(testing.allocator, "unroll_empty", sig);
+    defer func.deinit();
+
+    const changed = try runLoopUnroll(testing.allocator, &func);
     try testing.expect(!changed);
 }
 

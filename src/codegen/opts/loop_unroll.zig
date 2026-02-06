@@ -211,7 +211,7 @@ pub const LoopUnroll = struct {
         const inst_data = func.dfg.insts.get(inst) orelse return error.InvalidInst;
 
         // Remap operands
-        const new_data = remapInstructionOperands(inst_data, value_map);
+        const new_data = remapInstructionOperands(inst_data.*, value_map);
 
         // Create new instruction
         const new_inst = try func.dfg.makeInst(new_data);
@@ -219,7 +219,7 @@ pub const LoopUnroll = struct {
         // Append result if instruction has one
         const results = func.dfg.instResults(inst);
         if (results.len > 0) {
-            const result_ty = func.dfg.valueType(results[0]);
+            const result_ty = func.dfg.valueType(results[0]) orelse return error.InvalidType;
             const new_result = try func.dfg.appendInstResult(new_inst, result_ty);
 
             // Add to mapping
@@ -297,62 +297,63 @@ fn hasNestedLoops(loop: *const Loop, loop_info: *const LoopInfo) bool {
 
 /// Find induction variable pattern in loop header.
 fn findInductionVar(func: *const Function, header: Block) ?InductionVarInfo {
-    // Look for phi -> icmp -> br_if pattern
-    var iter = func.layout.blockInsts(header);
+    // Look for block-param iv + icmp pattern in loop header.
+    const header_data = func.dfg.blocks.get(header) orelse return null;
+    const header_params = header_data.getParams(&func.dfg.value_lists);
+    if (header_params.len == 0) return null;
+    const iv_value = header_params[0];
 
-    var phi_inst: ?Inst = null;
+    var iter = func.layout.blockInsts(header);
     var cmp_inst: ?Inst = null;
 
     while (iter.next()) |inst| {
         const inst_data = func.dfg.insts.get(inst) orelse continue;
         const opcode = inst_data.opcode();
-
-        if (opcode == .phi or opcode == .block_param) {
-            phi_inst = inst;
-        } else if (opcode == .icmp) {
+        if (opcode == .icmp) {
             cmp_inst = inst;
         }
     }
 
-    // Need both phi and comparison
-    if (phi_inst == null or cmp_inst == null) return null;
+    // Need comparison in the header.
+    if (cmp_inst == null) return null;
 
     // Get comparison operands
     const cmp_data = func.dfg.insts.get(cmp_inst.?) orelse return null;
 
     // Check if comparison uses the phi result
-    const cmp_args = switch (cmp_data) {
+    const cmp_args = switch (cmp_data.*) {
         .int_compare => |ic| ic.args,
         else => return null,
     };
 
-    const phi_results = func.dfg.instResults(phi_inst.?);
-    if (phi_results.len == 0) return null;
-    const phi_result = phi_results[0];
-
-    // Check if phi result is one of the comparison operands
-    if (cmp_args[0].asU32() != phi_result.asU32() and
-        cmp_args[1].asU32() != phi_result.asU32())
+    // Check if iv block parameter is one of the comparison operands.
+    if (cmp_args[0].asU32() != iv_value.asU32() and
+        cmp_args[1].asU32() != iv_value.asU32())
     {
         return null;
     }
 
     // Get bound from other operand
-    const bound_val = if (cmp_args[0].asU32() == phi_result.asU32()) cmp_args[1] else cmp_args[0];
+    const bound_val = if (cmp_args[0].asU32() == iv_value.asU32()) cmp_args[1] else cmp_args[0];
 
-    // Check if bound is constant
-    const bound_def = func.dfg.values.get(bound_val) orelse return null;
-    const bound = switch (bound_def.*) {
-        .iconst => |v| v,
+    // Check if bound is an iconst value.
+    const bound_value_def = func.dfg.valueDef(bound_val) orelse return null;
+    const bound_inst = switch (bound_value_def) {
+        .result => |r| r.inst,
+        else => return null,
+    };
+    const bound_inst_data = func.dfg.insts.get(bound_inst) orelse return null;
+    const bound = switch (bound_inst_data.*) {
+        .unary_imm => |d| if (d.opcode == .iconst) d.imm.value else return null,
         else => return null,
     };
 
     // Get induction variable type
-    const iv_ty = func.dfg.valueType(phi_result);
+    const iv_ty = func.dfg.valueType(iv_value) orelse return null;
 
     // For now, assume simple i = 0; i < N; i++ pattern
     return InductionVarInfo{
-        .iv = phi_result,
+        .iv = iv_value,
         .init = 0,
         .step = 1,
         .bound = @intCast(bound),

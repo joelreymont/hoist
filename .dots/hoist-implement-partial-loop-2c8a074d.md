@@ -1,9 +1,9 @@
 ---
 title: Implement partial loop unroll
-status: open
+status: active
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.918944+01:00"
+created-at: "\"2026-02-02T21:35:56.918944+01:00\""
 blocks:
   - hoist-legalize-vector-types-030df554
 ---
