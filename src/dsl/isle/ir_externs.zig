@@ -64,6 +64,10 @@ pub fn Externs(comptime Ctx: type) type {
             return .{ .arg0 = ty, .arg1 = input };
         }
 
+        pub fn value_type_ext(ctx: *Ctx, input: Value) !?Type {
+            return valTy(ctx, input);
+        }
+
         pub fn ty_vec_fits_in_register_ext(_: *Ctx, input: Type) !?Type {
             if (input.isVector() and input.bytes() <= 16) return input;
             return null;

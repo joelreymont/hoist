@@ -956,6 +956,10 @@
       (aarch64_fdemote x))
 
 ;; bitcast: Bitwise reinterpretation (FMOV between scalar and vector)
+;; i128 <-> i128: no-op in paired GPRs
+(rule 9 (lower (bitcast $I128 x @ (value_type $I128)))
+      (emit_regs (put_in_regs x)))
+
 ;; i32 <-> f32
 (rule (lower (bitcast dst_ty x))
       (if-let (value_type src_ty) x)
@@ -3244,8 +3248,8 @@
       (aarch64_fmov_to_gpr x out_ty))
 
 ;; I128 <-> I128: no-op
-(rule 3 (lower (has_type $I128 (bitcast _ x @ (value_type $I128))))
-      (aarch64_unimplemented))
+(rule 3 (lower (has_type $I128 (bitcast $I128 x)))
+      (emit_regs (put_in_regs x)))
 
 ;; ABI register accessors
 (decl pinned_reg () Aarch64Inst)

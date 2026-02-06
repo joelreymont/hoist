@@ -110,6 +110,7 @@ pub const IsleContext = struct {
 const Ir = ir_externs.Externs(IsleContext);
 
 pub const has_type_ext = Ir.has_type_ext;
+pub const value_type_ext = Ir.value_type_ext;
 pub const ty_vec_fits_in_register_ext = Ir.ty_vec_fits_in_register_ext;
 pub const ty_32_or_64_ext = Ir.ty_32_or_64_ext;
 
