@@ -8,7 +8,10 @@ const std = @import("std");
 const entities = @import("entities.zig");
 const Block = entities.Block;
 const Inst = entities.Inst;
+const FuncRef = entities.FuncRef;
 const Function = @import("function.zig").Function;
+const FunctionBuilder = @import("builder.zig").FunctionBuilder;
+const Signature = @import("signature.zig").Signature;
 
 /// Basic block predecessor: (block, terminator instruction).
 pub const BlockPredecessor = struct {
@@ -478,4 +481,41 @@ test "CFG: basic construction" {
     try testing.expect(!cfg.isValid());
     cfg.clear();
     try testing.expect(!cfg.isValid());
+}
+
+test "CFG: try_call records exception successor" {
+    const sig = Signature.init(testing.allocator, .fast);
+    var func = try Function.init(testing.allocator, "cfg_try_call", sig);
+    defer func.deinit();
+
+    var builder = try FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+
+    const block0 = try builder.createBlock();
+    const block1 = try builder.createBlock();
+    const block2 = try builder.createBlock();
+
+    builder.switchToBlock(block0);
+    _ = try builder.instTryCall(FuncRef.new(0), &.{}, block1, block2);
+    try builder.jump(block1);
+
+    builder.switchToBlock(block1);
+    try builder.ret();
+
+    builder.switchToBlock(block2);
+    try builder.ret();
+
+    var cfg = ControlFlowGraph.init(testing.allocator);
+    defer cfg.deinit(testing.allocator);
+    try cfg.compute(&func);
+
+    var succ_iter = cfg.succIter(block0);
+    const succ = succ_iter.next() orelse return error.TestExpectedEqual;
+    try testing.expectEqual(block1, succ);
+    try testing.expect(succ_iter.next() == null);
+
+    var ex_iter = cfg.exceptionSuccIter(block0);
+    const ex_succ = ex_iter.next() orelse return error.TestExpectedEqual;
+    try testing.expectEqual(block2, ex_succ);
+    try testing.expect(ex_iter.next() == null);
 }
