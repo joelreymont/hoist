@@ -1516,6 +1516,76 @@ test "typeToSize maps types correctly" {
     try testing.expectEqual(OperandSize.size64, ctx.typeToSize(Type.I64));
 }
 
+test "aarch64_uadd_overflow_cin emits adcs and cset(cs)" {
+    var func = try mkFunc(testing.allocator);
+    defer func.deinit();
+
+    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var lower_ctx = LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer lower_ctx.deinit();
+    _ = try lower_ctx.startBlock(lower_mod.Block.new(0));
+
+    var ctx = IsleContext.init(&lower_ctx);
+    const out = try aarch64_uadd_overflow_cin(&ctx, Type.I64, Value.new(0), Value.new(1), Value.new(2));
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+
+    var saw_set_carry = false;
+    var saw_adcs = false;
+    var saw_cs_cset = false;
+    for (vcode.insns.items) |insn| {
+        switch (insn) {
+            .subs_imm => saw_set_carry = true,
+            .adcs => saw_adcs = true,
+            .cset => |c| {
+                if (c.cond == .cs) saw_cs_cset = true;
+            },
+            else => {},
+        }
+    }
+
+    try testing.expect(saw_set_carry);
+    try testing.expect(saw_adcs);
+    try testing.expect(saw_cs_cset);
+}
+
+test "aarch64_sadd_overflow_cin emits adcs and cset(vs)" {
+    var func = try mkFunc(testing.allocator);
+    defer func.deinit();
+
+    var vcode = root.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var lower_ctx = LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer lower_ctx.deinit();
+    _ = try lower_ctx.startBlock(lower_mod.Block.new(0));
+
+    var ctx = IsleContext.init(&lower_ctx);
+    const out = try aarch64_sadd_overflow_cin(&ctx, Type.I64, Value.new(0), Value.new(1), Value.new(2));
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+
+    var saw_set_carry = false;
+    var saw_adcs = false;
+    var saw_vs_cset = false;
+    for (vcode.insns.items) |insn| {
+        switch (insn) {
+            .subs_imm => saw_set_carry = true,
+            .adcs => saw_adcs = true,
+            .cset => |c| {
+                if (c.cond == .vs) saw_vs_cset = true;
+            },
+            else => {},
+        }
+    }
+
+    try testing.expect(saw_set_carry);
+    try testing.expect(saw_adcs);
+    try testing.expect(saw_vs_cset);
+}
+
 /// Convert IntCC to AArch64 CondCode.
 fn intccToCondCode(cc: IntCC) CondCode {
     return switch (cc) {
