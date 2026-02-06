@@ -570,8 +570,66 @@ test "JIT: executable memory boundaries" {
 }
 
 test "JIT: register spilling with 40+ live values" {
-    // Skip - test body not implemented yet (spilling is supported in regalloc)
-    return error.SkipZigTest;
+    const allocator = testing.allocator;
+    const live_value_count: usize = 40;
+
+    var sig = Signature.init(allocator, .system_v);
+    for (0..live_value_count) |_| {
+        try sig.params.append(allocator, hoist.signature.AbiParam.new(Type.I64));
+    }
+    try sig.returns.append(allocator, hoist.signature.AbiParam.new(Type.I64));
+
+    var func = try Function.init(allocator, "spill_40_live_values", sig);
+    defer func.deinit();
+
+    const entry = try func.dfg.makeBlock();
+    try func.layout.appendBlock(entry);
+
+    var params: [live_value_count]entities.Value = undefined;
+    for (0..live_value_count) |i| {
+        params[i] = try func.dfg.appendBlockParam(entry, Type.I64);
+    }
+
+    // Create 40 non-rematerializable values from parameters before consuming them.
+    var live_vals: [live_value_count]entities.Value = undefined;
+    for (0..live_value_count) |i| {
+        const lhs = params[i];
+        const rhs = params[(i + 1) % live_value_count];
+        const add_inst = try func.dfg.makeInst(.{ .binary = .{
+            .opcode = .iadd,
+            .args = .{ lhs, rhs },
+        } });
+        try func.layout.appendInst(add_inst, entry);
+        live_vals[i] = try func.dfg.appendInstResult(add_inst, Type.I64);
+    }
+
+    var acc = live_vals[0];
+    for (1..live_value_count) |i| {
+        const sum_inst = try func.dfg.makeInst(.{ .binary = .{
+            .opcode = .iadd,
+            .args = .{ acc, live_vals[i] },
+        } });
+        try func.layout.appendInst(sum_inst, entry);
+        acc = try func.dfg.appendInstResult(sum_inst, Type.I64);
+    }
+
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{
+        .opcode = .@"return",
+        .arg = acc,
+    } });
+    try func.layout.appendInst(ret_inst, entry);
+
+    var codegen_ctx = hoist.codegen.compile.Context.init(allocator);
+    defer codegen_ctx.deinit();
+
+    var target = hoist.codegen.compile.Target.init(.aarch64);
+    target.opt_level = .none;
+    target.verify = true;
+
+    const compiled = try hoist.codegen.compile.compile(&codegen_ctx, &func, &target);
+    try testing.expect(compiled.code.items.len > 0);
+    try testing.expect(codegen_ctx.aarch64_regalloc != null);
+    try testing.expect(codegen_ctx.aarch64_regalloc.?.spill_bytes > 0);
 }
 
 test "try_call basic lowering" {

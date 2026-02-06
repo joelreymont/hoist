@@ -328,8 +328,9 @@ pub const LinearScanAllocator = struct {
                     free_regs.unset(reg_idx);
                     try self.active.append(self.allocator, range);
                 } else {
-                    // No suitable spill candidate - out of registers
-                    return error.OutOfRegisters;
+                    // Current interval ends latest; spill it directly.
+                    const spill_slot = try self.allocateSpillSlot(range.reg_class);
+                    try result.assignSpillSlot(range.vreg, spill_slot);
                 }
             }
         }
@@ -836,7 +837,7 @@ test "LinearScanAllocator different register classes independent" {
     try std.testing.expectEqual(@as(u6, 0), p2.?.hwEnc());
 }
 
-test "LinearScanAllocator out of registers error" {
+test "LinearScanAllocator spills current range when pressure is high" {
     const allocator = std.testing.allocator;
 
     var lsa = try LinearScanAllocator.init(allocator, 2, 2, 2); // Only 2 int regs
@@ -871,9 +872,13 @@ test "LinearScanAllocator out of registers error" {
         .reg_class = .int,
     });
 
-    // Should return OutOfRegisters error
-    const result_or_err = lsa.allocate(&info);
-    try std.testing.expectError(error.OutOfRegisters, result_or_err);
+    var result = try lsa.allocate(&info);
+    defer result.deinit();
+
+    try std.testing.expect(result.getPhysReg(v0) != null);
+    try std.testing.expect(result.getPhysReg(v1) != null);
+    try std.testing.expect(result.getPhysReg(v2) == null);
+    try std.testing.expect(result.getSpillSlot(v2) != null);
 }
 
 test "LinearScanAllocator register hints" {
