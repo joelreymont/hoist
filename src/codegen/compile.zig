@@ -71,6 +71,19 @@ fn vecElemSizeFromType(ty: ir.Type) ?a64_inst.VecElemSize {
     };
 }
 
+fn iconstImmediateValue(func: *const Function, value: ir.Value) ?i64 {
+    const def = func.dfg.valueDef(value) orelse return null;
+    const inst = switch (def) {
+        .result => |r| r.inst,
+        else => return null,
+    };
+    const data = func.dfg.insts.get(inst) orelse return null;
+    return switch (data.*) {
+        .unary_imm => |d| if (d.opcode == .iconst) d.imm.value else null,
+        else => null,
+    };
+}
+
 /// Compilation error with context.
 pub const CompileError = struct {
     inner: CodegenError,
@@ -2687,9 +2700,38 @@ fn lowerInstructionAArch64(
                 else
                     .size32;
 
-                // Emit shift instruction
-                // TODO: Optimize to use immediate form when shift amount is constant
-                if (data.opcode == .ishl) {
+                if (iconstImmediateValue(ctx.func, data.args[1])) |imm| {
+                    const mask: u64 = if (size == .size64) 63 else 31;
+                    const shift_amt: u8 = @intCast(@as(u64, @bitCast(imm)) & mask);
+                    if (data.opcode == .ishl) {
+                        try builder.emit(Inst{
+                            .lsl_imm = .{
+                                .dst = dst,
+                                .src = src1,
+                                .imm = shift_amt,
+                                .size = size,
+                            },
+                        });
+                    } else if (data.opcode == .ushr) {
+                        try builder.emit(Inst{
+                            .lsr_imm = .{
+                                .dst = dst,
+                                .src = src1,
+                                .imm = shift_amt,
+                                .size = size,
+                            },
+                        });
+                    } else {
+                        try builder.emit(Inst{
+                            .asr_imm = .{
+                                .dst = dst,
+                                .src = src1,
+                                .imm = shift_amt,
+                                .size = size,
+                            },
+                        });
+                    }
+                } else if (data.opcode == .ishl) {
                     try builder.emit(Inst{
                         .lsl_rr = .{
                             .dst = dst,
@@ -2708,7 +2750,6 @@ fn lowerInstructionAArch64(
                         },
                     });
                 } else {
-                    // sshr - arithmetic shift right
                     try builder.emit(Inst{
                         .asr_rr = .{
                             .dst = dst,
@@ -2855,36 +2896,77 @@ fn lowerInstructionAArch64(
                 else
                     .size32;
 
-                // Emit bitwise instruction
-                // TODO: Optimize to use immediate form when operand is constant
-                if (data.opcode == .band) {
-                    try builder.emit(Inst{
-                        .and_rr = .{
-                            .dst = dst,
-                            .src1 = src1,
-                            .src2 = src2,
-                            .size = size,
-                        },
-                    });
-                } else if (data.opcode == .bor) {
-                    try builder.emit(Inst{
-                        .orr_rr = .{
-                            .dst = dst,
-                            .src1 = src1,
-                            .src2 = src2,
-                            .size = size,
-                        },
-                    });
-                } else {
-                    // bxor
-                    try builder.emit(Inst{
-                        .eor_rr = .{
-                            .dst = dst,
-                            .src1 = src1,
-                            .src2 = src2,
-                            .size = size,
-                        },
-                    });
+                const rhs_imm = iconstImmediateValue(ctx.func, data.args[1]);
+                const lhs_imm = iconstImmediateValue(ctx.func, data.args[0]);
+                var emitted_imm = false;
+
+                if (rhs_imm) |imm| {
+                    const imm_u64: u64 = @bitCast(imm);
+                    if (data.opcode == .band) {
+                        if (a64_inst.aarch64_and_imm(dst, src1, imm_u64, size)) |inst_opt| {
+                            try builder.emit(inst_opt);
+                            emitted_imm = true;
+                        }
+                    } else if (data.opcode == .bor) {
+                        if (a64_inst.aarch64_orr_imm(dst, src1, imm_u64, size)) |inst_opt| {
+                            try builder.emit(inst_opt);
+                            emitted_imm = true;
+                        }
+                    } else {
+                        if (a64_inst.aarch64_eor_imm(dst, src1, imm_u64, size)) |inst_opt| {
+                            try builder.emit(inst_opt);
+                            emitted_imm = true;
+                        }
+                    }
+                } else if (lhs_imm) |imm| {
+                    const imm_u64: u64 = @bitCast(imm);
+                    if (data.opcode == .band) {
+                        if (a64_inst.aarch64_and_imm(dst, src2, imm_u64, size)) |inst_opt| {
+                            try builder.emit(inst_opt);
+                            emitted_imm = true;
+                        }
+                    } else if (data.opcode == .bor) {
+                        if (a64_inst.aarch64_orr_imm(dst, src2, imm_u64, size)) |inst_opt| {
+                            try builder.emit(inst_opt);
+                            emitted_imm = true;
+                        }
+                    } else {
+                        if (a64_inst.aarch64_eor_imm(dst, src2, imm_u64, size)) |inst_opt| {
+                            try builder.emit(inst_opt);
+                            emitted_imm = true;
+                        }
+                    }
+                }
+
+                if (!emitted_imm) {
+                    if (data.opcode == .band) {
+                        try builder.emit(Inst{
+                            .and_rr = .{
+                                .dst = dst,
+                                .src1 = src1,
+                                .src2 = src2,
+                                .size = size,
+                            },
+                        });
+                    } else if (data.opcode == .bor) {
+                        try builder.emit(Inst{
+                            .orr_rr = .{
+                                .dst = dst,
+                                .src1 = src1,
+                                .src2 = src2,
+                                .size = size,
+                            },
+                        });
+                    } else {
+                        try builder.emit(Inst{
+                            .eor_rr = .{
+                                .dst = dst,
+                                .src1 = src1,
+                                .src2 = src2,
+                                .size = size,
+                            },
+                        });
+                    }
                 }
 
                 // Track origin for rematerialization
@@ -7402,4 +7484,43 @@ test "buildIR: function is valid" {
 
     try testing.expect(func.layout.entryBlock() != null);
     try testing.expect(func.layout.blocks.elems.items.len > 0);
+}
+
+test "iconstImmediateValue extracts iconst imm" {
+    const sig = ir.Signature.init(testing.allocator, .fast);
+    var func = try Function.init(testing.allocator, "iconst_extract", sig);
+    defer func.deinit();
+
+    const block = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block);
+
+    const imm = ir.Imm64.new(42);
+    const inst = try func.dfg.makeInst(.{ .unary_imm = .{ .opcode = .iconst, .imm = imm } });
+    const val = try func.dfg.appendInstResult(inst, ir.Type.I64);
+    try func.layout.appendInst(inst, block);
+
+    try testing.expectEqual(@as(?i64, 42), iconstImmediateValue(&func, val));
+}
+
+test "iconstImmediateValue ignores non-constants" {
+    const sig = ir.Signature.init(testing.allocator, .fast);
+    var func = try Function.init(testing.allocator, "iconst_extract_nonconst", sig);
+    defer func.deinit();
+
+    const block = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block);
+
+    const c0 = try func.dfg.makeInst(.{ .unary_imm = .{ .opcode = .iconst, .imm = ir.Imm64.new(1) } });
+    const v0 = try func.dfg.appendInstResult(c0, ir.Type.I64);
+    try func.layout.appendInst(c0, block);
+
+    const c1 = try func.dfg.makeInst(.{ .unary_imm = .{ .opcode = .iconst, .imm = ir.Imm64.new(2) } });
+    const v1 = try func.dfg.appendInstResult(c1, ir.Type.I64);
+    try func.layout.appendInst(c1, block);
+
+    const add_inst = try func.dfg.makeInst(.{ .binary = .{ .opcode = .iadd, .args = .{ v0, v1 } } });
+    const add_val = try func.dfg.appendInstResult(add_inst, ir.Type.I64);
+    try func.layout.appendInst(add_inst, block);
+
+    try testing.expectEqual(@as(?i64, null), iconstImmediateValue(&func, add_val));
 }
