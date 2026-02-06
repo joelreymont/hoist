@@ -151,6 +151,14 @@ fn freeExecutableMemory(memory: []align(std.heap.page_size_min) u8) void {
     }
 }
 
+fn registerNoArgI32External(func: *Function, allocator: std.mem.Allocator, name: []const u8) !entities.FuncRef {
+    var ext_sig = Signature.init(allocator, .fast);
+    try ext_sig.returns.append(allocator, hoist.signature.AbiParam.new(Type.I32));
+    const sig_ref = try func.addSignature(ext_sig);
+    const ext_name = try ExternalName.fromTestcase(allocator, name);
+    return func.func_metadata.registerExternalFunc(ext_name, sig_ref, .import);
+}
+
 test "JIT: CRITICAL - verify ABI calling convention" {
     // This is a critical test to verify that Zig can correctly call
     // JIT-compiled ARM64 code and read the w0 register as the return value.
@@ -643,6 +651,7 @@ test "try_call basic lowering" {
     // Create function
     var func = try Function.init(allocator, "test_try_call", sig);
     defer func.deinit();
+    const func_ref = try registerNoArgI32External(&func, allocator, "test_try_call_basic_ext");
 
     // Build IR:
     // block0:
@@ -682,7 +691,7 @@ test "try_call basic lowering" {
     const try_call_data = InstructionData{
         .try_call = .{
             .opcode = .try_call,
-            .func_ref = entities.FuncRef.new(0), // Placeholder
+            .func_ref = func_ref,
             .args = empty_args,
             .normal_successor = block1,
             .exception_successor = block2,
@@ -691,12 +700,6 @@ test "try_call basic lowering" {
     const try_call_inst = try func.dfg.makeInst(try_call_data);
     try func.layout.appendInst(try_call_inst, block0);
 
-    const jump_block1 = InstructionData{ .jump = .{
-        .opcode = .jump,
-        .destination = block1,
-    } };
-    const jump_block1_inst = try func.dfg.makeInst(jump_block1);
-    try func.layout.appendInst(jump_block1_inst, block0);
     // try_call has no result (returns void)
 
     // block0: jump to block1 (after try_call succeeds)
@@ -769,6 +772,7 @@ test "landing pad with exception edge" {
     // Create function
     var func = try Function.init(allocator, "test_landing_pad", sig);
     defer func.deinit();
+    const func_ref = try registerNoArgI32External(&func, allocator, "test_landing_pad_ext");
 
     // Build IR with try_call and landing pad:
     // block0:
@@ -805,7 +809,7 @@ test "landing pad with exception edge" {
     const empty_args = value_list.ValueList.default();
     const try_call_data = InstructionData{ .try_call = .{
         .opcode = .try_call,
-        .func_ref = entities.FuncRef.new(0),
+        .func_ref = func_ref,
         .args = empty_args,
         .normal_successor = block1,
         .exception_successor = block2,
@@ -899,6 +903,7 @@ test "exception propagation with unwinding" {
     // Create function
     var func = try Function.init(allocator, "test_exception_propagation", sig);
     defer func.deinit();
+    const func_ref = try registerNoArgI32External(&func, allocator, "test_exception_propagation_ext");
 
     // Build IR simulating exception propagation:
     // block0(v0: i32):  // Entry with parameter
@@ -940,7 +945,7 @@ test "exception propagation with unwinding" {
     const try_call_data = InstructionData{
         .try_call = .{
             .opcode = .try_call,
-            .func_ref = entities.FuncRef.new(0), // Placeholder
+            .func_ref = func_ref,
             .args = empty_args,
             .normal_successor = block1,
             .exception_successor = block2,
