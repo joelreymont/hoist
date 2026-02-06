@@ -1,9 +1,11 @@
 ---
 title: Implement partial loop unroll
-status: active
+status: closed
 priority: 2
 issue-type: task
-created-at: "\"2026-02-02T21:35:56.918944+01:00\""
+created-at: "\"\\\"\\\\\\\"2026-02-02T21:35:56.918944+01:00\\\\\\\"\\\"\""
+closed-at: "2026-02-06T09:55:24.821186+01:00"
+close-reason: Implemented bounded partial/full loop peeling with tests
 blocks:
   - hoist-legalize-vector-types-030df554
 ---

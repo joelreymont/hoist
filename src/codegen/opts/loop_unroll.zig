@@ -128,12 +128,10 @@ pub const LoopUnroll = struct {
         // Trip count too small
         if (analysis.trip_count < self.config.min_trip_count) return false;
 
-        // Respect configured unroll ceiling. Partial unrolling is not yet
-        // implemented, so we only accept loops we can fully unroll.
-        if (analysis.trip_count > self.config.max_unroll) return false;
+        const effective_unroll = @min(analysis.trip_count, self.config.max_unroll);
 
         // Would expand code too much
-        const expanded_size = analysis.body_size * analysis.trip_count;
+        const expanded_size = analysis.body_size * effective_unroll;
         if (expanded_size > self.config.max_body_size * self.config.max_unroll) return false;
 
         return true;
@@ -141,72 +139,164 @@ pub const LoopUnroll = struct {
 
     /// Perform loop unrolling.
     fn unrollLoop(self: *LoopUnroll, func: *Function, loop: *const Loop, analysis: LoopAnalysis) !bool {
+        const unroll_factor = @min(analysis.trip_count, self.config.max_unroll);
+
         // For full unrolling, we eliminate the loop entirely
         if (self.config.full_unroll and analysis.trip_count <= self.config.max_unroll) {
             try self.fullyUnroll(func, loop, analysis);
             return true;
         }
 
-        return false;
+        return try self.partialUnroll(func, loop, analysis, unroll_factor);
     }
 
-    /// Fully unroll a loop (eliminate loop structure).
+    /// Fully unroll a loop by peeling all iterations into preheader.
     fn fullyUnroll(self: *LoopUnroll, func: *Function, loop: *const Loop, analysis: LoopAnalysis) !void {
-        // Clone loop body trip_count times
-        // Each iteration has the induction variable replaced with a constant
+        _ = try self.peelIntoPreheader(func, loop, analysis, analysis.trip_count);
+    }
 
-        const trip_count = analysis.trip_count;
+    /// Partially unroll a loop by peeling a bounded chunk and keeping cleanup.
+    fn partialUnroll(self: *LoopUnroll, func: *Function, loop: *const Loop, analysis: LoopAnalysis, factor: u32) !bool {
+        if (factor == 0 or analysis.trip_count <= factor) return false;
+        return try self.peelIntoPreheader(func, loop, analysis, factor);
+    }
 
-        // Create value mapping for each iteration
+    const SimpleLoopShape = struct {
+        preheader: Block,
+        preheader_term: Inst,
+        preheader_iv: Value,
+        body: Block,
+        body_term: Inst,
+        body_iv_next: Value,
+        body_insts: std.ArrayList(Inst),
+
+        fn deinit(self: *SimpleLoopShape, allocator: Allocator) void {
+            self.body_insts.deinit(allocator);
+        }
+    };
+
+    fn peelIntoPreheader(
+        self: *LoopUnroll,
+        func: *Function,
+        loop: *const Loop,
+        analysis: LoopAnalysis,
+        peel_count: u32,
+    ) !bool {
+        if (peel_count == 0) return false;
+
+        var shape = self.findSimpleLoopShape(func, loop, analysis) orelse return false;
+        defer shape.deinit(self.allocator);
+
+        var current_iv = shape.preheader_iv;
         var value_map = std.AutoHashMap(Value, Value).init(self.allocator);
         defer value_map.deinit();
 
-        for (0..trip_count) |iter| {
-            // Clear mapping for this iteration
+        for (0..peel_count) |_| {
             value_map.clearRetainingCapacity();
+            try value_map.put(analysis.iv_info.iv, current_iv);
 
-            // Map induction variable to constant
-            const iv_const = try self.createConstant(func, @intCast(iter), analysis.iv_info.ty);
-            try value_map.put(analysis.iv_info.iv, iv_const);
-
-            // Clone all instructions in loop body
-            for (loop.blocks.items) |block| {
-                if (block.asU32() == analysis.header.asU32()) continue; // Skip header
-
-                var inst_iter = func.layout.blockInsts(block);
-                while (inst_iter.next()) |inst| {
-                    const inst_data = func.dfg.insts.get(inst) orelse continue;
-                    const opcode = inst_data.opcode();
-
-                    // Skip branch instructions - they'll be dead after unrolling
-                    if (opcode.is_branch() or opcode.is_terminator()) continue;
-
-                    // Clone instruction with remapped values
-                    _ = try self.cloneInst(func, inst, &value_map);
-                    self.insts_added += 1;
-                }
+            for (shape.body_insts.items) |inst| {
+                _ = try self.cloneInstBefore(func, inst, &value_map, shape.preheader_term);
+                self.insts_added += 1;
             }
+
+            current_iv = value_map.get(shape.body_iv_next) orelse return false;
+        }
+
+        try self.setJumpArg(func, shape.preheader_term, 0, current_iv);
+        return true;
+    }
+
+    fn findSimpleLoopShape(
+        self: *LoopUnroll,
+        func: *Function,
+        loop: *const Loop,
+        analysis: LoopAnalysis,
+    ) ?SimpleLoopShape {
+        if (loop.blocks.items.len != 2) return null;
+
+        const header_params = func.dfg.blockParams(analysis.header);
+        if (header_params.len != 1) return null;
+        if (header_params[0].asU32() != analysis.iv_info.iv.asU32()) return null;
+
+        const header_term = lastInstInBlock(func, analysis.header) orelse return null;
+        const header_data = func.dfg.insts.get(header_term) orelse return null;
+        const header_branch = switch (header_data.*) {
+            .branch => |br| br,
+            else => return null,
+        };
+
+        const then_dest = header_branch.then_dest orelse return null;
+        const else_dest = header_branch.else_dest orelse return null;
+        const body_block = if (loop.contains(then_dest) and then_dest.asU32() != analysis.header.asU32())
+            then_dest
+        else if (loop.contains(else_dest) and else_dest.asU32() != analysis.header.asU32())
+            else_dest
+        else
+            return null;
+
+        const body_term = lastInstInBlock(func, body_block) orelse return null;
+        const body_term_data = func.dfg.insts.get(body_term) orelse return null;
+        const body_jump = switch (body_term_data.*) {
+            .jump => |j| j,
+            else => return null,
+        };
+        if (body_jump.destination.asU32() != analysis.header.asU32()) return null;
+        const body_args = func.dfg.value_lists.asSlice(body_jump.args);
+        if (body_args.len != 1) return null;
+
+        const preheader_block = findPreheader(func, loop, analysis.header) orelse return null;
+        const preheader_term = lastInstInBlock(func, preheader_block) orelse return null;
+        const pre_data = func.dfg.insts.get(preheader_term) orelse return null;
+        const pre_jump = switch (pre_data.*) {
+            .jump => |j| j,
+            else => return null,
+        };
+        if (pre_jump.destination.asU32() != analysis.header.asU32()) return null;
+        const pre_args = func.dfg.value_lists.asSlice(pre_jump.args);
+        if (pre_args.len != 1) return null;
+
+        var body_insts = std.ArrayList(Inst){};
+        var body_iter = func.layout.blockInsts(body_block);
+        while (body_iter.next()) |inst| {
+            if (inst.asU32() == body_term.asU32()) break;
+            const data = func.dfg.insts.get(inst) orelse continue;
+            if (data.opcode().is_branch() or data.opcode().is_terminator()) continue;
+            body_insts.append(self.allocator, inst) catch return null;
+        }
+
+        return .{
+            .preheader = preheader_block,
+            .preheader_term = preheader_term,
+            .preheader_iv = pre_args[0],
+            .body = body_block,
+            .body_term = body_term,
+            .body_iv_next = body_args[0],
+            .body_insts = body_insts,
+        };
+    }
+
+    fn setJumpArg(self: *LoopUnroll, func: *Function, jump_inst: Inst, index: usize, value: Value) !void {
+        _ = self;
+        const data = func.dfg.insts.getMut(jump_inst) orelse return error.InvalidInst;
+        switch (data.*) {
+            .jump => |*j| {
+                const args = func.dfg.value_lists.asMutSlice(j.args);
+                if (index >= args.len) return error.InvalidInst;
+                args[index] = value;
+            },
+            else => return error.InvalidInst,
         }
     }
 
-    /// Partially unroll a loop (duplicate body but keep loop structure).
-    fn partialUnroll(self: *LoopUnroll, func: *Function, loop: *const Loop, analysis: LoopAnalysis, factor: u32) !bool {
-        _ = self;
-        _ = func;
-        _ = loop;
-        _ = analysis;
-        _ = factor;
-
-        // TODO: Implement partial unrolling
-        // This involves:
-        // 1. Clone loop body `factor` times
-        // 2. Update induction variable increment by factor
-        // 3. Add remainder loop for trip_count % factor iterations
-        return false;
-    }
-
     /// Clone an instruction with remapped values.
-    fn cloneInst(self: *LoopUnroll, func: *Function, inst: Inst, value_map: *std.AutoHashMap(Value, Value)) !Inst {
+    fn cloneInstBefore(
+        self: *LoopUnroll,
+        func: *Function,
+        inst: Inst,
+        value_map: *std.AutoHashMap(Value, Value),
+        before_inst: Inst,
+    ) !Inst {
         _ = self;
 
         const inst_data = func.dfg.insts.get(inst) orelse return error.InvalidInst;
@@ -214,8 +304,9 @@ pub const LoopUnroll = struct {
         // Remap operands
         const new_data = remapInstructionOperands(inst_data.*, value_map);
 
-        // Create new instruction
+        // Create and insert instruction
         const new_inst = try func.dfg.makeInst(new_data);
+        try func.layout.insertInstBefore(new_inst, before_inst);
 
         // Append result if instruction has one
         const results = func.dfg.instResults(inst);
@@ -294,6 +385,31 @@ fn hasNestedLoops(loop: *const Loop, loop_info: *const LoopInfo) bool {
         if (other.parent == loop) return true;
     }
     return false;
+}
+
+fn lastInstInBlock(func: *const Function, block: Block) ?Inst {
+    var iter = func.layout.blockInsts(block);
+    var last: ?Inst = null;
+    while (iter.next()) |inst| {
+        last = inst;
+    }
+    return last;
+}
+
+fn findPreheader(func: *const Function, loop: *const Loop, header: Block) ?Block {
+    var block_iter = func.layout.blockIter();
+    while (block_iter.next()) |block| {
+        if (loop.contains(block)) continue;
+        const term = lastInstInBlock(func, block) orelse continue;
+        const term_data = func.dfg.insts.get(term) orelse continue;
+        switch (term_data.*) {
+            .jump => |j| {
+                if (j.destination.asU32() == header.asU32()) return block;
+            },
+            else => {},
+        }
+    }
+    return null;
 }
 
 /// Find induction variable pattern in loop header.
@@ -469,7 +585,7 @@ test "computeTripCount" {
     try testing.expectEqual(@as(?u32, 5), computeTripCount(info3));
 }
 
-test "LoopUnroll shouldUnroll enforces max_unroll" {
+test "LoopUnroll shouldUnroll allows bounded partial unroll" {
     const testing = std.testing;
 
     var pass = LoopUnroll.init(testing.allocator, .{ .max_unroll = 4 });
@@ -493,5 +609,5 @@ test "LoopUnroll shouldUnroll enforces max_unroll" {
         },
     };
 
-    try testing.expect(!pass.shouldUnroll(analysis));
+    try testing.expect(pass.shouldUnroll(analysis));
 }
