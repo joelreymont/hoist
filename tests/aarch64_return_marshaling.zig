@@ -6,11 +6,13 @@ const Function = hoist.function.Function;
 const Signature = hoist.signature.Signature;
 const AbiParam = hoist.signature.AbiParam;
 const Type = hoist.types.Type;
+const StructField = hoist.types.StructField;
 const InstructionData = hoist.instruction_data.InstructionData;
 const Imm64 = hoist.immediates.Imm64;
 const Ieee64 = hoist.immediates.Ieee64;
 const ContextBuilder = hoist.context.ContextBuilder;
 const ExternalName = hoist.extfunc.ExternalName;
+const a64_abi = hoist.aarch64_abi;
 
 // Test single integer return (X0)
 test "Return marshaling: single i32 in X0" {
@@ -477,4 +479,19 @@ test "Return marshaling: mixed i64+f64 in X0+V0" {
     try testing.expect(code.code.items.len > 0);
 }
 
-// TODO: HFA return test needs stack/struct load/store wiring.
+test "Return marshaling: classify HFA f64x2 in V0-V1" {
+    const fields = [_]StructField{
+        .{ .ty = Type.F64, .offset = 0 },
+        .{ .ty = Type.F64, .offset = 8 },
+    };
+    var struct_store = hoist.types.StructStore.init(testing.allocator);
+    defer struct_store.deinit();
+    const struct_id = try struct_store.intern(&fields, 16);
+    const hfa_ty = Type.fromStructId(struct_id);
+    const ret_loc = a64_abi.classifyReturn(hfa_ty, &struct_store);
+
+    try testing.expect(ret_loc == .hfa);
+    try testing.expectEqual(@as(u8, 2), ret_loc.hfa.count);
+    try testing.expectEqual(@as(u6, 0), ret_loc.hfa.regs[0].hwEnc());
+    try testing.expectEqual(@as(u6, 1), ret_loc.hfa.regs[1].hwEnc());
+}
