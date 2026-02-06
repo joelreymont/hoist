@@ -1727,7 +1727,7 @@
 ;; clz I128: Count leading zeros across both registers
 ;; Uses lower_clz128 helper from isle_helpers.zig
 (rule (lower (has_type $I128 (clz x)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_clz128 (put_in_regs x))))
 
 ;; ctz I128: Count trailing zeros by reversing bits then counting leading zeros
 (rule (lower (has_type $I128 (ctz x)))
@@ -1736,12 +1736,12 @@
 ;; cls I128: Count leading sign bits
 ;; Uses lower_cls128 helper from isle_helpers.zig
 (rule (lower (has_type $I128 (cls x)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_cls128 (put_in_regs x))))
 
 ;; popcnt I128: Count set bits across both registers
 ;; Uses lower_popcnt128 helper from isle_helpers.zig
 (rule (lower (has_type $I128 (popcnt x)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_popcnt128 (put_in_regs x))))
 ;; ineg: Integer negation
 
 ;; Vector negation (128-bit vectors)

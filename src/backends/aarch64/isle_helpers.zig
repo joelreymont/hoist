@@ -1150,6 +1150,113 @@ test "aarch64_isplit: i128 block param falls back to pinned pair" {
     try testing.expect(got_hi.eq(expect_hi));
 }
 
+fn hasInstTag(insns: []const Inst, tag: std.meta.Tag(Inst)) bool {
+    for (insns) |insn| {
+        if (@as(std.meta.Tag(Inst), insn) == tag) return true;
+    }
+    return false;
+}
+
+test "lower_clz128 emits clz and madd sequence" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_clz128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const out = try lower_clz128(lower_mod.ValueRegs.pair(lo, hi), &ctx);
+
+    try testing.expect(out.get(0) != null);
+    const out_hi = out.get(1) orelse return error.TestUnexpectedResult;
+    try testing.expect(out_hi.eq(Reg.fromPReg(PReg.new(.int, 31))));
+
+    try testing.expect(hasInstTag(vcode.insns.items, .clz));
+    try testing.expect(hasInstTag(vcode.insns.items, .lsr_imm));
+    try testing.expect(hasInstTag(vcode.insns.items, .madd));
+}
+
+test "lower_cls128 emits cls and csel sequence" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_cls128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const out = try lower_cls128(lower_mod.ValueRegs.pair(lo, hi), &ctx);
+
+    try testing.expect(out.get(0) != null);
+    const out_hi = out.get(1) orelse return error.TestUnexpectedResult;
+    try testing.expect(out_hi.eq(Reg.fromPReg(PReg.new(.int, 31))));
+
+    try testing.expect(hasInstTag(vcode.insns.items, .cls));
+    try testing.expect(hasInstTag(vcode.insns.items, .eon_rr));
+    try testing.expect(hasInstTag(vcode.insns.items, .csel));
+}
+
+test "lower_popcnt128 emits vector reduction sequence" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_popcnt128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const out = try lower_popcnt128(lower_mod.ValueRegs.pair(lo, hi), &ctx);
+
+    try testing.expect(out.get(0) != null);
+    const out_hi = out.get(1) orelse return error.TestUnexpectedResult;
+    try testing.expect(out_hi.eq(Reg.fromPReg(PReg.new(.int, 31))));
+
+    try testing.expect(hasInstTag(vcode.insns.items, .fmov_from_gpr));
+    try testing.expect(hasInstTag(vcode.insns.items, .vec_insert_lane));
+    try testing.expect(hasInstTag(vcode.insns.items, .vec_addv));
+    try testing.expect(hasInstTag(vcode.insns.items, .fmov_to_gpr));
+}
+
 test "aarch64_fcvtzs_32_trap emits traps" {
     const testing = std.testing;
 
@@ -5142,7 +5249,7 @@ pub fn consumes_flags_two_csel(
     return isle_types.ConsumesFlags.consumesFlagsTwiceReturnsValueRegs(
         Inst.CSel{ .rd = dst_lo, .cond = aarch_cond, .rn = rn_lo, .rm = rm_lo },
         Inst.CSel{ .rd = dst_hi, .cond = aarch_cond, .rn = rn_hi, .rm = rm_hi },
-        lower_mod.ValueRegs.two(dst_lo.toReg(), dst_hi.toReg()),
+        lower_mod.ValueRegs.pair(dst_lo.toReg(), dst_hi.toReg()),
     );
 }
 
@@ -6388,8 +6495,8 @@ pub fn lower_clz128(
     val: lower_mod.ValueRegs,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.ValueRegs {
-    const hi = lower_mod.ValueRegs.getReg(val, 1);
-    const lo = lower_mod.ValueRegs.getReg(val, 0);
+    const hi = val.get(1) orelse return error.NoMatch;
+    const lo = val.get(0) orelse return error.NoMatch;
 
     // CLZ on both halves
     const hi_clz_dst = lower_mod.WritableReg.allocReg(.int, ctx);
@@ -6418,7 +6525,7 @@ pub fn lower_clz128(
         .lsr_imm = .{
             .dst = tmp_dst,
             .src = hi_clz,
-            .shift = 6,
+            .imm = 6,
             .size = .size64,
         },
     });
@@ -6432,13 +6539,13 @@ pub fn lower_clz128(
             .dst = result_dst,
             .src1 = lo_clz,
             .src2 = tmp,
-            .src3 = hi_clz,
+            .addend = hi_clz,
             .size = .size64,
         },
     });
 
-    const zero = lower_mod.WritableReg.zero().toReg();
-    return lower_mod.ValueRegs.two(result_dst.toReg(), zero);
+    const zero = Reg.fromPReg(PReg.new(.int, 31));
+    return lower_mod.ValueRegs.pair(result_dst.toReg(), zero);
 }
 
 /// Count leading sign bits for I128
@@ -6447,8 +6554,8 @@ pub fn lower_cls128(
     val: lower_mod.ValueRegs,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.ValueRegs {
-    const lo = lower_mod.ValueRegs.getReg(val, 0);
-    const hi = lower_mod.ValueRegs.getReg(val, 1);
+    const lo = val.get(0) orelse return error.NoMatch;
+    const hi = val.get(1) orelse return error.NoMatch;
 
     // CLS on both halves
     const lo_cls_dst = lower_mod.WritableReg.allocReg(.int, ctx);
@@ -6474,7 +6581,7 @@ pub fn lower_cls128(
     // EON sign_eq_eon, hi, lo (XOR with NOT)
     const sign_eq_eon_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
-        .eon = .{
+        .eon_rr = .{
             .dst = sign_eq_eon_dst,
             .src1 = hi,
             .src2 = lo,
@@ -6489,7 +6596,7 @@ pub fn lower_cls128(
         .lsr_imm = .{
             .dst = sign_eq_dst,
             .src = sign_eq_eon,
-            .shift = 63,
+            .imm = 63,
             .size = .size64,
         },
     });
@@ -6502,7 +6609,7 @@ pub fn lower_cls128(
             .dst = lo_sign_bits_dst,
             .src1 = lo_cls,
             .src2 = sign_eq,
-            .src3 = sign_eq,
+            .addend = sign_eq,
             .size = .size64,
         },
     });
@@ -6522,10 +6629,11 @@ pub fn lower_cls128(
     const maybe_lo_dst = lower_mod.WritableReg.allocReg(.int, ctx);
     try ctx.emit(Inst{
         .csel = .{
-            .rd = maybe_lo_dst,
+            .dst = maybe_lo_dst,
             .cond = intccToCondCode(.eq),
-            .rn = lo_sign_bits,
-            .rm = lower_mod.WritableReg.zero().toReg(),
+            .src1 = lo_sign_bits,
+            .src2 = Reg.fromPReg(PReg.new(.int, 31)),
+            .size = .size64,
         },
     });
     const maybe_lo = maybe_lo_dst.toReg();
@@ -6541,8 +6649,8 @@ pub fn lower_cls128(
         },
     });
 
-    const zero = lower_mod.WritableReg.zero().toReg();
-    return lower_mod.ValueRegs.two(result_dst.toReg(), zero);
+    const zero = Reg.fromPReg(PReg.new(.int, 31));
+    return lower_mod.ValueRegs.pair(result_dst.toReg(), zero);
 }
 
 /// Population count for I128
@@ -6551,8 +6659,8 @@ pub fn lower_popcnt128(
     val: lower_mod.ValueRegs,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !lower_mod.ValueRegs {
-    const lo = lower_mod.ValueRegs.getReg(val, 0);
-    const hi = lower_mod.ValueRegs.getReg(val, 1);
+    const lo = val.get(0) orelse return error.NoMatch;
+    const hi = val.get(1) orelse return error.NoMatch;
 
     // Move lo to FPU (D register, lower half of Q)
     const tmp_half_dst = lower_mod.WritableReg.allocReg(.vector, ctx);
@@ -6611,8 +6719,8 @@ pub fn lower_popcnt128(
         },
     });
 
-    const zero = lower_mod.WritableReg.zero().toReg();
-    return lower_mod.ValueRegs.two(result_dst.toReg(), zero);
+    const zero = Reg.fromPReg(PReg.new(.int, 31));
+    return lower_mod.ValueRegs.pair(result_dst.toReg(), zero);
 }
 
 /// Vector shift by immediate

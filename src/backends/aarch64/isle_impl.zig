@@ -112,6 +112,41 @@ const Ir = ir_externs.Externs(IsleContext);
 pub const has_type_ext = Ir.has_type_ext;
 pub const ty_vec_fits_in_register_ext = Ir.ty_vec_fits_in_register_ext;
 pub const ty_32_or_64_ext = Ir.ty_32_or_64_ext;
+
+pub fn ty_vec_ext(_: *IsleContext, input: Type) !?Type {
+    if (input.isVector()) return input;
+    return null;
+}
+
+pub fn ty_vec64_ext(_: *IsleContext, input: Type) !?Type {
+    if (input.isVector() and input.bits() == 64) return input;
+    return null;
+}
+
+pub fn ty_float_or_vec_ext(_: *IsleContext, input: Type) !?Type {
+    if (input.isFloat() or input.isVector()) return input;
+    return null;
+}
+
+pub fn ty_vector_float_ext(_: *IsleContext, input: Type) !?Type {
+    if (input.isVector() and input.laneType().isFloat()) return input;
+    return null;
+}
+
+pub fn ty_vector_not_float_ext(_: *IsleContext, input: Type) !?Type {
+    if (input.isVector() and !input.laneType().isFloat()) return input;
+    return null;
+}
+
+pub fn ty_int_ref_scalar_64_ext(_: *IsleContext, input: Type) !?Type {
+    if (!input.isVector() and !input.isDynamicVector() and input.bits() <= 64 and (input.isInt() or input.isRef())) return input;
+    return null;
+}
+
+pub fn ty_int_ref_scalar_64_from_ty_ext(_: *IsleContext, input: Type) !?Type {
+    if (!input.isVector() and !input.isDynamicVector() and input.bits() <= 64 and (input.isInt() or input.isRef())) return input;
+    return null;
+}
 pub const iadd_ext = Ir.iadd_ext;
 pub const isub_ext = Ir.isub_ext;
 pub const imul_ext = Ir.imul_ext;
