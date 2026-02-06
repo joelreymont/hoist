@@ -350,9 +350,32 @@ pub fn ABIMachineSpec(comptime WordSize: type) type {
                             }
                         },
                         .hva => {
-                            // HVA: similar to HFA but for vector types
-                            // TODO: implement when vector types are added
-                            return error.UnsupportedHVA;
+                            // HVA: allocate to consecutive SIMD registers.
+                            const fields = arg_ty.@"struct";
+                            const num_members = fields.len;
+
+                            if (float_reg_idx + num_members <= self.float_arg_regs.len) {
+                                for (0..num_members) |i| {
+                                    const preg = self.float_arg_regs[float_reg_idx + i];
+                                    try slots.append(allocator, .{ .reg = .{
+                                        .preg = preg,
+                                        .ty = classification.elem_ty.?,
+                                        .extension = .none,
+                                    } });
+                                }
+                                float_reg_idx += num_members;
+                            } else {
+                                // Entire HVA spills to stack.
+                                float_reg_idx = self.float_arg_regs.len;
+                                const struct_size = arg_ty.bytes();
+                                try slots.append(allocator, .{ .stack = .{
+                                    .offset = stack_offset,
+                                    .ty = arg_ty,
+                                    .extension = .none,
+                                } });
+                                stack_offset += @intCast(struct_size);
+                                stack_offset = std.mem.alignForward(i64, stack_offset, 8);
+                            }
                         },
                         .general => {
                             // General struct ≤16 bytes: treat as composite integer
@@ -1028,6 +1051,75 @@ test "AAPCS64 vector arguments in float registers" {
     try testing.expect(arg_locs[2].slots[0] == .reg);
     try testing.expectEqual(PReg.new(.float, 2).index(), arg_locs[2].slots[0].reg.preg.index());
     try testing.expectEqual(RegClass.vector, arg_locs[2].slots[0].reg.ty.regClass());
+}
+
+test "AAPCS64 HVA struct arguments use consecutive SIMD regs" {
+    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+    const abi = aarch64_abi.aapcs64();
+
+    const vec_ty = Type{ .v128 = .{ .elem_type = .f32, .lane_count = 4 } };
+    const fields = [_]StructField{
+        .{ .ty = vec_ty, .offset = 0 },
+        .{ .ty = vec_ty, .offset = 16 },
+    };
+    const hva_ty = Type{ .@"struct" = &fields };
+
+    const args = [_]Type{hva_ty};
+    const sig = ABISignature.init(&args, &.{}, .aapcs64);
+
+    const arg_locs = try abi.computeArgLocs(sig, testing.allocator);
+    defer {
+        for (arg_locs) |arg| {
+            testing.allocator.free(arg.slots);
+        }
+        testing.allocator.free(arg_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 1), arg_locs.len);
+    try testing.expectEqual(@as(usize, 2), arg_locs[0].slots.len);
+
+    try testing.expect(arg_locs[0].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.float, 0).index(), arg_locs[0].slots[0].reg.preg.index());
+    try testing.expect(std.meta.eql(vec_ty, arg_locs[0].slots[0].reg.ty));
+
+    try testing.expect(arg_locs[0].slots[1] == .reg);
+    try testing.expectEqual(PReg.new(.float, 1).index(), arg_locs[0].slots[1].reg.preg.index());
+    try testing.expect(std.meta.eql(vec_ty, arg_locs[0].slots[1].reg.ty));
+}
+
+test "AAPCS64 HVA struct spills when SIMD regs exhausted" {
+    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+    const abi = aarch64_abi.aapcs64();
+
+    const vec_ty = Type{ .v128 = .{ .elem_type = .f32, .lane_count = 4 } };
+    const fields = [_]StructField{
+        .{ .ty = vec_ty, .offset = 0 },
+        .{ .ty = vec_ty, .offset = 16 },
+    };
+    const hva_ty = Type{ .@"struct" = &fields };
+
+    const args = [_]Type{ .f64, .f64, .f64, .f64, .f64, .f64, .f64, .f64, hva_ty };
+    const sig = ABISignature.init(&args, &.{}, .aapcs64);
+
+    const arg_locs = try abi.computeArgLocs(sig, testing.allocator);
+    defer {
+        for (arg_locs) |arg| {
+            testing.allocator.free(arg.slots);
+        }
+        testing.allocator.free(arg_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 9), arg_locs.len);
+
+    for (0..8) |i| {
+        try testing.expect(arg_locs[i].slots[0] == .reg);
+        try testing.expectEqual(PReg.new(.float, @intCast(i)).index(), arg_locs[i].slots[0].reg.preg.index());
+    }
+
+    try testing.expectEqual(@as(usize, 1), arg_locs[8].slots.len);
+    try testing.expect(arg_locs[8].slots[0] == .stack);
+    try testing.expectEqual(@as(i64, 0), arg_locs[8].slots[0].stack.offset);
+    try testing.expect(std.meta.eql(hva_ty, arg_locs[8].slots[0].stack.ty));
 }
 
 test "AAPCS64 i128 return in register pair" {
