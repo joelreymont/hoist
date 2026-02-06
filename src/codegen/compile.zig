@@ -1425,6 +1425,10 @@ fn selectOpLegalizer(target: *const Target) @import("legalize_ops.zig").OpLegali
 
 /// Lower IR to VCode via ISLE.
 fn lower(ctx: *Context, target: *const Target) CodegenError!void {
+    if (!ctx.cfg.isValid()) {
+        try ctx.cfg.compute(ctx.func);
+    }
+
     // Determine instruction type based on target architecture
     switch (target.arch) {
         .aarch64 => try lowerAArch64(ctx, target),
@@ -5081,7 +5085,12 @@ fn lowerInstructionAArch64(
             const result_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
 
             // Determine register class based on result type
-            const reg_class: RegClass = if (result_type.isFloat()) .float else .int;
+            const reg_class: RegClass = if (result_type.isVector())
+                .vector
+            else if (result_type.isFloat())
+                .float
+            else
+                .int;
             const result_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), reg_class);
             const dst = WritableReg.fromVReg(result_vreg);
 
@@ -5147,6 +5156,61 @@ fn lowerInstructionAArch64(
                         .offset = offset_i16,
                     },
                 });
+            } else if (data.opcode == .uload8x8 or
+                data.opcode == .sload8x8 or
+                data.opcode == .uload16x4 or
+                data.opcode == .sload16x4 or
+                data.opcode == .uload32x2 or
+                data.opcode == .sload32x2)
+            {
+                const widen_size: a64_inst.VecElemSize = switch (data.opcode) {
+                    .uload8x8, .sload8x8 => .size8x8,
+                    .uload16x4, .sload16x4 => .size16x4,
+                    .uload32x2, .sload32x2 => .size32x2,
+                    else => return error.LoweringFailed,
+                };
+                const is_signed = switch (data.opcode) {
+                    .sload8x8, .sload16x4, .sload32x2 => true,
+                    .uload8x8, .uload16x4, .uload32x2 => false,
+                    else => return error.LoweringFailed,
+                };
+
+                if (!result_type.isVector()) return error.LoweringFailed;
+
+                const tmp_vreg = VReg.new(@intCast(next_tmp_vreg.*), RegClass.vector);
+                next_tmp_vreg.* += 1;
+                const tmp = WritableReg.fromVReg(tmp_vreg);
+
+                try builder.emit(Inst{
+                    .ldr = .{
+                        .dst = tmp,
+                        .base = base,
+                        .offset = offset_i16,
+                        .size = .size64,
+                    },
+                });
+
+                if (is_signed) {
+                    try builder.emit(Inst{
+                        .vec_sshll = .{
+                            .dst = dst,
+                            .src = tmp.toReg(),
+                            .shift_amt = 0,
+                            .size = widen_size,
+                            .high = false,
+                        },
+                    });
+                } else {
+                    try builder.emit(Inst{
+                        .vec_ushll = .{
+                            .dst = dst,
+                            .src = tmp.toReg(),
+                            .shift_amt = 0,
+                            .size = widen_size,
+                            .high = false,
+                        },
+                    });
+                }
             } else {
                 // Regular load - emit based on result type size
                 if (result_type.bits() == 64) {
@@ -6678,6 +6742,7 @@ test "lower: try_call emits GOT load, BLR, and marshals X0" {
     ctx.target = &target;
 
     try optimize(&ctx, &target);
+    try optimize(&ctx, &target);
     try lower(&ctx, &target);
 
     const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
@@ -6758,7 +6823,6 @@ test "lower: try_call_indirect emits BLR and marshals X0" {
     target.verify = false;
     ctx.target = &target;
 
-    try optimize(&ctx, &target);
     try lower(&ctx, &target);
 
     const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
@@ -6839,7 +6903,6 @@ test "rewriteRegisters: no vregs after regalloc" {
     target.verify = false;
     ctx.target = &target;
 
-    try optimize(&ctx, &target);
     try lower(&ctx, &target);
     try allocateRegisters(&ctx, &target);
     try rewriteRegisters(&ctx, &target);
@@ -7458,6 +7521,86 @@ test "lower: imul_imm non-power-of-two emits movz and mul_rr" {
     }
     try testing.expect(saw_movz);
     try testing.expect(saw_mul_rr);
+}
+
+test "lower: uload8x8 emits vec_ushll" {
+    try expectWidenLoadLowering(.uload8x8, ir.Type.I16X8, false, .size8x8);
+}
+
+test "lower: sload8x8 emits vec_sshll" {
+    try expectWidenLoadLowering(.sload8x8, ir.Type.I16X8, true, .size8x8);
+}
+
+test "lower: uload16x4 emits vec_ushll" {
+    try expectWidenLoadLowering(.uload16x4, ir.Type.I32X4, false, .size16x4);
+}
+
+test "lower: sload16x4 emits vec_sshll" {
+    try expectWidenLoadLowering(.sload16x4, ir.Type.I32X4, true, .size16x4);
+}
+
+test "lower: uload32x2 emits vec_ushll" {
+    try expectWidenLoadLowering(.uload32x2, ir.Type.I64X2, false, .size32x2);
+}
+
+test "lower: sload32x2 emits vec_sshll" {
+    try expectWidenLoadLowering(.sload32x2, ir.Type.I64X2, true, .size32x2);
+}
+
+fn expectWidenLoadLowering(
+    opcode: Opcode,
+    result_ty: ir.Type,
+    is_signed: bool,
+    expected_size: a64_inst.VecElemSize,
+) !void {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(result_ty));
+
+    var func = try Function.init(testing.allocator, "widen_load_lower", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const addr = try builder.appendBlockParam(block, ir.I64);
+    const load_inst = try func.dfg.makeInst(.{ .load = .{
+        .opcode = opcode,
+        .flags = .{},
+        .arg = addr,
+        .offset = 0,
+    } });
+    const result = try func.dfg.appendInstResult(load_inst, result_ty);
+    try func.layout.appendInst(load_inst, block);
+    try builder.retValues(&.{result});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_widen = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .vec_ushll => |ushll| {
+                if (!is_signed and ushll.size == expected_size and ushll.shift_amt == 0) saw_widen = true;
+            },
+            .vec_sshll => |sshll| {
+                if (is_signed and sshll.size == expected_size and sshll.shift_amt == 0) saw_widen = true;
+            },
+            else => {},
+        }
+    }
+
+    try testing.expect(saw_widen);
 }
 
 fn expectOverflowBinSbcs(opcode: Opcode) !void {

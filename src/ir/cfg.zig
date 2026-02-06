@@ -78,7 +78,7 @@ pub const ControlFlowGraph = struct {
 
     pub fn clear(self: *ControlFlowGraph) void {
         for (self.data.items) |*node| {
-            node.clear();
+            node.deinit(self.allocator);
         }
         self.data.clearRetainingCapacity();
         self.valid = false;
