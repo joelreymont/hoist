@@ -605,7 +605,7 @@
 ;; avg_round: Unsigned rounding average (x + y + 1) >> 1
 ;; Uses URHADD instruction for lanes that fit in 32 bits
 (rule -1 (lower (has_type (lane_fits_in_32 ty) (avg_round x y)))
-      (aarch64_unimplemented))
+      (emit_val (vec_rrr VecALUOp.Urhadd x y (vector_size ty))))
 
 ;; avg_round: I64X2 requires manual implementation
 ;; (x | y) & 1 gives the rounding bit, then ((x >> 1) + (y >> 1)) + rounding
@@ -898,12 +898,9 @@
 ;; splat: Duplicate scalar to all vector lanes (DUP)
 ;; splat: Optimized patterns for specific cases
 
-;; splat: Load and replicate - use LD1R (highest priority)
-;; Pattern: splat(load(addr)) -> LD1R {Vt.<T>}, [Xn]
-;; This is much more efficient than LDR + DUP
-(rule 10 (lower (has_type ty @ (ty_vec_fits_in_register _) (splat (load elem_ty addr _flags _offset))))
-      (if-let 0 _offset) ;; LD1R doesn't support offset, only base register
-      (aarch64_ld1r ty addr))
+;; NOTE: Keep splat(load) on generic lowering path for now.
+;; The direct LD1R fusion rule here currently triggers an unsafe matcher
+;; unwrap in generated lowering for non-splat vector ops.
 
 ;; splat: Float constant - use immediate splat
 (rule (lower (has_type ty (splat c @ (f32const _))))

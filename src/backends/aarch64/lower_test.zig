@@ -503,6 +503,12 @@ test "lower unsigned dotprod pattern emits vec_udot when enabled" {
     try expectDotprodInst(&vcode, .udot, true);
 }
 
+test "lower avg_round emits urhadd for lane_fits_in_32" {
+    var vcode = try lowerAvgRoundVCode(Type.I8X16);
+    defer vcode.deinit();
+    try expectVecRrrOp(&vcode, .Urhadd);
+}
+
 // Helper wrappers to call generated lowering functions
 fn instValue(ctx: *lower_mod.LowerCtx(Inst), inst: lower_mod.Inst) !Value {
     return ctx.func.dfg.firstResult(inst) orelse try ctx.func.dfg.appendInstResult(inst, Type.I8);
@@ -538,6 +544,44 @@ fn lowerStoreVCode(opcode: root.opcodes.Opcode, val_ty: Type) !vcode_mod.VCode(I
     try func.layout.appendInst(store_inst, block0);
 
     const ret_inst = try func.dfg.makeInst(.{ .nullary = .{ .opcode = .@"return" } });
+    try func.layout.appendInst(ret_inst, block0);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+
+    return try lower_mod.lowerFunction(Inst, allocator, &func, backend);
+}
+
+fn lowerAvgRoundVCode(vec_ty: Type) !vcode_mod.VCode(Inst) {
+    const allocator = testing.allocator;
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(vec_ty));
+    try sig.params.append(allocator, AbiParam.new(vec_ty));
+    try sig.returns.append(allocator, AbiParam.new(vec_ty));
+
+    var func = try Function.init(allocator, "test_avg_round_lowering", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const x = try func.dfg.appendBlockParam(block0, vec_ty);
+    const y = try func.dfg.appendBlockParam(block0, vec_ty);
+
+    const avg_inst = try func.dfg.makeInst(.{ .binary = .{
+        .opcode = .avg_round,
+        .args = .{ x, y },
+    } });
+    try func.layout.appendInst(avg_inst, block0);
+    const avg = try func.dfg.appendInstResult(avg_inst, vec_ty);
+
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{
+        .opcode = .@"return",
+        .arg = avg,
+    } });
     try func.layout.appendInst(ret_inst, block0);
 
     const backend = lower_mod.LowerBackend(Inst){
@@ -777,6 +821,18 @@ fn expectDotprodInst(vcode: *const vcode_mod.VCode(Inst), kind: DotprodKind, exp
         }
     }
     try testing.expectEqual(expected, found);
+}
+
+fn expectVecRrrOp(vcode: *const vcode_mod.VCode(Inst), op: inst_mod.VecALUOp) !void {
+    for (vcode.insns.items) |insn| {
+        switch (insn) {
+            .vec_rrr => |i| {
+                if (i.op == op) return;
+            },
+            else => {},
+        }
+    }
+    return error.ExpectedInstructionNotFound;
 }
 
 fn maskBytesFromU128(mask: u128) [16]u8 {
