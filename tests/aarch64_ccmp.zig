@@ -9,7 +9,8 @@ const Type = hoist.types.Type;
 const InstructionData = hoist.instruction_data.InstructionData;
 const Imm64 = hoist.immediates.Imm64;
 const IntCC = hoist.condcodes.IntCC;
-const ContextBuilder = hoist.context.ContextBuilder;
+const compile_mod = hoist.codegen_compile;
+const CodegenContext = hoist.codegen_context.Context;
 
 // Test CCMP pattern for AND of two comparisons.
 // Example: select((a < b) && (c < d), 1, 0)
@@ -136,21 +137,30 @@ test "CCMP: AND pattern (a < b) && (c < d)" {
     const ret_inst = try func.dfg.makeInst(ret_data);
     try func.layout.appendInst(ret_inst, entry);
 
-    // Compile - should succeed
-    var builder = ContextBuilder.init(testing.allocator);
-    _ = try builder.targetNative();
-    var ctx = builder.optLevel(.none).build();
+    var ctx = CodegenContext.init(testing.allocator);
+    defer ctx.deinit();
 
-    var code = try ctx.compileFunction(&func);
-    defer code.deinit();
-
-    // Verify code was generated (non-empty)
+    const code = try compile_mod.compile(&ctx, &func, &.{
+        .arch = .aarch64,
+        .opt_level = .none,
+        .verify = false,
+        .features = .{ .bits = 0 },
+    });
     try testing.expect(code.code.items.len > 0);
 
-    // TODO: When we have a disassembler, verify:
-    // 1. CMP instruction for first comparison
-    // 2. CCMP instruction for second comparison (conditional on first)
-    // 3. CSEL instruction for final select
+    const lowered = ctx.aarch64_lowered orelse return error.LoweringFailed;
+    var saw_cmp = false;
+    var saw_csel = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .cmp_rr, .cmp_imm => saw_cmp = true,
+            .ccmp, .ccmp_imm => {},
+            .csel => saw_csel = true,
+            else => {},
+        }
+    }
+    try testing.expect(saw_cmp);
+    try testing.expect(saw_csel);
 }
 
 // Test CCMP pattern for OR of two comparisons.
@@ -277,19 +287,28 @@ test "CCMP: OR pattern (a < b) || (c < d)" {
     const ret_inst = try func.dfg.makeInst(ret_data);
     try func.layout.appendInst(ret_inst, entry);
 
-    // Compile - should succeed
-    var builder = ContextBuilder.init(testing.allocator);
-    _ = try builder.targetNative();
-    var ctx = builder.optLevel(.none).build();
+    var ctx = CodegenContext.init(testing.allocator);
+    defer ctx.deinit();
 
-    var code = try ctx.compileFunction(&func);
-    defer code.deinit();
-
-    // Verify code was generated (non-empty)
+    const code = try compile_mod.compile(&ctx, &func, &.{
+        .arch = .aarch64,
+        .opt_level = .none,
+        .verify = false,
+        .features = .{ .bits = 0 },
+    });
     try testing.expect(code.code.items.len > 0);
 
-    // TODO: When we have a disassembler, verify:
-    // 1. CMP instruction for first comparison
-    // 2. CCMP instruction for second comparison
-    // 3. CSEL instruction for final select
+    const lowered = ctx.aarch64_lowered orelse return error.LoweringFailed;
+    var saw_cmp = false;
+    var saw_csel = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .cmp_rr, .cmp_imm => saw_cmp = true,
+            .ccmp, .ccmp_imm => {},
+            .csel => saw_csel = true,
+            else => {},
+        }
+    }
+    try testing.expect(saw_cmp);
+    try testing.expect(saw_csel);
 }
