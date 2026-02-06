@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-**Status**: Functional AArch64 compiler with ongoing parity work
+**Status**: Functional AArch64 compiler with active parity closure
 **Test Coverage**: 2050+ tests (435 integration, 1618 unit)
 **Remaining Work**: Active dots in `.dots/` (ABI, exceptions, feature detection, perf)
 
@@ -19,6 +19,7 @@
 - Atomics and barriers
 - TLS models and relocations
 - Direct/indirect calls and basic returns
+- AAPCS64 struct ABI classification for general/HFA/HVA args and returns
 
 ### Testing ✅
 - End-to-end JIT tests
@@ -33,12 +34,22 @@
 ### ABI / Calls ⚠️
 - Tail-call ABI conformance (return_call)
 - Varargs ABI + lowering
-- Struct returns/args (sret marshaling path still incomplete)
+- Struct returns/args classification and sret routing are implemented; remaining work is deeper end-to-end struct result-value coverage
 - Multi-return ABI/emit
 
 ### Exception Handling ⚠️
 - `try_call` / `try_call_indirect` lowering, CFG exception edges, and LSDA call-site scanning are implemented
+- E2E tests now use real external function metadata for `try_call` paths and validate AArch64 compile output
 - Remaining: full runtime unwinder/landing-pad integration validation across full e2e workloads
+
+## Recent Completed Work
+
+- `6dc6cd6a`: Implemented AAPCS64 HVA argument mapping in `src/machinst/abi.zig`
+- `6d497e4e`: Fixed <=16B general struct argument chunking into X-register slots
+- `b2e6c627`: Implemented AAPCS64 struct return slot mapping (X0/X1, V0+, X8 sret)
+- `30aa6ab1`: Replaced placeholder `try_call` function refs with real metadata in e2e tests
+- `1890008d`: Added AArch64-gated compile validation for `try_call` e2e tests and fixed type mismatches
+- `c37e0e0e`: Removed debug-print noise from JIT e2e tests
 
 ### Feature Detection ⚠️
 - AArch64 runtime feature probing and plumbing

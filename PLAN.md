@@ -9,6 +9,14 @@
   - `/Users/joel/.claude/plans/fuzzy-sniffing-shamir.md`
   - the parity dot-tree plan captured in this file
 
+## Recent Execution Updates (Committed)
+- `6dc6cd6a`: HVA struct argument mapping implemented in `src/machinst/abi.zig`
+- `6d497e4e`: general <=16B struct args split into X-register chunks
+- `b2e6c627`: AAPCS64 struct return mapping implemented (X0/X1, V0+, X8 sret)
+- `30aa6ab1`: `try_call` e2e tests switched from placeholder func refs to real metadata
+- `1890008d`: `try_call` e2e tests now include AArch64 compile-path checks; type mismatch fixed
+- `c37e0e0e`: Removed debug-print noise from JIT e2e tests
+
 ## Canonical Execution Order
 
 ### 0. Parity Tracking and Baseline
