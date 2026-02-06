@@ -648,15 +648,15 @@ fn emitAddShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: inst_mod.ShiftOp, sh
     const rd = try hwEnc(dst);
     const rn = try hwEnc(src1);
     const rm = try hwEnc(src2);
-    const shift: u32 = @intFromEnum(shift_op);
-    const imm6: u32 = @intCast(shift_amt);
+    const shift: u2 = try encodeAddSubShiftOp(shift_op);
+    const imm6: u6 = try encodeShiftedRegisterImm6(shift_amt, size);
 
     // ADD (shifted register): sf|0|0|01011|shift|0|Rm|imm6|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
         (0b01011 << 24) |
-        (shift << 22) |
+        (@as(u32, shift) << 22) |
         (@as(u32, rm) << 16) |
-        (imm6 << 10) |
+        (@as(u32, imm6) << 10) |
         (@as(u32, rn) << 5) |
         rd;
 
@@ -711,7 +711,8 @@ fn emitSubShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: ShiftOp, shift_amt: 
     const rd = try hwEnc(dst);
     const rn = try hwEnc(src1);
     const rm = try hwEnc(src2);
-    const shift: u2 = @intFromEnum(shift_op);
+    const shift: u2 = try encodeAddSubShiftOp(shift_op);
+    const imm6: u6 = try encodeShiftedRegisterImm6(shift_amt, size);
 
     // SUB shifted: sf|1|0|01011|shift|0|Rm|imm6|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -719,7 +720,7 @@ fn emitSubShifted(dst: Reg, src1: Reg, src2: Reg, shift_op: ShiftOp, shift_amt: 
         (0b01011 << 24) |
         (@as(u32, shift) << 22) |
         (@as(u32, rm) << 16) |
-        (@as(u32, shift_amt) << 10) |
+        (@as(u32, imm6) << 10) |
         (@as(u32, rn) << 5) |
         rd;
 
@@ -1270,7 +1271,7 @@ fn emitLogicalShifted(
     const rn = try hwEnc(src1);
     const rm = try hwEnc(src2);
     const shift: u32 = @intFromEnum(shift_op);
-    const imm6: u32 = @intCast(shift_amt);
+    const imm6: u6 = try encodeShiftedRegisterImm6(shift_amt, size);
 
     // Logical (shifted register): sf|opc|01010|shift|N|Rm|imm6|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -1279,7 +1280,7 @@ fn emitLogicalShifted(
         (shift << 22) |
         (@as(u32, n) << 21) |
         (@as(u32, rm) << 16) |
-        (imm6 << 10) |
+        (@as(u32, imm6) << 10) |
         (@as(u32, rn) << 5) |
         rd;
 
@@ -1905,6 +1906,22 @@ fn encodeAddSubImm12(imm: u16) !AddSubImm12 {
         return .{ .imm12 = @intCast(imm >> 12), .shift = 1 };
     }
     return error.OffsetOutOfRange;
+}
+
+fn encodeAddSubShiftOp(shift_op: ShiftOp) !u2 {
+    return switch (shift_op) {
+        .lsl, .lsr, .asr => @intFromEnum(shift_op),
+        .ror => error.InvalidShift,
+    };
+}
+
+fn encodeShiftedRegisterImm6(shift_amt: u8, size: OperandSize) !u6 {
+    const max_shift: u8 = switch (size) {
+        .size32 => 31,
+        .size64 => 63,
+    };
+    if (shift_amt > max_shift) return error.InvalidShift;
+    return @intCast(shift_amt);
 }
 
 fn encodeUnsignedImm12Scaled(offset: i16, scale_shift: u4) !u12 {
@@ -5268,6 +5285,37 @@ test "emit add shifted" {
     try testing.expectEqual(@as(u32, 2), (insn >> 16) & 0x1F); // Rm = X2
 }
 
+test "emit add/sub shifted reject invalid shift operands" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+
+    try testing.expectError(error.InvalidShift, emit(.{ .add_shifted = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .shift_op = .lsl,
+        .shift_amt = 32,
+        .size = .size32,
+    } }, &buffer));
+
+    try testing.expectError(error.InvalidShift, emit(.{ .sub_shifted = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .shift_op = .ror,
+        .shift_amt = 1,
+        .size = .size64,
+    } }, &buffer));
+}
+
 test "emit mul rr" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
@@ -5686,6 +5734,42 @@ test "emit and rr 32-bit" {
 
     // Verify complete encoding: 0x0A070145 (AND W5, W10, W7)
     try testing.expectEqual(@as(u32, 0x0A070145), insn);
+}
+
+test "emit logical shifted validate shift amount and allow ror" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+
+    try testing.expectError(error.InvalidShift, emit(.{ .and_shifted = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .shift_op = .lsl,
+        .shift_amt = 32,
+        .size = .size32,
+    } }, &buffer));
+
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .eor_shifted = .{
+        .dst = wr0,
+        .src1 = r1,
+        .src2 = r2,
+        .shift_op = .ror,
+        .shift_amt = 8,
+        .size = .size64,
+    } }, &buffer);
+    try testing.expectEqual(@as(usize, 4), buffer.data.items.len);
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 0b11), (insn >> 22) & 0b11);
+    try testing.expectEqual(@as(u32, 8), (insn >> 10) & 0b111111);
 }
 
 test "emit and imm 64-bit" {
