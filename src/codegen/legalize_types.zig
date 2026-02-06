@@ -182,12 +182,9 @@ pub const TypeLegalizer = struct {
                 // Split in half
                 const half_lanes = lane_count / 2;
                 if (half_lanes > 0) {
-                    // Construct half-width vector type
-                    const log2_half = std.math.log2_int(u32, half_lanes);
-                    const half_type = Type{
-                        .raw = (lane_type.raw & 0x0f) | (@as(u16, log2_half) << 4) | 0x80,
-                    };
-                    return .{ .action = .split_vector, .target_type = half_type };
+                    if (Type.vector(lane_type, half_lanes)) |half_type| {
+                        return .{ .action = .split_vector, .target_type = half_type };
+                    }
                 }
             }
         }
@@ -198,11 +195,9 @@ pub const TypeLegalizer = struct {
             const lane_bits = lane_type.bits();
             const target_lanes = min_legal_size / lane_bits;
             if (target_lanes > lane_count and target_lanes <= 256) {
-                const log2_target = std.math.log2_int(u32, @intCast(target_lanes));
-                const wide_type = Type{
-                    .raw = (lane_type.raw & 0x0f) | (@as(u16, log2_target) << 4) | 0x80,
-                };
-                return .{ .action = .widen_vector, .target_type = wide_type };
+                if (Type.vector(lane_type, target_lanes)) |wide_type| {
+                    return .{ .action = .widen_vector, .target_type = wide_type };
+                }
             }
         }
 

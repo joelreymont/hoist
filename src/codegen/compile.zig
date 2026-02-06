@@ -931,8 +931,8 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
 /// Returns true if any phis were removed.
 fn removeConstantPhis(ctx: *Context) CodegenError!bool {
     var changed = false;
-    var block_iter = ctx.func.layout.blockIter();
-    while (block_iter.next()) |block| {
+    var block_iter_ops = ctx.func.layout.blockIter();
+    while (block_iter_ops.next()) |block| {
         const params = ctx.func.dfg.blockParams(block);
         if (params.len == 0) continue;
 
@@ -1120,8 +1120,8 @@ fn runEGraphOptimization(ctx: *Context) CodegenError!bool {
 
     // Rebuild IR from extracted e-nodes
     var changed = false;
-    var block_iter = ctx.func.layout.blockIter();
-    while (block_iter.next()) |block| {
+    var block_iter_ops = ctx.func.layout.blockIter();
+    while (block_iter_ops.next()) |block| {
         var inst_iter = ctx.func.layout.blockInsts(block);
         while (inst_iter.next()) |inst| {
             // Get result value
@@ -1341,6 +1341,23 @@ fn legalize(ctx: *Context) CodegenError!void {
     const type_legalizer = selectTypeLegalizer(target);
     const op_legalizer = selectOpLegalizer(target);
 
+    // Legalize block parameter types. Block params are not guaranteed to be
+    // present in the generic values iterator on all construction paths.
+    var block_iter = ctx.func.layout.blockIter();
+    while (block_iter.next()) |block| {
+        const block_data = ctx.func.dfg.blocks.get(block) orelse continue;
+        const params = block_data.getParams(&ctx.func.dfg.value_lists);
+        for (params) |param| {
+            const param_type = ctx.func.dfg.valueType(param) orelse continue;
+            const type_action = type_legalizer.legalize(param_type);
+            switch (type_action.action) {
+                .legal => {},
+                .promote, .widen_vector => ctx.func.dfg.setValueType(param, type_action.target_type),
+                .expand, .split_vector => return error.LegalizationFailed,
+            }
+        }
+    }
+
     // Iterate over all values in the function and apply trivial
     // legalization rewrites (narrow-scalar promotion). Non-trivial
     // expansions stay explicit failures until dedicated passes exist.
@@ -1351,15 +1368,15 @@ fn legalize(ctx: *Context) CodegenError!void {
         const type_action = type_legalizer.legalize(value_type);
         switch (type_action.action) {
             .legal => {},
-            .promote => ctx.func.dfg.setValueType(value, type_action.target_type),
-            .expand, .split_vector, .widen_vector => return error.LegalizationFailed,
+            .promote, .widen_vector => ctx.func.dfg.setValueType(value, type_action.target_type),
+            .expand, .split_vector => return error.LegalizationFailed,
         }
     }
 
     // Iterate over all instructions and reject operations that require
     // legalization strategies we have not lowered yet.
-    var block_iter = ctx.func.layout.blockIter();
-    while (block_iter.next()) |block| {
+    var block_iter_ops = ctx.func.layout.blockIter();
+    while (block_iter_ops.next()) |block| {
         var inst_iter = ctx.func.layout.blockInsts(block);
         while (inst_iter.next()) |inst| {
             const inst_data = ctx.func.dfg.insts.get(inst) orelse continue;
@@ -6621,6 +6638,75 @@ test "compile: vector iadd lowers on aarch64" {
 
     const result = try compile(&ctx, &func, &target);
 
+    try testing.expect(result.code.items.len > 0);
+}
+
+test "legalize: narrow vectors widen on aarch64" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I8X2));
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I8X2));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I8X2));
+
+    var func = try Function.init(testing.allocator, "legalize_i8x2", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const a = try builder.appendBlockParam(block, ir.Type.I8X2);
+    const b = try builder.appendBlockParam(block, ir.Type.I8X2);
+    const add = try builder.iadd(ir.Type.I8X2, a, b);
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{ .opcode = .@"return", .arg = add } });
+    try func.layout.appendInst(ret_inst, block);
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try legalize(&ctx);
+
+    const a_ty = ctx.func.dfg.valueType(a) orelse return error.TestExpectedEqual;
+    const b_ty = ctx.func.dfg.valueType(b) orelse return error.TestExpectedEqual;
+    const add_ty = ctx.func.dfg.valueType(add) orelse return error.TestExpectedEqual;
+    std.debug.print("legalized types: a={x} b={x} add={x}\n", .{ a_ty.raw, b_ty.raw, add_ty.raw });
+    try testing.expect(a_ty.eql(ir.Type.I8X8));
+    try testing.expect(b_ty.eql(ir.Type.I8X8));
+    try testing.expect(add_ty.eql(ir.Type.I8X8));
+}
+
+test "compile: narrow vector iadd compiles on aarch64" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I8X2));
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I8X2));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I8X2));
+
+    var func = try Function.init(testing.allocator, "vec_add_i8x2", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const a = try builder.appendBlockParam(block, ir.Type.I8X2);
+    const b = try builder.appendBlockParam(block, ir.Type.I8X2);
+    const add = try builder.iadd(ir.Type.I8X2, a, b);
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{ .opcode = .@"return", .arg = add } });
+    try func.layout.appendInst(ret_inst, block);
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+
+    const result = try compile(&ctx, &func, &target);
     try testing.expect(result.code.items.len > 0);
 }
 
