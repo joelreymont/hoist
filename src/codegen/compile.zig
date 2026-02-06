@@ -3556,7 +3556,7 @@ fn lowerInstructionAArch64(
             }
         },
         .ternary => |data| {
-            if (data.opcode == .select) {
+            if (data.opcode == .select or data.opcode == .select_spectre_guard) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
                 const RegClass = @import("../machinst/reg.zig").RegClass;
@@ -3564,7 +3564,7 @@ fn lowerInstructionAArch64(
                 const PReg = @import("../machinst/reg.zig").PReg;
                 const CondCode = @import("../backends/aarch64/inst.zig").CondCode;
 
-                const cond_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const cond_value = data.args[0];
                 const true_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
                 const false_vreg = VReg.new(@intCast(data.args[2].index + Reg.PINNED_VREGS), RegClass.int);
 
@@ -3577,13 +3577,39 @@ fn lowerInstructionAArch64(
 
                 const zero = Reg.fromPReg(PReg.new(RegClass.int, 31));
 
-                try builder.emit(Inst{
-                    .cmp_rr = .{
-                        .src1 = Reg.fromVReg(cond_vreg),
-                        .src2 = zero,
-                        .size = .size32,
-                    },
-                });
+                const cond_type = ctx.func.dfg.valueType(cond_value) orelse return error.LoweringFailed;
+                if (cond_type.eql(ir.I128)) {
+                    const pair = resolveI128PairRegs(ctx.func, cond_value);
+                    const merged_vreg = VReg.new(@intCast(next_tmp_vreg.*), RegClass.int);
+                    next_tmp_vreg.* += 1;
+                    const merged = WritableReg.fromVReg(merged_vreg);
+
+                    try builder.emit(Inst{
+                        .orr_rr = .{
+                            .dst = merged,
+                            .src1 = pair.lo,
+                            .src2 = pair.hi,
+                            .size = .size64,
+                        },
+                    });
+                    try builder.emit(Inst{
+                        .cmp_rr = .{
+                            .src1 = merged.toReg(),
+                            .src2 = zero,
+                            .size = .size64,
+                        },
+                    });
+                } else {
+                    const cond_vreg = VReg.new(@intCast(cond_value.index + Reg.PINNED_VREGS), RegClass.int);
+                    const cmp_size: OperandSize = if (cond_type.bits() > 32) .size64 else .size32;
+                    try builder.emit(Inst{
+                        .cmp_rr = .{
+                            .src1 = Reg.fromVReg(cond_vreg),
+                            .src2 = zero,
+                            .size = cmp_size,
+                        },
+                    });
+                }
 
                 try builder.emit(Inst{
                     .csel = .{

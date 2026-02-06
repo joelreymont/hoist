@@ -312,3 +312,97 @@ test "CCMP: OR pattern (a < b) || (c < d)" {
     try testing.expect(saw_cmp);
     try testing.expect(saw_csel);
 }
+
+test "select: i128 condition merges lanes before compare" {
+    var sig = Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
+    try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
+    try sig.returns.append(testing.allocator, AbiParam.new(Type.I64));
+
+    var func = try Function.init(testing.allocator, "select_i128_cond", sig);
+    defer func.deinit();
+
+    const entry = try func.dfg.makeBlock();
+    try func.layout.appendBlock(entry);
+
+    const lo = try func.dfg.appendBlockParam(entry, Type.I64);
+    const hi = try func.dfg.appendBlockParam(entry, Type.I64);
+
+    const iconcat_data = InstructionData{
+        .binary = .{
+            .opcode = .iconcat,
+            .args = .{ lo, hi },
+        },
+    };
+    const iconcat_inst = try func.dfg.makeInst(iconcat_data);
+    const iconcat_val = try func.dfg.appendInstResult(iconcat_inst, Type.I128);
+    try func.layout.appendInst(iconcat_inst, entry);
+
+    const t_data = InstructionData{
+        .unary_imm = .{
+            .opcode = .iconst,
+            .imm = Imm64.new(11),
+        },
+    };
+    const t_inst = try func.dfg.makeInst(t_data);
+    const t_val = try func.dfg.appendInstResult(t_inst, Type.I64);
+    try func.layout.appendInst(t_inst, entry);
+
+    const f_data = InstructionData{
+        .unary_imm = .{
+            .opcode = .iconst,
+            .imm = Imm64.new(22),
+        },
+    };
+    const f_inst = try func.dfg.makeInst(f_data);
+    const f_val = try func.dfg.appendInstResult(f_inst, Type.I64);
+    try func.layout.appendInst(f_inst, entry);
+
+    const select_data = InstructionData{
+        .ternary = .{
+            .opcode = .select,
+            .args = .{ iconcat_val, t_val, f_val },
+        },
+    };
+    const select_inst = try func.dfg.makeInst(select_data);
+    const select_val = try func.dfg.appendInstResult(select_inst, Type.I64);
+    try func.layout.appendInst(select_inst, entry);
+
+    const ret_data = InstructionData{
+        .unary = .{
+            .opcode = .@"return",
+            .arg = select_val,
+        },
+    };
+    const ret_inst = try func.dfg.makeInst(ret_data);
+    try func.layout.appendInst(ret_inst, entry);
+
+    var ctx = CodegenContext.init(testing.allocator);
+    defer ctx.deinit();
+
+    const code = try compile_mod.compile(&ctx, &func, &.{
+        .arch = .aarch64,
+        .opt_level = .none,
+        .verify = false,
+        .features = .{ .bits = 0 },
+    });
+    try testing.expect(code.code.items.len > 0);
+
+    const lowered = ctx.aarch64_lowered orelse return error.LoweringFailed;
+    var saw_orr = false;
+    var saw_cmp64 = false;
+    var saw_csel = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .orr_rr => saw_orr = true,
+            .cmp_rr => |cmp| {
+                if (cmp.size == .size64) saw_cmp64 = true;
+            },
+            .csel => saw_csel = true,
+            else => {},
+        }
+    }
+    try testing.expect(saw_orr);
+    try testing.expect(saw_cmp64);
+    try testing.expect(saw_csel);
+}
