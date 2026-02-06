@@ -3,8 +3,8 @@ title: Wire i128 bitrev/bswap lowering
 status: closed
 priority: 2
 issue-type: task
-created-at: "\"\\\"2026-02-07T00:33:35.785229+01:00\\\"\""
-closed-at: "2026-02-07T00:35:56.616692+01:00"
+created-at: "\"\\\"\\\\\\\"2026-02-07T00:33:35.785229+01:00\\\\\\\"\\\"\""
+closed-at: "2026-02-07T00:36:35.563062+01:00"
 close-reason: i128 bitrev/bswap now lower via pair helpers
 ---
 
