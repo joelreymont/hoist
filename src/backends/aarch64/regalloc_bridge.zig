@@ -27,7 +27,9 @@ pub const RegAllocBridge = struct {
     adapter: RegAllocAdapter,
     spill_pre: ?*std.ArrayList(Inst),
     spill_post: ?*std.ArrayList(Inst),
-    spill_next_scratch: usize,
+    spill_next_scratch_int: usize,
+    spill_next_scratch_float: usize,
+    spill_next_scratch_vec: usize,
 
     const Self = @This();
 
@@ -37,7 +39,9 @@ pub const RegAllocBridge = struct {
             .adapter = RegAllocAdapter.init(allocator),
             .spill_pre = null,
             .spill_post = null,
-            .spill_next_scratch = 0,
+            .spill_next_scratch_int = 0,
+            .spill_next_scratch_float = 0,
+            .spill_next_scratch_vec = 0,
         };
     }
 
@@ -734,25 +738,48 @@ pub const RegAllocBridge = struct {
         use_def,
     };
 
-    const scratch_regs = [_]u6{ 9, 10, 11, 12, 13, 14, 15, 16, 17 };
+    const scratch_int_regs = [_]u6{ 9, 10, 11, 12, 13, 14, 15, 16, 17 };
+    const scratch_float_regs = [_]u6{ 9, 10, 11, 12, 13, 14, 15, 16, 17 };
+    const scratch_vec_regs = [_]u6{ 9, 10, 11, 12, 13, 14, 15, 16, 17 };
 
     fn beginSpillEdit(self: *Self, pre: *std.ArrayList(Inst), post: *std.ArrayList(Inst)) void {
         self.spill_pre = pre;
         self.spill_post = post;
-        self.spill_next_scratch = 0;
+        self.spill_next_scratch_int = 0;
+        self.spill_next_scratch_float = 0;
+        self.spill_next_scratch_vec = 0;
     }
 
     fn endSpillEdit(self: *Self) void {
         self.spill_pre = null;
         self.spill_post = null;
-        self.spill_next_scratch = 0;
+        self.spill_next_scratch_int = 0;
+        self.spill_next_scratch_float = 0;
+        self.spill_next_scratch_vec = 0;
     }
 
-    fn nextScratch(self: *Self) !Reg {
-        if (self.spill_next_scratch >= scratch_regs.len) return error.SpillScratchExhausted;
-        const hw = scratch_regs[self.spill_next_scratch];
-        self.spill_next_scratch += 1;
-        return Reg.fromPReg(reg_mod.PReg.new(.int, hw));
+    fn nextScratch(self: *Self, class: reg_mod.RegClass) !Reg {
+        return switch (class) {
+            .int => blk: {
+                if (self.spill_next_scratch_int >= scratch_int_regs.len) return error.SpillScratchExhausted;
+                const hw = scratch_int_regs[self.spill_next_scratch_int];
+                self.spill_next_scratch_int += 1;
+                break :blk Reg.fromPReg(reg_mod.PReg.new(.int, hw));
+            },
+            .float => blk: {
+                if (self.spill_next_scratch_float >= scratch_float_regs.len) return error.SpillScratchExhausted;
+                const hw = scratch_float_regs[self.spill_next_scratch_float];
+                self.spill_next_scratch_float += 1;
+                break :blk Reg.fromPReg(reg_mod.PReg.new(.float, hw));
+            },
+            .vector => blk: {
+                if (self.spill_next_scratch_vec >= scratch_vec_regs.len) return error.SpillScratchExhausted;
+                const hw = scratch_vec_regs[self.spill_next_scratch_vec];
+                self.spill_next_scratch_vec += 1;
+                break :blk Reg.fromPReg(reg_mod.PReg.new(.vector, hw));
+            },
+            .scalable_vector, .predicate => error.UnsupportedSpillRegClass,
+        };
     }
 
     fn spillBaseReg() Reg {
@@ -769,26 +796,74 @@ pub const RegAllocBridge = struct {
         const offset = try spillOffset(slot);
         const base = spillBaseReg();
 
-        if (mode == .use or mode == .use_def) {
-            try pre.append(self.allocator, .{
-                .ldr = .{
-                    .dst = reg_mod.WritableReg.init(scratch),
-                    .base = base,
-                    .offset = offset,
-                    .size = .size64,
-                },
-            });
-        }
-
-        if (mode == .def or mode == .use_def) {
-            try post.append(self.allocator, .{
-                .str = .{
-                    .src = scratch,
-                    .base = base,
-                    .offset = offset,
-                    .size = .size64,
-                },
-            });
+        switch (scratch.class()) {
+            .int => {
+                if (mode == .use or mode == .use_def) {
+                    try pre.append(self.allocator, .{
+                        .ldr = .{
+                            .dst = reg_mod.WritableReg.init(scratch),
+                            .base = base,
+                            .offset = offset,
+                            .size = .size64,
+                        },
+                    });
+                }
+                if (mode == .def or mode == .use_def) {
+                    try post.append(self.allocator, .{
+                        .str = .{
+                            .src = scratch,
+                            .base = base,
+                            .offset = offset,
+                            .size = .size64,
+                        },
+                    });
+                }
+            },
+            .float => {
+                if (mode == .use or mode == .use_def) {
+                    try pre.append(self.allocator, .{
+                        .vldr = .{
+                            .dst = reg_mod.WritableReg.init(scratch),
+                            .base = base,
+                            .offset = offset,
+                            .size = .size64,
+                        },
+                    });
+                }
+                if (mode == .def or mode == .use_def) {
+                    try post.append(self.allocator, .{
+                        .vstr = .{
+                            .src = scratch,
+                            .base = base,
+                            .offset = offset,
+                            .size = .size64,
+                        },
+                    });
+                }
+            },
+            .vector => {
+                if (mode == .use or mode == .use_def) {
+                    try pre.append(self.allocator, .{
+                        .vldr = .{
+                            .dst = reg_mod.WritableReg.init(scratch),
+                            .base = base,
+                            .offset = offset,
+                            .size = .size128,
+                        },
+                    });
+                }
+                if (mode == .def or mode == .use_def) {
+                    try post.append(self.allocator, .{
+                        .vstr = .{
+                            .src = scratch,
+                            .base = base,
+                            .offset = offset,
+                            .size = .size128,
+                        },
+                    });
+                }
+            },
+            .scalable_vector, .predicate => return error.UnsupportedSpillRegClass,
         }
     }
 
@@ -1219,7 +1294,7 @@ pub const RegAllocBridge = struct {
                 return switch (alloc) {
                     .reg => |phys| Reg{ .p = phys },
                     .stack => |slot| blk: {
-                        const scratch = try self.nextScratch();
+                        const scratch = try self.nextScratch(vreg.class());
                         try self.emitSpillReload(mode, slot, scratch);
                         break :blk scratch;
                     },
@@ -1742,6 +1817,85 @@ test "RegAllocBridge applyAllocations inserts spill reloads for stack allocation
     const spill = vcode.getInst(2);
     try testing.expectEqual(@as(i16, 8), spill.str.offset);
     try testing.expectEqual(@as(u8, 10), spill.str.src.p.index);
+}
+
+test "RegAllocBridge applyAllocations inserts vector spill reloads for stack allocations" {
+    const Allocation = regalloc2_types.Allocation;
+    const SpillSlot = regalloc2_types.SpillSlot;
+
+    var vcode = VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    const v0 = VReg.new(0, .vector);
+    const v1 = VReg.new(1, .vector);
+
+    _ = try vcode.startBlock(&.{});
+    _ = try vcode.addInst(.{
+        .vec_rrr = .{
+            .op = .Orr,
+            .dst = reg_mod.WritableReg.init(Reg{ .v = v1 }),
+            .rn = Reg{ .v = v0 },
+            .rm = Reg{ .v = v0 },
+            .size = .V16B,
+        },
+    });
+    try vcode.finishBlock(0, &.{});
+
+    var bridge = RegAllocBridge.init(testing.allocator);
+    defer bridge.deinit();
+
+    try bridge.adapter.setAllocation(v0, Allocation{ .stack = SpillSlot.new(0) });
+    try bridge.adapter.setAllocation(v1, Allocation{ .stack = SpillSlot.new(16) });
+
+    try bridge.applyAllocations(&vcode);
+    try testing.expectEqual(@as(usize, 4), vcode.insns.items.len);
+
+    switch (vcode.getInst(0)) {
+        .vldr => |ld| {
+            try testing.expectEqual(@as(i16, 0), ld.offset);
+            try testing.expectEqual(inst_mod.FpuOperandSize.size128, ld.size);
+            const reg = ld.dst.toReg();
+            try testing.expectEqual(reg_mod.RegClass.vector, reg.class());
+            try testing.expectEqual(@as(u6, 9), reg.toRealReg().?.hwEnc());
+        },
+        else => return error.ExpectedInstructionNotFound,
+    }
+
+    switch (vcode.getInst(1)) {
+        .vldr => |ld| {
+            try testing.expectEqual(@as(i16, 0), ld.offset);
+            try testing.expectEqual(inst_mod.FpuOperandSize.size128, ld.size);
+            const reg = ld.dst.toReg();
+            try testing.expectEqual(reg_mod.RegClass.vector, reg.class());
+            try testing.expectEqual(@as(u6, 10), reg.toRealReg().?.hwEnc());
+        },
+        else => return error.ExpectedInstructionNotFound,
+    }
+
+    switch (vcode.getInst(2)) {
+        .vec_rrr => |op| {
+            const rn = op.rn;
+            const rm = op.rm;
+            const dst = op.dst.toReg();
+            try testing.expectEqual(reg_mod.RegClass.vector, rn.class());
+            try testing.expectEqual(reg_mod.RegClass.vector, rm.class());
+            try testing.expectEqual(reg_mod.RegClass.vector, dst.class());
+            try testing.expectEqual(@as(u6, 9), rn.toRealReg().?.hwEnc());
+            try testing.expectEqual(@as(u6, 10), rm.toRealReg().?.hwEnc());
+            try testing.expectEqual(@as(u6, 11), dst.toRealReg().?.hwEnc());
+        },
+        else => return error.ExpectedInstructionNotFound,
+    }
+
+    switch (vcode.getInst(3)) {
+        .vstr => |st| {
+            try testing.expectEqual(@as(i16, 16), st.offset);
+            try testing.expectEqual(inst_mod.FpuOperandSize.size128, st.size);
+            try testing.expectEqual(reg_mod.RegClass.vector, st.src.class());
+            try testing.expectEqual(@as(u6, 11), st.src.toRealReg().?.hwEnc());
+        },
+        else => return error.ExpectedInstructionNotFound,
+    }
 }
 
 test "RegAllocBridge applyAllocations inserts load+store for use_def spill" {
