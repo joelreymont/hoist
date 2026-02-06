@@ -4271,10 +4271,9 @@ fn lowerInstructionAArch64(
                     const temp_dst = WritableReg.fromVReg(temp_vreg);
 
                     try builder.emit(Inst{
-                        .movz = .{
+                        .mov_imm = .{
                             .dst = temp_dst,
-                            .imm = @intCast(imm_val & 0xFFFF),
-                            .shift = 0,
+                            .imm = @as(u64, @intCast(imm_val)),
                             .size = size,
                         },
                     });
@@ -4323,10 +4322,9 @@ fn lowerInstructionAArch64(
                         const temp_dst = WritableReg.fromVReg(temp_vreg);
 
                         try builder.emit(Inst{
-                            .movz = .{
+                            .mov_imm = .{
                                 .dst = temp_dst,
-                                .imm = @intCast(mask & 0xFFFF),
-                                .shift = 0,
+                                .imm = mask,
                                 .size = size,
                             },
                         });
@@ -4350,10 +4348,9 @@ fn lowerInstructionAArch64(
                     const quot_dst = WritableReg.fromVReg(quot_vreg);
 
                     try builder.emit(Inst{
-                        .movz = .{
+                        .mov_imm = .{
                             .dst = divisor_dst,
-                            .imm = @intCast(imm_val & 0xFFFF),
-                            .shift = 0,
+                            .imm = @as(u64, @intCast(imm_val)),
                             .size = size,
                         },
                     });
@@ -4443,10 +4440,9 @@ fn lowerInstructionAArch64(
                     const temp_dst = WritableReg.fromVReg(temp_vreg);
 
                     try builder.emit(Inst{
-                        .movz = .{
+                        .mov_imm = .{
                             .dst = temp_dst,
-                            .imm = @intCast(@as(u64, @intCast(imm_val)) & 0xFFFF),
-                            .shift = 0,
+                            .imm = @as(u64, @bitCast(imm_val)),
                             .size = size,
                         },
                     });
@@ -4487,10 +4483,9 @@ fn lowerInstructionAArch64(
                 const quot_dst = WritableReg.fromVReg(quot_vreg);
 
                 try builder.emit(Inst{
-                    .movz = .{
+                    .mov_imm = .{
                         .dst = divisor_dst,
-                        .imm = @intCast(@as(u64, @intCast(imm_val)) & 0xFFFF),
-                        .shift = 0,
+                        .imm = @as(u64, @bitCast(imm_val)),
                         .size = size,
                     },
                 });
@@ -8165,6 +8160,26 @@ test "lower: sload32x2 emits vec_sshll" {
     try expectWidenLoadLowering(.sload32x2, ir.Type.I64X2, true, .size32x2);
 }
 
+test "lower: udiv_imm large immediate keeps full immediate" {
+    try expectDivRemImmMovImm(.udiv_imm, 0x1234567);
+}
+
+test "lower: urem_imm large immediate keeps full immediate" {
+    try expectDivRemImmMovImm(.urem_imm, 0x1234567);
+}
+
+test "lower: sdiv_imm large immediate keeps full immediate" {
+    try expectDivRemImmMovImm(.sdiv_imm, 0x1234567);
+}
+
+test "lower: srem_imm large immediate keeps full immediate" {
+    try expectDivRemImmMovImm(.srem_imm, 0x1234567);
+}
+
+test "lower: sdiv_imm negative immediate keeps full immediate" {
+    try expectDivRemImmMovImm(.sdiv_imm, -0x12345);
+}
+
 fn expectIabsCmpImmSize(ty: ir.Type, expected_size: a64_inst.OperandSize) !void {
     var sig = ir.Signature.init(testing.allocator, .fast);
     try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ty));
@@ -8380,6 +8395,71 @@ fn expectWidenLoadLowering(
     }
 
     try testing.expect(saw_widen);
+}
+
+fn expectDivRemImmMovImm(opcode: Opcode, imm: i64) !void {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+
+    var func = try Function.init(testing.allocator, "divrem_imm_mov_imm", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const arg = try builder.appendBlockParam(block, ir.I64);
+    const op_inst = try func.dfg.makeInst(.{ .binary_imm64 = .{
+        .opcode = opcode,
+        .arg = arg,
+        .imm = ir.Imm64.new(imm),
+    } });
+    const result = try func.dfg.appendInstResult(op_inst, ir.I64);
+    try func.layout.appendInst(op_inst, block);
+    try builder.retValues(&.{result});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_mov_imm = false;
+    var saw_div = false;
+    var saw_msub = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .mov_imm => |mov| {
+                if (mov.size == .size64 and mov.imm == @as(u64, @bitCast(imm))) saw_mov_imm = true;
+            },
+            .udiv => {
+                if (opcode == .udiv_imm or opcode == .urem_imm) saw_div = true;
+            },
+            .sdiv => {
+                if (opcode == .sdiv_imm or opcode == .srem_imm) saw_div = true;
+            },
+            .msub => {
+                if (opcode == .urem_imm or opcode == .srem_imm) saw_msub = true;
+            },
+            else => {},
+        }
+    }
+
+    try testing.expect(saw_mov_imm);
+    try testing.expect(saw_div);
+    if (opcode == .urem_imm or opcode == .srem_imm) {
+        try testing.expect(saw_msub);
+    } else {
+        try testing.expect(!saw_msub);
+    }
 }
 
 fn expectOverflowBinSbcs(opcode: Opcode) !void {
