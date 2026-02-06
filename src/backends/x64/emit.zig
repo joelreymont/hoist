@@ -39,6 +39,7 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .ror_rr => |i| try emitShiftRR(1, i.dst.toReg(), i.count, i.size, buffer),
         .ror_imm => |i| try emitShiftImm(1, i.dst.toReg(), i.count, i.size, buffer),
         .imul_rr => |i| try emitImulRR(i.dst.toReg(), i.src, i.size, buffer),
+        .imul_imm => |i| try emitImulImm(i.dst.toReg(), i.src, i.imm, i.size, buffer),
         .neg => |i| try emitUnary(3, i.dst.toReg(), i.size, buffer),
         .not => |i| try emitUnary(2, i.dst.toReg(), i.size, buffer),
         .cmp_rr => |i| try emitAluRR(0x39, i.lhs, i.rhs, i.size, buffer),
@@ -222,6 +223,21 @@ fn emitImulRR(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuf
     try emitRex(size, dst, src, buffer);
     try buffer.putData(&[_]u8{ 0x0F, 0xAF });
     try buffer.putData(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
+}
+
+/// IMUL reg, reg, imm
+fn emitImulImm(dst: Reg, src: Reg, imm: i32, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitRex(size, dst, src, buffer);
+    if (imm >= -128 and imm <= 127) {
+        try buffer.putData(&[_]u8{0x6B}); // IMUL r, r/m, imm8
+        try buffer.putData(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
+        try buffer.putData(&[_]u8{@intCast(@as(u8, @bitCast(@as(i8, @intCast(imm)))))});
+    } else {
+        try buffer.putData(&[_]u8{0x69}); // IMUL r, r/m, imm32
+        try buffer.putData(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
+        const imm32: u32 = @bitCast(imm);
+        try buffer.putData(std.mem.asBytes(&imm32));
+    }
 }
 
 /// NEG/NOT reg with ModR/M subopcode.
@@ -626,6 +642,26 @@ test "emit neg reg" {
 
     try testing.expectEqual(@as(u8, 0x48), buffer.data.items[0]); // REX.W
     try testing.expectEqual(@as(u8, 0xF7), buffer.data.items[1]);
+}
+
+test "emit imul imm8" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const wr0 = root.reg.WritableReg.fromReg(Reg.fromVReg(v0));
+    const r1 = Reg.fromVReg(v1);
+
+    try emit(.{ .imul_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 7,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(u8, 0x48), buffer.data.items[0]); // REX.W
+    try testing.expectEqual(@as(u8, 0x6B), buffer.data.items[1]); // IMUL imm8
 }
 
 test "emit mov [base+disp], reg" {
