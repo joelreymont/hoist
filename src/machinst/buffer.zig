@@ -964,6 +964,26 @@ test "MachBuffer branch14 forward label reference preserves bit index" {
     try testing.expectEqual(@as(u32, 31), (patched >> 19) & 0x1F);
 }
 
+test "MachBuffer branch14 out-of-range returns BranchOutOfRange" {
+    var buf = MachBuffer.init(testing.allocator);
+    defer buf.deinit();
+
+    const target = try buf.allocLabel();
+
+    // TBZ X0, #0, <target> with placeholder imm14.
+    try buf.put4(0x36000000);
+    try buf.useLabelAtOffset(0, target, .branch14);
+
+    // Place target at +8192 words (+32768 bytes), just outside signed imm14 range.
+    var i: usize = 0;
+    while (i < 8191) : (i += 1) {
+        try buf.put4(0xD503201F); // NOP
+    }
+    try buf.bindLabel(target);
+
+    try testing.expectError(error.BranchOutOfRange, buf.finalize());
+}
+
 test "MachBuffer trap records" {
     var buf = MachBuffer.init(testing.allocator);
     defer buf.deinit();
