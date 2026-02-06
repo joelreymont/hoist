@@ -1231,6 +1231,38 @@ test "lower_isub128 emits subs_rr and sbcs sequence" {
     try testing.expect(hasInstTag(vcode.insns.items, .sbcs));
 }
 
+test "fpu_csel returns fcsel consumes-flags payload" {
+    const testing = std.testing;
+
+    var sig = signature_mod.Signature.init(testing.allocator, .system_v);
+    try sig.params.append(testing.allocator, signature_mod.AbiParam.new(Type.F64));
+    try sig.params.append(testing.allocator, signature_mod.AbiParam.new(Type.F64));
+    var func = try lower_mod.Function.init(testing.allocator, "test_fpu_csel", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+    const rn = try func.dfg.appendBlockParam(block0, Type.F64);
+    const rm = try func.dfg.appendBlockParam(block0, Type.F64);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    try ctx.allocateSSAVRegs();
+    _ = try ctx.startBlock(block0);
+
+    const payload = try fpu_csel(Type.F64, .ne, rn, rm, &ctx);
+    switch (payload) {
+        .ConsumesFlagsReturnsReg => |p| {
+            try testing.expectEqual(Inst.fcsel, @as(std.meta.Tag(Inst), p.inst));
+            try testing.expectEqual(FpuOperandSize.size64, p.inst.fcsel.size);
+        },
+        else => return error.TestUnexpectedResult,
+    }
+}
+
 test "lower_clz128 emits clz and madd sequence" {
     const testing = std.testing;
 
@@ -5257,19 +5289,25 @@ pub fn fpu_csel(
     rm: lower_mod.Value,
     ctx: *lower_mod.LowerCtx(Inst),
 ) !isle_types.ConsumesFlags {
-    const rn_reg = try ctx.getValueReg(rn, .float);
-    const rm_reg = try ctx.getValueReg(rm, .float);
+    const rn_reg = try getValueRegFloat(ctx, rn);
+    const rm_reg = try getValueRegFloat(ctx, rm);
     const dst = lower_mod.WritableVReg.allocVReg(.float, ctx);
 
     const aarch_cond = intccToCondCode(cond);
 
-    const size: Inst.ScalarSize = if (ty.eql(Type.F32))
-        .Size32
+    const size: FpuOperandSize = if (ty.eql(Type.F32))
+        .size32
     else
-        .Size64;
+        .size64;
 
     return isle_types.ConsumesFlags.consumesFlagsReturnsReg(
-        Inst.FpuCSel{ .size = size, .rd = dst, .cond = aarch_cond, .rn = rn_reg, .rm = rm_reg },
+        Inst{ .fcsel = .{
+            .dst = dst,
+            .src1 = rn_reg,
+            .src2 = rm_reg,
+            .cond = aarch_cond,
+            .size = size,
+        } },
         dst.toReg(),
     );
 }
