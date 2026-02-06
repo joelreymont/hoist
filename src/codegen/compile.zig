@@ -17,6 +17,7 @@ const Relocation = @import("context.zig").Relocation;
 const RelocKind = @import("context.zig").RelocKind;
 const Function = @import("../ir/function.zig").Function;
 const Block = @import("../ir/entities.zig").Block;
+const FuncRef = @import("../ir/entities.zig").FuncRef;
 const SigRef = @import("../ir/entities.zig").SigRef;
 const StackSlot = @import("../ir/entities.zig").StackSlot;
 const reg_mod = @import("../machinst/reg.zig");
@@ -6545,6 +6546,58 @@ test "compile: LSDA scan includes try_call_indirect" {
     } });
     try func.layout.appendInst(tc_inst, block0);
     _ = try func.dfg.appendInstResult(tc_inst, ir.I64);
+    try builder.jump(block1);
+
+    builder.switchToBlock(block1);
+    const one = try builder.iconst(ir.I64, 1);
+    try builder.retValues(&.{one});
+
+    builder.switchToBlock(block2);
+    const two = try builder.iconst(ir.I64, 2);
+    try builder.retValues(&.{two});
+
+    var buffer = MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+    const label0 = try buffer.allocLabel();
+    const label2 = try buffer.allocLabel();
+
+    try buffer.bindLabel(label0);
+    try buffer.put4(0x14000000); // placeholder call-site instruction width (4 bytes)
+    try buffer.bindLabel(label2);
+    try buffer.registerBlockLabel(block0, label0);
+    try buffer.registerBlockLabel(block2, label2);
+
+    var lsda = unwind.LSDA.init(testing.allocator);
+    defer lsda.deinit(testing.allocator);
+
+    const has_sites = try collectLsdaCallSites(testing.allocator, &func, &buffer, &lsda);
+    try testing.expect(has_sites);
+    try testing.expectEqual(@as(usize, 1), lsda.call_sites.items.len);
+
+    const site = lsda.call_sites.items[0];
+    try testing.expectEqual(@as(u32, 0), site.start_offset);
+    try testing.expectEqual(@as(u32, 4), site.length);
+    try testing.expectEqual(@as(u32, 4), site.landing_pad_offset);
+}
+
+test "compile: LSDA scan includes try_call" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    var func = try Function.init(testing.allocator, "lsda_try_call", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+
+    const block0 = try builder.createBlock();
+    const block1 = try builder.createBlock();
+    const block2 = try builder.createBlock();
+    try builder.appendBlock(block0);
+    try builder.appendBlock(block1);
+    try builder.appendBlock(block2);
+
+    builder.switchToBlock(block0);
+    _ = try builder.instTryCall(FuncRef.new(0), &.{}, block1, block2);
     try builder.jump(block1);
 
     builder.switchToBlock(block1);
