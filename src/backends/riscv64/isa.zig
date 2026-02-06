@@ -73,9 +73,10 @@ pub const Riscv64ISA = struct {
         defer liveness_info.deinit();
 
         // Phase 3: Register allocation using linear scan
-        const num_int_regs: u32 = 32; // x0-x31
-        const num_float_regs: u32 = 32; // f0-f31
-        const num_vector_regs: u32 = 32;
+        // Keep one scratch register per class free for spill/reload insertion.
+        const num_int_regs: u32 = 31; // x0-x30, reserve x31
+        const num_float_regs: u32 = 31; // f0-f30, reserve f31
+        const num_vector_regs: u32 = 31;
 
         var linear_scan = try linear_scan_mod.LinearScanAllocator.init(
             ctx.allocator,
@@ -179,11 +180,213 @@ pub const Riscv64ISA = struct {
         liveness_info: anytype,
         allocator: std.mem.Allocator,
     ) !void {
-        _ = vcode;
-        _ = result;
-        _ = liveness_info;
-        _ = allocator;
-        // TODO: Implement spill/reload insertion
+        const linear_scan_mod = @import("../../regalloc/linear_scan.zig");
+        const reg_mod = @import("../../machinst/reg.zig");
+
+        var spilled_vregs = std.ArrayList(struct {
+            vreg: reg_mod.VReg,
+            slot: linear_scan_mod.SpillSlot,
+        }){};
+        defer spilled_vregs.deinit(allocator);
+
+        for (liveness_info.ranges.items) |range| {
+            if (result.getSpillSlot(range.vreg)) |slot| {
+                try spilled_vregs.append(allocator, .{
+                    .vreg = range.vreg,
+                    .slot = slot,
+                });
+            }
+        }
+
+        if (spilled_vregs.items.len == 0) return;
+
+        var insertions = std.ArrayList(struct {
+            position: u32,
+            insert_after: bool,
+            inst: Inst,
+        }){};
+        defer insertions.deinit(allocator);
+
+        var scratch_use = std.AutoHashMap(u64, u32).init(allocator);
+        defer scratch_use.deinit();
+
+        const Helpers = struct {
+            fn spillOffsetI12(offset: u32) !i12 {
+                if (offset > @as(u32, @intCast(std.math.maxInt(i12)))) {
+                    return error.SpillOffsetOutOfRange;
+                }
+                return @intCast(offset);
+            }
+
+            fn scratchRegForClass(reg_class: reg_mod.RegClass) !reg_mod.Reg {
+                return switch (reg_class) {
+                    .int => reg_mod.Reg.fromPReg(reg_mod.PReg.new(.int, 31)),
+                    .float => reg_mod.Reg.fromPReg(reg_mod.PReg.new(.float, 31)),
+                    .vector => reg_mod.Reg.fromPReg(reg_mod.PReg.new(.float, 31)),
+                    else => error.UnsupportedSpillRegClass,
+                };
+            }
+
+            fn makeReload(class: reg_mod.RegClass, scratch: reg_mod.Reg, offset: i12) !Inst {
+                return switch (class) {
+                    .int => .{
+                        .ld = .{
+                            .dst = reg_mod.WritableReg.fromReg(scratch),
+                            .base = reg_mod.Reg.fromPReg(reg_mod.PReg.new(.int, 2)),
+                            .offset = offset,
+                        },
+                    },
+                    .float, .vector => .{
+                        .fld = .{
+                            .dst = reg_mod.WritableReg.fromReg(scratch),
+                            .base = reg_mod.Reg.fromPReg(reg_mod.PReg.new(.int, 2)),
+                            .offset = offset,
+                        },
+                    },
+                    else => error.UnsupportedSpillRegClass,
+                };
+            }
+
+            fn makeSpill(class: reg_mod.RegClass, scratch: reg_mod.Reg, offset: i12) !Inst {
+                return switch (class) {
+                    .int => .{
+                        .sd = .{
+                            .src = scratch,
+                            .base = reg_mod.Reg.fromPReg(reg_mod.PReg.new(.int, 2)),
+                            .offset = offset,
+                        },
+                    },
+                    .float, .vector => .{
+                        .fsd = .{
+                            .src = scratch,
+                            .base = reg_mod.Reg.fromPReg(reg_mod.PReg.new(.int, 2)),
+                            .offset = offset,
+                        },
+                    },
+                    else => error.UnsupportedSpillRegClass,
+                };
+            }
+
+            fn rewriteSpilledVReg(
+                inst: *Inst,
+                target_vreg: reg_mod.VReg,
+                replacement: reg_mod.Reg,
+            ) !void {
+                const Rewriter = struct {
+                    fn rewriteValue(value: anytype, vreg: reg_mod.VReg, repl: reg_mod.Reg) !void {
+                        const T = @TypeOf(value.*);
+                        switch (@typeInfo(T)) {
+                            .@"struct" => |s| {
+                                inline for (s.fields) |field| {
+                                    const field_ptr = &@field(value, field.name);
+                                    const FieldT = @TypeOf(field_ptr.*);
+                                    if (FieldT == reg_mod.Reg) {
+                                        if (field_ptr.*.toVReg()) |field_vreg| {
+                                            if (field_vreg.index() == vreg.index()) {
+                                                field_ptr.* = repl;
+                                            }
+                                        }
+                                    } else if (FieldT == reg_mod.WritableReg) {
+                                        if (field_ptr.*.toReg().toVReg()) |field_vreg| {
+                                            if (field_vreg.index() == vreg.index()) {
+                                                field_ptr.* = reg_mod.WritableReg.fromReg(repl);
+                                            }
+                                        }
+                                    } else {
+                                        switch (@typeInfo(FieldT)) {
+                                            .@"struct", .@"union", .optional => try rewriteValue(field_ptr, vreg, repl),
+                                            else => {},
+                                        }
+                                    }
+                                }
+                            },
+                            .@"union" => {
+                                switch (value.*) {
+                                    inline else => |*payload| try rewriteValue(payload, vreg, repl),
+                                }
+                            },
+                            .optional => {
+                                if (value.*) |*some| {
+                                    try rewriteValue(some, vreg, repl);
+                                }
+                            },
+                            else => {},
+                        }
+                    }
+                };
+
+                try Rewriter.rewriteValue(inst, target_vreg, replacement);
+            }
+        };
+
+        for (spilled_vregs.items) |spill_info| {
+            const off = try Helpers.spillOffsetI12(spill_info.slot.offset);
+            const scratch = try Helpers.scratchRegForClass(spill_info.vreg.class());
+
+            for (vcode.insns.items, 0..) |inst, idx| {
+                var inst_copy = inst;
+                const defs = try inst_copy.getDefs(allocator);
+                defer allocator.free(defs);
+                const uses = try inst_copy.getUses(allocator);
+                defer allocator.free(uses);
+
+                var has_def = false;
+                for (defs) |def_vreg| {
+                    if (def_vreg.index() == spill_info.vreg.index()) {
+                        has_def = true;
+                        break;
+                    }
+                }
+
+                var has_use = false;
+                for (uses) |use_vreg| {
+                    if (use_vreg.index() == spill_info.vreg.index()) {
+                        has_use = true;
+                        break;
+                    }
+                }
+
+                if (!has_def and !has_use) continue;
+
+                const key: u64 = (@as(u64, @intCast(idx)) << 32) | @as(u64, scratch.bits);
+                if (scratch_use.get(key)) |seen_vreg_idx| {
+                    if (seen_vreg_idx != spill_info.vreg.index()) {
+                        return error.MultipleSpillsPerInstruction;
+                    }
+                } else {
+                    try scratch_use.put(key, spill_info.vreg.index());
+                }
+
+                try Helpers.rewriteSpilledVReg(&vcode.insns.items[idx], spill_info.vreg, scratch);
+
+                if (has_use) {
+                    try insertions.append(allocator, .{
+                        .position = @intCast(idx),
+                        .insert_after = false,
+                        .inst = try Helpers.makeReload(spill_info.vreg.class(), scratch, off),
+                    });
+                }
+                if (has_def) {
+                    try insertions.append(allocator, .{
+                        .position = @intCast(idx),
+                        .insert_after = true,
+                        .inst = try Helpers.makeSpill(spill_info.vreg.class(), scratch, off),
+                    });
+                }
+            }
+        }
+
+        std.mem.sort(@TypeOf(insertions.items[0]), insertions.items, {}, struct {
+            fn lessThan(_: void, a: @TypeOf(insertions.items[0]), b: @TypeOf(insertions.items[0])) bool {
+                if (a.position != b.position) return a.position > b.position;
+                return a.insert_after and !b.insert_after;
+            }
+        }.lessThan);
+
+        for (insertions.items) |insertion| {
+            const insert_idx = if (insertion.insert_after) insertion.position + 1 else insertion.position;
+            try vcode.insns.insert(allocator, insert_idx, insertion.inst);
+        }
     }
 
     fn applyAllocations(inst: *Inst, result: anytype) !void {
@@ -315,5 +518,48 @@ test "Riscv64ISA applyAllocations rewrites vregs" {
             try testing.expect(add.dst.toReg().toRealReg() != null);
         },
         else => return error.TestUnexpectedInstructionTag,
+    }
+}
+
+test "Riscv64ISA insertSpillReloads rewrites spilled regs" {
+    const reg_mod = @import("../../machinst/reg.zig");
+    const liveness_mod = @import("../../regalloc/liveness.zig");
+    const linear_scan_mod = @import("../../regalloc/linear_scan.zig");
+
+    const spilled_v = reg_mod.VReg.new(330, .int);
+    const dst_v = reg_mod.VReg.new(331, .int);
+
+    var vcode = lower_mod.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    const bb = try vcode.startBlock(&.{});
+    _ = try vcode.addInst(.{
+        .add = .{
+            .dst = reg_mod.WritableReg.fromVReg(dst_v),
+            .src1 = reg_mod.Reg.fromVReg(spilled_v),
+            .src2 = reg_mod.Reg.fromVReg(spilled_v),
+        },
+    });
+    try vcode.finishBlock(bb, &.{});
+
+    var liveness = try liveness_mod.LivenessInfo.compute(Inst, testing.allocator, &vcode);
+    defer liveness.deinit();
+
+    var result = linear_scan_mod.RegAllocResult.init(testing.allocator);
+    defer result.deinit();
+    try result.assign(dst_v, reg_mod.PReg.new(.int, 5));
+    try result.assignSpillSlot(spilled_v, .{ .offset = 16 });
+
+    try Riscv64ISA.insertSpillReloads(&vcode, &result, &liveness, testing.allocator);
+
+    try testing.expectEqual(@as(usize, 3), vcode.insns.items.len);
+
+    switch (vcode.insns.items[0]) {
+        .ld => {},
+        else => return error.TestExpectedLoadReload,
+    }
+    switch (vcode.insns.items[2]) {
+        .sd => {},
+        else => return error.TestExpectedStoreSpill,
     }
 }
