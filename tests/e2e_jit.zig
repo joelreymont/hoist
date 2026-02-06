@@ -182,13 +182,6 @@ test "JIT: CRITICAL - verify ABI calling convention" {
         0xc0, 0x03, 0x5f, 0xd6, // ret
     };
 
-    std.debug.print("\n=== ABI VERIFICATION TEST ===\n", .{});
-    std.debug.print("Hand-written machine code: ", .{});
-    for (code_bytes) |byte| {
-        std.debug.print("{x:0>2} ", .{byte});
-    }
-    std.debug.print("\n", .{});
-
     // Allocate executable memory
     const exec_mem = try allocExecutableMemory(testing.allocator, code_bytes.len);
     defer freeExecutableMemory(exec_mem);
@@ -199,24 +192,10 @@ test "JIT: CRITICAL - verify ABI calling convention" {
     // Make executable
     try makeExecutable(exec_mem);
 
-    std.debug.print("Calling JIT function at {*}...\n", .{exec_mem.ptr});
-
     // Call the JIT function
     const FnType = *const fn () callconv(.c) i32;
     const jit_fn: FnType = @ptrCast(exec_mem.ptr);
     const result = jit_fn();
-
-    std.debug.print("Result: {}\n", .{result});
-
-    // This is the critical test - if this fails, our calling convention is wrong
-    if (result != 123) {
-        std.debug.print("CRITICAL FAILURE: Expected 123, got {}\n", .{result});
-        std.debug.print("This means the ABI/calling convention is broken!\n", .{});
-        std.debug.print("Possible causes:\n", .{});
-        std.debug.print("- Zig is not reading w0 as the return value\n", .{});
-        std.debug.print("- Register preservation issue\n", .{});
-        std.debug.print("- Calling convention mismatch\n", .{});
-    }
 
     try testing.expectEqual(@as(i32, 123), result);
 }
@@ -266,15 +245,6 @@ test "JIT: compile and execute return constant i32" {
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
-    // Debug: Print generated machine code
-    std.debug.print("\nGenerated code ({d} bytes):\n", .{code.code.items.len});
-    for (code.code.items, 0..) |byte, i| {
-        if (i % 4 == 0) std.debug.print("{x:0>8}: ", .{i});
-        std.debug.print("{x:0>2} ", .{byte});
-        if (i % 4 == 3) std.debug.print("\n", .{});
-    }
-    std.debug.print("\n", .{});
-
     // Allocate executable memory
     const exec_mem = try allocExecutableMemory(testing.allocator, code.code.items.len);
     defer freeExecutableMemory(exec_mem);
@@ -285,16 +255,10 @@ test "JIT: compile and execute return constant i32" {
     // Make memory executable
     try makeExecutable(exec_mem);
 
-    // Debug: Verify memory is executable
-    std.debug.print("exec_mem ptr: {*}, len: {d}\n", .{ exec_mem.ptr, exec_mem.len });
-    std.debug.print("About to call JIT function...\n", .{});
-
     // Execute compiled code
     const FnType = *const fn () callconv(.c) i32;
     const jit_fn: FnType = @ptrCast(exec_mem.ptr);
     const result = jit_fn();
-
-    std.debug.print("JIT returned: {d}\n", .{result});
 
     // Verify result
     try testing.expectEqual(@as(i32, 42), result);
@@ -496,14 +460,6 @@ test "JIT: compile and execute i64 multiply" {
 
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
-
-    // Debug: Print generated machine code
-    std.debug.print("\nGenerated machine code ({} bytes):\n", .{code.code.items.len});
-    for (code.code.items, 0..) |byte, i| {
-        if (i % 4 == 0) std.debug.print("\n{x:0>8}: ", .{i});
-        std.debug.print("{x:0>2} ", .{byte});
-    }
-    std.debug.print("\n\n", .{});
 
     // Allocate executable memory
     const exec_mem = try allocExecutableMemory(testing.allocator, code.code.items.len);
