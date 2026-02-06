@@ -1919,6 +1919,20 @@
 ;; Extending loads: Use specialized load instructions for narrow types
 ;; These have higher priority than the generic load to use LDRB/LDRH/LDRSB/LDRSH/LDRSW
 
+;; Direct extending-load opcodes.
+(rule 2 (lower (uload8 addr _flags _offset))
+      (aarch64_uload8 addr))
+(rule 2 (lower (uload16 addr _flags _offset))
+      (aarch64_uload16 addr))
+(rule 2 (lower (uload32 addr _flags _offset))
+      (aarch64_uload32 addr))
+(rule 2 (lower (sload8 addr _flags _offset))
+      (aarch64_sload8 addr))
+(rule 2 (lower (sload16 addr _flags _offset))
+      (aarch64_sload16 addr))
+(rule 2 (lower (sload32 addr _flags _offset))
+      (aarch64_sload32 addr))
+
 ;; load I8: Use LDRB (zero-extending load byte)
 (rule 1 (lower (load $I8 addr _flags _offset))
       (aarch64_uload8 addr))

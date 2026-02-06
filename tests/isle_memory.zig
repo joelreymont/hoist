@@ -267,7 +267,7 @@ test "ISLE coverage: sload8 (sign-extend i8)" {
     isle_helpers.setIsleCoverageTracker(&coverage);
     defer isle_helpers.setIsleCoverageTracker(null);
 
-    // Build IR: fn(ptr: i64) -> i64 { return sextend.i64(load.i8(ptr)) }
+    // Build IR: fn(ptr: i64) -> i64 { return (i64)*((i8*)ptr) }
     var sig = Signature.init(allocator, .fast);
     // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I64));
@@ -281,31 +281,21 @@ test "ISLE coverage: sload8 (sign-extend i8)" {
 
     const v0 = try func.dfg.appendBlockParam(block0, Type.I64);
 
-    // v1 = load.i8 v0+0
+    // v1 = sload8 v0+0
     const load_data = InstructionData{ .load = .{
-        .opcode = .load,
+        .opcode = .sload8,
         .flags = MemFlags.default(),
         .arg = v0,
         .offset = 0,
     } };
     const v1_inst = try func.dfg.makeInst(load_data);
     try func.layout.appendInst(v1_inst, block0);
-    _ = try func.dfg.appendInstResult(v1_inst, Type.I8);
+    _ = try func.dfg.appendInstResult(v1_inst, Type.I64);
     const v1 = func.dfg.firstResult(v1_inst).?;
-
-    // v2 = sextend.i64 v1
-    const sext_data = InstructionData{ .unary = .{
-        .opcode = .sextend,
-        .arg = v1,
-    } };
-    const v2_inst = try func.dfg.makeInst(sext_data);
-    try func.layout.appendInst(v2_inst, block0);
-    _ = try func.dfg.appendInstResult(v2_inst, Type.I64);
-    const v2 = func.dfg.firstResult(v2_inst).?;
 
     const return_data = InstructionData{ .unary = .{
         .opcode = .@"return",
-        .arg = v2,
+        .arg = v1,
     } };
     const ret_inst = try func.dfg.makeInst(return_data);
     try func.layout.appendInst(ret_inst, block0);
@@ -330,7 +320,7 @@ test "ISLE coverage: uload16 (zero-extend i16)" {
     isle_helpers.setIsleCoverageTracker(&coverage);
     defer isle_helpers.setIsleCoverageTracker(null);
 
-    // Build IR: fn(ptr: i64) -> i32 { return uextend.i32(load.i16(ptr)) }
+    // Build IR: fn(ptr: i64) -> i32 { return (i32)*((u16*)ptr) }
     var sig = Signature.init(allocator, .fast);
     // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I64));
@@ -344,31 +334,21 @@ test "ISLE coverage: uload16 (zero-extend i16)" {
 
     const v0 = try func.dfg.appendBlockParam(block0, Type.I64);
 
-    // v1 = load.i16 v0+0
+    // v1 = uload16 v0+0
     const load_data = InstructionData{ .load = .{
-        .opcode = .load,
+        .opcode = .uload16,
         .flags = MemFlags.default(),
         .arg = v0,
         .offset = 0,
     } };
     const v1_inst = try func.dfg.makeInst(load_data);
     try func.layout.appendInst(v1_inst, block0);
-    _ = try func.dfg.appendInstResult(v1_inst, Type.I16);
+    _ = try func.dfg.appendInstResult(v1_inst, Type.I32);
     const v1 = func.dfg.firstResult(v1_inst).?;
-
-    // v2 = uextend.i32 v1
-    const uext_data = InstructionData{ .unary = .{
-        .opcode = .uextend,
-        .arg = v1,
-    } };
-    const v2_inst = try func.dfg.makeInst(uext_data);
-    try func.layout.appendInst(v2_inst, block0);
-    _ = try func.dfg.appendInstResult(v2_inst, Type.I32);
-    const v2 = func.dfg.firstResult(v2_inst).?;
 
     const return_data = InstructionData{ .unary = .{
         .opcode = .@"return",
-        .arg = v2,
+        .arg = v1,
     } };
     const ret_inst = try func.dfg.makeInst(return_data);
     try func.layout.appendInst(ret_inst, block0);
@@ -393,7 +373,7 @@ test "ISLE coverage: sload32 (sign-extend i32 to i64)" {
     isle_helpers.setIsleCoverageTracker(&coverage);
     defer isle_helpers.setIsleCoverageTracker(null);
 
-    // Build IR: fn(ptr: i64) -> i64 { return sextend.i64(load.i32(ptr)) }
+    // Build IR: fn(ptr: i64) -> i64 { return (i64)*((i32*)ptr) }
     var sig = Signature.init(allocator, .fast);
     // Note: sig ownership transfers to func, func.deinit() frees it
     try sig.params.append(allocator, AbiParam.new(Type.I64));
@@ -407,31 +387,21 @@ test "ISLE coverage: sload32 (sign-extend i32 to i64)" {
 
     const v0 = try func.dfg.appendBlockParam(block0, Type.I64);
 
-    // v1 = load.i32 v0+0
+    // v1 = sload32 v0+0
     const load_data = InstructionData{ .load = .{
-        .opcode = .load,
+        .opcode = .sload32,
         .flags = MemFlags.default(),
         .arg = v0,
         .offset = 0,
     } };
     const v1_inst = try func.dfg.makeInst(load_data);
     try func.layout.appendInst(v1_inst, block0);
-    _ = try func.dfg.appendInstResult(v1_inst, Type.I32);
+    _ = try func.dfg.appendInstResult(v1_inst, Type.I64);
     const v1 = func.dfg.firstResult(v1_inst).?;
-
-    // v2 = sextend.i64 v1
-    const sext_data = InstructionData{ .unary = .{
-        .opcode = .sextend,
-        .arg = v1,
-    } };
-    const v2_inst = try func.dfg.makeInst(sext_data);
-    try func.layout.appendInst(v2_inst, block0);
-    _ = try func.dfg.appendInstResult(v2_inst, Type.I64);
-    const v2 = func.dfg.firstResult(v2_inst).?;
 
     const return_data = InstructionData{ .unary = .{
         .opcode = .@"return",
-        .arg = v2,
+        .arg = v1,
     } };
     const ret_inst = try func.dfg.makeInst(return_data);
     try func.layout.appendInst(ret_inst, block0);

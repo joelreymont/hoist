@@ -760,6 +760,25 @@
 (extern constructor istore32 istore32_ctor)
 (extern extractor istore32 istore32_ext)
 
+;; Scalar extending loads (distinct opcodes from generic load)
+(decl uload8 (Value MemFlags Offset32) Value)
+(extern extractor uload8 uload8_ext)
+
+(decl uload16 (Value MemFlags Offset32) Value)
+(extern extractor uload16 uload16_ext)
+
+(decl uload32 (Value MemFlags Offset32) Value)
+(extern extractor uload32 uload32_ext)
+
+(decl sload8 (Value MemFlags Offset32) Value)
+(extern extractor sload8 sload8_ext)
+
+(decl sload16 (Value MemFlags Offset32) Value)
+(extern extractor sload16 sload16_ext)
+
+(decl sload32 (Value MemFlags Offset32) Value)
+(extern extractor sload32 sload32_ext)
+
 ;; Widening loads (vector)
 (decl uload8x8 (Value MemFlags Offset32) Value)
 (extern constructor uload8x8 uload8x8_ctor)

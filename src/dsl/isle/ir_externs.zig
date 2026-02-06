@@ -990,6 +990,30 @@ pub fn Externs(comptime Ctx: type) type {
             }
         }
 
+        pub fn uload8_ext(ctx: *Ctx, input: Value) !?MemLoad {
+            return loadOpExt(ctx, input, .uload8);
+        }
+
+        pub fn uload16_ext(ctx: *Ctx, input: Value) !?MemLoad {
+            return loadOpExt(ctx, input, .uload16);
+        }
+
+        pub fn uload32_ext(ctx: *Ctx, input: Value) !?MemLoad {
+            return loadOpExt(ctx, input, .uload32);
+        }
+
+        pub fn sload8_ext(ctx: *Ctx, input: Value) !?MemLoad {
+            return loadOpExt(ctx, input, .sload8);
+        }
+
+        pub fn sload16_ext(ctx: *Ctx, input: Value) !?MemLoad {
+            return loadOpExt(ctx, input, .sload16);
+        }
+
+        pub fn sload32_ext(ctx: *Ctx, input: Value) !?MemLoad {
+            return loadOpExt(ctx, input, .sload32);
+        }
+
         pub fn uload8x8_ext(ctx: *Ctx, input: Value) !?MemLoad {
             return loadOpExt(ctx, input, .uload8x8);
         }
