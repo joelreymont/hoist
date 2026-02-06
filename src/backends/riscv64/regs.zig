@@ -226,12 +226,12 @@ pub fn t6() Reg {
 // Constructors for FPRs
 
 pub fn fprPreg(enc: u8) PReg {
-    return PReg.init(enc, .float);
+    return PReg.new(.float, @intCast(enc));
 }
 
 pub fn fpr(enc: u8) Reg {
     const preg = fprPreg(enc);
-    return Reg.fromVirtualReg(preg.index(), .float);
+    return Reg.fromPReg(preg);
 }
 
 pub fn ft0() Reg {

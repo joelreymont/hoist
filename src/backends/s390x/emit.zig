@@ -187,7 +187,7 @@ test "emit agr" {
     var buf = buffer_mod.MachBuffer.init(testing.allocator);
     defer buf.deinit();
 
-    try emit(.{ .agr = .{ .dst = regs.r2().toWritable(), .src1 = regs.r2(), .src2 = regs.r3() } }, &buf);
+    try emit(.{ .agr = .{ .dst = inst_mod.WritableReg.fromReg(regs.r2()), .src1 = regs.r2(), .src2 = regs.r3() } }, &buf);
     try testing.expectEqualSlices(u8, &[_]u8{ 0xB9, 0x08, 0x00, 0x23 }, buf.data.items);
 }
 
@@ -196,7 +196,7 @@ test "emit lghi" {
     var buf = buffer_mod.MachBuffer.init(testing.allocator);
     defer buf.deinit();
 
-    try emit(.{ .lghi = .{ .dst = regs.r2().toWritable(), .imm = 42 } }, &buf);
+    try emit(.{ .lghi = .{ .dst = inst_mod.WritableReg.fromReg(regs.r2()), .imm = 42 } }, &buf);
     try testing.expectEqualSlices(u8, &[_]u8{ 0xA7, 0x29, 0x00, 0x2A }, buf.data.items);
 }
 
@@ -205,6 +205,6 @@ test "emit lg" {
     var buf = buffer_mod.MachBuffer.init(testing.allocator);
     defer buf.deinit();
 
-    try emit(.{ .lg = .{ .dst = regs.r2().toWritable(), .base = regs.r15(), .offset = 160 } }, &buf);
+    try emit(.{ .lg = .{ .dst = inst_mod.WritableReg.fromReg(regs.r2()), .base = regs.r15(), .offset = 160 } }, &buf);
     try testing.expectEqualSlices(u8, &[_]u8{ 0xE3, 0x20, 0xF0, 0xA0, 0x00, 0x04 }, buf.data.items);
 }

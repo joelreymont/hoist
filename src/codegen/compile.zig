@@ -814,6 +814,8 @@ pub fn compile(
     ctx.target = target;
     ctx.clearAArch64State();
     ctx.clearX64State();
+    ctx.clearRiscv64State();
+    ctx.clearS390xState();
 
     // 1. Verify IR (if enabled)
     try verifyIf(ctx, func, target);
@@ -2142,7 +2144,7 @@ fn emitX64WithoutAllocation(
             x64_emit.emit(inst, &buffer) catch |err| {
                 return switch (err) {
                     error.OutOfMemory => error.OutOfMemory,
-                    else => error.EmissionFailed,
+                    error.UnsupportedInst => error.EmissionFailed,
                 };
             };
         }
@@ -2152,6 +2154,53 @@ fn emitX64WithoutAllocation(
     ctx.compiled_code = try assembleResult(ctx.allocator, &buffer, ctx.func, false);
 
     _ = x64_inst;
+}
+
+/// Emit riscv64 machine code from lowered VCode after register rewrite.
+fn emitRiscv64WithoutAllocation(
+    ctx: *Context,
+    vcode: *@import("../machinst/vcode.zig").VCode(@import("../backends/riscv64/inst.zig").Inst),
+) CodegenError!void {
+    const riscv_emit = @import("../backends/riscv64/emit.zig");
+    const buffer_mod = @import("../machinst/buffer.zig");
+
+    var buffer = buffer_mod.MachBuffer.init(ctx.allocator);
+    defer buffer.deinit();
+
+    for (vcode.insns.items) |inst| {
+        riscv_emit.emit(inst, &buffer) catch |err| {
+            return switch (err) {
+                error.OutOfMemory => error.OutOfMemory,
+            };
+        };
+    }
+
+    try buffer.finalize();
+    ctx.compiled_code = try assembleResult(ctx.allocator, &buffer, ctx.func, false);
+}
+
+/// Emit s390x machine code from lowered VCode after register rewrite.
+fn emitS390xWithoutAllocation(
+    ctx: *Context,
+    vcode: *@import("../machinst/vcode.zig").VCode(@import("../backends/s390x/inst.zig").Inst),
+) CodegenError!void {
+    const s390x_emit = @import("../backends/s390x/emit.zig");
+    const buffer_mod = @import("../machinst/buffer.zig");
+
+    var buffer = buffer_mod.MachBuffer.init(ctx.allocator);
+    defer buffer.deinit();
+
+    for (vcode.insns.items) |inst| {
+        s390x_emit.emit(inst, &buffer) catch |err| {
+            return switch (err) {
+                error.OutOfMemory => error.OutOfMemory,
+                error.InvalidReg => error.EmissionFailed,
+            };
+        };
+    }
+
+    try buffer.finalize();
+    ctx.compiled_code = try assembleResult(ctx.allocator, &buffer, ctx.func, false);
 }
 
 fn emitMovWideImmediate(
@@ -6016,10 +6065,20 @@ fn lowerRiscv64(ctx: *Context) CodegenError!void {
         error.OutOfMemory => error.OutOfMemory,
         else => error.LoweringFailed,
     };
-    lowered.deinit();
+    errdefer lowered.deinit();
 
-    // RISC-V lowering path is wired; register allocation and emission remain AArch64-only.
-    return error.UnsupportedTarget;
+    if (ctx.riscv64_regalloc) |*state| {
+        state.deinit();
+        ctx.riscv64_regalloc = null;
+    }
+    if (ctx.riscv64_lowered) |*state| {
+        state.deinit();
+        ctx.riscv64_lowered = null;
+    }
+
+    ctx.riscv64_lowered = .{
+        .vcode = lowered,
+    };
 }
 
 /// Lower IR to s390x VCode.
@@ -6036,10 +6095,20 @@ fn lowerS390x(ctx: *Context) CodegenError!void {
         error.OutOfMemory => error.OutOfMemory,
         else => error.LoweringFailed,
     };
-    lowered.deinit();
+    errdefer lowered.deinit();
 
-    // s390x lowering path is wired; register allocation and emission remain AArch64-only.
-    return error.UnsupportedTarget;
+    if (ctx.s390x_regalloc) |*state| {
+        state.deinit();
+        ctx.s390x_regalloc = null;
+    }
+    if (ctx.s390x_lowered) |*state| {
+        state.deinit();
+        ctx.s390x_lowered = null;
+    }
+
+    ctx.s390x_lowered = .{
+        .vcode = lowered,
+    };
 }
 
 /// Lower a single instruction via backend dispatch.
@@ -6122,7 +6191,93 @@ fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
                 };
             } else return error.LoweringFailed;
         },
-        else => return error.UnsupportedTarget,
+        .riscv64 => {
+            const Inst = @import("../backends/riscv64/inst.zig").Inst;
+            const riscv64_isa = @import("../backends/riscv64/isa.zig").Riscv64ISA;
+            const liveness_info_mod = @import("../regalloc/liveness.zig");
+
+            if (ctx.riscv64_lowered) |*lowered| {
+                var liveness_info = try liveness_info_mod.LivenessInfo.compute(Inst, ctx.allocator, &lowered.vcode);
+                defer liveness_info.deinit();
+
+                var linear_scan = try linear_scan_mod.LinearScanAllocator.init(
+                    ctx.allocator,
+                    31,
+                    31,
+                    31,
+                );
+                defer linear_scan.deinit();
+
+                var result = try linear_scan.allocate(&liveness_info);
+                errdefer result.deinit();
+
+                riscv64_isa.insertSpillReloads(&lowered.vcode, &result, &liveness_info, ctx.allocator) catch |err| switch (err) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    error.SpillOffsetOutOfRange => return error.SpillOffsetOutOfRange,
+                    error.UnsupportedSpillRegClass,
+                    error.MultipleSpillsPerInstruction,
+                    => return error.RegisterAllocationFailed,
+                };
+                const spill_bytes: u32 = linear_scan.next_spill_offset;
+
+                if (ctx.riscv64_regalloc) |*state| {
+                    state.deinit();
+                }
+                ctx.riscv64_regalloc = .{
+                    .allocator = ctx.allocator,
+                    .result = result,
+                    .spill_bytes = spill_bytes,
+                };
+            } else return error.LoweringFailed;
+        },
+        .s390x => {
+            const Inst = @import("../backends/s390x/inst.zig").Inst;
+            const s390x_isa = @import("../backends/s390x/isa.zig").S390xISA;
+            const liveness_info_mod = @import("../regalloc/liveness.zig");
+
+            if (ctx.s390x_lowered) |*lowered| {
+                var liveness_info = try liveness_info_mod.LivenessInfo.compute(Inst, ctx.allocator, &lowered.vcode);
+                defer liveness_info.deinit();
+
+                var linear_scan = try linear_scan_mod.LinearScanAllocator.init(
+                    ctx.allocator,
+                    16,
+                    16,
+                    16,
+                );
+                defer linear_scan.deinit();
+
+                const int_scratch_hw: u6 = 1; // r1
+                const float_scratch_hw: u6 = 15; // f15
+                const int_idx = linear_scan.int_reg_index[int_scratch_hw];
+                if (int_idx != 0xFF) linear_scan.free_int_regs.unset(int_idx);
+                const float_idx = linear_scan.float_reg_index[float_scratch_hw];
+                if (float_idx != 0xFF) linear_scan.free_float_regs.unset(float_idx);
+                const vec_idx = linear_scan.vector_reg_index[float_scratch_hw];
+                if (vec_idx != 0xFF) linear_scan.free_vector_regs.unset(vec_idx);
+
+                var result = try linear_scan.allocate(&liveness_info);
+                errdefer result.deinit();
+
+                s390x_isa.insertSpillReloads(&lowered.vcode, &result, &liveness_info, ctx.allocator) catch |err| switch (err) {
+                    error.OutOfMemory => return error.OutOfMemory,
+                    error.SpillOffsetOutOfRange => return error.SpillOffsetOutOfRange,
+                    error.UnsupportedSpillRegClass,
+                    error.MultipleSpillsPerInstruction,
+                    => return error.RegisterAllocationFailed,
+                };
+                const spill_bytes: u32 = linear_scan.next_spill_offset;
+
+                if (ctx.s390x_regalloc) |*state| {
+                    state.deinit();
+                }
+                ctx.s390x_regalloc = .{
+                    .allocator = ctx.allocator,
+                    .result = result,
+                    .spill_bytes = spill_bytes,
+                };
+            } else return error.LoweringFailed;
+        },
     }
 }
 
@@ -6141,7 +6296,34 @@ fn rewriteRegisters(ctx: *Context, target: *const Target) CodegenError!void {
                 } else return error.RegisterAllocationFailed;
             } else return error.LoweringFailed;
         },
-        else => return error.UnsupportedTarget,
+        .riscv64 => {
+            const riscv64_isa = @import("../backends/riscv64/isa.zig").Riscv64ISA;
+            if (ctx.riscv64_lowered) |*lowered| {
+                if (ctx.riscv64_regalloc) |*regalloc| {
+                    for (lowered.vcode.insns.items) |*inst| {
+                        riscv64_isa.applyAllocations(inst, &regalloc.result) catch |err| switch (err) {
+                            error.SpilledVirtualRegister,
+                            error.UnallocatedVirtualRegister,
+                            => return error.RegisterAllocationFailed,
+                        };
+                    }
+                } else return error.RegisterAllocationFailed;
+            } else return error.LoweringFailed;
+        },
+        .s390x => {
+            const s390x_isa = @import("../backends/s390x/isa.zig").S390xISA;
+            if (ctx.s390x_lowered) |*lowered| {
+                if (ctx.s390x_regalloc) |*regalloc| {
+                    for (lowered.vcode.insns.items) |*inst| {
+                        s390x_isa.applyAllocations(inst, &regalloc.result) catch |err| switch (err) {
+                            error.SpilledVirtualRegister,
+                            error.UnallocatedVirtualRegister,
+                            => return error.RegisterAllocationFailed,
+                        };
+                    }
+                } else return error.RegisterAllocationFailed;
+            } else return error.LoweringFailed;
+        },
     }
 }
 
@@ -6160,7 +6342,18 @@ fn emit(ctx: *Context, target: *const Target) CodegenError!void {
                 } else return error.RegisterAllocationFailed;
             } else return error.EmissionFailed;
         },
-        else => return error.UnsupportedTarget,
+        .riscv64 => {
+            if (ctx.riscv64_lowered) |*lowered| {
+                if (ctx.riscv64_regalloc == null) return error.RegisterAllocationFailed;
+                try emitRiscv64WithoutAllocation(ctx, &lowered.vcode);
+            } else return error.EmissionFailed;
+        },
+        .s390x => {
+            if (ctx.s390x_lowered) |*lowered| {
+                if (ctx.s390x_regalloc == null) return error.RegisterAllocationFailed;
+                try emitS390xWithoutAllocation(ctx, &lowered.vcode);
+            } else return error.EmissionFailed;
+        },
     }
 }
 
@@ -7051,6 +7244,60 @@ test "compile: emits prologue and epilogue" {
     try testing.expectEqualSlices(u8, &[_]u8{ 0xfd, 0x7b, 0xbf, 0xa9 }, result.code.items[0..4]);
     try testing.expectEqualSlices(u8, &[_]u8{ 0xfd, 0x7b, 0xc1, 0xa8 }, result.code.items[result.code.items.len - 8 .. result.code.items.len - 4]);
     try testing.expectEqualSlices(u8, &[_]u8{ 0xc0, 0x03, 0x5f, 0xd6 }, result.code.items[result.code.items.len - 4 .. result.code.items.len]);
+}
+
+test "compile: simple iadd compiles on riscv64" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    var func = try Function.init(testing.allocator, "riscv64_add", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const one = try builder.iconst(ir.I64, 1);
+    const two = try builder.iconst(ir.I64, 2);
+    const add = try builder.iadd(ir.I64, one, two);
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{ .opcode = .@"return", .arg = add } });
+    try func.layout.appendInst(ret_inst, block);
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+
+    var target = Target.init(.riscv64);
+    target.verify = false;
+
+    const result = try compile(&ctx, &func, &target);
+    try testing.expect(result.code.items.len > 0);
+}
+
+test "compile: simple iadd compiles on s390x" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    var func = try Function.init(testing.allocator, "s390x_add", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const one = try builder.iconst(ir.I64, 1);
+    const two = try builder.iconst(ir.I64, 2);
+    const add = try builder.iadd(ir.I64, one, two);
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{ .opcode = .@"return", .arg = add } });
+    try func.layout.appendInst(ret_inst, block);
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+
+    var target = Target.init(.s390x);
+    target.verify = false;
+
+    const result = try compile(&ctx, &func, &target);
+    try testing.expect(result.code.items.len > 0);
 }
 
 test "compile: vector iadd lowers on aarch64" {

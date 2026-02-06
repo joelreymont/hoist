@@ -4,6 +4,8 @@ const ir_entities = @import("../ir/entities.zig");
 const Opcode = @import("../ir/opcodes.zig").Opcode;
 const a64_inst = @import("../backends/aarch64/inst.zig");
 const x64_inst = @import("../backends/x64/inst.zig");
+const riscv64_inst = @import("../backends/riscv64/inst.zig");
+const s390x_inst = @import("../backends/s390x/inst.zig");
 const vcode_mod = @import("../machinst/vcode.zig");
 const reg_mod = @import("../machinst/reg.zig");
 const linear_scan_mod = @import("../regalloc/linear_scan.zig");
@@ -61,6 +63,46 @@ pub const X64Lowered = struct {
 
     pub fn deinit(self: *X64Lowered) void {
         self.vcode.deinit();
+        self.* = undefined;
+    }
+};
+
+pub const Riscv64Lowered = struct {
+    vcode: vcode_mod.VCode(riscv64_inst.Inst),
+
+    pub fn deinit(self: *Riscv64Lowered) void {
+        self.vcode.deinit();
+        self.* = undefined;
+    }
+};
+
+pub const Riscv64RegAlloc = struct {
+    allocator: std.mem.Allocator,
+    result: linear_scan_mod.RegAllocResult,
+    spill_bytes: u32,
+
+    pub fn deinit(self: *Riscv64RegAlloc) void {
+        self.result.deinit();
+        self.* = undefined;
+    }
+};
+
+pub const S390xLowered = struct {
+    vcode: vcode_mod.VCode(s390x_inst.Inst),
+
+    pub fn deinit(self: *S390xLowered) void {
+        self.vcode.deinit();
+        self.* = undefined;
+    }
+};
+
+pub const S390xRegAlloc = struct {
+    allocator: std.mem.Allocator,
+    result: linear_scan_mod.RegAllocResult,
+    spill_bytes: u32,
+
+    pub fn deinit(self: *S390xRegAlloc) void {
+        self.result.deinit();
         self.* = undefined;
     }
 };

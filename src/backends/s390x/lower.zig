@@ -14,9 +14,52 @@ pub const S390xLower = struct {
         ctx: *LowerCtx(Inst),
         inst: lower_mod.Inst,
     ) !bool {
-        _ = ctx;
-        _ = inst;
-        return false;
+        const data = ctx.func.dfg.insts.get(inst) orelse return false;
+        switch (data.*) {
+            .unary_imm => |uimm| {
+                if (uimm.opcode != .iconst) return false;
+                const result = ctx.func.dfg.firstResult(inst) orelse return false;
+                const dst = WritableReg.fromVReg(try ctx.getValueReg(result, .int));
+                const imm = uimm.imm.value;
+                if (imm < std.math.minInt(i16) or imm > std.math.maxInt(i16)) return false;
+                try ctx.emit(.{ .lghi = .{
+                    .dst = dst,
+                    .imm = @intCast(imm),
+                } });
+                return true;
+            },
+            .binary => |bin| {
+                if (bin.opcode != .iadd) return false;
+                const result = ctx.func.dfg.firstResult(inst) orelse return false;
+                const lhs_vreg = try ctx.getValueReg(bin.args[0], .int);
+                const lhs = Reg.fromVReg(lhs_vreg);
+                const rhs = Reg.fromVReg(try ctx.getValueReg(bin.args[1], .int));
+
+                // s390x add is 2-operand; reuse lhs for the result until move support lands.
+                try ctx.value_to_reg.put(result, lhs_vreg);
+                try ctx.emit(.{ .agr = .{
+                    .dst = WritableReg.fromReg(lhs),
+                    .src1 = lhs,
+                    .src2 = rhs,
+                } });
+                return true;
+            },
+            .unary => |u| {
+                if (u.opcode != .@"return") return false;
+                try ctx.emit(.ret);
+                return true;
+            },
+            .nullary => |n| {
+                if (n.opcode != .@"return") return false;
+                try ctx.emit(.ret);
+                return true;
+            },
+            .@"return" => {
+                try ctx.emit(.ret);
+                return true;
+            },
+            else => return false,
+        }
     }
 
     pub fn lowerBranch(

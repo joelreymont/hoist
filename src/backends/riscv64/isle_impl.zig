@@ -541,10 +541,13 @@ pub fn rv_ret(ctx: *IsleCtx) !ValueRegs {
 }
 
 pub fn rv_iconst(ctx: *IsleCtx, ty: Type, k: i64) !ValueRegs {
-    _ = ctx;
-    _ = ty;
-    _ = k;
-    return error.Unimplemented;
+    const dst = ctx.allocOutputReg(.int);
+    const imm: i64 = if (is32Bit(ty))
+        @as(i64, @as(i32, @truncate(k)))
+    else
+        k;
+    try ctx.emit(.{ .li = .{ .dst = dst, .imm = imm } });
+    return ValueRegs.single(dst.toReg());
 }
 
 pub fn rv_fadd(ctx: *IsleCtx, ty: Type, x: Value, y: Value) !ValueRegs {

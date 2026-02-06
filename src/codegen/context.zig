@@ -83,6 +83,14 @@ pub const Context = struct {
     aarch64_regalloc: ?pipeline_state.AArch64RegAlloc,
     /// x64 lowering state for current compilation.
     x64_lowered: ?pipeline_state.X64Lowered,
+    /// RISC-V lowering state for current compilation.
+    riscv64_lowered: ?pipeline_state.Riscv64Lowered,
+    /// RISC-V register allocation state for current compilation.
+    riscv64_regalloc: ?pipeline_state.Riscv64RegAlloc,
+    /// s390x lowering state for current compilation.
+    s390x_lowered: ?pipeline_state.S390xLowered,
+    /// s390x register allocation state for current compilation.
+    s390x_regalloc: ?pipeline_state.S390xRegAlloc,
 
     /// Request disassembly output.
     want_disasm: bool,
@@ -103,6 +111,10 @@ pub const Context = struct {
             .aarch64_lowered = null,
             .aarch64_regalloc = null,
             .x64_lowered = null,
+            .riscv64_lowered = null,
+            .riscv64_regalloc = null,
+            .s390x_lowered = null,
+            .s390x_regalloc = null,
             .want_disasm = false,
             .debug = DebugOptions.init(),
             .target = null,
@@ -120,6 +132,10 @@ pub const Context = struct {
             .aarch64_lowered = null,
             .aarch64_regalloc = null,
             .x64_lowered = null,
+            .riscv64_lowered = null,
+            .riscv64_regalloc = null,
+            .s390x_lowered = null,
+            .s390x_regalloc = null,
             .want_disasm = false,
             .debug = DebugOptions.init(),
             .target = null,
@@ -143,6 +159,18 @@ pub const Context = struct {
         if (self.x64_lowered) |*state| {
             state.deinit();
         }
+        if (self.riscv64_regalloc) |*state| {
+            state.deinit();
+        }
+        if (self.riscv64_lowered) |*state| {
+            state.deinit();
+        }
+        if (self.s390x_regalloc) |*state| {
+            state.deinit();
+        }
+        if (self.s390x_lowered) |*state| {
+            state.deinit();
+        }
         self.debug.deinit(self.allocator);
     }
 
@@ -164,6 +192,28 @@ pub const Context = struct {
         }
     }
 
+    pub fn clearRiscv64State(self: *Context) void {
+        if (self.riscv64_regalloc) |*state| {
+            state.deinit();
+            self.riscv64_regalloc = null;
+        }
+        if (self.riscv64_lowered) |*state| {
+            state.deinit();
+            self.riscv64_lowered = null;
+        }
+    }
+
+    pub fn clearS390xState(self: *Context) void {
+        if (self.s390x_regalloc) |*state| {
+            state.deinit();
+            self.s390x_regalloc = null;
+        }
+        if (self.s390x_lowered) |*state| {
+            state.deinit();
+            self.s390x_lowered = null;
+        }
+    }
+
     /// Clear all data structures for reuse.
     pub fn clear(self: *Context) void {
         // Note: Function doesn't support clear(), would need deinit + re-init
@@ -179,6 +229,8 @@ pub const Context = struct {
         self.compiled_code = null;
         self.clearAArch64State();
         self.clearX64State();
+        self.clearRiscv64State();
+        self.clearS390xState();
         self.want_disasm = false;
     }
 

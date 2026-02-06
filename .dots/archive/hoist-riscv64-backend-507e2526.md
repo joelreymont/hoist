@@ -1,9 +1,11 @@
 ---
 title: riscv64 backend
-status: open
+status: closed
 priority: 3
 issue-type: task
-created-at: "2026-02-02T21:35:57.009473+01:00"
+created-at: "\"\\\"2026-02-02T21:35:57.009473+01:00\\\"\""
+closed-at: "2026-02-06T19:08:48.159678+01:00"
+close-reason: Regalloc rewrite/spill path and emit are wired and tested.
 blocks:
   - hoist-x64-backend-5707920d
 ---

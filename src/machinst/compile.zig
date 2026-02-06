@@ -10,6 +10,7 @@ const regalloc2_api_mod = @import("regalloc2/api.zig");
 const regalloc2_types_mod = @import("regalloc2/types.zig");
 const regalloc2_liveness_mod = @import("regalloc2/liveness.zig");
 const regalloc2_allocator_mod = @import("regalloc2/allocator.zig");
+const signature_mod = @import("../ir/signature.zig");
 
 fn alignTo16(bytes: u32) u32 {
     return (bytes + 15) & ~@as(u32, 15);
@@ -290,19 +291,7 @@ fn convertRelocKind(kind: buffer_mod.Reloc) RelocationKind {
     return switch (kind) {
         .abs8, .aarch64_abs64 => .abs64,
         .x86_pc_rel_32, .aarch64_call26, .aarch64_jump26 => .pc_rel32,
-        .aarch64_adr_prel_pg_hi21,
-        .aarch64_add_abs_lo12_nc,
-        .aarch64_ldst64_abs_lo12_nc,
-        .aarch64_adr_got_page,
-        .aarch64_ld64_got_lo12_nc,
-        .aarch64_tlsle_add_tprel_hi12,
-        .aarch64_tlsle_add_tprel_lo12_nc,
-        .aarch64_tlsie_adr_gottprel_page21,
-        .aarch64_tlsie_ld64_gottprel_lo12_nc,
-        .aarch64_tlsdesc_adr_page21,
-        .aarch64_tlsdesc_ld64_lo12,
-        .aarch64_tlsdesc_add_lo12,
-        .aarch64_tlsdesc_call => .got_pc_rel32,
+        .aarch64_adr_prel_pg_hi21, .aarch64_add_abs_lo12_nc, .aarch64_ldst64_abs_lo12_nc, .aarch64_adr_got_page, .aarch64_ld64_got_lo12_nc, .aarch64_tlsle_add_tprel_hi12, .aarch64_tlsle_add_tprel_lo12_nc, .aarch64_tlsie_adr_gottprel_page21, .aarch64_tlsie_ld64_gottprel_lo12_nc, .aarch64_tlsdesc_adr_page21, .aarch64_tlsdesc_ld64_lo12, .aarch64_tlsdesc_add_lo12, .aarch64_tlsdesc_call => .got_pc_rel32,
         .abs4 => .abs64,
     };
 }
@@ -313,7 +302,8 @@ test "compile basic" {
         .lowerBranchFn = testLowerBranch,
     };
 
-    var func = lower_mod.Function.init(testing.allocator);
+    const sig = signature_mod.Signature.init(testing.allocator, .system_v);
+    var func = try lower_mod.Function.init(testing.allocator, "compile_basic_test", sig);
     defer func.deinit();
 
     const ctx = CompileCtx.init(testing.allocator, "x86_64");

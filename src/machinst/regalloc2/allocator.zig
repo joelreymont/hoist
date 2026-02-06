@@ -22,16 +22,16 @@ pub const Allocator = struct {
     next_spill: u32,
 
     pub fn init(mem: Allocator_mem, adapter: *RegAllocAdapter) !Allocator {
-        var int_pregs = std.ArrayList(PhysReg).init(mem);
-        var fp_pregs = std.ArrayList(PhysReg).init(mem);
+        var int_pregs = std.ArrayList(PhysReg){};
+        var fp_pregs = std.ArrayList(PhysReg){};
 
         var i: u8 = 0;
         while (i < 31) : (i += 1) {
-            try int_pregs.append(PhysReg.new(i));
+            try int_pregs.append(mem, PhysReg.new(i));
         }
         i = 0;
         while (i < 32) : (i += 1) {
-            try fp_pregs.append(PhysReg.new(32 + i));
+            try fp_pregs.append(mem, PhysReg.new(32 + i));
         }
 
         return .{
@@ -47,8 +47,8 @@ pub const Allocator = struct {
     }
 
     pub fn deinit(self: *Allocator) void {
-        self.int_pregs.deinit();
-        self.fp_pregs.deinit();
+        self.int_pregs.deinit(self.mem);
+        self.fp_pregs.deinit(self.mem);
         self.active_int.deinit();
         self.active_fp.deinit();
         self.spills.deinit();

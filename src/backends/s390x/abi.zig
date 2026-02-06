@@ -43,17 +43,17 @@ const s390x_float_rets = [_]PReg{
 };
 
 const s390x_callee_saves = [_]PReg{
-    PReg.new(.int, 6),  // r6
-    PReg.new(.int, 7),  // r7
-    PReg.new(.int, 8),  // r8
-    PReg.new(.int, 9),  // r9
+    PReg.new(.int, 6), // r6
+    PReg.new(.int, 7), // r7
+    PReg.new(.int, 8), // r8
+    PReg.new(.int, 9), // r9
     PReg.new(.int, 10), // r10
     PReg.new(.int, 11), // r11
     PReg.new(.int, 12), // r12
     PReg.new(.int, 13), // r13
     PReg.new(.int, 14), // r14
-    PReg.new(.float, 8),  // f8
-    PReg.new(.float, 9),  // f9
+    PReg.new(.float, 8), // f8
+    PReg.new(.float, 9), // f9
     PReg.new(.float, 10), // f10
     PReg.new(.float, 11), // f11
     PReg.new(.float, 12), // f12
@@ -75,6 +75,7 @@ pub fn sysv() abi_mod.ABIMachineSpec(u64) {
 }
 
 pub const S390xABICallee = struct {
+    allocator: Allocator,
     sig: abi_mod.ABISignature,
     abi: abi_mod.ABIMachineSpec(u64),
     call_conv: ?abi_mod.ABICallingConvention,
@@ -82,13 +83,13 @@ pub const S390xABICallee = struct {
     frame_size: u32,
 
     pub fn init(
-        _allocator: std.mem.Allocator,
+        allocator: std.mem.Allocator,
         sig: abi_mod.ABISignature,
     ) S390xABICallee {
-        _ = _allocator;
         const abi_spec = sysv();
 
         return .{
+            .allocator = allocator,
             .sig = sig,
             .abi = abi_spec,
             .call_conv = null,
@@ -102,7 +103,7 @@ pub const S390xABICallee = struct {
             var cc_mut = cc;
             cc_mut.deinit();
         }
-        self.clobbered_callee_saves.deinit();
+        self.clobbered_callee_saves.deinit(self.allocator);
     }
 
     pub fn computeCallConv(self: *S390xABICallee, allocator: Allocator) !void {
@@ -174,11 +175,7 @@ test "SysV ABI spec" {
 }
 
 test "S390xABICallee init" {
-    const sig = abi_mod.ABISignature{
-        .params = &.{},
-        .returns = &.{},
-        .call_conv = .system_v,
-    };
+    const sig = abi_mod.ABISignature.init(&.{}, &.{}, .system_v);
 
     var callee = S390xABICallee.init(testing.allocator, sig);
     defer callee.deinit();
@@ -187,11 +184,7 @@ test "S390xABICallee init" {
 }
 
 test "S390xABICaller init" {
-    const sig = abi_mod.ABISignature{
-        .params = &.{},
-        .returns = &.{},
-        .call_conv = .system_v,
-    };
+    const sig = abi_mod.ABISignature.init(&.{}, &.{}, .system_v);
 
     var caller = S390xABICaller.init(testing.allocator, sig);
     defer caller.deinit();

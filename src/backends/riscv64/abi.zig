@@ -50,8 +50,8 @@ const rv64_float_rets = [_]PReg{
 };
 
 const rv64_callee_saves = [_]PReg{
-    PReg.new(.int, 8),  // s0/fp (x8)
-    PReg.new(.int, 9),  // s1 (x9)
+    PReg.new(.int, 8), // s0/fp (x8)
+    PReg.new(.int, 9), // s1 (x9)
     PReg.new(.int, 18), // s2 (x18)
     PReg.new(.int, 19), // s3 (x19)
     PReg.new(.int, 20), // s4 (x20)
@@ -62,8 +62,8 @@ const rv64_callee_saves = [_]PReg{
     PReg.new(.int, 25), // s9 (x25)
     PReg.new(.int, 26), // s10 (x26)
     PReg.new(.int, 27), // s11 (x27)
-    PReg.new(.float, 8),  // fs0 (f8)
-    PReg.new(.float, 9),  // fs1 (f9)
+    PReg.new(.float, 8), // fs0 (f8)
+    PReg.new(.float, 9), // fs1 (f9)
     PReg.new(.float, 18), // fs2 (f18)
     PReg.new(.float, 19), // fs3 (f19)
     PReg.new(.float, 20), // fs4 (f20)
@@ -89,6 +89,7 @@ pub fn lp64d() abi_mod.ABIMachineSpec(u64) {
 }
 
 pub const Riscv64ABICallee = struct {
+    allocator: Allocator,
     sig: abi_mod.ABISignature,
     abi: abi_mod.ABIMachineSpec(u64),
     call_conv: ?abi_mod.ABICallingConvention,
@@ -96,13 +97,13 @@ pub const Riscv64ABICallee = struct {
     frame_size: u32,
 
     pub fn init(
-        _allocator: std.mem.Allocator,
+        allocator: std.mem.Allocator,
         sig: abi_mod.ABISignature,
     ) Riscv64ABICallee {
-        _ = _allocator;
         const abi_spec = lp64d();
 
         return .{
+            .allocator = allocator,
             .sig = sig,
             .abi = abi_spec,
             .call_conv = null,
@@ -116,7 +117,7 @@ pub const Riscv64ABICallee = struct {
             var cc_mut = cc;
             cc_mut.deinit();
         }
-        self.clobbered_callee_saves.deinit();
+        self.clobbered_callee_saves.deinit(self.allocator);
     }
 
     pub fn computeCallConv(self: *Riscv64ABICallee, allocator: Allocator) !void {
@@ -188,11 +189,7 @@ test "LP64D ABI spec" {
 }
 
 test "Riscv64ABICallee init" {
-    const sig = abi_mod.ABISignature{
-        .params = &.{},
-        .returns = &.{},
-        .call_conv = .system_v,
-    };
+    const sig = abi_mod.ABISignature.init(&.{}, &.{}, .system_v);
 
     var callee = Riscv64ABICallee.init(testing.allocator, sig);
     defer callee.deinit();

@@ -470,8 +470,8 @@ pub const Aarch64ISA = struct {
             };
         }
 
-        // Stack frame size (no spills yet in dummy allocator)
-        const stack_frame_size: u32 = 0;
+        // Stack frame size from regalloc2 spills, aligned per AAPCS64.
+        const stack_frame_size: u32 = std.mem.alignForward(u32, alloc.next_spill, 16);
 
         return compile_mod.CompiledCode{
             .code = code,

@@ -25,6 +25,9 @@ pub const RegAllocAdapter = regalloc2_api.RegAllocAdapter;
 pub const RegAllocBridge = struct {
     allocator: Allocator,
     adapter: RegAllocAdapter,
+    spill_pre: ?*std.ArrayList(Inst),
+    spill_post: ?*std.ArrayList(Inst),
+    spill_next_scratch: usize,
 
     const Self = @This();
 
@@ -32,6 +35,9 @@ pub const RegAllocBridge = struct {
         return .{
             .allocator = allocator,
             .adapter = RegAllocAdapter.init(allocator),
+            .spill_pre = null,
+            .spill_post = null,
+            .spill_next_scratch = 0,
         };
     }
 
@@ -699,9 +705,90 @@ pub const RegAllocBridge = struct {
     /// Apply allocation results to VCode.
     /// Replaces virtual registers with allocated physical registers.
     pub fn applyAllocations(self: *Self, vcode: *VCode(Inst)) !void {
-        for (vcode.insns.items, 0..) |*inst, inst_idx| {
-            _ = inst_idx;
-            try self.applyToInst(inst);
+        var rewritten = std.ArrayList(Inst){};
+        errdefer rewritten.deinit(self.allocator);
+
+        for (vcode.insns.items) |inst| {
+            var pre = std.ArrayList(Inst){};
+            defer pre.deinit(self.allocator);
+            var post = std.ArrayList(Inst){};
+            defer post.deinit(self.allocator);
+
+            var inst_copy = inst;
+            self.beginSpillEdit(&pre, &post);
+            defer self.endSpillEdit();
+
+            try self.applyToInst(&inst_copy);
+            try rewritten.appendSlice(self.allocator, pre.items);
+            try rewritten.append(self.allocator, inst_copy);
+            try rewritten.appendSlice(self.allocator, post.items);
+        }
+
+        vcode.insns.deinit(vcode.allocator);
+        vcode.insns = rewritten;
+    }
+
+    const OperandMode = enum {
+        use,
+        def,
+        use_def,
+    };
+
+    const scratch_regs = [_]u6{ 9, 10, 11, 12, 13, 14, 15, 16, 17 };
+
+    fn beginSpillEdit(self: *Self, pre: *std.ArrayList(Inst), post: *std.ArrayList(Inst)) void {
+        self.spill_pre = pre;
+        self.spill_post = post;
+        self.spill_next_scratch = 0;
+    }
+
+    fn endSpillEdit(self: *Self) void {
+        self.spill_pre = null;
+        self.spill_post = null;
+        self.spill_next_scratch = 0;
+    }
+
+    fn nextScratch(self: *Self) !Reg {
+        if (self.spill_next_scratch >= scratch_regs.len) return error.SpillScratchExhausted;
+        const hw = scratch_regs[self.spill_next_scratch];
+        self.spill_next_scratch += 1;
+        return Reg.fromPReg(reg_mod.PReg.new(.int, hw));
+    }
+
+    fn spillBaseReg() Reg {
+        return Reg.fromPReg(reg_mod.PReg.new(.int, 31)); // SP
+    }
+
+    fn spillOffset(slot: regalloc2_types.SpillSlot) !i16 {
+        return std.math.cast(i16, slot.index) orelse error.SpillSlotOffsetOutOfRange;
+    }
+
+    fn emitSpillReload(self: *Self, mode: OperandMode, slot: regalloc2_types.SpillSlot, scratch: Reg) !void {
+        const pre = self.spill_pre orelse return error.InvalidSpillEditState;
+        const post = self.spill_post orelse return error.InvalidSpillEditState;
+        const offset = try spillOffset(slot);
+        const base = spillBaseReg();
+
+        if (mode == .use or mode == .use_def) {
+            try pre.append(self.allocator, .{
+                .ldr = .{
+                    .dst = reg_mod.WritableReg.init(scratch),
+                    .base = base,
+                    .offset = offset,
+                    .size = .size64,
+                },
+            });
+        }
+
+        if (mode == .def or mode == .use_def) {
+            try post.append(self.allocator, .{
+                .str = .{
+                    .src = scratch,
+                    .base = base,
+                    .offset = offset,
+                    .size = .size64,
+                },
+            });
         }
     }
 
@@ -722,7 +809,7 @@ pub const RegAllocBridge = struct {
             },
 
             .movk => |*mov| {
-                mov.dst = try self.allocateWritableReg(mov.dst);
+                mov.dst = try self.allocateWritableRegUseDef(mov.dst);
             },
 
             .movn => |*mov| {
@@ -851,12 +938,12 @@ pub const RegAllocBridge = struct {
 
             .ldr_pre => |*ld| {
                 ld.dst = try self.allocateWritableReg(ld.dst);
-                ld.base = try self.allocateWritableReg(ld.base);
+                ld.base = try self.allocateWritableRegUseDef(ld.base);
             },
 
             .ldr_post => |*ld| {
                 ld.dst = try self.allocateWritableReg(ld.dst);
-                ld.base = try self.allocateWritableReg(ld.base);
+                ld.base = try self.allocateWritableRegUseDef(ld.base);
             },
 
             .ldp => |*ld| {
@@ -868,7 +955,7 @@ pub const RegAllocBridge = struct {
             .ldp_post => |*ld| {
                 ld.dst1 = try self.allocateWritableReg(ld.dst1);
                 ld.dst2 = try self.allocateWritableReg(ld.dst2);
-                ld.base = try self.allocateWritableReg(ld.base);
+                ld.base = try self.allocateWritableRegUseDef(ld.base);
             },
 
             .str => |*st| {
@@ -906,12 +993,12 @@ pub const RegAllocBridge = struct {
 
             .str_pre => |*st| {
                 st.src = try self.allocateReg(st.src);
-                st.base = try self.allocateWritableReg(st.base);
+                st.base = try self.allocateWritableRegUseDef(st.base);
             },
 
             .str_post => |*st| {
                 st.src = try self.allocateReg(st.src);
-                st.base = try self.allocateWritableReg(st.base);
+                st.base = try self.allocateWritableRegUseDef(st.base);
             },
 
             .stp => |*st| {
@@ -923,7 +1010,7 @@ pub const RegAllocBridge = struct {
             .stp_pre => |*st| {
                 st.src1 = try self.allocateReg(st.src1);
                 st.src2 = try self.allocateReg(st.src2);
-                st.base = try self.allocateWritableReg(st.base);
+                st.base = try self.allocateWritableRegUseDef(st.base);
             },
 
             .stp_imm => |*st| {
@@ -1122,12 +1209,20 @@ pub const RegAllocBridge = struct {
 
     /// Allocate a physical register for a Reg.
     fn allocateReg(self: *Self, reg: Reg) !Reg {
+        return self.allocateRegWithMode(reg, .use);
+    }
+
+    fn allocateRegWithMode(self: *Self, reg: Reg, mode: OperandMode) !Reg {
         return switch (reg) {
             .v => |vreg| {
                 const alloc = self.adapter.getAllocation(vreg) orelse return error.VRegNotAllocated;
                 return switch (alloc) {
                     .reg => |phys| Reg{ .p = phys },
-                    .stack => error.StackAllocationUnsupported,
+                    .stack => |slot| blk: {
+                        const scratch = try self.nextScratch();
+                        try self.emitSpillReload(mode, slot, scratch);
+                        break :blk scratch;
+                    },
                     .none => error.VRegNotAllocated,
                 };
             },
@@ -1138,7 +1233,14 @@ pub const RegAllocBridge = struct {
     /// Allocate a physical register for a WritableReg.
     fn allocateWritableReg(self: *Self, wreg: reg_mod.WritableReg) !reg_mod.WritableReg {
         const reg = wreg.toReg();
-        const allocated = try self.allocateReg(reg);
+        const allocated = try self.allocateRegWithMode(reg, .def);
+        return reg_mod.WritableReg.init(allocated);
+    }
+
+    /// Allocate a physical register for a read-modify-write WritableReg.
+    fn allocateWritableRegUseDef(self: *Self, wreg: reg_mod.WritableReg) !reg_mod.WritableReg {
+        const reg = wreg.toReg();
+        const allocated = try self.allocateRegWithMode(reg, .use_def);
         return reg_mod.WritableReg.init(allocated);
     }
 };
@@ -1599,7 +1701,7 @@ test "RegAllocBridge applyAllocations rejects unsupported instruction variant" {
     try testing.expectError(error.UnsupportedInstructionVariant, bridge.applyAllocations(&vcode));
 }
 
-test "RegAllocBridge applyAllocations rejects stack allocation" {
+test "RegAllocBridge applyAllocations inserts spill reloads for stack allocations" {
     const Allocation = regalloc2_types.Allocation;
     const SpillSlot = regalloc2_types.SpillSlot;
 
@@ -1623,9 +1725,56 @@ test "RegAllocBridge applyAllocations rejects stack allocation" {
     defer bridge.deinit();
 
     try bridge.adapter.setAllocation(v0, Allocation{ .stack = SpillSlot.new(0) });
-    try bridge.adapter.setAllocation(v1, Allocation{ .reg = regalloc2_types.PhysReg.new(5) });
+    try bridge.adapter.setAllocation(v1, Allocation{ .stack = SpillSlot.new(8) });
 
-    try testing.expectError(error.StackAllocationUnsupported, bridge.applyAllocations(&vcode));
+    try bridge.applyAllocations(&vcode);
+
+    try testing.expectEqual(@as(usize, 3), vcode.insns.items.len);
+
+    const reload = vcode.getInst(0);
+    try testing.expectEqual(@as(i16, 0), reload.ldr.offset);
+    try testing.expectEqual(@as(u8, 9), reload.ldr.dst.toReg().p.index);
+
+    const mov = vcode.getInst(1);
+    try testing.expectEqual(@as(u8, 9), mov.mov_rr.src.p.index);
+    try testing.expectEqual(@as(u8, 10), mov.mov_rr.dst.toReg().p.index);
+
+    const spill = vcode.getInst(2);
+    try testing.expectEqual(@as(i16, 8), spill.str.offset);
+    try testing.expectEqual(@as(u8, 10), spill.str.src.p.index);
+}
+
+test "RegAllocBridge applyAllocations inserts load+store for use_def spill" {
+    const Allocation = regalloc2_types.Allocation;
+    const SpillSlot = regalloc2_types.SpillSlot;
+
+    var vcode = VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    const v0 = VReg.new(0, .int);
+
+    _ = try vcode.startBlock(&.{});
+    _ = try vcode.addInst(.{
+        .movk = .{
+            .dst = reg_mod.WritableReg.init(Reg{ .v = v0 }),
+            .imm = 0x55AA,
+            .shift = 16,
+            .size = .size64,
+        },
+    });
+    try vcode.finishBlock(0, &.{});
+
+    var bridge = RegAllocBridge.init(testing.allocator);
+    defer bridge.deinit();
+
+    try bridge.adapter.setAllocation(v0, Allocation{ .stack = SpillSlot.new(16) });
+
+    try bridge.applyAllocations(&vcode);
+
+    try testing.expectEqual(@as(usize, 3), vcode.insns.items.len);
+    try testing.expectEqual(@as(i16, 16), vcode.getInst(0).ldr.offset);
+    try testing.expectEqual(@as(u8, 9), vcode.getInst(1).movk.dst.toReg().p.index);
+    try testing.expectEqual(@as(i16, 16), vcode.getInst(2).str.offset);
 }
 
 test "RegAllocBridge passes through no-reg control variants" {

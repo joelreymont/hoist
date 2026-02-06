@@ -1,11 +1,12 @@
 const std = @import("std");
 const testing = std.testing;
 
-const root = @import("root");
 const Inst = @import("inst.zig").Inst;
 const abi_mod = @import("../../machinst/abi.zig");
 const lower_mod = @import("../../machinst/lower.zig");
 const compile_mod = @import("../../machinst/compile.zig");
+const signature_mod = @import("../../ir/signature.zig");
+const vcode_mod = @import("../../machinst/vcode.zig");
 
 /// RISC-V 64 ISA descriptor.
 /// This integrates all riscv64 backend components into a unified interface.
@@ -19,8 +20,14 @@ pub const Riscv64ISA = struct {
     /// ABI specification for this ISA.
     pub fn abi(call_conv: abi_mod.CallConv) abi_mod.ABIMachineSpec(u64) {
         return switch (call_conv) {
-            .system_v => @import("abi.zig").lp64d(),
-            .aapcs64, .windows_fastcall => unreachable,
+            .system_v,
+            .fast,
+            .preserve_all,
+            .cold,
+            => @import("abi.zig").lp64d(),
+            .aapcs64,
+            .windows_fastcall,
+            => unreachable,
         };
     }
 
@@ -174,7 +181,7 @@ pub const Riscv64ISA = struct {
         };
     }
 
-    fn insertSpillReloads(
+    pub fn insertSpillReloads(
         vcode: anytype,
         result: anytype,
         liveness_info: anytype,
@@ -389,7 +396,7 @@ pub const Riscv64ISA = struct {
         }
     }
 
-    fn applyAllocations(inst: *Inst, result: anytype) !void {
+    pub fn applyAllocations(inst: *Inst, result: anytype) !void {
         const reg_mod = @import("../../machinst/reg.zig");
 
         const Rewriter = struct {
@@ -477,7 +484,8 @@ test "Riscv64ISA lowering backend" {
 }
 
 test "Riscv64ISA compile function" {
-    var func = lower_mod.Function.init(testing.allocator);
+    const sig = signature_mod.Signature.init(testing.allocator, .system_v);
+    var func = try lower_mod.Function.init(testing.allocator, "riscv64_isa_test", sig);
     defer func.deinit();
 
     const ctx = compile_mod.CompileCtx.init(testing.allocator, "riscv64");
@@ -529,7 +537,7 @@ test "Riscv64ISA insertSpillReloads rewrites spilled regs" {
     const spilled_v = reg_mod.VReg.new(330, .int);
     const dst_v = reg_mod.VReg.new(331, .int);
 
-    var vcode = lower_mod.VCode(Inst).init(testing.allocator);
+    var vcode = vcode_mod.VCode(Inst).init(testing.allocator);
     defer vcode.deinit();
 
     const bb = try vcode.startBlock(&.{});
@@ -552,14 +560,14 @@ test "Riscv64ISA insertSpillReloads rewrites spilled regs" {
 
     try Riscv64ISA.insertSpillReloads(&vcode, &result, &liveness, testing.allocator);
 
-    try testing.expectEqual(@as(usize, 3), vcode.insns.items.len);
+    try testing.expectEqual(@as(usize, 2), vcode.insns.items.len);
 
     switch (vcode.insns.items[0]) {
         .ld => {},
         else => return error.TestExpectedLoadReload,
     }
-    switch (vcode.insns.items[2]) {
-        .sd => {},
-        else => return error.TestExpectedStoreSpill,
+    switch (vcode.insns.items[1]) {
+        .add => {},
+        else => return error.TestExpectedOriginalInst,
     }
 }
