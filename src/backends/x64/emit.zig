@@ -46,6 +46,8 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .cmp_imm => |i| try emitAluImm(7, i.lhs, i.imm, i.size, buffer),
         .test_rr => |i| try emitTest(i.lhs, i.rhs, i.size, buffer),
         .test_imm => |i| try emitTestImm(i.lhs, i.imm, i.size, buffer),
+        .setcc => |i| try emitSetcc(@intFromEnum(i.cc), i.dst.toReg(), buffer),
+        .cmov => |i| try emitCmov(@intFromEnum(i.cc), i.dst.toReg(), i.src, i.size, buffer),
         .push_r => |i| try emitPush(i.src, buffer),
         .pop_r => |i| try emitPop(i.dst.toReg(), buffer),
         .load => |i| try emitMovRM(i.dst.toReg(), i.src, i.size, buffer),
@@ -122,7 +124,20 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .mulpd_rr => |i| try emitSse2RR(0x59, i.dst.toReg(), i.src, buffer),
         .divps_rr => |i| try emitSseRR(0x5E, i.dst.toReg(), i.src, buffer),
         .divpd_rr => |i| try emitSse2RR(0x5E, i.dst.toReg(), i.src, buffer),
-        else => return error.UnsupportedInst,
+        .addss_rr => |i| try emitSseScalarRR(0xF3, 0x58, i.dst.toReg(), i.src, buffer),
+        .addsd_rr => |i| try emitSseScalarRR(0xF2, 0x58, i.dst.toReg(), i.src, buffer),
+        .subss_rr => |i| try emitSseScalarRR(0xF3, 0x5C, i.dst.toReg(), i.src, buffer),
+        .subsd_rr => |i| try emitSseScalarRR(0xF2, 0x5C, i.dst.toReg(), i.src, buffer),
+        .mulss_rr => |i| try emitSseScalarRR(0xF3, 0x59, i.dst.toReg(), i.src, buffer),
+        .mulsd_rr => |i| try emitSseScalarRR(0xF2, 0x59, i.dst.toReg(), i.src, buffer),
+        .divss_rr => |i| try emitSseScalarRR(0xF3, 0x5E, i.dst.toReg(), i.src, buffer),
+        .divsd_rr => |i| try emitSseScalarRR(0xF2, 0x5E, i.dst.toReg(), i.src, buffer),
+        .sqrtss_rr => |i| try emitSseScalarRR(0xF3, 0x51, i.dst.toReg(), i.src, buffer),
+        .sqrtsd_rr => |i| try emitSseScalarRR(0xF2, 0x51, i.dst.toReg(), i.src, buffer),
+        .minss_rr => |i| try emitSseScalarRR(0xF3, 0x5D, i.dst.toReg(), i.src, buffer),
+        .minsd_rr => |i| try emitSseScalarRR(0xF2, 0x5D, i.dst.toReg(), i.src, buffer),
+        .maxss_rr => |i| try emitSseScalarRR(0xF3, 0x5F, i.dst.toReg(), i.src, buffer),
+        .maxsd_rr => |i| try emitSseScalarRR(0xF2, 0x5F, i.dst.toReg(), i.src, buffer),
     }
 }
 
@@ -276,6 +291,22 @@ fn emitPush(src: Reg, buffer: *buffer_mod.MachBuffer) !void {
 fn emitPop(dst: Reg, buffer: *buffer_mod.MachBuffer) !void {
     // POP opcode (0x58 + reg)
     try buffer.putData(&[_]u8{0x58 + hwEnc(dst)});
+}
+
+/// SETcc reg8
+fn emitSetcc(cc: u8, dst: Reg, buffer: *buffer_mod.MachBuffer) !void {
+    try emitRex(.size8, null, dst, buffer);
+    try buffer.putData(&[_]u8{ 0x0F, 0x90 + cc });
+    try buffer.putData(&[_]u8{modrm(0b11, 0, hwEnc(dst))});
+}
+
+/// CMOVcc dst, src
+fn emitCmov(cc: u8, dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    if (size == .size8) return error.UnsupportedInst;
+    if (size == .size16) try buffer.putData(&[_]u8{0x66});
+    try emitRex(size, dst, src, buffer);
+    try buffer.putData(&[_]u8{ 0x0F, 0x40 + cc });
+    try buffer.putData(&[_]u8{modrm(0b11, hwEnc(dst), hwEnc(src))});
 }
 
 /// JMP rel32
@@ -642,6 +673,39 @@ test "emit neg reg" {
 
     try testing.expectEqual(@as(u8, 0x48), buffer.data.items[0]); // REX.W
     try testing.expectEqual(@as(u8, 0xF7), buffer.data.items[1]);
+}
+
+test "emit setcc" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const wr0 = root.reg.WritableReg.fromReg(Reg.fromVReg(v0));
+
+    try emit(.{ .setcc = .{ .cc = .e, .dst = wr0 } }, &buffer);
+    try testing.expectEqual(@as(u8, 0x0F), buffer.data.items[0]);
+    try testing.expectEqual(@as(u8, 0x94), buffer.data.items[1]); // SETE
+}
+
+test "emit cmov" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = root.reg.VReg.new(0, .int);
+    const v1 = root.reg.VReg.new(1, .int);
+    const wr0 = root.reg.WritableReg.fromReg(Reg.fromVReg(v0));
+    const r1 = Reg.fromVReg(v1);
+
+    try emit(.{ .cmov = .{
+        .cc = .l,
+        .dst = wr0,
+        .src = r1,
+        .size = .size64,
+    } }, &buffer);
+
+    try testing.expectEqual(@as(u8, 0x48), buffer.data.items[0]); // REX.W
+    try testing.expectEqual(@as(u8, 0x0F), buffer.data.items[1]);
+    try testing.expectEqual(@as(u8, 0x4C), buffer.data.items[2]); // CMOVL
 }
 
 test "emit imul imm8" {
