@@ -1891,6 +1891,15 @@ fn encodeUnsignedImm12Scaled(offset: i16, scale_shift: u4) !u12 {
     return std.math.cast(u12, scaled_offset) orelse error.OffsetOutOfRange;
 }
 
+fn encodeSignedImm7Scaled(offset: i16, scale_shift: u4) !u7 {
+    const scale: i16 = @as(i16, 1) << scale_shift;
+    if (@rem(offset, scale) != 0) return error.OffsetNotAligned;
+
+    const scaled_offset: i16 = @divTrunc(offset, scale);
+    const imm7_signed = std.math.cast(i7, scaled_offset) orelse return error.OffsetOutOfRange;
+    return @bitCast(imm7_signed);
+}
+
 fn emitLdr(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
     const rt = try hwEnc(dst);
@@ -2043,7 +2052,7 @@ fn emitVldp(dst1: Reg, dst2: Reg, base: Reg, offset: i16, fp_size: FpuOperandSiz
         .size64 => 3, // 8 bytes
         .size128 => 4, // 16 bytes
     };
-    const imm7: u7 = @truncate(@as(u16, @bitCast(offset)) >> scale);
+    const imm7 = try encodeSignedImm7Scaled(offset, scale);
 
     const opc: u32 = switch (fp_size) {
         .size32 => 0b00,
@@ -2076,7 +2085,7 @@ fn emitVstp(src1: Reg, src2: Reg, base: Reg, offset: i16, fp_size: FpuOperandSiz
         .size64 => 3, // 8 bytes
         .size128 => 4, // 16 bytes
     };
-    const imm7: u7 = @truncate(@as(u16, @bitCast(offset)) >> scale);
+    const imm7 = try encodeSignedImm7Scaled(offset, scale);
 
     const opc: u32 = switch (fp_size) {
         .size32 => 0b00,
@@ -2398,7 +2407,7 @@ fn emitStp(src1: Reg, src2: Reg, base: Reg, offset: i16, size: OperandSize, buff
     const rn = try hwEnc(base);
     // Offset is scaled by size: 8 bytes for 64-bit, 4 bytes for 32-bit
     const scale: u4 = if (size == .size64) 3 else 2; // shift by 3 (÷8) for 64-bit, 2 (÷4) for 32-bit
-    const imm7: u7 = @truncate(@as(u16, @bitCast(offset)) >> scale);
+    const imm7 = try encodeSignedImm7Scaled(offset, scale);
 
     // STP: sf|10|1|0|010|0|imm7|Rt2|Rn|Rt
     const insn: u32 = (sf_bit << 31) |
@@ -2419,7 +2428,7 @@ fn emitLdp(dst1: Reg, dst2: Reg, base: Reg, offset: i16, size: OperandSize, buff
     const rn = try hwEnc(base);
     // Offset is scaled by size: 8 bytes for 64-bit, 4 bytes for 32-bit
     const scale: u4 = if (size == .size64) 3 else 2; // shift by 3 (÷8) for 64-bit, 2 (÷4) for 32-bit
-    const imm7: u7 = @truncate(@as(u16, @bitCast(offset)) >> scale);
+    const imm7 = try encodeSignedImm7Scaled(offset, scale);
 
     // LDP: sf|10|1|0|011|0|imm7|Rt2|Rn|Rt
     const insn: u32 = (sf_bit << 31) |
@@ -2439,7 +2448,7 @@ fn emitStpPre(src1: Reg, src2: Reg, base: Reg, offset: i16, size: OperandSize, b
     const rt2 = try hwEnc(src2);
     const rn = try hwEnc(base);
     const scale: u4 = if (size == .size64) 3 else 2;
-    const imm7: u7 = @truncate(@as(u16, @bitCast(offset)) >> scale);
+    const imm7 = try encodeSignedImm7Scaled(offset, scale);
 
     // STP pre-index: sf|0|101|0|011|0|imm7|Rt2|Rn|Rt
     // Note: bit 22 (L) = 0 for store, 1 for load
@@ -2461,7 +2470,7 @@ fn emitLdpPost(dst1: Reg, dst2: Reg, base: Reg, offset: i16, size: OperandSize, 
     const rt2 = try hwEnc(dst2);
     const rn = try hwEnc(base);
     const scale: u4 = if (size == .size64) 3 else 2;
-    const imm7: u7 = @truncate(@as(u16, @bitCast(offset)) >> scale);
+    const imm7 = try encodeSignedImm7Scaled(offset, scale);
 
     // LDP post-index: sf|10|1|0|001|1|imm7|Rt2|Rn|Rt
     const insn: u32 = (sf_bit << 31) |
@@ -8417,6 +8426,100 @@ test "emit ldp and stp with max negative offset" {
 
     const insn2 = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 0x40), (insn2 >> 15) & 0x7F); // imm7=-64
+}
+
+test "emit pair load/store scaled imm7 reject bad offsets" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const v2 = inst_mod.VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+    const wr1 = inst_mod.WritableReg.fromReg(r1);
+    const wr2 = inst_mod.WritableReg.fromReg(r2);
+
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .stp = .{
+        .src1 = r0,
+        .src2 = r1,
+        .base = r2,
+        .offset = 512,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .ldp = .{
+        .dst1 = wr0,
+        .dst2 = wr1,
+        .base = r2,
+        .offset = -520,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.OffsetNotAligned, emit(.{ .stp = .{
+        .src1 = r0,
+        .src2 = r1,
+        .base = r2,
+        .offset = 4,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.OffsetNotAligned, emit(.{ .ldp = .{
+        .dst1 = wr0,
+        .dst2 = wr1,
+        .base = r2,
+        .offset = 2,
+        .size = .size32,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .stp_pre = .{
+        .src1 = r0,
+        .src2 = r1,
+        .base = wr2,
+        .offset = 512,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .ldp_post = .{
+        .dst1 = wr0,
+        .dst2 = wr1,
+        .base = wr2,
+        .offset = -520,
+        .size = .size64,
+    } }, &buffer));
+}
+
+test "emit vector pair load/store scaled imm7 reject bad offsets" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = inst_mod.VReg.new(0, .float);
+    const v1 = inst_mod.VReg.new(1, .float);
+    const v2 = inst_mod.VReg.new(2, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const r2 = Reg.fromVReg(v2);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+    const wr1 = inst_mod.WritableReg.fromReg(r1);
+
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .vldp = .{
+        .dst1 = wr0,
+        .dst2 = wr1,
+        .base = r2,
+        .offset = 512,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.OffsetNotAligned, emit(.{ .vstp = .{
+        .src1 = r0,
+        .src2 = r1,
+        .base = r2,
+        .offset = 8,
+        .size = .size128,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .vstp = .{
+        .src1 = r0,
+        .src2 = r1,
+        .base = r2,
+        .offset = -1040,
+        .size = .size128,
+    } }, &buffer));
 }
 
 test "emit br" {
