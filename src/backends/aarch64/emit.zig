@@ -3523,7 +3523,7 @@ fn emitTbz(reg: Reg, bit: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void 
     try buffer.useLabelAtOffset(
         offset,
         MachLabel.new(label),
-        buffer_mod.LabelUseKind.branch19,
+        buffer_mod.LabelUseKind.branch14,
     );
 }
 
@@ -3544,7 +3544,7 @@ fn emitTbnz(reg: Reg, bit: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void
     try buffer.useLabelAtOffset(
         offset,
         MachLabel.new(label),
-        buffer_mod.LabelUseKind.branch19,
+        buffer_mod.LabelUseKind.branch14,
     );
 }
 

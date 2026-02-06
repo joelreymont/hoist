@@ -130,8 +130,11 @@ pub const LabelUseKind = enum {
     /// PC-relative 32-bit signed offset.
     pc_rel32,
     /// AArch64 conditional branch - 19-bit PC-relative (±1MB range).
-    /// Used by: B.cond, CBZ, CBNZ, TBZ, TBNZ
+    /// Used by: B.cond, CBZ, CBNZ
     branch19,
+    /// AArch64 test-bit branch - 14-bit PC-relative (±32KB range).
+    /// Used by: TBZ, TBNZ
+    branch14,
     /// AArch64 unconditional branch - 26-bit PC-relative (±128MB range).
     /// Used by: B, BL
     branch26,
@@ -145,7 +148,7 @@ pub const LabelUseKind = enum {
         return switch (self) {
             .pc_rel8 => 1,
             .pc_rel32 => 4,
-            .branch19, .branch26, .adr21, .ldr_literal19 => 4,
+            .branch19, .branch14, .branch26, .adr21, .ldr_literal19 => 4,
         };
     }
 
@@ -154,6 +157,7 @@ pub const LabelUseKind = enum {
             .pc_rel8 => 127,
             .pc_rel32 => 0x7FFF_FFFF,
             .branch19 => 1 << 20,
+            .branch14 => 1 << 15,
             .branch26 => 1 << 27,
             .adr21 => 1 << 20,
             .ldr_literal19 => 1 << 20,
@@ -165,6 +169,7 @@ pub const LabelUseKind = enum {
             .pc_rel8 => 128,
             .pc_rel32 => 0x8000_0000,
             .branch19 => 1 << 20,
+            .branch14 => 1 << 15,
             .branch26 => 1 << 27,
             .adr21 => 1 << 20,
             .ldr_literal19 => 1 << 20,
@@ -595,12 +600,23 @@ pub const MachBuffer = struct {
     }
 
     /// Patch a 19-bit branch offset into an instruction.
-    /// Used by B.cond (bits [23:5]), CBZ/CBNZ, TBZ/TBNZ
+    /// Used by B.cond (bits [23:5]), CBZ/CBNZ
     fn patchBranch19(insn_bytes: *[4]u8, offset: i64) !void {
         const offset_bits: u32 = @bitCast(@as(i32, @intCast(offset & 0x7FFFF)));
         var insn = std.mem.readInt(u32, insn_bytes, .little);
         // Clear bits [23:5], insert offset
         insn &= ~(@as(u32, 0x7FFFF) << 5);
+        insn |= offset_bits << 5;
+        std.mem.writeInt(u32, insn_bytes, insn, .little);
+    }
+
+    /// Patch a 14-bit branch offset into an instruction.
+    /// Used by TBZ/TBNZ (bits [18:5]).
+    fn patchBranch14(insn_bytes: *[4]u8, offset: i64) !void {
+        const offset_bits: u32 = @bitCast(@as(i32, @intCast(offset & 0x3FFF)));
+        var insn = std.mem.readInt(u32, insn_bytes, .little);
+        // Clear bits [18:5], insert offset
+        insn &= ~(@as(u32, 0x3FFF) << 5);
         insn |= offset_bits << 5;
         std.mem.writeInt(u32, insn_bytes, insn, .little);
     }
@@ -701,6 +717,19 @@ pub const MachBuffer = struct {
                         return error.BranchOutOfRange;
                     }
                     try patchBranch19(self.data.items[fixup.offset..][0..4], offset_words);
+                },
+                .branch14 => {
+                    // TBZ/TBNZ: 14-bit signed offset in instructions (word offset)
+                    const pc_aarch64 = fixup.offset;
+                    const delta_aarch64: i64 = @as(i64, @intCast(label_offset)) - @as(i64, @intCast(pc_aarch64));
+                    if (@rem(delta_aarch64, 4) != 0) {
+                        return error.UnalignedBranchTarget;
+                    }
+                    const offset_words = @divTrunc(delta_aarch64, 4);
+                    if (offset_words < -(1 << 13) or offset_words >= (1 << 13)) {
+                        return error.BranchOutOfRange;
+                    }
+                    try patchBranch14(self.data.items[fixup.offset..][0..4], offset_words);
                 },
                 .branch26 => {
                     // B, BL: 26-bit signed offset in instructions (word offset)
@@ -909,6 +938,30 @@ test "MachBuffer branch19 forward label reference" {
 
     const patched = std.mem.readInt(u32, buf.data.items[0..4], .little);
     try testing.expectEqual(@as(u32, 0x54000040), patched);
+}
+
+test "MachBuffer branch14 forward label reference preserves bit index" {
+    var buf = MachBuffer.init(testing.allocator);
+    defer buf.deinit();
+
+    const target = try buf.allocLabel();
+
+    // TBZ X5, #31, <target> with placeholder imm14.
+    // b5=0, b40=31, Rt=5
+    try buf.put4(0x36F80005);
+    try buf.useLabelAtOffset(0, target, .branch14);
+
+    // One 4-byte instruction between branch and target.
+    try buf.put4(0xD503201F); // NOP
+    try buf.bindLabel(target);
+
+    try buf.finalize();
+
+    const patched = std.mem.readInt(u32, buf.data.items[0..4], .little);
+    // imm14 = +2 words -> 0x40 in bits [18:5]
+    try testing.expectEqual(@as(u32, 0x36F80045), patched);
+    // Ensure b40 field (bit index low bits) is preserved.
+    try testing.expectEqual(@as(u32, 31), (patched >> 19) & 0x1F);
 }
 
 test "MachBuffer trap records" {
