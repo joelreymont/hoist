@@ -6674,7 +6674,6 @@ test "legalize: narrow vectors widen on aarch64" {
     const a_ty = ctx.func.dfg.valueType(a) orelse return error.TestExpectedEqual;
     const b_ty = ctx.func.dfg.valueType(b) orelse return error.TestExpectedEqual;
     const add_ty = ctx.func.dfg.valueType(add) orelse return error.TestExpectedEqual;
-    std.debug.print("legalized types: a={x} b={x} add={x}\n", .{ a_ty.raw, b_ty.raw, add_ty.raw });
     try testing.expect(a_ty.eql(ir.Type.I8X8));
     try testing.expect(b_ty.eql(ir.Type.I8X8));
     try testing.expect(add_ty.eql(ir.Type.I8X8));
