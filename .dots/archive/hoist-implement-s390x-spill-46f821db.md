@@ -1,9 +1,11 @@
 ---
 title: Implement s390x spill/reload
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.841878+01:00"
+created-at: "\"2026-02-02T21:35:56.841878+01:00\""
+closed-at: "2026-02-06T11:35:22.646866+01:00"
+close-reason: Implemented spill/reload insertion with tests.
 blocks:
   - hoist-implement-riscv64-vreg-58fe8426
 ---
