@@ -5553,7 +5553,7 @@ fn lowerInstructionAArch64(
             const size: OperandSize = if (arg_type.bits() == 64) .size64 else .size32;
 
             const imm_val = data.imm.value;
-            if (imm_val <= 4095) {
+            if (imm_val >= 0 and imm_val <= 4095) {
                 try builder.emit(Inst{
                     .cmp_imm = .{
                         .src = src,
@@ -7881,8 +7881,13 @@ test "lower: int_compare_imm emits cmp_imm with matching width" {
 }
 
 test "lower: int_compare_imm large immediate emits mov_imm and cmp_rr with matching width" {
-    try expectIntCompareImmLargeImmLowering(ir.I32, .size32, 0x123456);
-    try expectIntCompareImmLargeImmLowering(ir.I64, .size64, 0x123456789ABC);
+    try expectIntCompareImmCmpRrLowering(ir.I32, .size32, 0x123456);
+    try expectIntCompareImmCmpRrLowering(ir.I64, .size64, 0x123456789ABC);
+}
+
+test "lower: int_compare_imm negative immediate emits mov_imm and cmp_rr" {
+    try expectIntCompareImmCmpRrLowering(ir.I32, .size32, -1);
+    try expectIntCompareImmCmpRrLowering(ir.I64, .size64, -1);
 }
 
 test "lower: uload8x8 emits vec_ushll" {
@@ -8007,7 +8012,7 @@ fn expectIntCompareImmCmpSize(ty: ir.Type, expected_size: a64_inst.OperandSize) 
     try testing.expect(saw_expected);
 }
 
-fn expectIntCompareImmLargeImmLowering(
+fn expectIntCompareImmCmpRrLowering(
     ty: ir.Type,
     expected_size: a64_inst.OperandSize,
     imm: i64,
@@ -8051,6 +8056,7 @@ fn expectIntCompareImmLargeImmLowering(
     const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
     var saw_expected_mov = false;
     var saw_expected_cmp = false;
+    var saw_cmp_imm = false;
     for (lowered.vcode.insns.items) |inst| {
         switch (inst) {
             .mov_imm => |mov| {
@@ -8059,12 +8065,14 @@ fn expectIntCompareImmLargeImmLowering(
             .cmp_rr => |cmp| {
                 if (cmp.size == expected_size) saw_expected_cmp = true;
             },
+            .cmp_imm => saw_cmp_imm = true,
             else => {},
         }
     }
 
     try testing.expect(saw_expected_mov);
     try testing.expect(saw_expected_cmp);
+    try testing.expect(!saw_cmp_imm);
 }
 
 fn expectWidenLoadLowering(
