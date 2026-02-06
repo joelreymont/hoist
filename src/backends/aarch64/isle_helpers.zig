@@ -361,6 +361,31 @@ pub fn aarch64_cmp_imm(ty: hoist.types.Type, x: lower_mod.Value, imm: i64, cc: h
     } };
 }
 
+/// Compare an I128 value against zero by OR-ing both lanes and comparing result to 0.
+pub fn aarch64_cmp_i128_nonzero(
+    x: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    recordRule("aarch64_cmp_i128_nonzero");
+    const regs = try put_in_regs(x, ctx);
+    const lo = regs.get(0) orelse return error.NoMatch;
+    const hi = regs.get(1) orelse return error.NoMatch;
+
+    const merged = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .orr_rr = .{
+        .dst = merged,
+        .src1 = lo,
+        .src2 = hi,
+        .size = .size64,
+    } });
+
+    return Inst{ .cmp_imm = .{
+        .src = merged.toReg(),
+        .imm = .{ .bits = 0, .shift12 = false },
+        .size = .size64,
+    } };
+}
+
 /// Constructor: Create CMN instruction (register, register).
 /// CMN is an alias for ADDS with XZR as destination.
 pub fn aarch64_cmn_rr(ty: hoist.types.Type, x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
@@ -1078,6 +1103,53 @@ test "aarch64_cmp_imm: creates compare immediate instruction" {
     try testing.expectEqual(Inst.cmp_imm, @as(std.meta.Tag(Inst), inst));
     try testing.expectEqual(hoist.aarch64_inst.OperandSize.size32, inst.cmp_imm.size);
     try testing.expectEqual(@as(u64, 42), inst.cmp_imm.imm.toU64());
+}
+
+test "aarch64_cmp_i128_nonzero: merges lanes before cmp_imm" {
+    const testing = std.testing;
+
+    const sig = signature_mod.Signature.init(testing.allocator, .system_v);
+    var func = try lower_mod.Function.init(testing.allocator, "test_cmp_i128_nonzero", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const lo_inst = try func.dfg.makeInst(.{ .unary_imm = .{
+        .opcode = .iconst,
+        .imm = .{ .value = 1 },
+    } });
+    try func.layout.appendInst(lo_inst, block0);
+    const lo = try func.dfg.appendInstResult(lo_inst, Type.I64);
+
+    const hi_inst = try func.dfg.makeInst(.{ .unary_imm = .{
+        .opcode = .iconst,
+        .imm = .{ .value = 2 },
+    } });
+    try func.layout.appendInst(hi_inst, block0);
+    const hi = try func.dfg.appendInstResult(hi_inst, Type.I64);
+
+    const iconcat_inst = try func.dfg.makeInst(.{ .binary = .{
+        .opcode = .iconcat,
+        .args = .{ lo, hi },
+    } });
+    try func.layout.appendInst(iconcat_inst, block0);
+    const wide = try func.dfg.appendInstResult(iconcat_inst, Type.I128);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+    try testing.expect(ctx.current_block != null);
+
+    const inst = try aarch64_cmp_i128_nonzero(wide, &ctx);
+
+    try testing.expectEqual(Inst.cmp_imm, @as(std.meta.Tag(Inst), inst));
+    try testing.expectEqual(@as(u64, 0), inst.cmp_imm.imm.toU64());
+    try testing.expectEqual(hoist.aarch64_inst.OperandSize.size64, inst.cmp_imm.size);
+    try testing.expect(hasInstTag(vcode.insns.items, .orr_rr));
 }
 
 test "put_in_regs: i128 block param falls back to pinned pair" {

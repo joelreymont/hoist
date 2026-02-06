@@ -1805,9 +1805,12 @@
       (let ((cmp_inst Aarch64Inst (aarch64_cmp_imm $I64 rcond 0 IntCC.ne)))
             (aarch64_csel ty rn rm cmp_inst IntCC.ne)))
 
-;; I128 condition: OR lo and hi parts, then compare
-(rule -4 (lower (has_type ty (select rcond @ (value_type $I128) rn rm)))
-      (aarch64_unimplemented))
+;; I128 condition: OR lo and hi parts, then compare.
+;; Match directly on `select` to avoid falling through to the band(icmp,icmp)
+;; pattern, which assumes a different condition shape.
+(rule -4 (lower (select ty rcond @ (value_type $I128) rn rm))
+      (let ((cmp_inst Aarch64Inst (aarch64_cmp_i128_nonzero rcond)))
+            (aarch64_csel ty rn rm cmp_inst IntCC.ne)))
 
 ;; Optimized: select with icmp condition (inline comparison)
 (rule (lower (select ty (icmp cc cmp_ty x y) true_val false_val))
@@ -1838,7 +1841,8 @@
 
 ;; I128 condition with Spectre mitigation: OR lo and hi parts, then compare
 (rule -2 (lower (has_type ty (select_spectre_guard rcond @ (value_type $I128) rn rm)))
-      (aarch64_unimplemented))
+      (let ((cmp_inst Aarch64Inst (aarch64_cmp_i128_nonzero rcond)))
+            (aarch64_csel ty rn rm cmp_inst IntCC.ne)))
 
 ;; Immediate forms
 
@@ -2745,6 +2749,7 @@
 ;; Comparison operations
 (decl aarch64_cmp_rr (Type Value Value IntCC) Aarch64Inst)
 (decl aarch64_cmp_imm (Type Value i64 IntCC) Aarch64Inst)
+(decl aarch64_cmp_i128_nonzero (Value) Aarch64Inst)
 (decl aarch64_tst_imm (Type Value i64) Aarch64Inst)
 
 ;; Conditional compare operations (CCMP)
