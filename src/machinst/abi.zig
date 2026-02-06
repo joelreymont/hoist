@@ -378,10 +378,32 @@ pub fn ABIMachineSpec(comptime WordSize: type) type {
                             }
                         },
                         .general => {
-                            // General struct ≤16 bytes: treat as composite integer
-                            // Fall through to normal handling
-                            const rc = arg_ty.regClass();
-                            try handleRegClass(rc, arg_ty, &int_reg_idx, &float_reg_idx, &stack_offset, &slots, self, allocator);
+                            // General struct <=16 bytes: pass as one or two 64-bit chunks.
+                            const struct_size = arg_ty.bytes();
+                            const chunk_count: usize = @intCast((struct_size + 7) / 8);
+
+                            if (chunk_count == 0) {
+                                // Empty struct argument consumes no slots.
+                            } else if (int_reg_idx + chunk_count <= self.int_arg_regs.len) {
+                                for (0..chunk_count) |i| {
+                                    const preg = self.int_arg_regs[int_reg_idx + i];
+                                    try slots.append(allocator, .{ .reg = .{
+                                        .preg = preg,
+                                        .ty = .i64,
+                                        .extension = .none,
+                                    } });
+                                }
+                                int_reg_idx += chunk_count;
+                            } else {
+                                // Not enough GPRs for full aggregate: place entire struct on stack.
+                                try slots.append(allocator, .{ .stack = .{
+                                    .offset = stack_offset,
+                                    .ty = arg_ty,
+                                    .extension = .none,
+                                } });
+                                stack_offset += @as(i64, @intCast(struct_size));
+                                stack_offset = std.mem.alignForward(i64, stack_offset, self.stack_align);
+                            }
                         },
                     }
                 } else if (arg_ty == .i128) {
@@ -1120,6 +1142,72 @@ test "AAPCS64 HVA struct spills when SIMD regs exhausted" {
     try testing.expect(arg_locs[8].slots[0] == .stack);
     try testing.expectEqual(@as(i64, 0), arg_locs[8].slots[0].stack.offset);
     try testing.expect(std.meta.eql(hva_ty, arg_locs[8].slots[0].stack.ty));
+}
+
+test "AAPCS64 general struct <=16 bytes uses GPR chunks" {
+    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+    const abi = aarch64_abi.aapcs64();
+
+    const fields = [_]StructField{
+        .{ .ty = .i64, .offset = 0 },
+        .{ .ty = .i32, .offset = 8 },
+    };
+    const struct_ty = Type{ .@"struct" = &fields };
+
+    const args = [_]Type{struct_ty};
+    const sig = ABISignature.init(&args, &.{}, .aapcs64);
+
+    const arg_locs = try abi.computeArgLocs(sig, testing.allocator);
+    defer {
+        for (arg_locs) |arg| {
+            testing.allocator.free(arg.slots);
+        }
+        testing.allocator.free(arg_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 1), arg_locs.len);
+    try testing.expectEqual(@as(usize, 2), arg_locs[0].slots.len);
+
+    try testing.expect(arg_locs[0].slots[0] == .reg);
+    try testing.expectEqual(PReg.new(.int, 0).index(), arg_locs[0].slots[0].reg.preg.index());
+    try testing.expect(std.meta.eql(Type.i64, arg_locs[0].slots[0].reg.ty));
+
+    try testing.expect(arg_locs[0].slots[1] == .reg);
+    try testing.expectEqual(PReg.new(.int, 1).index(), arg_locs[0].slots[1].reg.preg.index());
+    try testing.expect(std.meta.eql(Type.i64, arg_locs[0].slots[1].reg.ty));
+}
+
+test "AAPCS64 general struct spills if not enough GPRs for full aggregate" {
+    const aarch64_abi = @import("../backends/aarch64/abi.zig");
+    const abi = aarch64_abi.aapcs64();
+
+    const fields = [_]StructField{
+        .{ .ty = .i64, .offset = 0 },
+        .{ .ty = .i32, .offset = 8 },
+    };
+    const struct_ty = Type{ .@"struct" = &fields };
+
+    const args = [_]Type{ .i64, .i64, .i64, .i64, .i64, .i64, .i64, struct_ty };
+    const sig = ABISignature.init(&args, &.{}, .aapcs64);
+
+    const arg_locs = try abi.computeArgLocs(sig, testing.allocator);
+    defer {
+        for (arg_locs) |arg| {
+            testing.allocator.free(arg.slots);
+        }
+        testing.allocator.free(arg_locs);
+    }
+
+    try testing.expectEqual(@as(usize, 8), arg_locs.len);
+    for (0..7) |i| {
+        try testing.expect(arg_locs[i].slots[0] == .reg);
+        try testing.expectEqual(PReg.new(.int, @intCast(i)).index(), arg_locs[i].slots[0].reg.preg.index());
+    }
+
+    try testing.expectEqual(@as(usize, 1), arg_locs[7].slots.len);
+    try testing.expect(arg_locs[7].slots[0] == .stack);
+    try testing.expectEqual(@as(i64, 0), arg_locs[7].slots[0].stack.offset);
+    try testing.expect(std.meta.eql(struct_ty, arg_locs[7].slots[0].stack.ty));
 }
 
 test "AAPCS64 i128 return in register pair" {
