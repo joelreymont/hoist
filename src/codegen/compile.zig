@@ -5586,12 +5586,12 @@ fn lowerInstructionAArch64(
                 const temp_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS + 1), RegClass.int);
                 const temp_reg = Reg.fromVReg(temp_vreg);
                 const temp_dst = WritableReg.fromVReg(temp_vreg);
+                const imm_bits: u64 = @bitCast(imm_val);
 
                 try builder.emit(Inst{
-                    .movz = .{
+                    .mov_imm = .{
                         .dst = temp_dst,
-                        .imm = @intCast(imm_val & 0xFFFF),
-                        .shift = 0,
+                        .imm = imm_bits,
                         .size = size,
                     },
                 });
@@ -7880,6 +7880,11 @@ test "lower: int_compare_imm emits cmp_imm with matching width" {
     try expectIntCompareImmCmpSize(ir.I64, .size64);
 }
 
+test "lower: int_compare_imm large immediate emits mov_imm and cmp_rr with matching width" {
+    try expectIntCompareImmLargeImmLowering(ir.I32, .size32, 0x123456);
+    try expectIntCompareImmLargeImmLowering(ir.I64, .size64, 0x123456789ABC);
+}
+
 test "lower: uload8x8 emits vec_ushll" {
     try expectWidenLoadLowering(.uload8x8, ir.Type.I16X8, false, .size8x8);
 }
@@ -8000,6 +8005,66 @@ fn expectIntCompareImmCmpSize(ty: ir.Type, expected_size: a64_inst.OperandSize) 
     }
 
     try testing.expect(saw_expected);
+}
+
+fn expectIntCompareImmLargeImmLowering(
+    ty: ir.Type,
+    expected_size: a64_inst.OperandSize,
+    imm: i64,
+) !void {
+    const IntCC = @import("../ir/condcodes.zig").IntCC;
+
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ty));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I32));
+
+    var func = try Function.init(testing.allocator, "icmp_imm_large", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const arg = try builder.appendBlockParam(block, ty);
+    const cmp_inst = try func.dfg.makeInst(.{ .int_compare_imm = .{
+        .opcode = .icmp_imm,
+        .cond = IntCC.eq,
+        .arg = arg,
+        .imm = ir.Imm64.new(imm),
+    } });
+    const result = try func.dfg.appendInstResult(cmp_inst, ir.I32);
+    try func.layout.appendInst(cmp_inst, block);
+    try builder.retValues(&.{result});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_expected_mov = false;
+    var saw_expected_cmp = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .mov_imm => |mov| {
+                if (mov.size == expected_size and mov.imm == @as(u64, @bitCast(imm))) saw_expected_mov = true;
+            },
+            .cmp_rr => |cmp| {
+                if (cmp.size == expected_size) saw_expected_cmp = true;
+            },
+            else => {},
+        }
+    }
+
+    try testing.expect(saw_expected_mov);
+    try testing.expect(saw_expected_cmp);
 }
 
 fn expectWidenLoadLowering(
