@@ -546,10 +546,19 @@ pub fn emitMovImm(dst: Reg, imm: u64, size: OperandSize, buffer: *buffer_mod.Mac
 /// MOVZ - Move wide with zero
 /// Encoding: sf|opc|100101|hw|imm16|Rd
 /// opc=10 for MOVZ, hw = shift / 16
+fn encodeMovWideShift(shift: u8, size: OperandSize) !u2 {
+    if (@mod(shift, 16) != 0) return error.InvalidShift;
+    switch (size) {
+        .size32 => if (shift > 16) return error.InvalidShift,
+        .size64 => if (shift > 48) return error.InvalidShift,
+    }
+    return @intCast(shift / 16);
+}
+
 fn emitMovz(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
     const rd = try hwEnc(dst);
-    const hw: u2 = @intCast(shift / 16);
+    const hw = try encodeMovWideShift(shift, size);
 
     // MOVZ: sf|10|100101|hw|imm16|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -567,7 +576,7 @@ fn emitMovz(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mo
 fn emitMovk(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
     const rd = try hwEnc(dst);
-    const hw: u2 = @intCast(shift / 16);
+    const hw = try encodeMovWideShift(shift, size);
 
     // MOVK: sf|11|100101|hw|imm16|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -585,7 +594,7 @@ fn emitMovk(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mo
 fn emitMovn(dst: Reg, imm: u16, shift: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
     const sf_bit: u32 = @intCast(sf(size));
     const rd = try hwEnc(dst);
-    const hw: u2 = @intCast(shift / 16);
+    const hw = try encodeMovWideShift(shift, size);
 
     // MOVN: sf|00|100101|hw|imm16|Rd
     const insn: u32 = (sf_bit << 31) |
@@ -8117,6 +8126,34 @@ test "emit movn 32-bit" {
     try emit(.{ .movn = .{ .dst = wr14, .imm = 0x1111, .shift = 16, .size = .size32 } }, &buffer);
     const insn2 = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
     try testing.expectEqual(@as(u32, 1), (insn2 >> 21) & 0x3); // hw=1
+}
+
+test "emit mov wide rejects invalid shifts" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = inst_mod.VReg.new(0, .int);
+    const r0 = Reg.fromVReg(v0);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+
+    try testing.expectError(error.InvalidShift, emit(.{ .movz = .{
+        .dst = wr0,
+        .imm = 0x1234,
+        .shift = 8,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.InvalidShift, emit(.{ .movk = .{
+        .dst = wr0,
+        .imm = 0x1234,
+        .shift = 24,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.InvalidShift, emit(.{ .movn = .{
+        .dst = wr0,
+        .imm = 0x1234,
+        .shift = 32,
+        .size = .size32,
+    } }, &buffer));
 }
 
 test "emit stp 64-bit zero offset" {
