@@ -3861,21 +3861,57 @@ fn lowerInstructionAArch64(
                 const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
                 const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
 
-                // ARM64 ADD immediate supports 12-bit unsigned immediate
+                // ARM64 ADD/SUB immediate supports 12-bit unsigned immediate.
+                // Use add/sub immediate when encodable, otherwise materialize constant in a temp.
                 const imm_val = data.imm.value;
-                const imm_u16: u16 = @intCast(@mod(imm_val, 4096)); // Mask to 12 bits
-
-                try builder.emit(Inst{
-                    .add_imm = .{
-                        .dst = dst,
-                        .src = src,
-                        .imm = imm_u16,
-                        .size = size,
-                    },
-                });
+                if (imm_val >= 0 and imm_val <= 4095) {
+                    try builder.emit(Inst{
+                        .add_imm = .{
+                            .dst = dst,
+                            .src = src,
+                            .imm = @intCast(imm_val),
+                            .size = size,
+                        },
+                    });
+                } else {
+                    const abs_u64: u64 = if (imm_val < 0)
+                        @intCast(-@as(i128, imm_val))
+                    else
+                        @intCast(imm_val);
+                    if (imm_val < 0 and abs_u64 <= 4095) {
+                        try builder.emit(Inst{
+                            .sub_imm = .{
+                                .dst = dst,
+                                .src = src,
+                                .imm = @intCast(abs_u64),
+                                .size = size,
+                            },
+                        });
+                    } else {
+                        const temp_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS + 1), RegClass.int);
+                        const temp = WritableReg.fromVReg(temp_vreg);
+                        const imm_bits: u64 = @bitCast(imm_val);
+                        try builder.emit(Inst{
+                            .mov_imm = .{
+                                .dst = temp,
+                                .imm = imm_bits,
+                                .size = size,
+                            },
+                        });
+                        try builder.emit(Inst{
+                            .add_rr = .{
+                                .dst = dst,
+                                .src1 = src,
+                                .src2 = Reg.fromVReg(temp_vreg),
+                                .size = size,
+                            },
+                        });
+                    }
+                }
             } else if (data.opcode == .irsub_imm) {
                 // Reverse subtract immediate: result = imm - arg
-                // Implement as: NEG dst, arg; ADD dst, dst, #imm
+                // For small non-negative immediates use NEG+ADD immediate.
+                // Otherwise materialize imm and subtract: dst = imm - src.
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
                 const RegClass = @import("../machinst/reg.zig").RegClass;
@@ -3891,27 +3927,45 @@ fn lowerInstructionAArch64(
                 const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
                 const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
 
-                // NEG dst, src (dst = -src)
-                try builder.emit(Inst{
-                    .neg = .{
-                        .dst = dst,
-                        .src = src,
-                        .size = size,
-                    },
-                });
-
-                // ADD dst, dst, #imm (dst = -src + imm = imm - src)
                 const imm_val = data.imm.value;
-                const imm_u16: u16 = @intCast(@mod(imm_val, 4096));
-
-                try builder.emit(Inst{
-                    .add_imm = .{
-                        .dst = dst,
-                        .src = Reg.fromVReg(result_vreg),
-                        .imm = imm_u16,
-                        .size = size,
-                    },
-                });
+                if (imm_val >= 0 and imm_val <= 4095) {
+                    // NEG dst, src (dst = -src)
+                    try builder.emit(Inst{
+                        .neg = .{
+                            .dst = dst,
+                            .src = src,
+                            .size = size,
+                        },
+                    });
+                    // ADD dst, dst, #imm (dst = -src + imm = imm - src)
+                    try builder.emit(Inst{
+                        .add_imm = .{
+                            .dst = dst,
+                            .src = Reg.fromVReg(result_vreg),
+                            .imm = @intCast(imm_val),
+                            .size = size,
+                        },
+                    });
+                } else {
+                    const temp_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS + 1), RegClass.int);
+                    const temp = WritableReg.fromVReg(temp_vreg);
+                    const imm_bits: u64 = @bitCast(imm_val);
+                    try builder.emit(Inst{
+                        .mov_imm = .{
+                            .dst = temp,
+                            .imm = imm_bits,
+                            .size = size,
+                        },
+                    });
+                    try builder.emit(Inst{
+                        .sub_rr = .{
+                            .dst = dst,
+                            .src1 = Reg.fromVReg(temp_vreg),
+                            .src2 = src,
+                            .size = size,
+                        },
+                    });
+                }
             } else if (data.opcode == .imul_imm) {
                 // Multiply immediate: result = arg * imm
                 // Optimize power-of-2 to LSL, otherwise use MOVZ+MUL
@@ -7725,6 +7779,103 @@ test "lower: iadd_imm emits add_imm" {
     try testing.expect(saw_add_imm);
 }
 
+test "lower: iadd_imm negative emits sub_imm" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+
+    var func = try Function.init(testing.allocator, "iadd_imm_neg_sub", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const arg = try builder.appendBlockParam(block, ir.I64);
+    const add_inst = try func.dfg.makeInst(.{ .binary_imm64 = .{
+        .opcode = .iadd_imm,
+        .arg = arg,
+        .imm = ir.Imm64.new(-37),
+    } });
+    const result = try func.dfg.appendInstResult(add_inst, ir.I64);
+    try func.layout.appendInst(add_inst, block);
+    try builder.retValues(&.{result});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_sub_imm = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .sub_imm => |sub| {
+                if (sub.imm == 37) saw_sub_imm = true;
+            },
+            else => {},
+        }
+    }
+    try testing.expect(saw_sub_imm);
+}
+
+test "lower: iadd_imm large emits mov_imm and add_rr" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+
+    var func = try Function.init(testing.allocator, "iadd_imm_large_add_rr", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const arg = try builder.appendBlockParam(block, ir.I64);
+    const add_inst = try func.dfg.makeInst(.{ .binary_imm64 = .{
+        .opcode = .iadd_imm,
+        .arg = arg,
+        .imm = ir.Imm64.new(0x123456),
+    } });
+    const result = try func.dfg.appendInstResult(add_inst, ir.I64);
+    try func.layout.appendInst(add_inst, block);
+    try builder.retValues(&.{result});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_mov_imm = false;
+    var saw_add_rr = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .mov_imm => |mov| {
+                if (mov.imm == 0x123456 and mov.size == .size64) saw_mov_imm = true;
+            },
+            .add_rr => saw_add_rr = true,
+            else => {},
+        }
+    }
+    try testing.expect(saw_mov_imm);
+    try testing.expect(saw_add_rr);
+}
+
 test "lower: irsub_imm emits neg and add_imm" {
     var sig = ir.Signature.init(testing.allocator, .fast);
     try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
@@ -7773,6 +7924,56 @@ test "lower: irsub_imm emits neg and add_imm" {
     }
     try testing.expect(saw_neg);
     try testing.expect(saw_add_imm);
+}
+
+test "lower: irsub_imm negative emits mov_imm and sub_rr" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+
+    var func = try Function.init(testing.allocator, "irsub_imm_neg_sub_rr", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const arg = try builder.appendBlockParam(block, ir.I64);
+    const rsub_inst = try func.dfg.makeInst(.{ .binary_imm64 = .{
+        .opcode = .irsub_imm,
+        .arg = arg,
+        .imm = ir.Imm64.new(-9),
+    } });
+    const result = try func.dfg.appendInstResult(rsub_inst, ir.I64);
+    try func.layout.appendInst(rsub_inst, block);
+    try builder.retValues(&.{result});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_mov_imm = false;
+    var saw_sub_rr = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .mov_imm => |mov| {
+                if (mov.imm == @as(u64, @bitCast(@as(i64, -9))) and mov.size == .size64) saw_mov_imm = true;
+            },
+            .sub_rr => saw_sub_rr = true,
+            else => {},
+        }
+    }
+    try testing.expect(saw_mov_imm);
+    try testing.expect(saw_sub_rr);
 }
 
 test "lower: imul_imm power-of-two emits lsl_imm" {
