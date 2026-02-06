@@ -4253,10 +4253,10 @@ fn lowerInstructionAArch64(
                 const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
                 const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
 
-                const imm_val = data.imm.value;
+                const imm_bits: u64 = @bitCast(data.imm.value);
 
-                if (imm_val > 0 and std.math.isPowerOfTwo(imm_val)) {
-                    const shift_amt: u8 = @intCast(@ctz(imm_val));
+                if (imm_bits > 0 and std.math.isPowerOfTwo(imm_bits)) {
+                    const shift_amt: u8 = @intCast(@ctz(imm_bits));
                     try builder.emit(Inst{
                         .lsr_imm = .{
                             .dst = dst,
@@ -4273,7 +4273,7 @@ fn lowerInstructionAArch64(
                     try builder.emit(Inst{
                         .mov_imm = .{
                             .dst = temp_dst,
-                            .imm = @as(u64, @intCast(imm_val)),
+                            .imm = imm_bits,
                             .size = size,
                         },
                     });
@@ -4303,10 +4303,10 @@ fn lowerInstructionAArch64(
                 const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
                 const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
 
-                const imm_val = data.imm.value;
+                const imm_bits: u64 = @bitCast(data.imm.value);
 
-                if (imm_val > 0 and std.math.isPowerOfTwo(imm_val)) {
-                    const mask: u64 = @intCast(imm_val - 1);
+                if (imm_bits > 0 and std.math.isPowerOfTwo(imm_bits)) {
+                    const mask: u64 = imm_bits - 1;
                     const ImmLogic = @import("../backends/aarch64/inst.zig").ImmLogic;
                     if (ImmLogic.maybeFromU64(mask, size)) |imm_logic| {
                         try builder.emit(Inst{
@@ -4350,7 +4350,7 @@ fn lowerInstructionAArch64(
                     try builder.emit(Inst{
                         .mov_imm = .{
                             .dst = divisor_dst,
-                            .imm = @as(u64, @intCast(imm_val)),
+                            .imm = imm_bits,
                             .size = size,
                         },
                     });
@@ -8166,6 +8166,14 @@ test "lower: udiv_imm large immediate keeps full immediate" {
 
 test "lower: urem_imm large immediate keeps full immediate" {
     try expectDivRemImmMovImm(.urem_imm, 0x1234567);
+}
+
+test "lower: udiv_imm -1 immediate preserves unsigned bits" {
+    try expectDivRemImmMovImm(.udiv_imm, -1);
+}
+
+test "lower: urem_imm -1 immediate preserves unsigned bits" {
+    try expectDivRemImmMovImm(.urem_imm, -1);
 }
 
 test "lower: sdiv_imm large immediate keeps full immediate" {
