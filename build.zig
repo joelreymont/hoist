@@ -227,18 +227,17 @@ pub fn build(b: *std.Build) void {
     // const run_s390x_encoding = b.addRunArtifact(s390x_encoding);
     // test_step.dependOn(&run_s390x_encoding.step);
 
-    // TODO: x64_encoding.zig requires complete x64 backend (emit not implemented)
-    // const x64_encoding = b.addTest(.{
-    //     .root_module = b.createModule(.{
-    //         .root_source_file = b.path("tests/x64_encoding.zig"),
-    //         .target = target,
-    //         .optimize = optimize,
-    //     }),
-    // });
-    // x64_encoding.root_module.addImport("hoist", lib.root_module);
-    // applyFlags(x64_encoding, enable_lto, debug_info, strip_debug, pic, single_threaded);
-    // const run_x64_encoding = b.addRunArtifact(x64_encoding);
-    // test_step.dependOn(&run_x64_encoding.step);
+    const x64_encoding = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/x64_encoding.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    x64_encoding.root_module.addImport("hoist", lib.root_module);
+    applyFlags(x64_encoding, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_x64_encoding = b.addRunArtifact(x64_encoding);
+    test_step.dependOn(&run_x64_encoding.step);
 
     const e2e_tail_calls = b.addTest(.{
         .root_module = b.createModule(.{

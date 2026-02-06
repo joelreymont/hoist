@@ -5,9 +5,10 @@ const hoist = @import("hoist");
 const Inst = hoist.x64_inst.Inst;
 const Reg = hoist.x64_inst.Reg;
 const WritableReg = hoist.x64_inst.WritableReg;
+const Mem = hoist.x64_inst.Mem;
 const PReg = hoist.reg.PReg;
-const OperandSize = hoist.x64_inst.OperandSize;
 const MachBuffer = hoist.buffer.MachBuffer;
+const emit = hoist.x64_emit.emit;
 
 // Test MOV encoding: mov rax, rbx
 test "x64 encode mov" {
@@ -26,7 +27,7 @@ test "x64 encode mov" {
         },
     };
 
-    try inst.emit(&buffer);
+    try emit(inst, &buffer);
 
     // mov rax, rbx: REX.W + 89 /r (ModR/M = 11_011_000)
     // Expected: 48 89 D8
@@ -45,13 +46,12 @@ test "x64 encode add" {
     const inst = Inst{
         .add_rr = .{
             .dst = rax_w,
-            .src1 = rax,
-            .src2 = rbx,
+            .src = rbx,
             .size = .size64,
         },
     };
 
-    try inst.emit(&buffer);
+    try emit(inst, &buffer);
 
     // add rax, rbx: REX.W + 01 /r
     // Expected: 48 01 D8
@@ -71,7 +71,7 @@ test "x64 encode push" {
         },
     };
 
-    try inst.emit(&buffer);
+    try emit(inst, &buffer);
 
     // push rbx: 50 + rd (0x53)
     // Expected: 53
@@ -92,7 +92,7 @@ test "x64 encode pop" {
         },
     };
 
-    try inst.emit(&buffer);
+    try emit(inst, &buffer);
 
     // pop rbx: 58 + rd (0x5B)
     // Expected: 5B
@@ -110,13 +110,12 @@ test "x64 encode add immediate" {
     const inst = Inst{
         .add_imm = .{
             .dst = rax_w,
-            .src = rax,
             .imm = 42,
             .size = .size64,
         },
     };
 
-    try inst.emit(&buffer);
+    try emit(inst, &buffer);
 
     // add rax, 42: REX.W + 81 /0 + imm32 or 83 /0 + imm8
     // Expected: 48 83 C0 2A (using sign-extended imm8)
@@ -140,7 +139,7 @@ test "x64 encode extended registers" {
         },
     };
 
-    try inst.emit(&buffer);
+    try emit(inst, &buffer);
 
     // mov r8, r9: REX.WRB + 89 /r
     // Expected: 4D 89 C8
@@ -156,16 +155,16 @@ test "x64 encode load" {
     const rbx = Reg.fromPReg(PReg.new(.int, 3));
     const rax_w = WritableReg.fromReg(rax);
 
+    const mem = Mem.base_disp(rbx, 8);
     const inst = Inst{
         .mov_rm = .{
             .dst = rax_w,
-            .base = rbx,
-            .offset = 8,
+            .src = mem,
             .size = .size64,
         },
     };
 
-    try inst.emit(&buffer);
+    try emit(inst, &buffer);
 
     // mov rax, [rbx + 8]: REX.W + 8B /r + disp8
     // Expected: 48 8B 43 08
@@ -180,16 +179,16 @@ test "x64 encode store" {
     const rax = Reg.fromPReg(PReg.new(.int, 0));
     const rbx = Reg.fromPReg(PReg.new(.int, 3));
 
+    const mem = Mem.base_disp(rbx, 16);
     const inst = Inst{
         .mov_mr = .{
-            .base = rbx,
-            .offset = 16,
+            .dst = mem,
             .src = rax,
             .size = .size64,
         },
     };
 
-    try inst.emit(&buffer);
+    try emit(inst, &buffer);
 
     // mov [rbx + 16], rax: REX.W + 89 /r + disp8
     // Expected: 48 89 43 10
@@ -203,7 +202,7 @@ test "x64 encode ret" {
 
     const inst = Inst{ .ret = {} };
 
-    try inst.emit(&buffer);
+    try emit(inst, &buffer);
 
     // ret: C3
     try testing.expectEqual(@as(usize, 1), buffer.data.items.len);
@@ -227,7 +226,7 @@ test "x64 encode 32bit" {
         },
     };
 
-    try inst.emit(&buffer);
+    try emit(inst, &buffer);
 
     // mov eax, ebx: 89 /r (no REX prefix for 32-bit)
     // Expected: 89 D8

@@ -1,9 +1,11 @@
 ---
 title: x64 backend
-status: active
+status: closed
 priority: 3
 issue-type: task
-created-at: "\"2026-02-02T21:35:57.002510+01:00\""
+created-at: "\"\\\"2026-02-02T21:35:57.002510+01:00\\\"\""
+closed-at: "2026-02-06T18:32:06.022259+01:00"
+close-reason: Lowering/emit implemented; x64 encoding tests enabled
 blocks:
   - hoist-other-backends-85db0220
 ---
