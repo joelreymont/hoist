@@ -1257,6 +1257,98 @@ test "lower_popcnt128 emits vector reduction sequence" {
     try testing.expect(hasInstTag(vcode.insns.items, .fmov_to_gpr));
 }
 
+test "aarch64_uadd_overflow_cin emits cmp+adcs+cset(cs)" {
+    const testing = std.testing;
+
+    var sig = signature_mod.Signature.init(testing.allocator, .system_v);
+    try sig.params.append(testing.allocator, signature_mod.AbiParam.new(Type.I64));
+    try sig.params.append(testing.allocator, signature_mod.AbiParam.new(Type.I64));
+    try sig.params.append(testing.allocator, signature_mod.AbiParam.new(Type.I64));
+
+    var func = try lower_mod.Function.init(testing.allocator, "test_uadd_overflow_cin", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+    const a = try func.dfg.appendBlockParam(block0, Type.I64);
+    const b = try func.dfg.appendBlockParam(block0, Type.I64);
+    const cin = try func.dfg.appendBlockParam(block0, Type.I64);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    try ctx.allocateSSAVRegs();
+    _ = try ctx.startBlock(block0);
+
+    const out = try aarch64_uadd_overflow_cin(Type.I64, a, b, cin, &ctx);
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+
+    try testing.expect(hasInstTag(vcode.insns.items, .cmp_imm));
+    try testing.expect(hasInstTag(vcode.insns.items, .adcs));
+
+    var saw_cs_cset = false;
+    for (vcode.insns.items) |insn| {
+        switch (insn) {
+            .cset => |c| {
+                if (c.cond == .cs) {
+                    saw_cs_cset = true;
+                }
+            },
+            else => {},
+        }
+    }
+    try testing.expect(saw_cs_cset);
+}
+
+test "aarch64_sadd_overflow_cin emits cmp+adcs+cset(vs)" {
+    const testing = std.testing;
+
+    var sig = signature_mod.Signature.init(testing.allocator, .system_v);
+    try sig.params.append(testing.allocator, signature_mod.AbiParam.new(Type.I64));
+    try sig.params.append(testing.allocator, signature_mod.AbiParam.new(Type.I64));
+    try sig.params.append(testing.allocator, signature_mod.AbiParam.new(Type.I64));
+
+    var func = try lower_mod.Function.init(testing.allocator, "test_sadd_overflow_cin", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+    const a = try func.dfg.appendBlockParam(block0, Type.I64);
+    const b = try func.dfg.appendBlockParam(block0, Type.I64);
+    const cin = try func.dfg.appendBlockParam(block0, Type.I64);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    try ctx.allocateSSAVRegs();
+    _ = try ctx.startBlock(block0);
+
+    const out = try aarch64_sadd_overflow_cin(Type.I64, a, b, cin, &ctx);
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+
+    try testing.expect(hasInstTag(vcode.insns.items, .cmp_imm));
+    try testing.expect(hasInstTag(vcode.insns.items, .adcs));
+
+    var saw_vs_cset = false;
+    for (vcode.insns.items) |insn| {
+        switch (insn) {
+            .cset => |c| {
+                if (c.cond == .vs) {
+                    saw_vs_cset = true;
+                }
+            },
+            else => {},
+        }
+    }
+    try testing.expect(saw_vs_cset);
+}
+
 test "aarch64_fcvtzs_32_trap emits traps" {
     const testing = std.testing;
 
@@ -3671,6 +3763,78 @@ pub fn aarch64_sadd_overflow(ty: types.Type, a: lower_mod.Value, b: lower_mod.Va
             .size = size,
         },
     });
+
+    return lower_mod.ValueRegs.pair(dst.toReg(), overflow_reg.toReg());
+}
+
+pub fn aarch64_uadd_overflow_cin(ty: types.Type, a: lower_mod.Value, b: lower_mod.Value, cin: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    recordRule("aarch64_uadd_overflow_cin");
+    const a_reg = Reg.fromVReg(try ctx.getValueReg(a, .int));
+    const b_reg = Reg.fromVReg(try ctx.getValueReg(b, .int));
+    const cin_reg = Reg.fromVReg(try ctx.getValueReg(cin, .int));
+    const size: OperandSize = if (ty.bits() == 64) .size64 else .size32;
+
+    const one = Imm12.maybeFromU64(1) orelse return error.InvalidImmediate;
+
+    // Set carry flag from carry-in value (0/1): C=1 iff cin >= 1.
+    try ctx.emit(Inst{ .cmp_imm = .{
+        .src = cin_reg,
+        .imm = one,
+        .size = size,
+    } });
+
+    // Add with carry-in.
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .adcs = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = size,
+    } });
+
+    // Unsigned overflow is carry-out.
+    const overflow_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .cset = .{
+        .dst = overflow_reg,
+        .cond = .cs,
+        .size = size,
+    } });
+
+    return lower_mod.ValueRegs.pair(dst.toReg(), overflow_reg.toReg());
+}
+
+pub fn aarch64_sadd_overflow_cin(ty: types.Type, a: lower_mod.Value, b: lower_mod.Value, cin: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
+    recordRule("aarch64_sadd_overflow_cin");
+    const a_reg = Reg.fromVReg(try ctx.getValueReg(a, .int));
+    const b_reg = Reg.fromVReg(try ctx.getValueReg(b, .int));
+    const cin_reg = Reg.fromVReg(try ctx.getValueReg(cin, .int));
+    const size: OperandSize = if (ty.bits() == 64) .size64 else .size32;
+
+    const one = Imm12.maybeFromU64(1) orelse return error.InvalidImmediate;
+
+    // Set carry flag from carry-in value (0/1): C=1 iff cin >= 1.
+    try ctx.emit(Inst{ .cmp_imm = .{
+        .src = cin_reg,
+        .imm = one,
+        .size = size,
+    } });
+
+    // Add with carry-in.
+    const dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .adcs = .{
+        .dst = dst,
+        .src1 = a_reg,
+        .src2 = b_reg,
+        .size = size,
+    } });
+
+    // Signed overflow is V flag.
+    const overflow_reg = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .cset = .{
+        .dst = overflow_reg,
+        .cond = .vs,
+        .size = size,
+    } });
 
     return lower_mod.ValueRegs.pair(dst.toReg(), overflow_reg.toReg());
 }
