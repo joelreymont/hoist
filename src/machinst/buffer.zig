@@ -477,6 +477,8 @@ pub const MachBuffer = struct {
     /// Add a constant to the pool, return its label.
     /// Deduplicates identical constants.
     pub fn addConstant(self: *MachBuffer, value: u64, size: u8) !MachLabel {
+        if (size != 4 and size != 8) return error.InvalidConstantSize;
+
         const key = ConstPoolKey{ .value = value, .size = size };
 
         // Check if constant already exists
@@ -1026,6 +1028,14 @@ test "MachBuffer addConstant keeps same value with different sizes separate" {
     const second = std.mem.readInt(u64, buf.data.items[4..12], .little);
     try testing.expectEqual(@as(u32, 0x3F800000), first);
     try testing.expectEqual(@as(u64, 0x000000003F800000), second);
+}
+
+test "MachBuffer addConstant rejects invalid size" {
+    var buf = MachBuffer.init(testing.allocator);
+    defer buf.deinit();
+
+    try testing.expectError(error.InvalidConstantSize, buf.addConstant(0x1234, 1));
+    try testing.expectError(error.InvalidConstantSize, buf.addConstant(0x1234, 16));
 }
 
 test "MachBuffer emitJumpTables rejects unresolved labels" {
