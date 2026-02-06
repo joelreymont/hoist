@@ -579,8 +579,15 @@ pub const MachBuffer = struct {
             // Emit offsets to each target
             // For ARM64: typically use 32-bit signed offsets from table base
             for (jt.targets.items) |entry| {
+                if (entry.label.index >= self.label_offsets.items.len) {
+                    return error.InvalidLabel;
+                }
+
                 // Get the offset of the target label
-                const target_offset = self.label_offsets.items[entry.label];
+                const target_offset = self.label_offsets.items[entry.label.index];
+                if (target_offset == UNKNOWN_OFFSET) {
+                    return error.UnresolvedLabel;
+                }
                 const table_offset = self.curOffset();
 
                 // Calculate PC-relative offset
@@ -1019,6 +1026,28 @@ test "MachBuffer addConstant keeps same value with different sizes separate" {
     const second = std.mem.readInt(u64, buf.data.items[4..12], .little);
     try testing.expectEqual(@as(u32, 0x3F800000), first);
     try testing.expectEqual(@as(u64, 0x000000003F800000), second);
+}
+
+test "MachBuffer emitJumpTables rejects unresolved labels" {
+    var buf = MachBuffer.init(testing.allocator);
+    defer buf.deinit();
+
+    const jt_idx = try buf.createJumpTable(Block.new(0), 4);
+    const unresolved = try buf.allocLabel();
+    try buf.addJumpTableTarget(jt_idx, Block.new(1), unresolved);
+
+    try testing.expectError(error.UnresolvedLabel, buf.emitJumpTables());
+}
+
+test "MachBuffer emitJumpTables rejects invalid labels" {
+    var buf = MachBuffer.init(testing.allocator);
+    defer buf.deinit();
+
+    const jt_idx = try buf.createJumpTable(Block.new(0), 4);
+    const invalid_label = MachLabel.new(999999);
+    try buf.addJumpTableTarget(jt_idx, Block.new(1), invalid_label);
+
+    try testing.expectError(error.InvalidLabel, buf.emitJumpTables());
 }
 
 test "MachBuffer trap records" {
