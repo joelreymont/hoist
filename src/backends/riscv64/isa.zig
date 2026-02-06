@@ -187,9 +187,62 @@ pub const Riscv64ISA = struct {
     }
 
     fn applyAllocations(inst: *Inst, result: anytype) !void {
-        _ = inst;
-        _ = result;
-        // TODO: Implement vreg->preg rewriting
+        const reg_mod = @import("../../machinst/reg.zig");
+
+        const Rewriter = struct {
+            fn mapReg(reg: reg_mod.Reg, alloc_result: anytype) !reg_mod.Reg {
+                if (reg.toVReg()) |vreg| {
+                    if (alloc_result.getPhysReg(vreg)) |preg| {
+                        return reg_mod.Reg.fromPReg(preg);
+                    }
+                    if (alloc_result.getSpillSlot(vreg) != null) {
+                        return error.SpilledVirtualRegister;
+                    }
+                    return error.UnallocatedVirtualRegister;
+                }
+                return reg;
+            }
+
+            fn mapWritableReg(wreg: reg_mod.WritableReg, alloc_result: anytype) !reg_mod.WritableReg {
+                const mapped = try mapReg(wreg.toReg(), alloc_result);
+                return reg_mod.WritableReg.fromReg(mapped);
+            }
+
+            fn rewrite(value: anytype, alloc_result: anytype) !void {
+                const T = @TypeOf(value.*);
+                switch (@typeInfo(T)) {
+                    .@"struct" => |s| {
+                        inline for (s.fields) |field| {
+                            const field_ptr = &@field(value, field.name);
+                            const FieldT = @TypeOf(field_ptr.*);
+                            if (FieldT == reg_mod.Reg) {
+                                field_ptr.* = try mapReg(field_ptr.*, alloc_result);
+                            } else if (FieldT == reg_mod.WritableReg) {
+                                field_ptr.* = try mapWritableReg(field_ptr.*, alloc_result);
+                            } else {
+                                switch (@typeInfo(FieldT)) {
+                                    .@"struct", .@"union", .optional => try rewrite(field_ptr, alloc_result),
+                                    else => {},
+                                }
+                            }
+                        }
+                    },
+                    .@"union" => {
+                        switch (value.*) {
+                            inline else => |*payload| try rewrite(payload, alloc_result),
+                        }
+                    },
+                    .optional => {
+                        if (value.*) |*some| {
+                            try rewrite(some, alloc_result);
+                        }
+                    },
+                    else => {},
+                }
+            }
+        };
+
+        try Rewriter.rewrite(inst, result);
     }
 };
 
@@ -231,4 +284,36 @@ test "Riscv64ISA compile function" {
 
     // Empty function produces minimal code
     try testing.expect(code.code.len == 0);
+}
+
+test "Riscv64ISA applyAllocations rewrites vregs" {
+    const linear_scan_mod = @import("../../regalloc/linear_scan.zig");
+    const reg_mod = @import("../../machinst/reg.zig");
+
+    const src_v = reg_mod.VReg.new(300, .int);
+    const dst_v = reg_mod.VReg.new(301, .int);
+
+    var inst = Inst{
+        .add = .{
+            .dst = reg_mod.WritableReg.fromVReg(dst_v),
+            .src1 = reg_mod.Reg.fromVReg(src_v),
+            .src2 = reg_mod.Reg.fromVReg(src_v),
+        },
+    };
+
+    var result = linear_scan_mod.RegAllocResult.init(testing.allocator);
+    defer result.deinit();
+    try result.assign(src_v, reg_mod.PReg.new(.int, 5));
+    try result.assign(dst_v, reg_mod.PReg.new(.int, 6));
+
+    try Riscv64ISA.applyAllocations(&inst, &result);
+
+    switch (inst) {
+        .add => |add| {
+            try testing.expect(add.src1.toRealReg() != null);
+            try testing.expect(add.src2.toRealReg() != null);
+            try testing.expect(add.dst.toReg().toRealReg() != null);
+        },
+        else => return error.TestUnexpectedInstructionTag,
+    }
 }

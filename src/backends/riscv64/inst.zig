@@ -1028,16 +1028,100 @@ pub const Inst = union(enum) {
 
     /// Get defined (output) registers for this instruction.
     pub fn getDefs(self: *const Inst, allocator: std.mem.Allocator) ![]VReg {
-        _ = self;
-        return allocator.alloc(VReg, 0);
+        var collector = OperandCollector.init(allocator);
+        defer collector.deinit();
+
+        try collectOperands(self, &collector);
+
+        var vregs = std.ArrayList(VReg){};
+        defer vregs.deinit(allocator);
+
+        for (collector.defs.items) |wreg| {
+            if (wreg.toReg().toVReg()) |vreg| {
+                try vregs.append(allocator, vreg);
+            }
+        }
+        return try vregs.toOwnedSlice(allocator);
     }
 
     /// Get used (input) registers for this instruction.
     pub fn getUses(self: *const Inst, allocator: std.mem.Allocator) ![]VReg {
-        _ = self;
-        return allocator.alloc(VReg, 0);
+        var collector = OperandCollector.init(allocator);
+        defer collector.deinit();
+
+        try collectOperands(self, &collector);
+
+        var vregs = std.ArrayList(VReg){};
+        defer vregs.deinit(allocator);
+
+        for (collector.uses.items) |reg| {
+            if (reg.toVReg()) |vreg| {
+                try vregs.append(allocator, vreg);
+            }
+        }
+        return try vregs.toOwnedSlice(allocator);
     }
 };
+
+pub const OperandCollector = struct {
+    uses: std.ArrayList(Reg),
+    defs: std.ArrayList(WritableReg),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) OperandCollector {
+        return .{
+            .uses = std.ArrayList(Reg){},
+            .defs = std.ArrayList(WritableReg){},
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *OperandCollector) void {
+        self.uses.deinit(self.allocator);
+        self.defs.deinit(self.allocator);
+    }
+
+    pub fn regUse(self: *OperandCollector, reg: Reg) !void {
+        try self.uses.append(self.allocator, reg);
+    }
+
+    pub fn regDef(self: *OperandCollector, reg: WritableReg) !void {
+        try self.defs.append(self.allocator, reg);
+    }
+};
+
+fn collectOperands(value: anytype, collector: *OperandCollector) !void {
+    const T = @TypeOf(value.*);
+    switch (@typeInfo(T)) {
+        .@"struct" => |s| {
+            inline for (s.fields) |field| {
+                const field_ptr = &@field(value, field.name);
+                const FieldT = @TypeOf(field_ptr.*);
+                if (FieldT == Reg) {
+                    try collector.regUse(field_ptr.*);
+                } else if (FieldT == WritableReg) {
+                    try collector.regDef(field_ptr.*);
+                } else {
+                    switch (@typeInfo(FieldT)) {
+                        .@"struct", .@"union", .optional => try collectOperands(field_ptr, collector),
+                        else => {},
+                    }
+                }
+            }
+        },
+        .@"union" => {
+            switch (value.*) {
+                inline else => |*payload| try collectOperands(payload, collector),
+            }
+        },
+        .optional => {
+            if (value.*) |*some| {
+                try collectOperands(some, collector);
+            }
+        },
+        else => {},
+    }
+}
 
 /// Floating-point rounding mode.
 pub const RoundingMode = enum(u3) {
@@ -1066,4 +1150,45 @@ test "inst size" {
 test "rounding mode encoding" {
     try testing.expectEqual(@as(u3, 0b000), @intFromEnum(RoundingMode.rne));
     try testing.expectEqual(@as(u3, 0b111), @intFromEnum(RoundingMode.dyn));
+}
+
+test "inst defs and uses for addi" {
+    const src_v = VReg.new(200, .int);
+    const dst_v = VReg.new(201, .int);
+
+    const inst = Inst{
+        .addi = .{
+            .dst = WritableReg.fromVReg(dst_v),
+            .src = Reg.fromVReg(src_v),
+            .imm = 7,
+        },
+    };
+
+    const defs = try inst.getDefs(testing.allocator);
+    defer testing.allocator.free(defs);
+    try testing.expectEqual(@as(usize, 1), defs.len);
+    try testing.expectEqual(dst_v.index(), defs[0].index());
+
+    const uses = try inst.getUses(testing.allocator);
+    defer testing.allocator.free(uses);
+    try testing.expectEqual(@as(usize, 1), uses.len);
+    try testing.expectEqual(src_v.index(), uses[0].index());
+}
+
+test "inst uses for indirect call target" {
+    const target_v = VReg.new(220, .int);
+    const inst = Inst{
+        .call = .{
+            .target = .{ .indirect = Reg.fromVReg(target_v) },
+        },
+    };
+
+    const defs = try inst.getDefs(testing.allocator);
+    defer testing.allocator.free(defs);
+    try testing.expectEqual(@as(usize, 0), defs.len);
+
+    const uses = try inst.getUses(testing.allocator);
+    defer testing.allocator.free(uses);
+    try testing.expectEqual(@as(usize, 1), uses.len);
+    try testing.expectEqual(target_v.index(), uses[0].index());
 }
