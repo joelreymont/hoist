@@ -1269,6 +1269,80 @@ test "lower_imul128 emits umulh mads and mul_rr sequence" {
     try testing.expect(hasInstTag(vcode.insns.items, .mul_rr));
 }
 
+test "lower_rotr128 emits variable-shift and csel sequence" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_rotr128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const amt = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+
+    const out = try lower_rotr128(
+        lower_mod.ValueRegs.pair(lo, hi),
+        amt,
+        &ctx,
+    );
+
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+    try testing.expect(hasInstTag(vcode.insns.items, .lsr_rr));
+    try testing.expect(hasInstTag(vcode.insns.items, .lsl_rr));
+    try testing.expect(hasInstTag(vcode.insns.items, .orr_rr));
+    try testing.expect(hasInstTag(vcode.insns.items, .csel));
+}
+
+test "lower_rotl128 reuses rotr helper path" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_rotl128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const amt = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+
+    const out = try lower_rotl128(
+        lower_mod.ValueRegs.pair(lo, hi),
+        amt,
+        &ctx,
+    );
+
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+    try testing.expect(hasInstTag(vcode.insns.items, .neg));
+    try testing.expect(hasInstTag(vcode.insns.items, .csel));
+}
+
 test "lower_band128 emits and_rr on both halves" {
     const testing = std.testing;
 
@@ -7281,6 +7355,170 @@ pub fn lower_imul128(
     } });
 
     return lower_mod.ValueRegs.pair(out_lo.toReg(), out_hi.toReg());
+}
+
+/// Rotate-right for I128 register pairs.
+/// Shift amount is masked to 0..127 and uses variable 64-bit shifts plus lane swap.
+pub fn lower_rotr128(
+    val: lower_mod.ValueRegs,
+    amt: Reg,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lo = val.get(0) orelse return error.NoMatch;
+    const hi = val.get(1) orelse return error.NoMatch;
+
+    const imm127 = ImmLogic.maybeFromU64(127, .size64) orelse return error.UnsupportedLogicalImmediate;
+    const imm63 = ImmLogic.maybeFromU64(63, .size64) orelse return error.UnsupportedLogicalImmediate;
+    const imm0: Imm12 = .{ .bits = 0, .shift12 = false };
+
+    const amt128_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .and_imm = .{
+        .dst = amt128_dst,
+        .src = amt,
+        .imm = imm127,
+    } });
+    const amt128 = amt128_dst.toReg();
+
+    const sh_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .and_imm = .{
+        .dst = sh_dst,
+        .src = amt128,
+        .imm = imm63,
+    } });
+    const sh = sh_dst.toReg();
+
+    const neg_sh_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .neg = .{
+        .dst = neg_sh_dst,
+        .src = sh,
+        .size = .size64,
+    } });
+
+    const inv_sh_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .and_imm = .{
+        .dst = inv_sh_dst,
+        .src = neg_sh_dst.toReg(),
+        .imm = imm63,
+    } });
+    const inv_sh = inv_sh_dst.toReg();
+
+    const lo_shr_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .lsr_rr = .{
+        .dst = lo_shr_dst,
+        .src1 = lo,
+        .src2 = sh,
+        .size = .size64,
+    } });
+
+    const hi_shl_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .lsl_rr = .{
+        .dst = hi_shl_dst,
+        .src1 = hi,
+        .src2 = inv_sh,
+        .size = .size64,
+    } });
+
+    const lo_mix_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .orr_rr = .{
+        .dst = lo_mix_dst,
+        .src1 = lo_shr_dst.toReg(),
+        .src2 = hi_shl_dst.toReg(),
+        .size = .size64,
+    } });
+    const lo_mix = lo_mix_dst.toReg();
+
+    const hi_shr_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .lsr_rr = .{
+        .dst = hi_shr_dst,
+        .src1 = hi,
+        .src2 = sh,
+        .size = .size64,
+    } });
+
+    const lo_shl_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .lsl_rr = .{
+        .dst = lo_shl_dst,
+        .src1 = lo,
+        .src2 = inv_sh,
+        .size = .size64,
+    } });
+
+    const hi_mix_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .orr_rr = .{
+        .dst = hi_mix_dst,
+        .src1 = hi_shr_dst.toReg(),
+        .src2 = lo_shl_dst.toReg(),
+        .size = .size64,
+    } });
+    const hi_mix = hi_mix_dst.toReg();
+
+    const swap_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .lsr_imm = .{
+        .dst = swap_dst,
+        .src = amt128,
+        .imm = 6,
+        .size = .size64,
+    } });
+    const swap = swap_dst.toReg();
+
+    try ctx.emit(Inst{ .cmp_imm = .{
+        .src = swap,
+        .imm = imm0,
+        .size = .size64,
+    } });
+
+    const out_lo = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .csel = .{
+        .dst = out_lo,
+        .src1 = hi_mix,
+        .src2 = lo_mix,
+        .cond = .ne,
+        .size = .size64,
+    } });
+
+    const out_hi = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .csel = .{
+        .dst = out_hi,
+        .src1 = lo_mix,
+        .src2 = hi_mix,
+        .cond = .ne,
+        .size = .size64,
+    } });
+
+    return lower_mod.ValueRegs.pair(out_lo.toReg(), out_hi.toReg());
+}
+
+/// Rotate-left for I128 register pairs.
+/// Implemented as rotate-right by (-amt mod 128).
+pub fn lower_rotl128(
+    val: lower_mod.ValueRegs,
+    amt: Reg,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const imm127 = ImmLogic.maybeFromU64(127, .size64) orelse return error.UnsupportedLogicalImmediate;
+
+    const amt128_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .and_imm = .{
+        .dst = amt128_dst,
+        .src = amt,
+        .imm = imm127,
+    } });
+
+    const neg_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .neg = .{
+        .dst = neg_dst,
+        .src = amt128_dst.toReg(),
+        .size = .size64,
+    } });
+
+    const rotr_amt_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .and_imm = .{
+        .dst = rotr_amt_dst,
+        .src = neg_dst.toReg(),
+        .imm = imm127,
+    } });
+
+    return lower_rotr128(val, rotr_amt_dst.toReg(), ctx);
 }
 
 /// Bitwise AND for I128 register pairs.
