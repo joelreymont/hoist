@@ -3,6 +3,7 @@ const std = @import("std");
 const ir_entities = @import("../ir/entities.zig");
 const Opcode = @import("../ir/opcodes.zig").Opcode;
 const a64_inst = @import("../backends/aarch64/inst.zig");
+const x64_inst = @import("../backends/x64/inst.zig");
 const vcode_mod = @import("../machinst/vcode.zig");
 const reg_mod = @import("../machinst/reg.zig");
 const linear_scan_mod = @import("../regalloc/linear_scan.zig");
@@ -51,6 +52,15 @@ pub const AArch64RegAlloc = struct {
 
     pub fn deinit(self: *AArch64RegAlloc) void {
         self.result.deinit();
+        self.* = undefined;
+    }
+};
+
+pub const X64Lowered = struct {
+    vcode: vcode_mod.VCode(x64_inst.Inst),
+
+    pub fn deinit(self: *X64Lowered) void {
+        self.vcode.deinit();
         self.* = undefined;
     }
 };

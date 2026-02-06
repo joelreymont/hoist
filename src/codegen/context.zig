@@ -81,6 +81,8 @@ pub const Context = struct {
     aarch64_lowered: ?pipeline_state.AArch64Lowered,
     /// AArch64 register allocation state for current compilation.
     aarch64_regalloc: ?pipeline_state.AArch64RegAlloc,
+    /// x64 lowering state for current compilation.
+    x64_lowered: ?pipeline_state.X64Lowered,
 
     /// Request disassembly output.
     want_disasm: bool,
@@ -100,6 +102,7 @@ pub const Context = struct {
             .compiled_code = null,
             .aarch64_lowered = null,
             .aarch64_regalloc = null,
+            .x64_lowered = null,
             .want_disasm = false,
             .debug = DebugOptions.init(),
             .target = null,
@@ -116,6 +119,7 @@ pub const Context = struct {
             .compiled_code = null,
             .aarch64_lowered = null,
             .aarch64_regalloc = null,
+            .x64_lowered = null,
             .want_disasm = false,
             .debug = DebugOptions.init(),
             .target = null,
@@ -136,6 +140,9 @@ pub const Context = struct {
         if (self.aarch64_lowered) |*state| {
             state.deinit();
         }
+        if (self.x64_lowered) |*state| {
+            state.deinit();
+        }
         self.debug.deinit(self.allocator);
     }
 
@@ -147,6 +154,13 @@ pub const Context = struct {
         if (self.aarch64_lowered) |*state| {
             state.deinit();
             self.aarch64_lowered = null;
+        }
+    }
+
+    pub fn clearX64State(self: *Context) void {
+        if (self.x64_lowered) |*state| {
+            state.deinit();
+            self.x64_lowered = null;
         }
     }
 
@@ -163,6 +177,8 @@ pub const Context = struct {
             code.deinit();
         }
         self.compiled_code = null;
+        self.clearAArch64State();
+        self.clearX64State();
         self.want_disasm = false;
     }
 

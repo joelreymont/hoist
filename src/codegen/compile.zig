@@ -813,6 +813,7 @@ pub fn compile(
     ctx.func = func;
     ctx.target = target;
     ctx.clearAArch64State();
+    ctx.clearX64State();
 
     // 1. Verify IR (if enabled)
     try verifyIf(ctx, func, target);
@@ -2108,6 +2109,49 @@ fn emitAArch64WithAllocation(
     try buffer.emitConstPool();
     try buffer.finalize();
     ctx.compiled_code = try assembleResult(ctx.allocator, &buffer, ctx.func, false);
+}
+
+/// Emit x64 machine code from lowered VCode without register allocation.
+///
+/// This is a bootstrap pipeline path: it emits lowered instructions directly.
+/// Virtual registers are encoded using the x64 emitter's current vreg mapping.
+fn emitX64WithoutAllocation(
+    ctx: *Context,
+    vcode: *@import("../machinst/vcode.zig").VCode(@import("../backends/x64/inst.zig").Inst),
+) CodegenError!void {
+    const x64_emit = @import("../backends/x64/emit.zig");
+    const x64_inst = @import("../backends/x64/inst.zig");
+    const buffer_mod = @import("../machinst/buffer.zig");
+
+    var buffer = buffer_mod.MachBuffer.init(ctx.allocator);
+    defer buffer.deinit();
+
+    var labels = std.ArrayList(buffer_mod.MachLabel){};
+    defer labels.deinit(ctx.allocator);
+    try labels.ensureTotalCapacity(ctx.allocator, vcode.blocks.items.len);
+
+    var block_idx: usize = 0;
+    while (block_idx < vcode.blocks.items.len) : (block_idx += 1) {
+        labels.appendAssumeCapacity(try buffer.allocLabel());
+    }
+
+    for (vcode.blocks.items, 0..) |vblock, vblock_idx| {
+        const label = labels.items[vblock_idx];
+        try buffer.bindLabel(label);
+        for (vcode.insns.items[vblock.insn_start..vblock.insn_end]) |inst| {
+            x64_emit.emit(inst, &buffer) catch |err| {
+                return switch (err) {
+                    error.OutOfMemory => error.OutOfMemory,
+                    else => error.EmissionFailed,
+                };
+            };
+        }
+    }
+
+    try buffer.finalize();
+    ctx.compiled_code = try assembleResult(ctx.allocator, &buffer, ctx.func, false);
+
+    _ = x64_inst;
 }
 
 fn emitMovWideImmediate(
@@ -5946,10 +5990,16 @@ fn lowerX86_64(ctx: *Context) CodegenError!void {
         error.OutOfMemory => error.OutOfMemory,
         else => error.LoweringFailed,
     };
-    lowered.deinit();
+    errdefer lowered.deinit();
 
-    // x64 lowering path is wired; register allocation and emission are still AArch64-only.
-    return error.UnsupportedTarget;
+    if (ctx.x64_lowered) |*state| {
+        state.deinit();
+        ctx.x64_lowered = null;
+    }
+
+    ctx.x64_lowered = .{
+        .vcode = lowered,
+    };
 }
 
 /// Lower IR to RISC-V 64 VCode.
@@ -6011,6 +6061,9 @@ fn lowerInstruction(lower_ctx: anytype, inst: ir.Inst, target: *const Target) Co
 /// Allocate registers.
 fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
     switch (target.arch) {
+        .x86_64 => {
+            if (ctx.x64_lowered == null) return error.LoweringFailed;
+        },
         .aarch64 => {
             const Inst = @import("../backends/aarch64/inst.zig").Inst;
 
@@ -6076,6 +6129,9 @@ fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
 /// Rewrite virtual registers to physical registers after allocation.
 fn rewriteRegisters(ctx: *Context, target: *const Target) CodegenError!void {
     switch (target.arch) {
+        .x86_64 => {
+            if (ctx.x64_lowered == null) return error.LoweringFailed;
+        },
         .aarch64 => {
             if (ctx.aarch64_lowered) |*lowered| {
                 if (ctx.aarch64_regalloc) |*regalloc| {
@@ -6092,6 +6148,11 @@ fn rewriteRegisters(ctx: *Context, target: *const Target) CodegenError!void {
 /// Emit machine code.
 fn emit(ctx: *Context, target: *const Target) CodegenError!void {
     switch (target.arch) {
+        .x86_64 => {
+            if (ctx.x64_lowered) |*lowered| {
+                try emitX64WithoutAllocation(ctx, &lowered.vcode);
+            } else return error.EmissionFailed;
+        },
         .aarch64 => {
             if (ctx.aarch64_lowered) |*lowered| {
                 if (ctx.aarch64_regalloc) |*regalloc| {

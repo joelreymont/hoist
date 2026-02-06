@@ -1,9 +1,9 @@
 ---
 title: Wire Codegen Pipeline
-status: open
+status: active
 priority: 2
 issue-type: task
-created-at: "2026-02-02T21:35:56.552154+01:00"
+created-at: "\"2026-02-02T21:35:56.552154+01:00\""
 blocks:
   - hoist-add-bench-baseline-9f13b2d1
 ---
