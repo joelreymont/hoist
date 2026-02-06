@@ -6987,56 +6987,9 @@ test "lower: istore32 emits STR (32-bit)" {
     try testing.expect(saw_str32);
 }
 
-test "lower: uadd_overflow_cin emits ADCS" {
-    var sig = ir.Signature.init(testing.allocator, .fast);
-    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
-    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
-    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
-    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
-
-    var func = try Function.init(testing.allocator, "uadd_overflow_cin_adcs", sig);
-    defer func.deinit();
-
-    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
-    defer builder.deinit();
-    const block = try builder.createBlock();
-    builder.switchToBlock(block);
-
-    const x = try builder.appendBlockParam(block, ir.I64);
-    const y = try builder.appendBlockParam(block, ir.I64);
-    const cin = try builder.appendBlockParam(block, ir.I64);
-
-    const ov_inst = try func.dfg.makeInst(.{ .ternary = .{
-        .opcode = .uadd_overflow_cin,
-        .args = .{ x, y, cin },
-    } });
-    const sum = try func.dfg.appendInstResult(ov_inst, ir.I64);
-    _ = try func.dfg.appendInstResult(ov_inst, ir.I64);
-    try func.layout.appendInst(ov_inst, block);
-
-    const ret_inst = try func.dfg.makeInst(.{ .unary = .{ .opcode = .@"return", .arg = sum } });
-    try func.layout.appendInst(ret_inst, block);
-
-    var ctx = Context.init(testing.allocator);
-    defer ctx.deinit();
-    ctx.func = &func;
-
-    var target = Target.init(.aarch64);
-    target.verify = false;
-    ctx.target = &target;
-
-    try optimize(&ctx, &target);
-    try lower(&ctx, &target);
-
-    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
-    var saw_adcs = false;
-    for (lowered.vcode.insns.items) |inst| {
-        switch (inst) {
-            .adcs => saw_adcs = true,
-            else => {},
-        }
-    }
-    try testing.expect(saw_adcs);
+test "lower: overflow_cin emits ADCS" {
+    try expectOverflowCinAdcs(.uadd_overflow_cin);
+    try expectOverflowCinAdcs(.sadd_overflow_cin);
 }
 
 test "lower: overflow_bin emits SBCS" {
@@ -7165,6 +7118,198 @@ test "lower: i128 param split loads both halves" {
     try testing.expect(saw_src_x1);
 }
 
+test "lower: iadd_imm emits add_imm" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+
+    var func = try Function.init(testing.allocator, "iadd_imm_add", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const arg = try builder.appendBlockParam(block, ir.I64);
+    const add_inst = try func.dfg.makeInst(.{ .binary_imm64 = .{
+        .opcode = .iadd_imm,
+        .arg = arg,
+        .imm = ir.Imm64.new(37),
+    } });
+    const result = try func.dfg.appendInstResult(add_inst, ir.I64);
+    try func.layout.appendInst(add_inst, block);
+    try builder.retValues(&.{result});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_add_imm = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .add_imm => |add| {
+                if (add.imm == 37) saw_add_imm = true;
+            },
+            else => {},
+        }
+    }
+    try testing.expect(saw_add_imm);
+}
+
+test "lower: irsub_imm emits neg and add_imm" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+
+    var func = try Function.init(testing.allocator, "irsub_imm_neg_add", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const arg = try builder.appendBlockParam(block, ir.I64);
+    const rsub_inst = try func.dfg.makeInst(.{ .binary_imm64 = .{
+        .opcode = .irsub_imm,
+        .arg = arg,
+        .imm = ir.Imm64.new(123),
+    } });
+    const result = try func.dfg.appendInstResult(rsub_inst, ir.I64);
+    try func.layout.appendInst(rsub_inst, block);
+    try builder.retValues(&.{result});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_neg = false;
+    var saw_add_imm = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .neg => saw_neg = true,
+            .add_imm => |add| {
+                if (add.imm == 123) saw_add_imm = true;
+            },
+            else => {},
+        }
+    }
+    try testing.expect(saw_neg);
+    try testing.expect(saw_add_imm);
+}
+
+test "lower: imul_imm power-of-two emits lsl_imm" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+
+    var func = try Function.init(testing.allocator, "imul_imm_lsl", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const arg = try builder.appendBlockParam(block, ir.I64);
+    const mul_inst = try func.dfg.makeInst(.{ .binary_imm64 = .{
+        .opcode = .imul_imm,
+        .arg = arg,
+        .imm = ir.Imm64.new(8),
+    } });
+    const result = try func.dfg.appendInstResult(mul_inst, ir.I64);
+    try func.layout.appendInst(mul_inst, block);
+    try builder.retValues(&.{result});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_lsl_imm = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .lsl_imm => |lsl| {
+                if (lsl.imm == 3) saw_lsl_imm = true;
+            },
+            else => {},
+        }
+    }
+    try testing.expect(saw_lsl_imm);
+}
+
+test "lower: imul_imm non-power-of-two emits movz and mul_rr" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+
+    var func = try Function.init(testing.allocator, "imul_imm_mul_rr", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const arg = try builder.appendBlockParam(block, ir.I64);
+    const mul_inst = try func.dfg.makeInst(.{ .binary_imm64 = .{
+        .opcode = .imul_imm,
+        .arg = arg,
+        .imm = ir.Imm64.new(7),
+    } });
+    const result = try func.dfg.appendInstResult(mul_inst, ir.I64);
+    try func.layout.appendInst(mul_inst, block);
+    try builder.retValues(&.{result});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_movz = false;
+    var saw_mul_rr = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .movz => saw_movz = true,
+            .mul_rr => saw_mul_rr = true,
+            else => {},
+        }
+    }
+    try testing.expect(saw_movz);
+    try testing.expect(saw_mul_rr);
+}
+
 fn expectOverflowBinSbcs(opcode: Opcode) !void {
     var sig = ir.Signature.init(testing.allocator, .fast);
     try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
@@ -7215,6 +7360,58 @@ fn expectOverflowBinSbcs(opcode: Opcode) !void {
         }
     }
     try testing.expect(saw_sbcs);
+}
+
+fn expectOverflowCinAdcs(opcode: Opcode) !void {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+
+    var func = try Function.init(testing.allocator, "overflow_cin_adcs", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const x = try builder.appendBlockParam(block, ir.I64);
+    const y = try builder.appendBlockParam(block, ir.I64);
+    const cin = try builder.appendBlockParam(block, ir.I64);
+
+    const ov_inst = try func.dfg.makeInst(.{ .ternary = .{
+        .opcode = opcode,
+        .args = .{ x, y, cin },
+    } });
+    const sum = try func.dfg.appendInstResult(ov_inst, ir.I64);
+    _ = try func.dfg.appendInstResult(ov_inst, ir.I64);
+    try func.layout.appendInst(ov_inst, block);
+
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{ .opcode = .@"return", .arg = sum } });
+    try func.layout.appendInst(ret_inst, block);
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_adcs = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .adcs => saw_adcs = true,
+            else => {},
+        }
+    }
+    try testing.expect(saw_adcs);
 }
 
 // Comprehensive IRBuilder tests
