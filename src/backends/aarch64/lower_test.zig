@@ -509,6 +509,16 @@ test "lower avg_round emits urhadd for lane_fits_in_32" {
     try expectVecRrrOp(&vcode, .Urhadd);
 }
 
+test "lower avg_round i64x2 emits shift-or-add sequence" {
+    var vcode = try lowerAvgRoundVCode(Type.I64X2);
+    defer vcode.deinit();
+
+    try expectVecShiftImmOpCount(&vcode, .Ushr, 3);
+    try expectVecShiftImmOpCount(&vcode, .Shl, 1);
+    try expectVecRrrOp(&vcode, .Orr);
+    try expectVecAddAtLeast(&vcode, 2);
+}
+
 test "lower splat(load) emits ld1r" {
     var vcode = try lowerSplatLoadVCode();
     defer vcode.deinit();
@@ -891,6 +901,34 @@ fn expectVecRrrOp(vcode: *const vcode_mod.VCode(Inst), op: inst_mod.VecALUOp) !v
         }
     }
     return error.ExpectedInstructionNotFound;
+}
+
+fn expectVecShiftImmOpCount(
+    vcode: *const vcode_mod.VCode(Inst),
+    op: inst_mod.VecShiftImmOp,
+    expected_count: usize,
+) !void {
+    var count: usize = 0;
+    for (vcode.insns.items) |insn| {
+        switch (insn) {
+            .vec_shift_imm => |i| {
+                if (i.op == op) count += 1;
+            },
+            else => {},
+        }
+    }
+    try testing.expectEqual(expected_count, count);
+}
+
+fn expectVecAddAtLeast(vcode: *const vcode_mod.VCode(Inst), min_count: usize) !void {
+    var count: usize = 0;
+    for (vcode.insns.items) |insn| {
+        switch (insn) {
+            .vec_add => count += 1,
+            else => {},
+        }
+    }
+    try testing.expect(count >= min_count);
 }
 
 fn maskBytesFromU128(mask: u128) [16]u8 {

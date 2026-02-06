@@ -1851,6 +1851,79 @@ pub fn aarch64_splat(ty: types.Type, x: lower_mod.Value, ctx: *lower_mod.LowerCt
     } };
 }
 
+/// avg_round for I64X2: ((x >> 1) + (y >> 1)) + ((x | y) & 1)
+/// Implemented with shifts and OR so we avoid relying on unavailable URHADD.2D.
+pub fn aarch64_avg_round_i64x2(
+    x: lower_mod.Value,
+    y: lower_mod.Value,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !Inst {
+    recordRule("aarch64_avg_round_i64x2");
+
+    const x_reg = try getValueRegVec(ctx, x);
+    const y_reg = try getValueRegVec(ctx, y);
+
+    const x_half = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    try ctx.emit(Inst{ .vec_shift_imm = .{
+        .dst = x_half,
+        .rn = x_reg,
+        .imm = 1,
+        .size = .size64x2,
+        .op = .Ushr,
+    } });
+
+    const y_half = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    try ctx.emit(Inst{ .vec_shift_imm = .{
+        .dst = y_half,
+        .rn = y_reg,
+        .imm = 1,
+        .size = .size64x2,
+        .op = .Ushr,
+    } });
+
+    const halves_sum = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    try ctx.emit(Inst{ .vec_add = .{
+        .dst = halves_sum,
+        .src1 = x_half.toReg(),
+        .src2 = y_half.toReg(),
+        .size = .size64x2,
+    } });
+
+    const or_xy = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    try ctx.emit(Inst{ .vec_rrr = .{
+        .dst = or_xy,
+        .rn = x_reg,
+        .rm = y_reg,
+        .size = .V2D,
+        .op = .Orr,
+    } });
+
+    const lsb_to_sign = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    try ctx.emit(Inst{ .vec_shift_imm = .{
+        .dst = lsb_to_sign,
+        .rn = or_xy.toReg(),
+        .imm = 63,
+        .size = .size64x2,
+        .op = .Shl,
+    } });
+
+    const rounding = lower_mod.WritableVReg.allocVReg(.vector, ctx);
+    try ctx.emit(Inst{ .vec_shift_imm = .{
+        .dst = rounding,
+        .rn = lsb_to_sign.toReg(),
+        .imm = 63,
+        .size = .size64x2,
+        .op = .Ushr,
+    } });
+
+    return Inst{ .vec_add = .{
+        .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
+        .src1 = halves_sum.toReg(),
+        .src2 = rounding.toReg(),
+        .size = .size64x2,
+    } };
+}
+
 /// VEC_DUP_FROM_FPU - Duplicate vector element to all lanes (DUP Vd.T, Vn.T[lane])
 pub fn vec_dup_from_fpu(src: lower_mod.Value, size_enum: VectorSize, lane: u8, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     const src_reg = try getValueRegVec(ctx, src);

@@ -609,8 +609,10 @@
 
 ;; avg_round: I64X2 requires manual implementation
 ;; (x | y) & 1 gives the rounding bit, then ((x >> 1) + (y >> 1)) + rounding
+(decl aarch64_avg_round_i64x2 (Value Value) Aarch64Inst)
+(extern constructor aarch64_avg_round_i64x2 aarch64_avg_round_i64x2)
 (rule (lower (has_type $I64X2 (avg_round x y)))
-      (aarch64_unimplemented))
+      (aarch64_avg_round_i64x2 x y))
 
 ;; Vector reduction operations (type-parameterized via multi_lane)
 
