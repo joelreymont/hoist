@@ -1978,6 +1978,43 @@ test "RegAllocBridge applyAllocations rejects oversized spill slot offset" {
     try testing.expectError(error.SpillSlotOffsetOutOfRange, bridge.applyAllocations(&vcode));
 }
 
+test "RegAllocBridge applyAllocations accepts max spill slot offset" {
+    const Allocation = regalloc2_types.Allocation;
+    const SpillSlot = regalloc2_types.SpillSlot;
+
+    var vcode = VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+
+    _ = try vcode.startBlock(&.{});
+    _ = try vcode.addInst(.{
+        .mov_rr = .{
+            .dst = reg_mod.WritableReg.init(Reg{ .v = v1 }),
+            .src = Reg{ .v = v0 },
+            .size = .size64,
+        },
+    });
+    try vcode.finishBlock(0, &.{});
+
+    var bridge = RegAllocBridge.init(testing.allocator);
+    defer bridge.deinit();
+
+    try bridge.adapter.setAllocation(v0, Allocation{ .stack = SpillSlot.new(32_767) });
+    try bridge.adapter.setAllocation(v1, Allocation{ .stack = SpillSlot.new(32_767) });
+
+    try bridge.applyAllocations(&vcode);
+
+    try testing.expectEqual(@as(usize, 3), vcode.insns.items.len);
+    try testing.expectEqual(@as(i16, 32_767), vcode.getInst(0).ldr.offset);
+    try testing.expectEqual(@as(u8, 9), vcode.getInst(0).ldr.dst.toReg().p.index);
+    try testing.expectEqual(@as(u8, 9), vcode.getInst(1).mov_rr.src.p.index);
+    try testing.expectEqual(@as(u8, 10), vcode.getInst(1).mov_rr.dst.toReg().p.index);
+    try testing.expectEqual(@as(i16, 32_767), vcode.getInst(2).str.offset);
+    try testing.expectEqual(@as(u8, 10), vcode.getInst(2).str.src.p.index);
+}
+
 test "RegAllocBridge passes through no-reg control variants" {
     var vcode = VCode(Inst).init(testing.allocator);
     defer vcode.deinit();
