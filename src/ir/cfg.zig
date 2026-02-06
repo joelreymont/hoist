@@ -9,9 +9,11 @@ const entities = @import("entities.zig");
 const Block = entities.Block;
 const Inst = entities.Inst;
 const FuncRef = entities.FuncRef;
+const SigRef = entities.SigRef;
 const Function = @import("function.zig").Function;
 const FunctionBuilder = @import("builder.zig").FunctionBuilder;
 const Signature = @import("signature.zig").Signature;
+const Type = @import("types.zig").Type;
 
 /// Basic block predecessor: (block, terminator instruction).
 pub const BlockPredecessor = struct {
@@ -497,6 +499,53 @@ test "CFG: try_call records exception successor" {
 
     builder.switchToBlock(block0);
     _ = try builder.instTryCall(FuncRef.new(0), &.{}, block1, block2);
+    try builder.jump(block1);
+
+    builder.switchToBlock(block1);
+    try builder.ret();
+
+    builder.switchToBlock(block2);
+    try builder.ret();
+
+    var cfg = ControlFlowGraph.init(testing.allocator);
+    defer cfg.deinit(testing.allocator);
+    try cfg.compute(&func);
+
+    var succ_iter = cfg.succIter(block0);
+    const succ = succ_iter.next() orelse return error.TestExpectedEqual;
+    try testing.expectEqual(block1, succ);
+    try testing.expect(succ_iter.next() == null);
+
+    var ex_iter = cfg.exceptionSuccIter(block0);
+    const ex_succ = ex_iter.next() orelse return error.TestExpectedEqual;
+    try testing.expectEqual(block2, ex_succ);
+    try testing.expect(ex_iter.next() == null);
+}
+
+test "CFG: try_call_indirect records exception successor" {
+    const sig = Signature.init(testing.allocator, .fast);
+    var func = try Function.init(testing.allocator, "cfg_try_call_indirect", sig);
+    defer func.deinit();
+
+    var builder = try FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+
+    const block0 = try builder.createBlock();
+    const block1 = try builder.createBlock();
+    const block2 = try builder.createBlock();
+
+    builder.switchToBlock(block0);
+    const callee_ptr = try builder.iconst(Type.I64, 0);
+    const args = try builder.buildValueList(&.{callee_ptr});
+    const tc_inst = try func.dfg.makeInst(.{ .try_call_indirect = .{
+        .opcode = .try_call_indirect,
+        .sig_ref = SigRef.new(0),
+        .args = args,
+        .normal_successor = block1,
+        .exception_successor = block2,
+    } });
+    try func.layout.appendInst(tc_inst, block0);
+    _ = try func.dfg.appendInstResult(tc_inst, Type.I64);
     try builder.jump(block1);
 
     builder.switchToBlock(block1);
