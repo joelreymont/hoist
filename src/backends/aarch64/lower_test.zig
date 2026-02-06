@@ -158,6 +158,68 @@ test "lower imul_imm emits mul_rr" {
     );
 }
 
+fn lowerI128ShiftVCode(opcode: Opcode) !vcode_mod.VCode(Inst) {
+    const allocator = testing.allocator;
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(Type.I128));
+    try sig.params.append(allocator, AbiParam.new(Type.I128));
+    try sig.returns.append(allocator, AbiParam.new(Type.I128));
+
+    var func = try Function.init(allocator, "test_i128_shift_lowering", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const x = try func.dfg.appendBlockParam(block0, Type.I128);
+    const amt = try func.dfg.appendBlockParam(block0, Type.I128);
+
+    const shift_inst = try func.dfg.makeInst(.{ .binary = .{
+        .opcode = opcode,
+        .args = .{ x, amt },
+    } });
+    try func.layout.appendInst(shift_inst, block0);
+    const shifted = try func.dfg.appendInstResult(shift_inst, Type.I128);
+
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{
+        .opcode = .@"return",
+        .arg = shifted,
+    } });
+    try func.layout.appendInst(ret_inst, block0);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+    return try lower_mod.lowerFunction(Inst, allocator, &func, backend);
+}
+
+fn expectInstTag(vcode: *const vcode_mod.VCode(Inst), tag: std.meta.Tag(Inst)) !void {
+    for (vcode.insns.items) |insn| {
+        if (@as(std.meta.Tag(Inst), insn) == tag) return;
+    }
+    return error.ExpectedInstructionNotFound;
+}
+
+test "lower i128 ishl emits lsl_rr sequence" {
+    var vcode = try lowerI128ShiftVCode(.ishl);
+    defer vcode.deinit();
+    try expectInstTag(&vcode, Inst.lsl_rr);
+}
+
+test "lower i128 ushr emits lsr_rr sequence" {
+    var vcode = try lowerI128ShiftVCode(.ushr);
+    defer vcode.deinit();
+    try expectInstTag(&vcode, Inst.lsr_rr);
+}
+
+test "lower i128 sshr emits asr_rr sequence" {
+    var vcode = try lowerI128ShiftVCode(.sshr);
+    defer vcode.deinit();
+    try expectInstTag(&vcode, Inst.asr_rr);
+}
+
 test "lower iadd + return" {
     // Build IR: function(a: i64, b: i64) -> i64 { return a + b }
     // block0(v0: i64, v1: i64):

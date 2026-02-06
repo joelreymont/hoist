@@ -5281,8 +5281,20 @@ pub fn consumes_flags_two_csel(
     const aarch_cond = intccToCondCode(cond);
 
     return isle_types.ConsumesFlags.consumesFlagsTwiceReturnsValueRegs(
-        Inst.CSel{ .rd = dst_lo, .cond = aarch_cond, .rn = rn_lo, .rm = rm_lo },
-        Inst.CSel{ .rd = dst_hi, .cond = aarch_cond, .rn = rn_hi, .rm = rm_hi },
+        Inst{ .csel = .{
+            .dst = dst_lo,
+            .src1 = rn_lo,
+            .src2 = rm_lo,
+            .cond = aarch_cond,
+            .size = .size64,
+        } },
+        Inst{ .csel = .{
+            .dst = dst_hi,
+            .src1 = rn_hi,
+            .src2 = rm_hi,
+            .cond = aarch_cond,
+            .size = .size64,
+        } },
         lower_mod.ValueRegs.pair(dst_lo.toReg(), dst_hi.toReg()),
     );
 }

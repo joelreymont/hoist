@@ -1057,12 +1057,10 @@
             (maybe_hi Reg (orr $I64 hi_lshift lo_rshift)))
          (with_flags
          (tst_imm $I64 amt 64)
-         (consumes_flags_concat
-          (csel_reg IntCC.ne (zero_reg) lo_lshift)
-          (csel_reg IntCC.ne lo_lshift maybe_hi)))))
+         (consumes_flags_two_csel IntCC.ne (zero_reg) lo_lshift lo_lshift maybe_hi))))
 
 (rule (lower (has_type $I128 (ishl x y)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_shl128 (put_in_regs x) (put_in_reg y))))
 
 ;; ishl: Integer shift left (register form)
 (rule (lower (ishl ty x y))
@@ -1103,12 +1101,10 @@
             (maybe_lo Reg (orr $I64 lo_rshift hi_lshift)))
          (with_flags
          (tst_imm $I64 amt 64)
-         (consumes_flags_concat
-          (csel_reg IntCC.ne hi_rshift maybe_lo)
-          (csel_reg IntCC.ne (zero_reg) hi_rshift)))))
+         (consumes_flags_two_csel IntCC.ne hi_rshift (zero_reg) maybe_lo hi_rshift))))
 
 (rule (lower (has_type $I128 (ushr x y)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_ushr128 (put_in_regs x) (put_in_reg y))))
 
 ;; ushr: Unsigned shift right (register form)
 (rule (lower (ushr ty x y))
@@ -1152,12 +1148,10 @@
             (maybe_lo Reg (orr $I64 lo_rshift hi_lshift)))
          (with_flags
          (tst_imm $I64 amt 64)
-         (consumes_flags_concat
-          (csel_reg IntCC.ne hi_rshift maybe_lo)
-          (csel_reg IntCC.ne hi_sign hi_rshift)))))
+         (consumes_flags_two_csel IntCC.ne hi_rshift hi_sign maybe_lo hi_rshift))))
 
 (rule (lower (has_type $I128 (sshr x y)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_sshr128 (put_in_regs x) (put_in_reg y))))
 
 ;; sshr: Signed shift right (register form)
 (rule (lower (sshr ty x y))
