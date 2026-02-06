@@ -1945,7 +1945,7 @@ fn emitVldr(dst: Reg, base: Reg, offset: i16, fp_size: FpuOperandSize, buffer: *
         .size64 => 3, // 8 bytes
         .size128 => 4, // 16 bytes
     };
-    const scaled_offset: u12 = @intCast(@divExact(offset, @as(i16, 1) << scale));
+    const scaled_offset = try encodeUnsignedImm12Scaled(offset, scale);
 
     // size field encoding
     const size: u32 = switch (fp_size) {
@@ -2015,7 +2015,7 @@ fn emitVstr(src: Reg, base: Reg, offset: i16, fp_size: FpuOperandSize, buffer: *
         .size64 => 3,
         .size128 => 4,
     };
-    const scaled_offset: u12 = @intCast(@divExact(offset, @as(i16, 1) << scale));
+    const scaled_offset = try encodeUnsignedImm12Scaled(offset, scale);
 
     // size field encoding
     const size: u32 = switch (fp_size) {
@@ -8520,6 +8520,74 @@ test "emit vector pair load/store scaled imm7 reject bad offsets" {
         .offset = -1040,
         .size = .size128,
     } }, &buffer));
+}
+
+test "emit vector load/store unsigned imm12 rejects bad offsets" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = inst_mod.VReg.new(0, .float);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .vldr = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = -8,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.OffsetNotAligned, emit(.{ .vldr = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = 4,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .vldr = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = 16384,
+        .size = .size32,
+    } }, &buffer));
+    try testing.expectError(error.OffsetNotAligned, emit(.{ .vstr = .{
+        .src = r0,
+        .base = r1,
+        .offset = 8,
+        .size = .size128,
+    } }, &buffer));
+}
+
+test "emit vector load/store unsigned imm12 encodes scaled offsets" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = inst_mod.VReg.new(0, .float);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+
+    try emit(.{ .vldr = .{
+        .dst = wr0,
+        .base = r1,
+        .offset = 16380,
+        .size = .size32,
+    } }, &buffer);
+    var insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    var imm12 = (insn >> 10) & 0xFFF;
+    try testing.expectEqual(@as(u32, 4095), imm12);
+
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .vstr = .{
+        .src = r0,
+        .base = r1,
+        .offset = 32760,
+        .size = .size64,
+    } }, &buffer);
+    insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    imm12 = (insn >> 10) & 0xFFF;
+    try testing.expectEqual(@as(u32, 4095), imm12);
 }
 
 test "emit br" {
