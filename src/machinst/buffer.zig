@@ -187,6 +187,11 @@ const ConstPoolEntry = struct {
     label: MachLabel,
 };
 
+const ConstPoolKey = struct {
+    value: u64,
+    size: u8,
+};
+
 /// Jump table entry for br_table implementation.
 pub const JumpTableEntry = struct {
     /// Target block for this table entry.
@@ -249,8 +254,8 @@ pub const MachBuffer = struct {
     label_offsets: std.ArrayList(CodeOffset),
     /// Constant pool entries.
     const_pool: std.ArrayList(ConstPoolEntry),
-    /// Map from constant value to pool index (for deduplication).
-    const_pool_map: std.AutoHashMap(u64, u32),
+    /// Map from constant key to pool index (for deduplication).
+    const_pool_map: std.AutoHashMap(ConstPoolKey, u32),
     /// Jump tables for br_table instructions.
     jump_tables: std.ArrayList(JumpTable),
     /// Map from IR Block to MachLabel for exception handling.
@@ -278,7 +283,7 @@ pub const MachBuffer = struct {
             .fixups = std.ArrayList(LabelFixup){},
             .label_offsets = std.ArrayList(CodeOffset){},
             .const_pool = std.ArrayList(ConstPoolEntry){},
-            .const_pool_map = std.AutoHashMap(u64, u32).init(allocator),
+            .const_pool_map = std.AutoHashMap(ConstPoolKey, u32).init(allocator),
             .jump_tables = std.ArrayList(JumpTable){},
             .block_labels = std.AutoHashMap(Block, MachLabel).init(allocator),
             .source_lines = std.ArrayList(SourceLineInfo){},
@@ -472,8 +477,10 @@ pub const MachBuffer = struct {
     /// Add a constant to the pool, return its label.
     /// Deduplicates identical constants.
     pub fn addConstant(self: *MachBuffer, value: u64, size: u8) !MachLabel {
+        const key = ConstPoolKey{ .value = value, .size = size };
+
         // Check if constant already exists
-        if (self.const_pool_map.get(value)) |index| {
+        if (self.const_pool_map.get(key)) |index| {
             return self.const_pool.items[index].label;
         }
 
@@ -487,7 +494,7 @@ pub const MachBuffer = struct {
             .size = size,
             .label = label,
         });
-        try self.const_pool_map.put(value, index);
+        try self.const_pool_map.put(key, index);
 
         return label;
     }
@@ -982,6 +989,36 @@ test "MachBuffer branch14 out-of-range returns BranchOutOfRange" {
     try buf.bindLabel(target);
 
     try testing.expectError(error.BranchOutOfRange, buf.finalize());
+}
+
+test "MachBuffer addConstant dedupes by value and size" {
+    var buf = MachBuffer.init(testing.allocator);
+    defer buf.deinit();
+
+    const l1 = try buf.addConstant(0x1234, 8);
+    const l2 = try buf.addConstant(0x1234, 8);
+
+    try testing.expectEqual(l1.index, l2.index);
+    try testing.expectEqual(@as(usize, 1), buf.const_pool.items.len);
+}
+
+test "MachBuffer addConstant keeps same value with different sizes separate" {
+    var buf = MachBuffer.init(testing.allocator);
+    defer buf.deinit();
+
+    const l32 = try buf.addConstant(0x3F800000, 4);
+    const l64 = try buf.addConstant(0x3F800000, 8);
+
+    try testing.expect(l32.index != l64.index);
+    try testing.expectEqual(@as(usize, 2), buf.const_pool.items.len);
+
+    try buf.emitConstPool();
+    try testing.expectEqual(@as(usize, 12), buf.data.items.len);
+
+    const first = std.mem.readInt(u32, buf.data.items[0..4], .little);
+    const second = std.mem.readInt(u64, buf.data.items[4..12], .little);
+    try testing.expectEqual(@as(u32, 0x3F800000), first);
+    try testing.expectEqual(@as(u64, 0x000000003F800000), second);
 }
 
 test "MachBuffer trap records" {
