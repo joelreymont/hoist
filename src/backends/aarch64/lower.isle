@@ -1745,7 +1745,7 @@
 ;; ineg: I128 negation using subtraction from zero (0 - x)
 ;; Priority 2 to match before generic ineg
 (rule 2 (lower (has_type $I128 (ineg x)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_ineg128 (put_in_regs x))))
 
 ;; Scalar negation
 (rule (lower (ineg ty x))
@@ -1754,7 +1754,7 @@
 ;; iabs: I128 absolute value
 ;; Algorithm: sign = x_hi >> 63 (arithmetic); result = (x ^ sign) - sign
 (rule (lower (has_type $I128 (iabs x)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_iabs128 (put_in_regs x))))
 
 ;; iabs: Vector integer absolute value
 (rule -1 (lower (has_type ty @ (multi_lane _ _) (iabs x)))
@@ -2709,6 +2709,8 @@
 (decl lower_popcnt128 (ValueRegs) ValueRegs)
 (decl lower_sextend128 (ValueRegs) ValueRegs)
 (decl lower_uextend128 (ValueRegs) ValueRegs)
+(decl lower_ineg128 (ValueRegs) ValueRegs)
+(decl lower_iabs128 (ValueRegs) ValueRegs)
 
 ;; Negation operations
 (decl aarch64_neg (Type Value) Aarch64Inst)

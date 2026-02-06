@@ -1428,6 +1428,68 @@ test "lower_uextend128 reuses low half and zeros high half" {
     try testing.expectEqual(@as(usize, 0), vcode.insns.items.len);
 }
 
+test "lower_ineg128 emits subs_rr and sbcs sequence" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_ineg128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const out = try lower_ineg128(lower_mod.ValueRegs.pair(lo, hi), &ctx);
+
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+    try testing.expect(hasInstTag(vcode.insns.items, .subs_rr));
+    try testing.expect(hasInstTag(vcode.insns.items, .sbcs));
+}
+
+test "lower_iabs128 emits asr/eor/subs/sbcs sequence" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_iabs128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const out = try lower_iabs128(lower_mod.ValueRegs.pair(lo, hi), &ctx);
+
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+    try testing.expect(hasInstTag(vcode.insns.items, .asr_imm));
+    try testing.expect(hasInstTag(vcode.insns.items, .eor_rr));
+    try testing.expect(hasInstTag(vcode.insns.items, .subs_rr));
+    try testing.expect(hasInstTag(vcode.insns.items, .sbcs));
+}
+
 test "fpu_csel returns fcsel consumes-flags payload" {
     const testing = std.testing;
 
@@ -6869,6 +6931,92 @@ pub fn lower_uextend128(
     const lo = val.get(0) orelse return error.NoMatch;
     const zero = Reg.fromPReg(PReg.new(.int, 31));
     return lower_mod.ValueRegs.pair(lo, zero);
+}
+
+/// Negate an I128 value encoded as (lo, hi) register pair.
+/// Uses two's-complement subtraction with carry propagation.
+pub fn lower_ineg128(
+    val: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lo = val.get(0) orelse return error.NoMatch;
+    const hi = val.get(1) orelse return error.NoMatch;
+    const zero = Reg.fromPReg(PReg.new(.int, 31));
+
+    const out_lo = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .subs_rr = .{
+        .dst = out_lo,
+        .src1 = zero,
+        .src2 = lo,
+        .size = .size64,
+    } });
+
+    const out_hi = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .sbcs = .{
+        .dst = out_hi,
+        .src1 = zero,
+        .src2 = hi,
+        .size = .size64,
+    } });
+
+    return lower_mod.ValueRegs.pair(out_lo.toReg(), out_hi.toReg());
+}
+
+/// Absolute value for I128 register pair.
+/// sign = hi >> 63; result = (x ^ sign) - sign
+pub fn lower_iabs128(
+    val: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lo = val.get(0) orelse return error.NoMatch;
+    const hi = val.get(1) orelse return error.NoMatch;
+
+    const sign_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .asr_imm = .{
+            .dst = sign_dst,
+            .src = hi,
+            .imm = 63,
+            .size = .size64,
+        },
+    });
+    const sign = sign_dst.toReg();
+
+    const lo_xor_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .eor_rr = .{
+        .dst = lo_xor_dst,
+        .src1 = lo,
+        .src2 = sign,
+        .size = .size64,
+    } });
+    const lo_xor = lo_xor_dst.toReg();
+
+    const hi_xor_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .eor_rr = .{
+        .dst = hi_xor_dst,
+        .src1 = hi,
+        .src2 = sign,
+        .size = .size64,
+    } });
+    const hi_xor = hi_xor_dst.toReg();
+
+    const out_lo = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .subs_rr = .{
+        .dst = out_lo,
+        .src1 = lo_xor,
+        .src2 = sign,
+        .size = .size64,
+    } });
+
+    const out_hi = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .sbcs = .{
+        .dst = out_hi,
+        .src1 = hi_xor,
+        .src2 = sign,
+        .size = .size64,
+    } });
+
+    return lower_mod.ValueRegs.pair(out_lo.toReg(), out_hi.toReg());
 }
 
 /// Add two I128 values encoded as (lo, hi) register pairs.
