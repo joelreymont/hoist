@@ -2676,15 +2676,22 @@ pub fn link_reg(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
 pub fn aarch64_get_pinned_reg(ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_get_pinned_reg");
     _ = ctx;
-    // Return pinned register (x28 - typically used for VM context)
-    return Inst{ .mov_rr = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(28)), .src = Reg.gpr(28), .size = .size64 } };
+    const pinned = Reg.gpr(pinnedRegNum());
+    return Inst{ .mov_rr = .{ .dst = lower_mod.WritableReg.fromReg(pinned), .src = pinned, .size = .size64 } };
 }
 
 pub fn aarch64_set_pinned_reg(val: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_set_pinned_reg");
     const src = try ctx.getValueReg(val, .int);
-    // Move value to pinned register (x28)
-    return Inst{ .mov_rr = .{ .dst = lower_mod.WritableReg.fromReg(Reg.gpr(28)), .src = src, .size = .size64 } };
+    const pinned = Reg.gpr(pinnedRegNum());
+    return Inst{ .mov_rr = .{ .dst = lower_mod.WritableReg.fromReg(pinned), .src = src, .size = .size64 } };
+}
+
+fn pinnedRegNum() u6 {
+    return switch (abi_mod.Platform.detect()) {
+        .darwin => 18,
+        .linux, .other => 28,
+    };
 }
 
 /// Exception handling: landingpad reads exception value from X0
@@ -7111,4 +7118,12 @@ pub fn aarch64_sve_eor(x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.L
         .src1 = x_reg,
         .src2 = y_reg,
     } };
+}
+
+test "pinnedRegNum matches platform ABI" {
+    const expected: u6 = switch (abi_mod.Platform.detect()) {
+        .darwin => 18,
+        .linux, .other => 28,
+    };
+    try std.testing.expectEqual(expected, pinnedRegNum());
 }
