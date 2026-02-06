@@ -6632,6 +6632,78 @@ test "compile: LSDA scan includes try_call" {
     try testing.expectEqual(@as(u32, 4), site.landing_pad_offset);
 }
 
+test "lower: try_call emits GOT load, BLR, and marshals X0" {
+    const ExternalName = @import("../ir/extfunc.zig").ExternalName;
+
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    var func = try Function.init(testing.allocator, "lower_try_call", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+
+    const block0 = try builder.createBlock();
+    const block1 = try builder.createBlock();
+    const block2 = try builder.createBlock();
+    try builder.appendBlock(block0);
+    try builder.appendBlock(block1);
+    try builder.appendBlock(block2);
+
+    var callee_sig = ir.Signature.init(testing.allocator, .fast);
+    try callee_sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    const sig_ref = SigRef.new(0);
+    try func.signatures.set(func.allocator, sig_ref, callee_sig);
+
+    const name = try ExternalName.fromTestcase(testing.allocator, "callee_try");
+    const func_ref = try func.func_metadata.registerExternalFunc(name, sig_ref, .import);
+
+    builder.switchToBlock(block0);
+    const call_res = try builder.instTryCall(func_ref, &.{}, block1, block2);
+    try builder.jump(block1);
+
+    builder.switchToBlock(block1);
+    try builder.retValues(&.{call_res});
+
+    builder.switchToBlock(block2);
+    const zero = try builder.iconst(ir.I64, 0);
+    try builder.retValues(&.{zero});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_load_ext_name = false;
+    var saw_blr = false;
+    var saw_x0_move = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .load_ext_name_got => saw_load_ext_name = true,
+            .blr => saw_blr = true,
+            .mov_rr => |mv| {
+                if (mv.dst.toReg().toVReg() != null) {
+                    if (mv.src.toRealReg()) |src_real| {
+                        if (src_real.hwEnc() == 0 and mv.size == .size64) saw_x0_move = true;
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
+    try testing.expect(saw_load_ext_name);
+    try testing.expect(saw_blr);
+    try testing.expect(saw_x0_move);
+}
+
 test "assembleResult: empty buffer" {
     var buffer = MachBuffer.init(testing.allocator);
     defer buffer.deinit();
