@@ -190,7 +190,7 @@ pub const aarch64_legalize = @import("backends/aarch64/legalize.zig");
 pub const aarch64_compact_unwind = @import("backends/aarch64/compact_unwind.zig");
 pub const aarch64_probestack = @import("backends/aarch64/probestack.zig");
 pub const aarch64_dwarf_line = @import("backends/aarch64/dwarf_line.zig");
-pub const aarch64_lower_generated = @import("generated/aarch64_lower_generated.zig");
+pub const aarch64_lower_generated = @import("generated/isle/aarch64_lower_generated.zig");
 
 pub const riscv64_inst = @import("backends/riscv64/inst.zig");
 pub const riscv64_emit = @import("backends/riscv64/emit.zig");

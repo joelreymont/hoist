@@ -17,6 +17,7 @@ const Opcode = hoist.opcodes.Opcode;
 const aarch64_lower = hoist.aarch64_lower_generated;
 const lower_mod = hoist.lower;
 const Inst = hoist.aarch64_inst.Inst;
+const isle_impl = hoist.aarch64_isle_impl;
 const isle_helpers = hoist.aarch64_isle_helpers;
 const isle_coverage = hoist.aarch64_isle_coverage;
 
@@ -145,6 +146,100 @@ test "ISLE coverage: iadd i32 register + immediate" {
     try testing.expect(coverage.uniqueRulesInvoked() > 0);
 }
 
+test "ISLE coverage: iadd_imm i64 lowers via aarch64_add_imm" {
+    const allocator = testing.allocator;
+
+    var coverage = isle_coverage.IsleRuleCoverage.init(allocator);
+    defer coverage.deinit();
+    isle_helpers.setIsleCoverageTracker(&coverage);
+    defer isle_helpers.setIsleCoverageTracker(null);
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.returns.append(allocator, AbiParam.new(Type.I64));
+
+    var func = try Function.init(allocator, "test_iadd_imm_i64", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const v0 = try func.dfg.appendBlockParam(block0, Type.I64);
+    const v1_data = InstructionData{ .binary_imm64 = .{
+        .opcode = .iadd_imm,
+        .arg = v0,
+        .imm = .{ .value = 17 },
+    } };
+    const v1_inst = try func.dfg.makeInst(v1_data);
+    try func.layout.appendInst(v1_inst, block0);
+    const v1 = try func.dfg.appendInstResult(v1_inst, Type.I64);
+
+    const return_data = InstructionData{ .unary = .{
+        .opcode = .@"return",
+        .arg = v1,
+    } };
+    const ret_inst = try func.dfg.makeInst(return_data);
+    try func.layout.appendInst(ret_inst, block0);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+
+    var vcode = try lower_mod.lowerFunction(Inst, allocator, &func, backend);
+    defer vcode.deinit();
+
+    try testing.expect(vcode.insns.items.len > 0);
+    try testing.expect(coverage.getCount("aarch64_add_imm") > 0);
+}
+
+test "ISLE coverage: irsub_imm i64 lowers via aarch64_sub_rr" {
+    const allocator = testing.allocator;
+
+    var coverage = isle_coverage.IsleRuleCoverage.init(allocator);
+    defer coverage.deinit();
+    isle_helpers.setIsleCoverageTracker(&coverage);
+    defer isle_helpers.setIsleCoverageTracker(null);
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.returns.append(allocator, AbiParam.new(Type.I64));
+
+    var func = try Function.init(allocator, "test_irsub_imm_i64", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const v0 = try func.dfg.appendBlockParam(block0, Type.I64);
+    const v1_data = InstructionData{ .binary_imm64 = .{
+        .opcode = .irsub_imm,
+        .arg = v0,
+        .imm = .{ .value = 1024 },
+    } };
+    const v1_inst = try func.dfg.makeInst(v1_data);
+    try func.layout.appendInst(v1_inst, block0);
+    const v1 = try func.dfg.appendInstResult(v1_inst, Type.I64);
+
+    const return_data = InstructionData{ .unary = .{
+        .opcode = .@"return",
+        .arg = v1,
+    } };
+    const ret_inst = try func.dfg.makeInst(return_data);
+    try func.layout.appendInst(ret_inst, block0);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+
+    var vcode = try lower_mod.lowerFunction(Inst, allocator, &func, backend);
+    defer vcode.deinit();
+
+    try testing.expect(vcode.insns.items.len > 0);
+    try testing.expect(coverage.getCount("aarch64_sub_rr") > 0);
+}
+
 test "ISLE coverage: isub i64 register - register" {
     const allocator = testing.allocator;
 
@@ -249,6 +344,53 @@ test "ISLE coverage: imul i32 register * register" {
 
     try testing.expect(vcode.insns.items.len > 0);
     try testing.expect(coverage.uniqueRulesInvoked() > 0);
+}
+
+test "ISLE coverage: imul_imm i64 lowers via aarch64_mul_rr" {
+    const allocator = testing.allocator;
+
+    var coverage = isle_coverage.IsleRuleCoverage.init(allocator);
+    defer coverage.deinit();
+    isle_helpers.setIsleCoverageTracker(&coverage);
+    defer isle_helpers.setIsleCoverageTracker(null);
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.returns.append(allocator, AbiParam.new(Type.I64));
+
+    var func = try Function.init(allocator, "test_imul_imm_i64", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const v0 = try func.dfg.appendBlockParam(block0, Type.I64);
+    const v1_data = InstructionData{ .binary_imm64 = .{
+        .opcode = .imul_imm,
+        .arg = v0,
+        .imm = .{ .value = 9 },
+    } };
+    const v1_inst = try func.dfg.makeInst(v1_data);
+    try func.layout.appendInst(v1_inst, block0);
+    const v1 = try func.dfg.appendInstResult(v1_inst, Type.I64);
+
+    const return_data = InstructionData{ .unary = .{
+        .opcode = .@"return",
+        .arg = v1,
+    } };
+    const ret_inst = try func.dfg.makeInst(return_data);
+    try func.layout.appendInst(ret_inst, block0);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+
+    var vcode = try lower_mod.lowerFunction(Inst, allocator, &func, backend);
+    defer vcode.deinit();
+
+    try testing.expect(vcode.insns.items.len > 0);
+    try testing.expect(coverage.getCount("aarch64_mul_rr") > 0);
 }
 
 test "ISLE coverage: ishl i64 register << register" {
@@ -557,12 +699,22 @@ test "ISLE coverage: bxor i64 bitwise XOR" {
     try testing.expect(coverage.uniqueRulesInvoked() > 0);
 }
 
+fn instValue(ctx: *lower_mod.LowerCtx(Inst), inst: lower_mod.Inst) !hoist.entities.Value {
+    return ctx.func.dfg.firstResult(inst) orelse try ctx.func.dfg.appendInstResult(inst, Type.I8);
+}
+
 // Stub lowering functions (required by lowerFunction)
 fn lowerInst(
     ctx: *lower_mod.LowerCtx(Inst),
     inst: lower_mod.Inst,
 ) !bool {
-    return try aarch64_lower.lower(ctx, inst);
+    var isle_ctx = isle_impl.IsleContext.init(ctx);
+    const lowered = aarch64_lower.lower(&isle_ctx, try instValue(ctx, inst)) catch |err| {
+        if (err == error.NoMatch) return false;
+        return err;
+    };
+    try ctx.emit(lowered);
+    return true;
 }
 
 fn lowerBranch(

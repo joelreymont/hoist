@@ -22,6 +22,59 @@ const Imm128 = root.immediates.Imm128;
 const Block = root.entities.Block;
 const Value = root.entities.Value;
 const InstructionData = root.instruction_data.InstructionData;
+const Opcode = root.opcodes.Opcode;
+
+fn lowerBinaryImm64EmitsTag(
+    allocator: std.mem.Allocator,
+    name: []const u8,
+    ty: Type,
+    opcode: Opcode,
+    imm: i64,
+    expected_tag: std.meta.Tag(Inst),
+) !void {
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(ty));
+    try sig.returns.append(allocator, AbiParam.new(ty));
+
+    var func = try Function.init(allocator, name, sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const v0 = try func.dfg.appendBlockParam(block0, ty);
+    const op_data = InstructionData{ .binary_imm64 = .{
+        .opcode = opcode,
+        .arg = v0,
+        .imm = .{ .value = imm },
+    } };
+    const op_inst = try func.dfg.makeInst(op_data);
+    try func.layout.appendInst(op_inst, block0);
+    const v1 = try func.dfg.appendInstResult(op_inst, ty);
+
+    const ret_data = InstructionData{ .unary = .{
+        .opcode = .@"return",
+        .arg = v1,
+    } };
+    const ret_inst = try func.dfg.makeInst(ret_data);
+    try func.layout.appendInst(ret_inst, block0);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+    var vcode = try lower_mod.lowerFunction(Inst, allocator, &func, backend);
+    defer vcode.deinit();
+
+    var found = false;
+    for (vcode.insns.items) |insn| {
+        if (@as(std.meta.Tag(Inst), insn) == expected_tag) {
+            found = true;
+            break;
+        }
+    }
+    try testing.expect(found);
+}
 
 test "lower simple iconst + return" {
     // Build IR: function returning constant 42
@@ -70,6 +123,39 @@ test "lower simple iconst + return" {
 
     // Should have 1 block (entry)
     try testing.expectEqual(@as(usize, 1), vcode.blocks.items.len);
+}
+
+test "lower iadd_imm emits add_imm" {
+    try lowerBinaryImm64EmitsTag(
+        testing.allocator,
+        "test_iadd_imm_add_imm",
+        Type.I64,
+        .iadd_imm,
+        123,
+        Inst.add_imm,
+    );
+}
+
+test "lower irsub_imm emits sub_rr" {
+    try lowerBinaryImm64EmitsTag(
+        testing.allocator,
+        "test_irsub_imm_sub_rr",
+        Type.I64,
+        .irsub_imm,
+        77,
+        Inst.sub_rr,
+    );
+}
+
+test "lower imul_imm emits mul_rr" {
+    try lowerBinaryImm64EmitsTag(
+        testing.allocator,
+        "test_imul_imm_mul_rr",
+        Type.I64,
+        .imul_imm,
+        9,
+        Inst.mul_rr,
+    );
 }
 
 test "lower iadd + return" {

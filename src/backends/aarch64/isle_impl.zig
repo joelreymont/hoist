@@ -352,6 +352,20 @@ pub fn aarch64_iconst(
     return inst;
 }
 
+pub fn iconst_u64(
+    ctx: *IsleContext,
+    k: i64,
+) !Value {
+    const dst = ctx.allocOutputReg(.int);
+    const inst = Inst{ .mov_imm = .{
+        .dst = dst,
+        .imm = @bitCast(k),
+        .size = .size64,
+    } };
+    try ctx.emit(inst);
+    return try ctx.lower_ctx.getValueFromReg(dst.toReg(), .int);
+}
+
 // ============================================================================
 // ISLE Constructors - Integer Arithmetic
 // ============================================================================
@@ -442,6 +456,7 @@ pub fn aarch64_add_imm(
     x: Value,
     imm: i64,
 ) !Inst {
+    isle_helpers.recordRule("aarch64_add_imm");
     const size = ctx.typeToSize(ty);
     const reg_x = try ctx.getValueReg(x, .int);
     const dst = ctx.allocOutputReg(.int);
@@ -466,6 +481,7 @@ pub fn aarch64_sub_rr(
     x: Value,
     y: Value,
 ) !Inst {
+    isle_helpers.recordRule("aarch64_sub_rr");
     const size = ctx.typeToSize(ty);
     const reg_x = try ctx.getValueReg(x, .int);
     const reg_y = try ctx.getValueReg(y, .int);
@@ -490,6 +506,7 @@ pub fn aarch64_sub_imm(
     x: Value,
     imm: i64,
 ) !Inst {
+    isle_helpers.recordRule("aarch64_sub_imm");
     const size = ctx.typeToSize(ty);
     const reg_x = try ctx.getValueReg(x, .int);
     const dst = ctx.allocOutputReg(.int);
@@ -568,6 +585,7 @@ pub fn aarch64_mul_rr(
     x: Value,
     y: Value,
 ) !Inst {
+    isle_helpers.recordRule("aarch64_mul_rr");
     const size = ctx.typeToSize(ty);
     const reg_x = try ctx.getValueReg(x, .int);
     const reg_y = try ctx.getValueReg(y, .int);
