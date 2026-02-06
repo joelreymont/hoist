@@ -1092,6 +1092,14 @@ pub const OperandCollector = struct {
 
 fn collectOperands(value: anytype, collector: *OperandCollector) !void {
     const T = @TypeOf(value.*);
+    if (T == Reg) {
+        try collector.regUse(value.*);
+        return;
+    }
+    if (T == WritableReg) {
+        try collector.regDef(value.*);
+        return;
+    }
     switch (@typeInfo(T)) {
         .@"struct" => |s| {
             inline for (s.fields) |field| {

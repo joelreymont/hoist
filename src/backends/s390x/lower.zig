@@ -1,12 +1,13 @@
 const std = @import("std");
 const testing = std.testing;
 
-const root = @import("root");
+const root = @import("../../root.zig");
 const Inst = @import("inst.zig").Inst;
 const Reg = @import("inst.zig").Reg;
 const WritableReg = @import("inst.zig").WritableReg;
 const lower_mod = @import("../../machinst/lower.zig");
 const LowerCtx = lower_mod.LowerCtx;
+const Signature = root.signature.Signature;
 
 pub const S390xLower = struct {
     pub fn lowerInst(
@@ -59,7 +60,8 @@ test "S390xLower backend creation" {
 test "S390xLower with stub function" {
     const backend = S390xLower.backend();
 
-    var func = lower_mod.Function.init(testing.allocator);
+    const sig = Signature.init(testing.allocator, .system_v);
+    var func = try lower_mod.Function.init(testing.allocator, "s390x_stub", sig);
     defer func.deinit();
 
     var vcode = root.vcode.VCode(Inst).init(testing.allocator);

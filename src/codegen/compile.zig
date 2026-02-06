@@ -5954,15 +5954,41 @@ fn lowerX86_64(ctx: *Context) CodegenError!void {
 
 /// Lower IR to RISC-V 64 VCode.
 fn lowerRiscv64(ctx: *Context) CodegenError!void {
-    // TODO: RISC-V 64 lowering not yet implemented
-    _ = ctx;
+    const Inst = @import("../backends/riscv64/inst.zig").Inst;
+    const riscv64_lower = @import("../backends/riscv64/lower.zig").Riscv64Lower;
+
+    var lowered = lower_mod.lowerFunction(
+        Inst,
+        ctx.allocator,
+        ctx.func,
+        riscv64_lower.backend(),
+    ) catch |err| return switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => error.LoweringFailed,
+    };
+    lowered.deinit();
+
+    // RISC-V lowering path is wired; register allocation and emission remain AArch64-only.
     return error.UnsupportedTarget;
 }
 
 /// Lower IR to s390x VCode.
 fn lowerS390x(ctx: *Context) CodegenError!void {
-    // TODO: s390x lowering not yet implemented
-    _ = ctx;
+    const Inst = @import("../backends/s390x/inst.zig").Inst;
+    const s390x_lower = @import("../backends/s390x/lower.zig").S390xLower;
+
+    var lowered = lower_mod.lowerFunction(
+        Inst,
+        ctx.allocator,
+        ctx.func,
+        s390x_lower.backend(),
+    ) catch |err| return switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => error.LoweringFailed,
+    };
+    lowered.deinit();
+
+    // s390x lowering path is wired; register allocation and emission remain AArch64-only.
     return error.UnsupportedTarget;
 }
 
