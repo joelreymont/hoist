@@ -36,6 +36,7 @@ const ir = struct {
     pub const Type = @import("../ir/types.zig").Type;
     pub const I32 = @import("../ir/types.zig").Type.I32;
     pub const I64 = @import("../ir/types.zig").Type.I64;
+    pub const I128 = @import("../ir/types.zig").Type.I128;
     pub const Signature = @import("../ir/signature.zig").Signature;
     pub const Verifier = @import("../ir/verifier.zig").Verifier;
     pub const Inst = @import("../ir/entities.zig").Inst;
@@ -1510,6 +1511,80 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
 
             for (params, 0..) |param, i| {
                 const param_type = ctx.func.dfg.valueType(param) orelse return error.LoweringFailed;
+                const loc = arg_locs[i];
+
+                if (param_type.eql(ir.I128)) {
+                    const lo_vreg = VReg.new(@intCast(param.index + Reg.PINNED_VREGS), RegClass.int);
+                    const hi_vreg = VReg.new(@intCast(param.index + Reg.PINNED_VREGS + 1), RegClass.int);
+                    const lo_dst = WritableReg.fromVReg(lo_vreg);
+                    const hi_dst = WritableReg.fromVReg(hi_vreg);
+
+                    switch (loc) {
+                        .reg_pair => |pair| {
+                            try builder.emit(Inst{ .mov_rr = .{
+                                .dst = lo_dst,
+                                .src = Reg.fromPReg(pair.lo),
+                                .size = .size64,
+                            } });
+                            try builder.emit(Inst{ .mov_rr = .{
+                                .dst = hi_dst,
+                                .src = Reg.fromPReg(pair.hi),
+                                .size = .size64,
+                            } });
+                        },
+                        .stack => |offset| {
+                            if (stack_base == null) {
+                                const base_vreg = VReg.new(next_tmp_vreg, .int);
+                                next_tmp_vreg += 1;
+                                const base_dst = WritableReg.fromVReg(base_vreg);
+                                try builder.emit(Inst{ .tailcall_sp = .{ .dst = base_dst } });
+                                stack_base = base_vreg;
+                            }
+
+                            const base_reg = Reg.fromVReg(stack_base.?);
+                            var addr_reg = base_reg;
+
+                            if (offset != 0) {
+                                const off_vreg = VReg.new(next_tmp_vreg, .int);
+                                next_tmp_vreg += 1;
+                                const off_dst = WritableReg.fromVReg(off_vreg);
+                                try builder.emit(Inst{ .mov_imm = .{
+                                    .dst = off_dst,
+                                    .imm = offset,
+                                    .size = .size64,
+                                } });
+
+                                const addr_vreg = VReg.new(next_tmp_vreg, .int);
+                                next_tmp_vreg += 1;
+                                const addr_dst = WritableReg.fromVReg(addr_vreg);
+                                try builder.emit(Inst{ .add_rr = .{
+                                    .dst = addr_dst,
+                                    .src1 = base_reg,
+                                    .src2 = Reg.fromVReg(off_vreg),
+                                    .size = .size64,
+                                } });
+                                addr_reg = Reg.fromVReg(addr_vreg);
+                            }
+
+                            try builder.emit(Inst{ .ldr = .{
+                                .dst = lo_dst,
+                                .base = addr_reg,
+                                .offset = 0,
+                                .size = .size64,
+                            } });
+                            try builder.emit(Inst{ .ldr = .{
+                                .dst = hi_dst,
+                                .base = addr_reg,
+                                .offset = 8,
+                                .size = .size64,
+                            } });
+                        },
+                        else => return error.LoweringFailed,
+                    }
+
+                    continue;
+                }
+
                 const class: RegClass = if (param_type.isInt() or param_type.isRef())
                     .int
                 else if (param_type.isFloat() or param_type.isVector())
@@ -1519,7 +1594,6 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
 
                 const param_vreg = VReg.new(@intCast(param.index + Reg.PINNED_VREGS), class);
                 const dst = WritableReg.fromVReg(param_vreg);
-                const loc = arg_locs[i];
 
                 switch (loc) {
                     .reg => |preg| {
@@ -1796,20 +1870,38 @@ fn emitReturnMovesAArch64(
             }
             fp_idx += 1;
         } else {
-            if (int_idx >= 8) return error.LoweringFailed;
-            const int_hw: u6 = @intCast(int_idx);
-            const src_vreg = VReg.new(@intCast(val.index + Reg.PINNED_VREGS), RegClass.int);
-            const src = Reg.fromVReg(src_vreg);
-            const dst_reg = Reg.fromPReg(PReg.new(.int, int_hw));
-            const dst = WritableReg.fromReg(dst_reg);
-            const bits = value_type.bits();
-            const size: OperandSize = if (bits != 0 and bits <= 32) .size32 else .size64;
-            try builder.emit(Inst{ .mov_rr = .{
-                .dst = dst,
-                .src = src,
-                .size = size,
-            } });
-            int_idx += 1;
+            if (value_type.eql(ir.I128)) {
+                if (int_idx >= 7) return error.LoweringFailed;
+                const src_pair = resolveI128PairRegs(ctx.func, val);
+                const lo_reg = Reg.fromPReg(PReg.new(.int, @intCast(int_idx)));
+                const hi_reg = Reg.fromPReg(PReg.new(.int, @intCast(int_idx + 1)));
+                try builder.emit(Inst{ .mov_rr = .{
+                    .dst = WritableReg.fromReg(lo_reg),
+                    .src = src_pair.lo,
+                    .size = .size64,
+                } });
+                try builder.emit(Inst{ .mov_rr = .{
+                    .dst = WritableReg.fromReg(hi_reg),
+                    .src = src_pair.hi,
+                    .size = .size64,
+                } });
+                int_idx += 2;
+            } else {
+                if (int_idx >= 8) return error.LoweringFailed;
+                const int_hw: u6 = @intCast(int_idx);
+                const src_vreg = VReg.new(@intCast(val.index + Reg.PINNED_VREGS), RegClass.int);
+                const src = Reg.fromVReg(src_vreg);
+                const dst_reg = Reg.fromPReg(PReg.new(.int, int_hw));
+                const dst = WritableReg.fromReg(dst_reg);
+                const bits = value_type.bits();
+                const size: OperandSize = if (bits != 0 and bits <= 32) .size32 else .size64;
+                try builder.emit(Inst{ .mov_rr = .{
+                    .dst = dst,
+                    .src = src,
+                    .size = size,
+                } });
+                int_idx += 1;
+            }
         }
     }
 }
@@ -2102,6 +2194,43 @@ fn mapPinnedVReg(
     try lower_ctx.value_to_reg.put(value, vreg);
 }
 
+const I128PairRegs = struct {
+    lo: reg_mod.Reg,
+    hi: reg_mod.Reg,
+};
+
+fn resolveI128PairRegs(func: *Function, value: ir.Value) I128PairRegs {
+    const Reg = reg_mod.Reg;
+    const VReg = reg_mod.VReg;
+
+    if (func.dfg.valueDef(value)) |def| {
+        if (def.inst()) |inst| {
+            if (func.dfg.insts.get(inst)) |inst_data_ptr| {
+                switch (inst_data_ptr.*) {
+                    .binary => |data| {
+                        if (data.opcode == .iconcat) {
+                            const lo_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), .int);
+                            const hi_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), .int);
+                            return .{
+                                .lo = Reg.fromVReg(lo_vreg),
+                                .hi = Reg.fromVReg(hi_vreg),
+                            };
+                        }
+                    },
+                    else => {},
+                }
+            }
+        }
+    }
+
+    const lo_vreg = VReg.new(@intCast(value.index + Reg.PINNED_VREGS), .int);
+    const hi_vreg = VReg.new(@intCast(value.index + Reg.PINNED_VREGS + 1), .int);
+    return .{
+        .lo = Reg.fromVReg(lo_vreg),
+        .hi = Reg.fromVReg(hi_vreg),
+    };
+}
+
 fn stackSlotOffset(func: *Function, slot: StackSlot, out_stack_max: u32) i32 {
     var offset: u32 = out_stack_max;
     const slots = func.stack_slots.elems.items;
@@ -2293,7 +2422,13 @@ fn lowerInstructionAArch64(
         },
         .binary => |data| {
             // Handle binary instructions (iadd, isub, etc.)
-            if (data.opcode == .iadd) {
+            if (data.opcode == .iconcat) {
+                const result_value = ctx.func.dfg.firstResult(inst) orelse return error.LoweringFailed;
+                const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
+                if (!value_type.eql(ir.I128)) return error.LoweringFailed;
+                // Pseudo-op only: i128 is represented as a register pair and materialized by
+                // consumers (e.g. isplit/return), so there is no direct machine instruction.
+            } else if (data.opcode == .iadd) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
                 const RegClass = @import("../machinst/reg.zig").RegClass;
@@ -4140,6 +4275,29 @@ fn lowerInstructionAArch64(
                 const vals = [_]ir.Value{data.arg};
                 try emitReturnMovesAArch64(ctx, builder, vals[0..]);
                 try builder.emit(Inst.ret);
+            } else if (data.opcode == .isplit) {
+                const VReg = @import("../machinst/reg.zig").VReg;
+                const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                const RegClass = @import("../machinst/reg.zig").RegClass;
+                const Reg = @import("../machinst/reg.zig").Reg;
+
+                const results = ctx.func.dfg.instResults(inst);
+                if (results.len != 2) return error.LoweringFailed;
+
+                const src_pair = resolveI128PairRegs(ctx.func, data.arg);
+                const lo_dst_vreg = VReg.new(@intCast(results[0].index + Reg.PINNED_VREGS), RegClass.int);
+                const hi_dst_vreg = VReg.new(@intCast(results[1].index + Reg.PINNED_VREGS), RegClass.int);
+
+                try builder.emit(Inst{ .mov_rr = .{
+                    .dst = WritableReg.fromVReg(lo_dst_vreg),
+                    .src = src_pair.lo,
+                    .size = .size64,
+                } });
+                try builder.emit(Inst{ .mov_rr = .{
+                    .dst = WritableReg.fromVReg(hi_dst_vreg),
+                    .src = src_pair.hi,
+                    .size = .size64,
+                } });
             } else if (data.opcode == .ireduce) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
@@ -6521,6 +6679,127 @@ test "lower: uadd_overflow_cin emits ADCS" {
 test "lower: overflow_bin emits SBCS" {
     try expectOverflowBinSbcs(.usub_overflow_bin);
     try expectOverflowBinSbcs(.ssub_overflow_bin);
+}
+
+test "lower: iconcat return marshals in X0/X1" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I128));
+
+    var func = try Function.init(testing.allocator, "iconcat_ret_pair", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const lo = try builder.appendBlockParam(block, ir.I64);
+    const hi = try builder.appendBlockParam(block, ir.I64);
+
+    const iconcat_inst = try func.dfg.makeInst(.{ .binary = .{
+        .opcode = .iconcat,
+        .args = .{ lo, hi },
+    } });
+    const wide = try func.dfg.appendInstResult(iconcat_inst, ir.I128);
+    try func.layout.appendInst(iconcat_inst, block);
+
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{
+        .opcode = .@"return",
+        .arg = wide,
+    } });
+    try func.layout.appendInst(ret_inst, block);
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_x0 = false;
+    var saw_x1 = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .mov_rr => |mv| {
+                if (mv.dst.toReg().toRealReg()) |dst_real| {
+                    const enc = dst_real.hwEnc();
+                    if (enc == 0 and mv.size == .size64) saw_x0 = true;
+                    if (enc == 1 and mv.size == .size64) saw_x1 = true;
+                }
+            },
+            else => {},
+        }
+    }
+    try testing.expect(saw_x0);
+    try testing.expect(saw_x1);
+}
+
+test "lower: i128 param split loads both halves" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I128));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+
+    var func = try Function.init(testing.allocator, "split_i128_param", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const wide = try builder.appendBlockParam(block, ir.I128);
+    const split_inst = try func.dfg.makeInst(.{ .unary = .{
+        .opcode = .isplit,
+        .arg = wide,
+    } });
+    const lo = try func.dfg.appendInstResult(split_inst, ir.I64);
+    _ = try func.dfg.appendInstResult(split_inst, ir.I64);
+    try func.layout.appendInst(split_inst, block);
+
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{
+        .opcode = .@"return",
+        .arg = lo,
+    } });
+    try func.layout.appendInst(ret_inst, block);
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_src_x0 = false;
+    var saw_src_x1 = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .mov_rr => |mv| {
+                if (mv.src.toRealReg()) |src_real| {
+                    if (mv.dst.toReg().toVReg() != null) {
+                        const enc = src_real.hwEnc();
+                        if (enc == 0 and mv.size == .size64) saw_src_x0 = true;
+                        if (enc == 1 and mv.size == .size64) saw_src_x1 = true;
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
+    try testing.expect(saw_src_x0);
+    try testing.expect(saw_src_x1);
 }
 
 fn expectOverflowBinSbcs(opcode: Opcode) !void {
