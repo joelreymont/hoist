@@ -4483,19 +4483,10 @@ pub fn aarch64_call_indirect(sig_ref: SigRef, ptr: lower_mod.Value, args: lower_
 
 pub fn aarch64_try_call(sig_ref: SigRef, name: ExternalName, args: lower_mod.ValueSlice, ctx: *lower_mod.LowerCtx(Inst)) !lower_mod.ValueRegs {
     recordRule("aarch64_try_call");
-    // Function call with exception handling support (DOTS 1,2,3)
-    // DOT 1: Rule skeleton extracts sig_ref, name, args from try_call instruction
-    // DOT 2: Emit BL instruction with AAPCS64 argument marshaling
-    // DOT 3: Add exception check via CBZ X0 and branch to successors
-    //
-    // NOTE: The successors (normal_successor, exception_successor) are in TryCallData
-    // but not accessible via ISLE patterns (they're Blocks, not Values).
-    // The complete lowering including exception handling is implemented in
-    // aarch64_lower_generated.zig's .try_call case, which has direct access
-    // to the instruction data via IR DFG.
-    //
-    // This function currently delegates to aarch64_call for the call part.
-    // Exception handling is emitted separately by the manual lowering code.
+    // try_call emits the same call sequence as aarch64_call.
+    // Exception routing uses LSDA + unwinder metadata attached by codegen:
+    // on normal return, lowering branches to normal_successor; on exception,
+    // unwinding transfers control to exception_successor landing pad.
 
     // Delegate to regular call implementation for the functional part
     return aarch64_call(sig_ref, name, args, ctx);

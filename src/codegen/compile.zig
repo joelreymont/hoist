@@ -1749,32 +1749,23 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
                 .next_tmp_vreg = &next_tmp_vreg,
             }, inst, target);
 
-            // Check if this was a try_call and emit exception handling branch
+            // try_call and try_call_indirect are terminators: emit the normal-edge branch.
             const inst_data_ptr = ctx.func.dfg.insts.get(inst);
             if (inst_data_ptr) |data| {
                 if (data.* == .try_call) {
-                    const try_call_data = data.try_call;
-                    // try_call uses DWARF-based exception handling (see docs/exception-handling-abi.md)
-                    //
-                    // CRITICAL: No explicit exception check or conditional branch is needed.
-                    // Exception handling is performed by the runtime unwinder via LSDA/CFI:
-                    //
-                    // 1. try_call emits BL instruction (via aarch64_call)
-                    // 2. On normal return: execution continues to normal_successor (implicit fall-through)
-                    // 3. On exception: runtime unwind consults LSDA, jumps to exception_successor
-                    //
-                    // The compiler's responsibilities (ALL COMPLETE):
-                    // ✓ Populate LSDA with [try_call_pc, length, landing_pad_pc] (see generateEhFrame)
-                    // ✓ Generate .eh_frame with CIE/FDE (see assembleResult)
-                    // ✓ Bind block labels for PC offset queries (see emitAArch64WithAllocation)
-                    //
-                    // No additional code emission needed here.
-                    // The normal_successor and exception_successor are used for:
-                    // - LSDA population (exception_successor provides landing pad PC)
-                    // - CFG analysis (optimizer, dominance tree)
-                    //
-                    // Tracked in: hoist-582b4f760099eb16 (closed - no branch emission needed)
-                    _ = try_call_data;
+                    const target_label = block_index_map.get(data.try_call.normal_successor) orelse return error.LoweringFailed;
+                    try builder.emit(Inst{
+                        .b = .{
+                            .target = .{ .label = target_label },
+                        },
+                    });
+                } else if (data.* == .try_call_indirect) {
+                    const target_label = block_index_map.get(data.try_call_indirect.normal_successor) orelse return error.LoweringFailed;
+                    try builder.emit(Inst{
+                        .b = .{
+                            .target = .{ .label = target_label },
+                        },
+                    });
                 }
             }
         }
@@ -7063,7 +7054,6 @@ test "lower: try_call emits GOT load, BLR, and marshals X0" {
 
     builder.switchToBlock(block0);
     const call_res = try builder.instTryCall(func_ref, &.{}, block1, block2);
-    try builder.jump(block1);
 
     builder.switchToBlock(block1);
     try builder.retValues(&.{call_res});
@@ -7088,10 +7078,12 @@ test "lower: try_call emits GOT load, BLR, and marshals X0" {
     var saw_load_ext_name = false;
     var saw_blr = false;
     var saw_x0_move = false;
+    var saw_normal_branch = false;
     for (lowered.vcode.insns.items) |inst| {
         switch (inst) {
             .load_ext_name_got => saw_load_ext_name = true,
             .blr => saw_blr = true,
+            .b => saw_normal_branch = true,
             .mov_rr => |mv| {
                 if (mv.dst.toReg().toVReg() != null) {
                     if (mv.src.toRealReg()) |src_real| {
@@ -7106,6 +7098,7 @@ test "lower: try_call emits GOT load, BLR, and marshals X0" {
     try testing.expect(saw_load_ext_name);
     try testing.expect(saw_blr);
     try testing.expect(saw_x0_move);
+    try testing.expect(saw_normal_branch);
 }
 
 test "lower: try_call_indirect emits BLR and marshals X0" {
@@ -7145,7 +7138,6 @@ test "lower: try_call_indirect emits BLR and marshals X0" {
     } });
     const call_res = try func.dfg.appendInstResult(tc_inst, ir.I64);
     try func.layout.appendInst(tc_inst, block0);
-    try builder.jump(block1);
 
     builder.switchToBlock(block1);
     try builder.retValues(&.{call_res});
@@ -7167,9 +7159,11 @@ test "lower: try_call_indirect emits BLR and marshals X0" {
     const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
     var saw_blr = false;
     var saw_x0_move = false;
+    var saw_normal_branch = false;
     for (lowered.vcode.insns.items) |inst| {
         switch (inst) {
             .blr => saw_blr = true,
+            .b => saw_normal_branch = true,
             .mov_rr => |mv| {
                 if (mv.dst.toReg().toVReg() != null) {
                     if (mv.src.toRealReg()) |src_real| {
@@ -7183,6 +7177,7 @@ test "lower: try_call_indirect emits BLR and marshals X0" {
 
     try testing.expect(saw_blr);
     try testing.expect(saw_x0_move);
+    try testing.expect(saw_normal_branch);
 }
 
 test "assembleResult: empty buffer" {
