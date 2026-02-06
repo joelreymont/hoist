@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  tools/dot-finish <dot-id> -m "<50-char imperative commit msg>" [-r "<dot close note>"]
+
+Actions:
+  1. Run full test suite
+  2. Close dot
+  3. Set jj commit description
+  4. Push codex/indirect-return bookmark (if present), otherwise default push
+  5. Start a new empty change
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 3 ]]; then
+  usage
+  exit 1
+fi
+
+dot_id="$1"
+shift
+
+commit_msg=""
+dot_reason="Completed"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -m|--message)
+      commit_msg="${2:-}"
+      shift 2
+      ;;
+    -r|--reason)
+      dot_reason="${2:-}"
+      shift 2
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "$commit_msg" ]]; then
+  echo "Missing required -m/--message" >&2
+  usage
+  exit 1
+fi
+
+repo_root="$(jj root)"
+cd "$repo_root"
+
+zig build test -j1 --global-cache-dir .zig-global-cache --summary failures
+dot off "$dot_id" -r "$dot_reason"
+jj describe -m "$commit_msg"
+
+if jj bookmark list | grep -q '^codex/indirect-return'; then
+  jj bookmark set codex/indirect-return -r @ >/dev/null
+  jj git push --bookmark codex/indirect-return
+else
+  jj git push
+fi
+
+jj new -m "Track next parity task"
