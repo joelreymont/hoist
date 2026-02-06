@@ -1731,7 +1731,7 @@
 
 ;; ctz I128: Count trailing zeros by reversing bits then counting leading zeros
 (rule (lower (has_type $I128 (ctz x)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_ctz128 (put_in_regs x))))
 
 ;; cls I128: Count leading sign bits
 ;; Uses lower_cls128 helper from isle_helpers.zig
@@ -2704,6 +2704,7 @@
 (decl aarch64_popcnt_32 (Value) Aarch64Inst)
 (decl aarch64_popcnt_64 (Value) Aarch64Inst)
 (decl lower_clz128 (ValueRegs) ValueRegs)
+(decl lower_ctz128 (ValueRegs) ValueRegs)
 (decl lower_cls128 (ValueRegs) ValueRegs)
 (decl lower_popcnt128 (ValueRegs) ValueRegs)
 

@@ -1190,6 +1190,40 @@ test "lower_clz128 emits clz and madd sequence" {
     try testing.expect(hasInstTag(vcode.insns.items, .madd));
 }
 
+test "lower_ctz128 emits rbit+clz and csel sequence" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_ctz128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const out = try lower_ctz128(lower_mod.ValueRegs.pair(lo, hi), &ctx);
+
+    try testing.expect(out.get(0) != null);
+    const out_hi = out.get(1) orelse return error.TestUnexpectedResult;
+    try testing.expect(out_hi.eq(Reg.fromPReg(PReg.new(.int, 31))));
+
+    try testing.expect(hasInstTag(vcode.insns.items, .rbit));
+    try testing.expect(hasInstTag(vcode.insns.items, .clz));
+    try testing.expect(hasInstTag(vcode.insns.items, .cmp_imm));
+    try testing.expect(hasInstTag(vcode.insns.items, .csel));
+}
+
 test "lower_cls128 emits cls and csel sequence" {
     const testing = std.testing;
 
@@ -6540,6 +6574,93 @@ pub fn lower_clz128(
             .src1 = lo_clz,
             .src2 = tmp,
             .addend = hi_clz,
+            .size = .size64,
+        },
+    });
+
+    const zero = Reg.fromPReg(PReg.new(.int, 31));
+    return lower_mod.ValueRegs.pair(result_dst.toReg(), zero);
+}
+
+/// Count trailing zeros for I128.
+/// Algorithm:
+/// - ctz(x) = clz(rbit(x)) for each 64-bit half.
+/// - If lo != 0: result = ctz(lo)
+/// - Else: result = 64 + ctz(hi)
+pub fn lower_ctz128(
+    val: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lo = val.get(0) orelse return error.NoMatch;
+    const hi = val.get(1) orelse return error.NoMatch;
+
+    const lo_rbit_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .rbit = .{
+            .dst = lo_rbit_dst,
+            .src = lo,
+            .size = .size64,
+        },
+    });
+    const lo_rbit = lo_rbit_dst.toReg();
+
+    const lo_ctz_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .clz = .{
+            .dst = lo_ctz_dst,
+            .src = lo_rbit,
+            .size = .size64,
+        },
+    });
+    const lo_ctz = lo_ctz_dst.toReg();
+
+    const hi_rbit_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .rbit = .{
+            .dst = hi_rbit_dst,
+            .src = hi,
+            .size = .size64,
+        },
+    });
+    const hi_rbit = hi_rbit_dst.toReg();
+
+    const hi_ctz_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .clz = .{
+            .dst = hi_ctz_dst,
+            .src = hi_rbit,
+            .size = .size64,
+        },
+    });
+    const hi_ctz = hi_ctz_dst.toReg();
+
+    const hi_plus_64_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .add_imm = .{
+            .dst = hi_plus_64_dst,
+            .src = hi_ctz,
+            .imm = 64,
+            .size = .size64,
+        },
+    });
+    const hi_plus_64 = hi_plus_64_dst.toReg();
+
+    const zero_imm = Imm12.maybeFromU64(0) orelse return error.InvalidImmediate;
+    try ctx.emit(Inst{
+        .cmp_imm = .{
+            .src = lo,
+            .imm = zero_imm,
+            .size = .size64,
+        },
+    });
+
+    const result_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .csel = .{
+            .dst = result_dst,
+            .cond = intccToCondCode(.eq),
+            .src1 = hi_plus_64,
+            .src2 = lo_ctz,
             .size = .size64,
         },
     });
