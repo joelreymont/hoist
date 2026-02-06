@@ -117,7 +117,7 @@ pub const LICM = struct {
             .float_compare => |d| self.isValueInvariant(func, loop, d.args[0]) and self.isValueInvariant(func, loop, d.args[1]),
             .load => |d| self.isValueInvariant(func, loop, d.arg),
             .call => |d| blk: {
-                for (d.args.asSlice(&func.dfg.value_lists)) |arg| {
+                for (func.dfg.value_lists.asSlice(d.args)) |arg| {
                     if (!self.isValueInvariant(func, loop, arg)) break :blk false;
                 }
                 break :blk true;
@@ -147,13 +147,13 @@ pub const LICM = struct {
     fn hoistInvariants(self: *LICM, func: *Function, loop: *const Loop, preheader: Block) !bool {
         _ = loop;
         var hoisted = false;
-        var to_hoist = std.ArrayList(Inst).init(self.allocator);
-        defer to_hoist.deinit();
+        var to_hoist = std.ArrayList(Inst){};
+        defer to_hoist.deinit(self.allocator);
 
         // Collect instructions to hoist
         var iter = self.invariant_insts.keyIterator();
         while (iter.next()) |inst| {
-            try to_hoist.append(inst.*);
+            try to_hoist.append(self.allocator, inst.*);
         }
 
         // Hoist each instruction
@@ -175,7 +175,12 @@ pub const LICM = struct {
             if (last_non_term) |prev| {
                 try func.layout.insertInstAfter(inst, prev);
             } else {
-                try func.layout.prependBlockInst(inst, preheader);
+                var preheader_iter2 = func.layout.blockInsts(preheader);
+                if (preheader_iter2.next()) |first_inst| {
+                    try func.layout.insertInstBefore(inst, first_inst);
+                } else {
+                    try func.layout.appendInst(inst, preheader);
+                }
             }
 
             hoisted = true;
@@ -194,14 +199,14 @@ pub const LICM = struct {
 
         // For now, find existing preheader
         // A proper implementation would create one if it doesn't exist
-        const header_preds = cfg.predecessors(loop.header);
+        var header_preds = cfg.predecessors(loop.header);
 
         // Look for a predecessor that's not in the loop
-        for (header_preds) |pred| {
-            if (!loop.contains(pred)) {
+        while (header_preds.next()) |pred| {
+            if (!loop.contains(pred.block)) {
                 // Found a potential preheader
                 // In a full implementation, verify it has only one successor
-                return pred;
+                return pred.block;
             }
         }
 

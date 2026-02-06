@@ -163,10 +163,24 @@ fn runCopyProp(allocator: Allocator, func: *Function) !bool {
 
 /// Run LICM pass.
 fn runLICM(allocator: Allocator, func: *Function) !bool {
-    _ = allocator;
-    _ = func;
-    // TODO: Implement LICM pass struct
-    return false;
+    var cfg = ControlFlowGraph.init(allocator);
+    defer cfg.deinit(allocator);
+    try cfg.compute(func);
+
+    const entry = func.entryBlock() orelse return false;
+
+    var domtree = DominatorTree.init(allocator);
+    defer domtree.deinit();
+    try domtree.compute(allocator, entry, &cfg);
+
+    var loop_info = LoopInfo.init(allocator);
+    defer loop_info.deinit(allocator);
+    try loop_info.compute(&cfg, &domtree);
+    if (loop_info.loops.items.len == 0) return false;
+
+    var pass = licm.LICM.init(allocator);
+    defer pass.deinit();
+    return try pass.run(func, &loop_info, &domtree, &cfg);
 }
 
 /// Run SimplifyBranch pass.
@@ -247,6 +261,15 @@ test "PassManager: statistics collection" {
     try testing.expectEqualStrings("Spectre", stats[8].name);
     try testing.expectEqualStrings("Peephole", stats[9].name);
     try testing.expectEqualStrings("DCE", stats[10].name);
+}
+
+test "runLICM: no entry returns false" {
+    const sig = @import("../ir/signature.zig").Signature.init(testing.allocator, .fast);
+    var func = try Function.init(testing.allocator, "licm_empty", sig);
+    defer func.deinit();
+
+    const changed = try runLICM(testing.allocator, &func);
+    try testing.expect(!changed);
 }
 
 test "PassManager: clear statistics" {
