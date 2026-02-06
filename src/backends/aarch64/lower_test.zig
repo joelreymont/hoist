@@ -509,6 +509,12 @@ test "lower avg_round emits urhadd for lane_fits_in_32" {
     try expectVecRrrOp(&vcode, .Urhadd);
 }
 
+test "lower splat(load) emits ld1r" {
+    var vcode = try lowerSplatLoadVCode();
+    defer vcode.deinit();
+    try expectLd1rInst(&vcode);
+}
+
 // Helper wrappers to call generated lowering functions
 fn instValue(ctx: *lower_mod.LowerCtx(Inst), inst: lower_mod.Inst) !Value {
     return ctx.func.dfg.firstResult(inst) orelse try ctx.func.dfg.appendInstResult(inst, Type.I8);
@@ -581,6 +587,51 @@ fn lowerAvgRoundVCode(vec_ty: Type) !vcode_mod.VCode(Inst) {
     const ret_inst = try func.dfg.makeInst(.{ .unary = .{
         .opcode = .@"return",
         .arg = avg,
+    } });
+    try func.layout.appendInst(ret_inst, block0);
+
+    const backend = lower_mod.LowerBackend(Inst){
+        .lowerInstFn = lowerInst,
+        .lowerBranchFn = lowerBranch,
+    };
+
+    return try lower_mod.lowerFunction(Inst, allocator, &func, backend);
+}
+
+fn lowerSplatLoadVCode() !vcode_mod.VCode(Inst) {
+    const allocator = testing.allocator;
+
+    var sig = Signature.init(allocator, .fast);
+    try sig.params.append(allocator, AbiParam.new(Type.I64));
+    try sig.returns.append(allocator, AbiParam.new(Type.I8X16));
+
+    var func = try Function.init(allocator, "test_splat_load_ld1r", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    const addr = try func.dfg.appendBlockParam(block0, Type.I64);
+
+    const load_inst = try func.dfg.makeInst(.{ .load = .{
+        .opcode = .load,
+        .flags = root.memflags.MemFlags.default(),
+        .arg = addr,
+        .offset = 0,
+    } });
+    try func.layout.appendInst(load_inst, block0);
+    const loaded = try func.dfg.appendInstResult(load_inst, Type.I8);
+
+    const splat_inst = try func.dfg.makeInst(.{ .unary = .{
+        .opcode = .splat,
+        .arg = loaded,
+    } });
+    try func.layout.appendInst(splat_inst, block0);
+    const splat = try func.dfg.appendInstResult(splat_inst, Type.I8X16);
+
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{
+        .opcode = .@"return",
+        .arg = splat,
     } });
     try func.layout.appendInst(ret_inst, block0);
 
@@ -765,6 +816,13 @@ fn expectStoreInst(vcode: *const vcode_mod.VCode(Inst), kind: StoreKind) !void {
         }
     }
     try testing.expect(found);
+}
+
+fn expectLd1rInst(vcode: *const vcode_mod.VCode(Inst)) !void {
+    for (vcode.insns.items) |inst| {
+        if (inst == .ld1r) return;
+    }
+    return error.TestExpectedEqual;
 }
 
 fn expectShuffleInst(vcode: *const vcode_mod.VCode(Inst), kind: ShuffleKind) !void {

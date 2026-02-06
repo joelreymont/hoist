@@ -109,6 +109,21 @@ fn intValue(value: lower_mod.Value, ctx: *const lower_mod.LowerCtx(Inst)) ?i64 {
     return inst_data.unary_imm.imm.value;
 }
 
+fn splatLoadBase(value: lower_mod.Value, ctx: *const lower_mod.LowerCtx(Inst)) ?lower_mod.Value {
+    const def = ctx.func.dfg.valueDef(value) orelse return null;
+    const inst = def.inst() orelse return null;
+    const inst_data = ctx.func.dfg.insts.get(inst) orelse return null;
+
+    return switch (inst_data.*) {
+        .load => |ld| blk: {
+            if (ld.opcode != .load) return null;
+            if (ld.offset != 0) return null;
+            break :blk ld.arg;
+        },
+        else => null,
+    };
+}
+
 /// Constructor: Convert Imm12 back to u64.
 pub fn u64_from_imm12(imm: Imm12) u64 {
     return imm.toU64();
@@ -1815,9 +1830,19 @@ pub fn aarch64_rotl_rr(ty: types.Type, x: lower_mod.Value, y: lower_mod.Value, c
 /// SPLAT - Duplicate scalar to all vector lanes (DUP)
 pub fn aarch64_splat(ty: types.Type, x: lower_mod.Value, ctx: *lower_mod.LowerCtx(Inst)) !Inst {
     recordRule("aarch64_splat");
-    const x_reg = try getValueReg(ctx, x);
-
     const size = try tyToVecElemSize(ty);
+
+    // Fuse splat(load [base]) into LD1R when the load has zero offset.
+    if (splatLoadBase(x, ctx)) |base_val| {
+        const base_reg = try getValueReg(ctx, base_val);
+        return Inst{ .ld1r = .{
+            .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
+            .base = base_reg,
+            .size = size,
+        } };
+    }
+
+    const x_reg = try getValueReg(ctx, x);
 
     return Inst{ .vec_dup = .{
         .dst = lower_mod.WritableVReg.allocVReg(.vector, ctx),
