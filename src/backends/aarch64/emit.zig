@@ -619,12 +619,13 @@ fn emitAddImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_m
     const sf_bit: u32 = @intCast(sf(size));
     const rd = try hwEnc(dst);
     const rn = try hwEnc(src);
-    const imm12: u12 = @truncate(imm);
+    const encoded = try encodeAddSubImm12(imm);
 
     // ADD imm: sf|0|0|10001|shift|imm12|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
         (0b10001 << 24) |
-        (@as(u32, imm12) << 10) |
+        (@as(u32, encoded.shift) << 22) |
+        (@as(u32, encoded.imm12) << 10) |
         (@as(u32, rn) << 5) |
         rd;
 
@@ -744,13 +745,14 @@ fn emitSubImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_m
     const sf_bit: u32 = @intCast(sf(size));
     const rd = try hwEnc(dst);
     const rn = try hwEnc(src);
-    const imm12: u12 = @truncate(imm);
+    const encoded = try encodeAddSubImm12(imm);
 
     // SUB imm: sf|1|0|10001|shift|imm12|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
         (1 << 30) |
         (0b10001 << 24) |
-        (@as(u32, imm12) << 10) |
+        (@as(u32, encoded.shift) << 22) |
+        (@as(u32, encoded.imm12) << 10) |
         (@as(u32, rn) << 5) |
         rd;
 
@@ -820,13 +822,14 @@ fn emitAddsImm(dst: Reg, src: Reg, imm: u16, size: OperandSize, buffer: *buffer_
     const sf_bit: u32 = @intCast(sf(size));
     const rd = try hwEnc(dst);
     const rn = try hwEnc(src);
-    const imm12: u12 = @truncate(imm);
+    const encoded = try encodeAddSubImm12(imm);
 
     // ADDS imm: sf|0|1|10001|shift|imm12|Rn|Rd
     const insn: u32 = (sf_bit << 31) |
         (0b01 << 29) |
         (0b10001 << 24) |
-        (@as(u32, imm12) << 10) |
+        (@as(u32, encoded.shift) << 22) |
+        (@as(u32, encoded.imm12) << 10) |
         (@as(u32, rn) << 5) |
         rd;
 
@@ -1878,6 +1881,21 @@ fn emitUxth(dst: Reg, src: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffe
 fn encodeSignedImm9(offset: i16) !u9 {
     const imm9_signed = std.math.cast(i9, offset) orelse return error.OffsetOutOfRange;
     return @bitCast(imm9_signed);
+}
+
+const AddSubImm12 = struct {
+    imm12: u12,
+    shift: u1,
+};
+
+fn encodeAddSubImm12(imm: u16) !AddSubImm12 {
+    if (imm <= 0x0FFF) {
+        return .{ .imm12 = @intCast(imm), .shift = 0 };
+    }
+    if ((imm & 0x0FFF) == 0) {
+        return .{ .imm12 = @intCast(imm >> 12), .shift = 1 };
+    }
+    return error.OffsetOutOfRange;
 }
 
 fn encodeUnsignedImm12Scaled(offset: i16, scale_shift: u4) !u12 {
@@ -6152,6 +6170,91 @@ test "emit adds imm 32-bit" {
 
     // Verify complete encoding: 0x310192B4 (ADDS W20, W21, #100)
     try testing.expectEqual(@as(u32, 0x310192B4), insn);
+}
+
+test "emit add/sub/adds imm reject out-of-range immediate" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .add_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 4097,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .sub_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 4097,
+        .size = .size64,
+    } }, &buffer));
+    try testing.expectError(error.OffsetOutOfRange, emit(.{ .adds_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 4097,
+        .size = .size32,
+    } }, &buffer));
+}
+
+test "emit add/sub/adds imm encode max imm12" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v0 = inst_mod.VReg.new(0, .int);
+    const v1 = inst_mod.VReg.new(1, .int);
+    const r0 = Reg.fromVReg(v0);
+    const r1 = Reg.fromVReg(v1);
+    const wr0 = inst_mod.WritableReg.fromReg(r0);
+
+    try emit(.{ .add_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 4095,
+        .size = .size64,
+    } }, &buffer);
+    var insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    var imm12 = (insn >> 10) & 0xFFF;
+    try testing.expectEqual(@as(u32, 4095), imm12);
+
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .sub_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 4095,
+        .size = .size64,
+    } }, &buffer);
+    insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    imm12 = (insn >> 10) & 0xFFF;
+    try testing.expectEqual(@as(u32, 4095), imm12);
+
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .adds_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 4095,
+        .size = .size64,
+    } }, &buffer);
+    insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    imm12 = (insn >> 10) & 0xFFF;
+    try testing.expectEqual(@as(u32, 4095), imm12);
+
+    buffer.data.clearRetainingCapacity();
+    try emit(.{ .sub_imm = .{
+        .dst = wr0,
+        .src = r1,
+        .imm = 8192,
+        .size = .size64,
+    } }, &buffer);
+    insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    imm12 = (insn >> 10) & 0xFFF;
+    try testing.expectEqual(@as(u32, 2), imm12);
+    try testing.expectEqual(@as(u32, 1), (insn >> 22) & 1);
 }
 
 test "emit subs rr 64-bit" {
