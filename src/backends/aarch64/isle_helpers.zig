@@ -1490,6 +1490,64 @@ test "lower_iabs128 emits asr/eor/subs/sbcs sequence" {
     try testing.expect(hasInstTag(vcode.insns.items, .sbcs));
 }
 
+test "lower_bitrev128 emits rbit on both halves" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_bitrev128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const out = try lower_bitrev128(lower_mod.ValueRegs.pair(lo, hi), &ctx);
+
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+    try testing.expect(hasInstTag(vcode.insns.items, .rbit));
+}
+
+test "lower_bswap128 emits rev64 on both halves" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_bswap128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const out = try lower_bswap128(lower_mod.ValueRegs.pair(lo, hi), &ctx);
+
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+    try testing.expect(hasInstTag(vcode.insns.items, .rev64));
+}
+
 test "fpu_csel returns fcsel consumes-flags payload" {
     const testing = std.testing;
 
@@ -7017,6 +7075,64 @@ pub fn lower_iabs128(
     } });
 
     return lower_mod.ValueRegs.pair(out_lo.toReg(), out_hi.toReg());
+}
+
+/// Bit-reverse a 128-bit value encoded as (lo, hi) register pair.
+/// Reverses bits in each half and swaps halves.
+pub fn lower_bitrev128(
+    val: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lo = val.get(0) orelse return error.NoMatch;
+    const hi = val.get(1) orelse return error.NoMatch;
+
+    const lo_rev_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .rbit = .{
+            .dst = lo_rev_dst,
+            .src = lo,
+            .size = .size64,
+        },
+    });
+
+    const hi_rev_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .rbit = .{
+            .dst = hi_rev_dst,
+            .src = hi,
+            .size = .size64,
+        },
+    });
+
+    return lower_mod.ValueRegs.pair(hi_rev_dst.toReg(), lo_rev_dst.toReg());
+}
+
+/// Byte-swap a 128-bit value encoded as (lo, hi) register pair.
+/// Reverses bytes in each half and swaps halves.
+pub fn lower_bswap128(
+    val: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lo = val.get(0) orelse return error.NoMatch;
+    const hi = val.get(1) orelse return error.NoMatch;
+
+    const lo_rev_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .rev64 = .{
+            .dst = lo_rev_dst,
+            .src = lo,
+        },
+    });
+
+    const hi_rev_dst = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{
+        .rev64 = .{
+            .dst = hi_rev_dst,
+            .src = hi,
+        },
+    });
+
+    return lower_mod.ValueRegs.pair(hi_rev_dst.toReg(), lo_rev_dst.toReg());
 }
 
 /// Add two I128 values encoded as (lo, hi) register pairs.

@@ -1684,7 +1684,7 @@
 
 ;; bitrev I128: Reverse bits in each half, then swap order
 (rule (lower (has_type $I128 (bitrev x)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_bitrev128 (put_in_regs x))))
 
 ;; bswap: Byte swap (REV16, REV32, REV64)
 (rule (lower (has_type $I16 (bswap x)))
@@ -1698,7 +1698,7 @@
 
 ;; bswap I128: Reverse bytes in each half, then swap order
 (rule (lower (has_type $I128 (bswap x)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_bswap128 (put_in_regs x))))
 
 ;; popcnt: Population count (count set bits)
 (rule (lower (has_type $I8 (popcnt x)))
@@ -1716,7 +1716,7 @@
 
 ;; bswap I128: Reverse bytes in each half, then swap order
 (rule (lower (has_type $I128 (bswap x)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_bswap128 (put_in_regs x))))
 
 ;; clz I128: Count leading zeros across both registers
 ;; Uses lower_clz128 helper from isle_helpers.zig
@@ -2711,6 +2711,8 @@
 (decl lower_uextend128 (ValueRegs) ValueRegs)
 (decl lower_ineg128 (ValueRegs) ValueRegs)
 (decl lower_iabs128 (ValueRegs) ValueRegs)
+(decl lower_bitrev128 (ValueRegs) ValueRegs)
+(decl lower_bswap128 (ValueRegs) ValueRegs)
 
 ;; Negation operations
 (decl aarch64_neg (Type Value) Aarch64Inst)
