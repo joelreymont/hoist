@@ -6891,6 +6891,102 @@ test "lower: istore8 emits STRB" {
     try testing.expect(saw_strb);
 }
 
+test "lower: istore16 emits STRH" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64)); // address
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64)); // value
+
+    var func = try Function.init(testing.allocator, "istore16_strh", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const addr = try builder.appendBlockParam(block, ir.I64);
+    const val = try builder.appendBlockParam(block, ir.I64);
+
+    const store_inst = try func.dfg.makeInst(.{ .store = .{
+        .opcode = .istore16,
+        .flags = .{},
+        .args = .{ addr, val },
+        .offset = 0,
+    } });
+    try func.layout.appendInst(store_inst, block);
+    try builder.ret();
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_strh = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .strh => saw_strh = true,
+            else => {},
+        }
+    }
+    try testing.expect(saw_strh);
+}
+
+test "lower: istore32 emits STR (32-bit)" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64)); // address
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64)); // value
+
+    var func = try Function.init(testing.allocator, "istore32_str", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const addr = try builder.appendBlockParam(block, ir.I64);
+    const val = try builder.appendBlockParam(block, ir.I64);
+
+    const store_inst = try func.dfg.makeInst(.{ .store = .{
+        .opcode = .istore32,
+        .flags = .{},
+        .args = .{ addr, val },
+        .offset = 0,
+    } });
+    try func.layout.appendInst(store_inst, block);
+    try builder.ret();
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_str32 = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .str => |str| {
+                if (str.size == .size32) saw_str32 = true;
+            },
+            else => {},
+        }
+    }
+    try testing.expect(saw_str32);
+}
+
 test "lower: uadd_overflow_cin emits ADCS" {
     var sig = ir.Signature.init(testing.allocator, .fast);
     try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
