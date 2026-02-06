@@ -1948,6 +1948,36 @@ test "RegAllocBridge applyAllocations inserts load+store for use_def spill" {
     try testing.expectEqual(@as(i16, 16), vcode.getInst(2).str.offset);
 }
 
+test "RegAllocBridge applyAllocations rejects oversized spill slot offset" {
+    const Allocation = regalloc2_types.Allocation;
+    const SpillSlot = regalloc2_types.SpillSlot;
+    const PhysReg = regalloc2_types.PhysReg;
+
+    var vcode = VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    const v0 = VReg.new(0, .int);
+    const v1 = VReg.new(1, .int);
+
+    _ = try vcode.startBlock(&.{});
+    _ = try vcode.addInst(.{
+        .mov_rr = .{
+            .dst = reg_mod.WritableReg.init(Reg{ .v = v1 }),
+            .src = Reg{ .v = v0 },
+            .size = .size64,
+        },
+    });
+    try vcode.finishBlock(0, &.{});
+
+    var bridge = RegAllocBridge.init(testing.allocator);
+    defer bridge.deinit();
+
+    try bridge.adapter.setAllocation(v0, Allocation{ .stack = SpillSlot.new(40_000) });
+    try bridge.adapter.setAllocation(v1, Allocation{ .reg = PhysReg.new(10) });
+
+    try testing.expectError(error.SpillSlotOffsetOutOfRange, bridge.applyAllocations(&vcode));
+}
+
 test "RegAllocBridge passes through no-reg control variants" {
     var vcode = VCode(Inst).init(testing.allocator);
     defer vcode.deinit();
