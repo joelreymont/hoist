@@ -10,6 +10,7 @@ const Type = hoist.types.Type;
 const ContextBuilder = hoist.context.ContextBuilder;
 const FuncRef = hoist.entities.FuncRef;
 const Value = hoist.entities.Value;
+const a64_abi = hoist.aarch64_abi;
 
 // AAPCS64 stack argument rules:
 // - First 8 integer arguments: X0-X7
@@ -17,6 +18,23 @@ const Value = hoist.entities.Value;
 // - Additional arguments: pushed to stack in order
 // - Stack must be 16-byte aligned
 // - Each stack slot is 8 bytes (or rounded up for smaller types)
+
+fn expectIntReg(loc: a64_abi.ArgLoc, idx: u6) !void {
+    try testing.expect(loc == .reg);
+    try testing.expectEqual(@as(u8, @intFromEnum(hoist.machinst.RegClass.int)), @as(u8, @intFromEnum(loc.reg.class())));
+    try testing.expectEqual(@as(u6, idx), loc.reg.hwEnc());
+}
+
+fn expectFloatReg(loc: a64_abi.ArgLoc, idx: u6) !void {
+    try testing.expect(loc == .reg);
+    try testing.expectEqual(@as(u8, @intFromEnum(hoist.machinst.RegClass.float)), @as(u8, @intFromEnum(loc.reg.class())));
+    try testing.expectEqual(@as(u6, idx), loc.reg.hwEnc());
+}
+
+fn expectStack(loc: a64_abi.ArgLoc, offset: u32) !void {
+    try testing.expect(loc == .stack);
+    try testing.expectEqual(offset, loc.stack);
+}
 
 // Test 1: 9 integer arguments (last one goes to stack)
 test "stack args: 9 integers - last on stack" {
@@ -63,8 +81,11 @@ test "stack args: 9 integers - last on stack" {
 
     // Verify: code generated successfully
 
-    // TODO: Verify args 0-7 in X0-X7, arg 8 loaded from [SP, #offset]
-    // TODO: Verify stack frame allocated to accommodate overflow args
+    const locs = try a64_abi.computeArgLocs(allocator, sig.params.items, false, null);
+    defer allocator.free(locs);
+    try testing.expectEqual(@as(usize, 9), locs.len);
+    for (0..8) |idx| try expectIntReg(locs[idx], @intCast(idx));
+    try expectStack(locs[8], 0);
 }
 
 // Test 2: 10 integer arguments (last two on stack)
@@ -121,7 +142,12 @@ test "stack args: 10 integers - last two on stack" {
 
     // Verify: code generated successfully
 
-    // TODO: Verify args 8, 9 loaded from [SP, #0] and [SP, #8]
+    const locs = try a64_abi.computeArgLocs(allocator, sig.params.items, false, null);
+    defer allocator.free(locs);
+    try testing.expectEqual(@as(usize, 10), locs.len);
+    for (0..8) |idx| try expectIntReg(locs[idx], @intCast(idx));
+    try expectStack(locs[8], 0);
+    try expectStack(locs[9], 8);
 }
 
 // Test 3: 9 float arguments (last one goes to stack)
@@ -167,7 +193,11 @@ test "stack args: 9 floats - last on stack" {
 
     // Verify: code generated successfully
 
-    // TODO: Verify args 0-7 in V0-V7, arg 8 loaded from [SP, #offset]
+    const locs = try a64_abi.computeArgLocs(allocator, sig.params.items, false, null);
+    defer allocator.free(locs);
+    try testing.expectEqual(@as(usize, 9), locs.len);
+    for (0..8) |idx| try expectFloatReg(locs[idx], @intCast(idx));
+    try expectStack(locs[8], 0);
 }
 
 // Test 4: Mixed int and float with overflow
@@ -234,8 +264,13 @@ test "stack args: mixed types with stack overflow" {
 
     // Verify: code generated successfully
 
-    // TODO: Verify int and float overflow tracked separately
-    // TODO: Verify both overflow args on stack at correct offsets
+    const locs = try a64_abi.computeArgLocs(allocator, sig.params.items, false, null);
+    defer allocator.free(locs);
+    try testing.expectEqual(@as(usize, 18), locs.len);
+    for (0..8) |idx| try expectIntReg(locs[idx], @intCast(idx));
+    for (8..16) |idx| try expectFloatReg(locs[idx], @intCast(idx - 8));
+    try expectStack(locs[16], 0);
+    try expectStack(locs[17], 8);
 }
 
 // Test 5: Calling function with many arguments
@@ -315,9 +350,12 @@ test "stack args: call with stack arguments" {
 
     // Verify: code generated successfully
 
-    // TODO: Verify caller stores args 8, 9 to stack before BL
-    // TODO: Verify stack pointer adjusted for outgoing args
-    // TODO: Verify 16-byte stack alignment maintained
+    const locs = try a64_abi.computeArgLocs(allocator, callee_sig.params.items, false, null);
+    defer allocator.free(locs);
+    try testing.expectEqual(@as(usize, 10), locs.len);
+    for (0..8) |idx| try expectIntReg(locs[idx], @intCast(idx));
+    try expectStack(locs[8], 0);
+    try expectStack(locs[9], 8);
 }
 
 // Test 6: Large number of arguments (stress test)
@@ -363,8 +401,11 @@ test "stack args: 16 arguments stress test" {
 
     // Verify: code generated successfully
 
-    // TODO: Verify 8 stack slots allocated (args 8-15)
-    // TODO: Verify correct offset calculation for arg 15: [SP, #56]
+    const locs = try a64_abi.computeArgLocs(allocator, sig.params.items, false, null);
+    defer allocator.free(locs);
+    try testing.expectEqual(@as(usize, 16), locs.len);
+    for (0..8) |idx| try expectIntReg(locs[idx], @intCast(idx));
+    for (8..16) |idx| try expectStack(locs[idx], @intCast((idx - 8) * 8));
 }
 
 // Test 7: Small types on stack (i8, i16 arguments)
@@ -430,6 +471,10 @@ test "stack args: small integer types" {
 
     // Verify: code generated successfully
 
-    // TODO: Verify i8 and i16 occupy full 8-byte stack slots
-    // TODO: Verify proper zero/sign extension when loaded
+    const locs = try a64_abi.computeArgLocs(allocator, sig.params.items, false, null);
+    defer allocator.free(locs);
+    try testing.expectEqual(@as(usize, 10), locs.len);
+    for (0..8) |idx| try expectIntReg(locs[idx], @intCast(idx));
+    try expectStack(locs[8], 0);
+    try expectStack(locs[9], 8);
 }
