@@ -128,6 +128,10 @@ pub const LoopUnroll = struct {
         // Trip count too small
         if (analysis.trip_count < self.config.min_trip_count) return false;
 
+        // Respect configured unroll ceiling. Partial unrolling is not yet
+        // implemented, so we only accept loops we can fully unroll.
+        if (analysis.trip_count > self.config.max_unroll) return false;
+
         // Would expand code too much
         const expanded_size = analysis.body_size * analysis.trip_count;
         if (expanded_size > self.config.max_body_size * self.config.max_unroll) return false;
@@ -137,17 +141,13 @@ pub const LoopUnroll = struct {
 
     /// Perform loop unrolling.
     fn unrollLoop(self: *LoopUnroll, func: *Function, loop: *const Loop, analysis: LoopAnalysis) !bool {
-        const unroll_factor = @min(analysis.trip_count, self.config.max_unroll);
-
         // For full unrolling, we eliminate the loop entirely
         if (self.config.full_unroll and analysis.trip_count <= self.config.max_unroll) {
             try self.fullyUnroll(func, loop, analysis);
             return true;
         }
 
-        // Partial unrolling: duplicate loop body N times
-        try self.partialUnroll(func, loop, analysis, unroll_factor);
-        return true;
+        return false;
     }
 
     /// Fully unroll a loop (eliminate loop structure).
@@ -190,7 +190,7 @@ pub const LoopUnroll = struct {
     }
 
     /// Partially unroll a loop (duplicate body but keep loop structure).
-    fn partialUnroll(self: *LoopUnroll, func: *Function, loop: *const Loop, analysis: LoopAnalysis, factor: u32) !void {
+    fn partialUnroll(self: *LoopUnroll, func: *Function, loop: *const Loop, analysis: LoopAnalysis, factor: u32) !bool {
         _ = self;
         _ = func;
         _ = loop;
@@ -202,6 +202,7 @@ pub const LoopUnroll = struct {
         // 1. Clone loop body `factor` times
         // 2. Update induction variable increment by factor
         // 3. Add remainder loop for trip_count % factor iterations
+        return false;
     }
 
     /// Clone an instruction with remapped values.
@@ -466,4 +467,31 @@ test "computeTripCount" {
         .ty = Type.I32,
     };
     try testing.expectEqual(@as(?u32, 5), computeTripCount(info3));
+}
+
+test "LoopUnroll shouldUnroll enforces max_unroll" {
+    const testing = std.testing;
+
+    var pass = LoopUnroll.init(testing.allocator, .{ .max_unroll = 4 });
+    defer pass.deinit();
+
+    var loop = Loop.init(testing.allocator, Block.new(0), 0);
+    defer loop.deinit();
+
+    const analysis = LoopAnalysis{
+        .loop = &loop,
+        .header = Block.new(0),
+        .body_size = 2,
+        .trip_count = 8,
+        .iv_info = .{
+            .iv = Value.fromU32(0),
+            .init = 0,
+            .step = 1,
+            .bound = 8,
+            .cmp_kind = .lt,
+            .ty = Type.I32,
+        },
+    };
+
+    try testing.expect(!pass.shouldUnroll(analysis));
 }
