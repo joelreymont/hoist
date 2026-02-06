@@ -455,7 +455,7 @@
 ;; iadd: I128 addition using register pairs (ADDS + ADC)
 ;; Priority -3 to match before vector and scalar rules
 (rule -3 (lower (iadd $I128 x y))
-      (aarch64_unimplemented))
+      (emit_regs (lower_iadd128 (put_in_regs x) (put_in_regs y))))
 
 ;; iadd: Vector integer addition (type-parameterized via multi_lane)
 (rule 1 (lower (has_type ty @ (multi_lane _ _) (iadd ty x y)))
@@ -464,7 +464,7 @@
 ;; isub: I128 subtraction using register pairs (SUBS + SBC)
 ;; Priority -3 to match before vector and scalar rules
 (rule -3 (lower (isub $I128 x y))
-      (aarch64_unimplemented))
+      (emit_regs (lower_isub128 (put_in_regs x) (put_in_regs y))))
 
 ;; Vector isub: Subtract vector elements
 (rule 1 (lower (has_type (ty_vec ty) (isub ty x y)))
@@ -2697,6 +2697,8 @@
 (decl aarch64_popcnt_16 (Value) Aarch64Inst)
 (decl aarch64_popcnt_32 (Value) Aarch64Inst)
 (decl aarch64_popcnt_64 (Value) Aarch64Inst)
+(decl lower_iadd128 (ValueRegs ValueRegs) ValueRegs)
+(decl lower_isub128 (ValueRegs ValueRegs) ValueRegs)
 (decl lower_clz128 (ValueRegs) ValueRegs)
 (decl lower_ctz128 (ValueRegs) ValueRegs)
 (decl lower_cls128 (ValueRegs) ValueRegs)

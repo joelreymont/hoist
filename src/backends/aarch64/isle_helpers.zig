@@ -1157,6 +1157,80 @@ fn hasInstTag(insns: []const Inst, tag: std.meta.Tag(Inst)) bool {
     return false;
 }
 
+test "lower_iadd128 emits adds_rr and adcs sequence" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_iadd128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lhs_lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const lhs_hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const rhs_lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const rhs_hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+
+    const out = try lower_iadd128(
+        lower_mod.ValueRegs.pair(lhs_lo, lhs_hi),
+        lower_mod.ValueRegs.pair(rhs_lo, rhs_hi),
+        &ctx,
+    );
+
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+    try testing.expect(hasInstTag(vcode.insns.items, .adds_rr));
+    try testing.expect(hasInstTag(vcode.insns.items, .adcs));
+}
+
+test "lower_isub128 emits subs_rr and sbcs sequence" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_isub128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lhs_lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const lhs_hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const rhs_lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const rhs_hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+
+    const out = try lower_isub128(
+        lower_mod.ValueRegs.pair(lhs_lo, lhs_hi),
+        lower_mod.ValueRegs.pair(rhs_lo, rhs_hi),
+        &ctx,
+    );
+
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+    try testing.expect(hasInstTag(vcode.insns.items, .subs_rr));
+    try testing.expect(hasInstTag(vcode.insns.items, .sbcs));
+}
+
 test "lower_clz128 emits clz and madd sequence" {
     const testing = std.testing;
 
@@ -6526,6 +6600,70 @@ pub fn aarch64_smul_overflow_i64(
     });
 
     return lower_mod.ValueRegs.pair(out_dst.toReg(), of_dst.toReg());
+}
+
+// I128 arithmetic helpers
+
+/// Add two I128 values encoded as (lo, hi) register pairs.
+/// Emits ADDS for low half and ADCS for high half to propagate carry.
+pub fn lower_iadd128(
+    lhs: lower_mod.ValueRegs,
+    rhs: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lhs_lo = lhs.get(0) orelse return error.NoMatch;
+    const lhs_hi = lhs.get(1) orelse return error.NoMatch;
+    const rhs_lo = rhs.get(0) orelse return error.NoMatch;
+    const rhs_hi = rhs.get(1) orelse return error.NoMatch;
+
+    const out_lo = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .adds_rr = .{
+        .dst = out_lo,
+        .src1 = lhs_lo,
+        .src2 = rhs_lo,
+        .size = .size64,
+    } });
+
+    const out_hi = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .adcs = .{
+        .dst = out_hi,
+        .src1 = lhs_hi,
+        .src2 = rhs_hi,
+        .size = .size64,
+    } });
+
+    return lower_mod.ValueRegs.pair(out_lo.toReg(), out_hi.toReg());
+}
+
+/// Subtract two I128 values encoded as (lo, hi) register pairs.
+/// Emits SUBS for low half and SBCS for high half to propagate borrow.
+pub fn lower_isub128(
+    lhs: lower_mod.ValueRegs,
+    rhs: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lhs_lo = lhs.get(0) orelse return error.NoMatch;
+    const lhs_hi = lhs.get(1) orelse return error.NoMatch;
+    const rhs_lo = rhs.get(0) orelse return error.NoMatch;
+    const rhs_hi = rhs.get(1) orelse return error.NoMatch;
+
+    const out_lo = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .subs_rr = .{
+        .dst = out_lo,
+        .src1 = lhs_lo,
+        .src2 = rhs_lo,
+        .size = .size64,
+    } });
+
+    const out_hi = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .sbcs = .{
+        .dst = out_hi,
+        .src1 = lhs_hi,
+        .src2 = rhs_hi,
+        .size = .size64,
+    } });
+
+    return lower_mod.ValueRegs.pair(out_lo.toReg(), out_hi.toReg());
 }
 
 // I128 bit manipulation helpers
