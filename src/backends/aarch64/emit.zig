@@ -3508,6 +3508,7 @@ fn emitCbnz(reg: Reg, label: u32, size: OperandSize, buffer: *buffer_mod.MachBuf
 
 /// TBZ (test bit and branch if zero)
 fn emitTbz(reg: Reg, bit: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void {
+    if (bit > 63) return error.InvalidShift;
     // TBZ: b5|011011|b40|imm14|Rt
     // b5 (bit 31): bit[5] - upper bit of bit index (for 64-bit regs)
     // b40 (bits 23-19): bit[4:0] - lower 5 bits of bit index
@@ -3529,6 +3530,7 @@ fn emitTbz(reg: Reg, bit: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void 
 
 /// TBNZ (test bit and branch if non-zero)
 fn emitTbnz(reg: Reg, bit: u8, label: u32, buffer: *buffer_mod.MachBuffer) !void {
+    if (bit > 63) return error.InvalidShift;
     // TBNZ: b5|011011|1|b40|imm14|Rt
     // b5 (bit 31): bit[5] - upper bit of bit index (for 64-bit regs)
     // b40 (bits 23-19): bit[4:0] - lower 5 bits of bit index
@@ -8860,6 +8862,26 @@ test "emit tbnz finalization preserves bit index and patches imm14" {
     try testing.expectEqual(@as(u32, 31), (insn >> 19) & 0x1F); // b40
     try testing.expectEqual(@as(u32, 2), (insn >> 5) & 0x3FFF); // imm14 words
     try testing.expectEqual(@as(u32, 7), insn & 0x1F); // Rt
+}
+
+test "emit tbz/tbnz reject out-of-range bit index" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const v1 = inst_mod.VReg.new(1, .int);
+    const r1 = Reg.fromVReg(v1);
+
+    try testing.expectError(error.InvalidShift, emit(.{ .tbz = .{
+        .reg = r1,
+        .bit = 64,
+        .target = .{ .label = 0 },
+    } }, &buffer));
+
+    try testing.expectError(error.InvalidShift, emit(.{ .tbnz = .{
+        .reg = r1,
+        .bit = 255,
+        .target = .{ .label = 0 },
+    } }, &buffer));
 }
 
 test "emit br" {
