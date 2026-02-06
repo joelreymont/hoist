@@ -28,6 +28,16 @@ pub fn emit(inst: Inst, buffer: *buffer_mod.MachBuffer) !void {
         .or_imm => |i| try emitAluImm(1, i.dst.toReg(), i.imm, i.size, buffer),
         .xor_rr => |i| try emitAluRR(0x31, i.dst.toReg(), i.src, i.size, buffer),
         .xor_imm => |i| try emitAluImm(6, i.dst.toReg(), i.imm, i.size, buffer),
+        .shl_rr => |i| try emitShiftRR(4, i.dst.toReg(), i.count, i.size, buffer),
+        .shl_imm => |i| try emitShiftImm(4, i.dst.toReg(), i.count, i.size, buffer),
+        .shr_rr => |i| try emitShiftRR(5, i.dst.toReg(), i.count, i.size, buffer),
+        .shr_imm => |i| try emitShiftImm(5, i.dst.toReg(), i.count, i.size, buffer),
+        .sar_rr => |i| try emitShiftRR(7, i.dst.toReg(), i.count, i.size, buffer),
+        .sar_imm => |i| try emitShiftImm(7, i.dst.toReg(), i.count, i.size, buffer),
+        .rol_rr => |i| try emitShiftRR(0, i.dst.toReg(), i.count, i.size, buffer),
+        .rol_imm => |i| try emitShiftImm(0, i.dst.toReg(), i.count, i.size, buffer),
+        .ror_rr => |i| try emitShiftRR(1, i.dst.toReg(), i.count, i.size, buffer),
+        .ror_imm => |i| try emitShiftImm(1, i.dst.toReg(), i.count, i.size, buffer),
         .imul_rr => |i| try emitImulRR(i.dst.toReg(), i.src, i.size, buffer),
         .neg => |i| try emitUnary(3, i.dst.toReg(), i.size, buffer),
         .not => |i| try emitUnary(2, i.dst.toReg(), i.size, buffer),
@@ -220,6 +230,24 @@ fn emitUnary(subopcode: u8, dst: Reg, size: OperandSize, buffer: *buffer_mod.Mac
     const opcode: u8 = if (size == .size8) 0xF6 else 0xF7;
     try buffer.putData(&[_]u8{opcode});
     try buffer.putData(&[_]u8{modrm(0b11, subopcode, hwEnc(dst))});
+}
+
+/// Shift/rotate reg by CL.
+fn emitShiftRR(subopcode: u8, dst: Reg, count: Reg, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    if (hwEnc(count) != 1) return error.UnsupportedInst;
+    try emitRex(size, null, dst, buffer);
+    const opcode: u8 = if (size == .size8) 0xD2 else 0xD3;
+    try buffer.putData(&[_]u8{opcode});
+    try buffer.putData(&[_]u8{modrm(0b11, subopcode, hwEnc(dst))});
+}
+
+/// Shift/rotate reg by imm8.
+fn emitShiftImm(subopcode: u8, dst: Reg, imm: u8, size: OperandSize, buffer: *buffer_mod.MachBuffer) !void {
+    try emitRex(size, null, dst, buffer);
+    const opcode: u8 = if (size == .size8) 0xC0 else 0xC1;
+    try buffer.putData(&[_]u8{opcode});
+    try buffer.putData(&[_]u8{modrm(0b11, subopcode, hwEnc(dst))});
+    try buffer.putData(&[_]u8{imm});
 }
 
 /// PUSH reg
