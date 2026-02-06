@@ -8814,6 +8814,54 @@ test "emit vector load/store unsigned imm12 encodes scaled offsets" {
     try testing.expectEqual(@as(u32, 4095), imm12);
 }
 
+test "emit tbz finalization preserves bit index and patches imm14" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const target = try buffer.allocLabel();
+    const v5 = inst_mod.VReg.new(5, .int);
+    const r5 = Reg.fromVReg(v5);
+
+    try emit(.{ .tbz = .{
+        .reg = r5,
+        .bit = 31,
+        .target = .{ .label = target.index },
+    } }, &buffer);
+    try emit(.{ .nop = {} }, &buffer);
+    try buffer.bindLabel(target);
+    try buffer.finalize();
+
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 31), (insn >> 19) & 0x1F); // b40
+    try testing.expectEqual(@as(u32, 2), (insn >> 5) & 0x3FFF); // imm14 words
+    try testing.expectEqual(@as(u32, 5), insn & 0x1F); // Rt
+}
+
+test "emit tbnz finalization preserves bit index and patches imm14" {
+    var buffer = buffer_mod.MachBuffer.init(testing.allocator);
+    defer buffer.deinit();
+
+    const target = try buffer.allocLabel();
+    const v7 = inst_mod.VReg.new(7, .int);
+    const r7 = Reg.fromVReg(v7);
+
+    try emit(.{ .tbnz = .{
+        .reg = r7,
+        .bit = 63,
+        .target = .{ .label = target.index },
+    } }, &buffer);
+    try emit(.{ .nop = {} }, &buffer);
+    try buffer.bindLabel(target);
+    try buffer.finalize();
+
+    const insn = std.mem.bytesToValue(u32, buffer.data.items[0..4]);
+    try testing.expectEqual(@as(u32, 1), (insn >> 31) & 0x1); // b5
+    try testing.expectEqual(@as(u32, 1), (insn >> 24) & 0x1); // TBNZ op bit
+    try testing.expectEqual(@as(u32, 31), (insn >> 19) & 0x1F); // b40
+    try testing.expectEqual(@as(u32, 2), (insn >> 5) & 0x3FFF); // imm14 words
+    try testing.expectEqual(@as(u32, 7), insn & 0x1F); // Rt
+}
+
 test "emit br" {
     var buffer = buffer_mod.MachBuffer.init(testing.allocator);
     defer buffer.deinit();
