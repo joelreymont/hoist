@@ -3968,7 +3968,7 @@ fn lowerInstructionAArch64(
                 }
             } else if (data.opcode == .imul_imm) {
                 // Multiply immediate: result = arg * imm
-                // Optimize power-of-2 to LSL, otherwise use MOVZ+MUL
+                // Optimize power-of-2 to LSL, otherwise materialize full immediate and MUL.
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
                 const RegClass = @import("../machinst/reg.zig").RegClass;
@@ -4002,13 +4002,10 @@ fn lowerInstructionAArch64(
                     const temp_vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS + 1), RegClass.int);
                     const temp = WritableReg.fromVReg(temp_vreg);
 
-                    // MOVZ temp, #imm (simplified - only handles lower 16 bits)
-                    const imm_u16: u16 = @intCast(imm_val & 0xFFFF);
                     try builder.emit(Inst{
-                        .movz = .{
+                        .mov_imm = .{
                             .dst = temp,
-                            .imm = imm_u16,
-                            .shift = 0,
+                            .imm = imm_val,
                             .size = size,
                         },
                     });
@@ -8023,7 +8020,7 @@ test "lower: imul_imm power-of-two emits lsl_imm" {
     try testing.expect(saw_lsl_imm);
 }
 
-test "lower: imul_imm non-power-of-two emits movz and mul_rr" {
+test "lower: imul_imm non-power-of-two emits mov_imm and mul_rr" {
     var sig = ir.Signature.init(testing.allocator, .fast);
     try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
     try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
@@ -8058,16 +8055,69 @@ test "lower: imul_imm non-power-of-two emits movz and mul_rr" {
     try lower(&ctx, &target);
 
     const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
-    var saw_movz = false;
+    var saw_mov_imm = false;
     var saw_mul_rr = false;
     for (lowered.vcode.insns.items) |inst| {
         switch (inst) {
-            .movz => saw_movz = true,
+            .mov_imm => |mov| {
+                if (mov.imm == 7) saw_mov_imm = true;
+            },
             .mul_rr => saw_mul_rr = true,
             else => {},
         }
     }
-    try testing.expect(saw_movz);
+    try testing.expect(saw_mov_imm);
+    try testing.expect(saw_mul_rr);
+}
+
+test "lower: imul_imm large non-power-of-two keeps full immediate" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.params.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+
+    var func = try Function.init(testing.allocator, "imul_imm_large_full", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const arg = try builder.appendBlockParam(block, ir.I64);
+    const mul_inst = try func.dfg.makeInst(.{ .binary_imm64 = .{
+        .opcode = .imul_imm,
+        .arg = arg,
+        .imm = ir.Imm64.new(0x1234567),
+    } });
+    const result = try func.dfg.appendInstResult(mul_inst, ir.I64);
+    try func.layout.appendInst(mul_inst, block);
+    try builder.retValues(&.{result});
+
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.func = &func;
+
+    var target = Target.init(.aarch64);
+    target.verify = false;
+    ctx.target = &target;
+
+    try optimize(&ctx, &target);
+    try lower(&ctx, &target);
+
+    const lowered = ctx.aarch64_lowered orelse return error.TestExpectedEqual;
+    var saw_full_mov_imm = false;
+    var saw_mul_rr = false;
+    for (lowered.vcode.insns.items) |inst| {
+        switch (inst) {
+            .mov_imm => |mov| {
+                if (mov.imm == 0x1234567) saw_full_mov_imm = true;
+            },
+            .mul_rr => saw_mul_rr = true,
+            else => {},
+        }
+    }
+
+    try testing.expect(saw_full_mov_imm);
     try testing.expect(saw_mul_rr);
 }
 
