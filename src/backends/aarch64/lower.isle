@@ -1377,7 +1377,7 @@
 
 ;; band: I128 bitwise AND (operate on low/high parts independently)
 (rule (lower (has_type $I128 (band x y)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_band128 (put_in_regs x) (put_in_regs y))))
 
 ;; Scalar AND
 (rule (lower (band ty x y))
@@ -1471,7 +1471,7 @@
 
 ;; bor: I128 bitwise OR (operate on low/high parts independently)
 (rule (lower (has_type $I128 (bor x y)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_bor128 (put_in_regs x) (put_in_regs y))))
 
 ;; bor: Bitwise OR (register form)
 (rule (lower (bor ty x y))
@@ -1552,7 +1552,7 @@
 
 ;; bxor: I128 bitwise XOR (operate on low/high parts independently)
 (rule (lower (has_type $I128 (bxor x y)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_bxor128 (put_in_regs x) (put_in_regs y))))
 
 ;; Scalar XOR
 (rule (lower (bxor ty x y))
@@ -1633,7 +1633,7 @@
 
 ;; bnot: I128 bitwise NOT (operate on low/high parts independently)
 (rule (lower (has_type $I128 (bnot x)))
-      (aarch64_unimplemented))
+      (emit_regs (lower_bnot128 (put_in_regs x))))
 
 ;; Scalar NOT (implemented as MVN)
 (rule (lower (bnot ty x))
@@ -2699,6 +2699,10 @@
 (decl aarch64_popcnt_64 (Value) Aarch64Inst)
 (decl lower_iadd128 (ValueRegs ValueRegs) ValueRegs)
 (decl lower_isub128 (ValueRegs ValueRegs) ValueRegs)
+(decl lower_band128 (ValueRegs ValueRegs) ValueRegs)
+(decl lower_bor128 (ValueRegs ValueRegs) ValueRegs)
+(decl lower_bxor128 (ValueRegs ValueRegs) ValueRegs)
+(decl lower_bnot128 (ValueRegs) ValueRegs)
 (decl lower_clz128 (ValueRegs) ValueRegs)
 (decl lower_ctz128 (ValueRegs) ValueRegs)
 (decl lower_cls128 (ValueRegs) ValueRegs)

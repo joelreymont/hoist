@@ -1231,6 +1231,144 @@ test "lower_isub128 emits subs_rr and sbcs sequence" {
     try testing.expect(hasInstTag(vcode.insns.items, .sbcs));
 }
 
+test "lower_band128 emits and_rr on both halves" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_band128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lhs_lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const lhs_hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const rhs_lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const rhs_hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+
+    const out = try lower_band128(
+        lower_mod.ValueRegs.pair(lhs_lo, lhs_hi),
+        lower_mod.ValueRegs.pair(rhs_lo, rhs_hi),
+        &ctx,
+    );
+
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+    try testing.expect(hasInstTag(vcode.insns.items, .and_rr));
+}
+
+test "lower_bor128 emits orr_rr on both halves" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_bor128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lhs_lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const lhs_hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const rhs_lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const rhs_hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+
+    const out = try lower_bor128(
+        lower_mod.ValueRegs.pair(lhs_lo, lhs_hi),
+        lower_mod.ValueRegs.pair(rhs_lo, rhs_hi),
+        &ctx,
+    );
+
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+    try testing.expect(hasInstTag(vcode.insns.items, .orr_rr));
+}
+
+test "lower_bxor128 emits eor_rr on both halves" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_bxor128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lhs_lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const lhs_hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const rhs_lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const rhs_hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+
+    const out = try lower_bxor128(
+        lower_mod.ValueRegs.pair(lhs_lo, lhs_hi),
+        lower_mod.ValueRegs.pair(rhs_lo, rhs_hi),
+        &ctx,
+    );
+
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+    try testing.expect(hasInstTag(vcode.insns.items, .eor_rr));
+}
+
+test "lower_bnot128 emits mvn_rr on both halves" {
+    const testing = std.testing;
+
+    var func = try lower_mod.Function.init(
+        testing.allocator,
+        "test_lower_bnot128",
+        signature_mod.Signature.init(testing.allocator, .system_v),
+    );
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const lo = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+    const hi = lower_mod.WritableReg.allocReg(.int, &ctx).toReg();
+
+    const out = try lower_bnot128(lower_mod.ValueRegs.pair(lo, hi), &ctx);
+
+    try testing.expect(out.get(0) != null);
+    try testing.expect(out.get(1) != null);
+    try testing.expect(hasInstTag(vcode.insns.items, .mvn_rr));
+}
+
 test "fpu_csel returns fcsel consumes-flags payload" {
     const testing = std.testing;
 
@@ -6698,6 +6836,121 @@ pub fn lower_isub128(
         .dst = out_hi,
         .src1 = lhs_hi,
         .src2 = rhs_hi,
+        .size = .size64,
+    } });
+
+    return lower_mod.ValueRegs.pair(out_lo.toReg(), out_hi.toReg());
+}
+
+/// Bitwise AND for I128 register pairs.
+pub fn lower_band128(
+    lhs: lower_mod.ValueRegs,
+    rhs: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lhs_lo = lhs.get(0) orelse return error.NoMatch;
+    const lhs_hi = lhs.get(1) orelse return error.NoMatch;
+    const rhs_lo = rhs.get(0) orelse return error.NoMatch;
+    const rhs_hi = rhs.get(1) orelse return error.NoMatch;
+
+    const out_lo = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .and_rr = .{
+        .dst = out_lo,
+        .src1 = lhs_lo,
+        .src2 = rhs_lo,
+        .size = .size64,
+    } });
+
+    const out_hi = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .and_rr = .{
+        .dst = out_hi,
+        .src1 = lhs_hi,
+        .src2 = rhs_hi,
+        .size = .size64,
+    } });
+
+    return lower_mod.ValueRegs.pair(out_lo.toReg(), out_hi.toReg());
+}
+
+/// Bitwise OR for I128 register pairs.
+pub fn lower_bor128(
+    lhs: lower_mod.ValueRegs,
+    rhs: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lhs_lo = lhs.get(0) orelse return error.NoMatch;
+    const lhs_hi = lhs.get(1) orelse return error.NoMatch;
+    const rhs_lo = rhs.get(0) orelse return error.NoMatch;
+    const rhs_hi = rhs.get(1) orelse return error.NoMatch;
+
+    const out_lo = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .orr_rr = .{
+        .dst = out_lo,
+        .src1 = lhs_lo,
+        .src2 = rhs_lo,
+        .size = .size64,
+    } });
+
+    const out_hi = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .orr_rr = .{
+        .dst = out_hi,
+        .src1 = lhs_hi,
+        .src2 = rhs_hi,
+        .size = .size64,
+    } });
+
+    return lower_mod.ValueRegs.pair(out_lo.toReg(), out_hi.toReg());
+}
+
+/// Bitwise XOR for I128 register pairs.
+pub fn lower_bxor128(
+    lhs: lower_mod.ValueRegs,
+    rhs: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lhs_lo = lhs.get(0) orelse return error.NoMatch;
+    const lhs_hi = lhs.get(1) orelse return error.NoMatch;
+    const rhs_lo = rhs.get(0) orelse return error.NoMatch;
+    const rhs_hi = rhs.get(1) orelse return error.NoMatch;
+
+    const out_lo = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .eor_rr = .{
+        .dst = out_lo,
+        .src1 = lhs_lo,
+        .src2 = rhs_lo,
+        .size = .size64,
+    } });
+
+    const out_hi = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .eor_rr = .{
+        .dst = out_hi,
+        .src1 = lhs_hi,
+        .src2 = rhs_hi,
+        .size = .size64,
+    } });
+
+    return lower_mod.ValueRegs.pair(out_lo.toReg(), out_hi.toReg());
+}
+
+/// Bitwise NOT for I128 register pairs.
+pub fn lower_bnot128(
+    val: lower_mod.ValueRegs,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !lower_mod.ValueRegs {
+    const lo = val.get(0) orelse return error.NoMatch;
+    const hi = val.get(1) orelse return error.NoMatch;
+
+    const out_lo = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .mvn_rr = .{
+        .dst = out_lo,
+        .src = lo,
+        .size = .size64,
+    } });
+
+    const out_hi = lower_mod.WritableReg.allocReg(.int, ctx);
+    try ctx.emit(Inst{ .mvn_rr = .{
+        .dst = out_hi,
+        .src = hi,
         .size = .size64,
     } });
 
