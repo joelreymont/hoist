@@ -683,10 +683,7 @@ test "try_call basic lowering" {
     const v0 = try func.dfg.appendInstResult(v0_inst, Type.I32);
     try func.layout.appendInst(v0_inst, block0);
 
-    // block0: try_call (skeleton - needs proper function reference)
-    // For now, we create the try_call instruction data but can't lower it
-    // because we need a valid FuncRef (external function metadata)
-    // This test verifies the IR accepts try_call instructions
+    // block0: try_call to registered external function metadata
     const empty_args = value_list.ValueList.default();
     const try_call_data = InstructionData{
         .try_call = .{
@@ -754,11 +751,19 @@ test "try_call basic lowering" {
     // Verify block2 is marked as landing pad
     try testing.expect(func.dfg.blocks.get(block2).?.is_landing_pad);
 
-    // Note: Full lowering test would require:
-    // 1. Valid external function reference (FuncRef with metadata)
-    // 2. Compilation through lower/regalloc/emit pipeline
-    // 3. Verification of BL+CBZ+B instruction sequence
-    // For now, this tests IR construction and basic validation
+    if (builtin.cpu.arch == .aarch64 or builtin.cpu.arch == .aarch64_be) {
+        var ctx_builder = ContextBuilder.init(allocator);
+        _ = try ctx_builder.targetNative();
+        var ctx = ctx_builder.optLevel(.none).build();
+
+        var code = try ctx.compileFunction(&func);
+        defer code.deinit();
+
+        try testing.expect(code.code.items.len > 0);
+        try testing.expect(code.eh_frame != null);
+        try testing.expect(code.eh_frame.?.items.len > 0);
+        try testing.expect(code.relocs.items.len > 0);
+    }
 }
 
 test "landing pad with exception edge" {
@@ -889,6 +894,20 @@ test "landing pad with exception edge" {
 
     // Verify exception value (v1) is available in landing pad
     std.mem.doNotOptimizeAway(&v1);
+
+    if (builtin.cpu.arch == .aarch64 or builtin.cpu.arch == .aarch64_be) {
+        var ctx_builder = ContextBuilder.init(allocator);
+        _ = try ctx_builder.targetNative();
+        var ctx = ctx_builder.optLevel(.none).build();
+
+        var code = try ctx.compileFunction(&func);
+        defer code.deinit();
+
+        try testing.expect(code.code.items.len > 0);
+        try testing.expect(code.eh_frame != null);
+        try testing.expect(code.eh_frame.?.items.len > 0);
+        try testing.expect(code.relocs.items.len > 0);
+    }
 }
 
 test "exception propagation with unwinding" {
@@ -969,7 +988,7 @@ test "exception propagation with unwinding" {
         .imm = Imm64.new(10),
     } };
     const v2_inst = try func.dfg.makeInst(v2_data);
-    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I64);
+    const v2 = try func.dfg.appendInstResult(v2_inst, Type.I32);
     try func.layout.appendInst(v2_inst, block1);
 
     // block1: return v2
@@ -995,7 +1014,7 @@ test "exception propagation with unwinding" {
         .imm = Imm64.new(100),
     } };
     const v4_inst = try func.dfg.makeInst(v4_data);
-    const v4 = try func.dfg.appendInstResult(v4_inst, Type.I64);
+    const v4 = try func.dfg.appendInstResult(v4_inst, Type.I32);
     try func.layout.appendInst(v4_inst, block2);
 
     // block2: return v4
@@ -1051,6 +1070,20 @@ test "exception propagation with unwinding" {
     // 3. Exception handler can access both exception value (v3) and pre-exception state (v1)
     // 4. Stack unwinding would restore v1 from spill slot if needed
     _ = v3; // Exception value would be used in real handler
+
+    if (builtin.cpu.arch == .aarch64 or builtin.cpu.arch == .aarch64_be) {
+        var ctx_builder = ContextBuilder.init(allocator);
+        _ = try ctx_builder.targetNative();
+        var ctx = ctx_builder.optLevel(.none).build();
+
+        var code = try ctx.compileFunction(&func);
+        defer code.deinit();
+
+        try testing.expect(code.code.items.len > 0);
+        try testing.expect(code.eh_frame != null);
+        try testing.expect(code.eh_frame.?.items.len > 0);
+        try testing.expect(code.relocs.items.len > 0);
+    }
 }
 
 test "try_call with external function reference" {
