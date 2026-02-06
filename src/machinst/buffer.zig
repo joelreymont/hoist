@@ -577,6 +577,7 @@ pub const MachBuffer = struct {
 
             // Bind the jump table label (for PC-relative addressing)
             try self.bindLabel(jt.table_label);
+            const table_base_offset = self.curOffset();
 
             // Emit offsets to each target
             // For ARM64: typically use 32-bit signed offsets from table base
@@ -590,10 +591,9 @@ pub const MachBuffer = struct {
                 if (target_offset == UNKNOWN_OFFSET) {
                     return error.UnresolvedLabel;
                 }
-                const table_offset = self.curOffset();
 
                 // Calculate PC-relative offset
-                const offset: i32 = @intCast(@as(i64, target_offset) - @as(i64, table_offset));
+                const offset: i32 = @intCast(@as(i64, target_offset) - @as(i64, table_base_offset));
 
                 // Emit 4-byte offset
                 const offset_u32: u32 = @bitCast(offset);
@@ -1058,6 +1058,30 @@ test "MachBuffer emitJumpTables rejects invalid labels" {
     try buf.addJumpTableTarget(jt_idx, Block.new(1), invalid_label);
 
     try testing.expectError(error.InvalidLabel, buf.emitJumpTables());
+}
+
+test "MachBuffer emitJumpTables uses table-base-relative offsets" {
+    var buf = MachBuffer.init(testing.allocator);
+    defer buf.deinit();
+
+    const t0 = try buf.allocLabel();
+    try buf.bindLabel(t0); // offset 0
+    try buf.put4(0xD503201F); // NOP
+
+    const t1 = try buf.allocLabel();
+    try buf.bindLabel(t1); // offset 4
+    try buf.put4(0xD503201F); // NOP
+
+    const jt_idx = try buf.createJumpTable(Block.new(0), 4);
+    try buf.addJumpTableTarget(jt_idx, Block.new(0), t0);
+    try buf.addJumpTableTarget(jt_idx, Block.new(1), t1);
+
+    try buf.emitJumpTables();
+
+    const off0 = std.mem.readInt(i32, buf.data.items[8..12], .little);
+    const off1 = std.mem.readInt(i32, buf.data.items[12..16], .little);
+    try testing.expectEqual(@as(i32, -8), off0);
+    try testing.expectEqual(@as(i32, -4), off1);
 }
 
 test "MachBuffer trap records" {
