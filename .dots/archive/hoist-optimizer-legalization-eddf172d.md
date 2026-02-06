@@ -1,9 +1,11 @@
 ---
 title: Optimizer/legalization
-status: active
+status: closed
 priority: 2
 issue-type: task
-created-at: "\"2026-02-02T21:35:56.883460+01:00\""
+created-at: "\"\\\"2026-02-02T21:35:56.883460+01:00\\\"\""
+closed-at: "2026-02-06T10:00:09.707152+01:00"
+close-reason: Implemented remaining optimizer/legalization pass gaps (loop unroll peeling + const shift/bitop immediate lowering). Backend target stubs remain tracked under backend parity dots.
 blocks:
   - hoist-finish-mach-o-42e5a740
 ---
