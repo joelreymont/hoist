@@ -203,3 +203,30 @@ test "Allocation" {
     try testing.expectEqual(s1.index, allocation.getSpill(v1).?.index);
     try testing.expect(allocation.getReg(v1) == null);
 }
+
+test "LinearScanAllocator rejects unsupported reg classes" {
+    var alloc = LinearScanAllocator.init(testing.allocator);
+    defer alloc.deinit();
+
+    const int_regs = [_]PReg{
+        PReg.new(.int, 0),
+        PReg.new(.int, 1),
+    };
+    try alloc.initRegs(&int_regs, &.{}, &.{});
+
+    const sve_vreg = VReg.new(10, .scalable_vector);
+    try testing.expectError(error.UnsupportedRegClass, alloc.allocate(sve_vreg));
+
+    const pred_vreg = VReg.new(11, .predicate);
+    try testing.expectError(error.UnsupportedRegClass, alloc.allocate(pred_vreg));
+}
+
+test "LinearScanAllocator free rejects unsupported reg classes" {
+    var alloc = LinearScanAllocator.init(testing.allocator);
+    defer alloc.deinit();
+
+    const bad_vreg = VReg.new(20, .int);
+    const bad_preg = PReg.new(.scalable_vector, 0);
+    try alloc.allocations.put(bad_vreg, bad_preg);
+    try testing.expectError(error.UnsupportedRegClass, alloc.free(bad_vreg));
+}
