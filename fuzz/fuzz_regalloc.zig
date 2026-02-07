@@ -1,14 +1,13 @@
 const std = @import("std");
 const hoist = @import("hoist");
 
-const VCode = hoist.vcode.VCode;
 const VReg = hoist.reg.VReg;
 const PReg = hoist.reg.PReg;
 const RegClass = hoist.reg.RegClass;
 const LinearScanAllocator = hoist.regalloc.LinearScanAllocator;
 
 /// Fuzzer for register allocation.
-/// Generates random VCode with virtual registers and tests allocator.
+/// Generates random allocate/free sequences and validates allocator invariants.
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -24,7 +23,7 @@ pub fn main() !void {
 
     std.debug.print("Running regalloc fuzzer for {d} iterations...\n", .{iterations});
 
-    var prng = std.rand.DefaultPrng.init(blk: {
+    var prng = std.Random.DefaultPrng.init(blk: {
         var seed: u64 = undefined;
         try std.posix.getrandom(std.mem.asBytes(&seed));
         break :blk seed;
@@ -39,20 +38,8 @@ pub fn main() !void {
             std.debug.print("Iteration {d}/{d} (crashes: {d}, successes: {d})\n", .{ i, iterations, crashes, successes });
         }
 
-        // Generate random VCode
-        var vcode = generateRandomVCode(allocator, rand) catch |err| {
-            std.debug.print("Failed to generate vcode: {}\n", .{err});
-            crashes += 1;
-            continue;
-        };
-        defer vcode.deinit();
-
-        // Try to allocate registers
-        var allocator_inst = LinearScanAllocator.init(allocator, &vcode);
-        defer allocator_inst.deinit();
-
-        allocator_inst.run() catch |err| {
-            std.debug.print("Register allocation failed: {}\n", .{err});
+        runIteration(allocator, rand) catch |err| {
+            std.debug.print("Regalloc iteration failed: {}\n", .{err});
             crashes += 1;
             continue;
         };
@@ -70,37 +57,84 @@ pub fn main() !void {
     }
 }
 
-/// Generate random VCode for testing.
-fn generateRandomVCode(allocator: std.mem.Allocator, rand: std.rand.Random) !VCode {
-    var vcode = VCode.init(allocator);
-    errdefer vcode.deinit();
+fn runIteration(allocator: std.mem.Allocator, rand: std.Random) !void {
+    var allocator_inst = LinearScanAllocator.init(allocator);
+    defer allocator_inst.deinit();
 
-    const num_vregs = rand.uintAtMost(u32, 50) + 10;
+    var int_regs = try buildRegs(allocator, .int, 16);
+    defer int_regs.deinit(allocator);
+    var float_regs = try buildRegs(allocator, .float, 16);
+    defer float_regs.deinit(allocator);
+    var vector_regs = try buildRegs(allocator, .vector, 16);
+    defer vector_regs.deinit(allocator);
 
-    // Create virtual registers
-    var vregs = std.ArrayList(VReg).init(allocator);
-    defer vregs.deinit();
+    try allocator_inst.initRegs(int_regs.items, float_regs.items, vector_regs.items);
 
-    for (0..num_vregs) |i| {
-        const class: RegClass = if (rand.boolean()) .int else .float;
-        const vreg = VReg.new(class, @intCast(i));
-        try vregs.append(vreg);
-    }
+    var expected = std.AutoHashMap(VReg, PReg).init(allocator);
+    defer expected.deinit();
 
-    // Generate random instructions using these vregs
-    const num_blocks = rand.uintAtMost(u32, 5) + 1;
+    var live = std.ArrayList(VReg){};
+    defer live.deinit(allocator);
 
-    for (0..num_blocks) |_| {
-        const block_id = try vcode.newBlock();
-
-        const num_insts = rand.uintAtMost(u32, 20) + 5;
-        for (0..num_insts) |_| {
-            // For now, just create dummy instruction metadata
-            // In real implementation, would create actual VInst
-            _ = block_id;
-            _ = vregs;
+    const steps = rand.uintAtMost(u16, 300) + 50;
+    for (0..steps) |_| {
+        if (live.items.len > 0 and rand.uintAtMost(u8, 3) == 0) {
+            const idx = rand.uintAtMost(usize, live.items.len - 1);
+            const vreg = live.swapRemove(idx);
+            try allocator_inst.free(vreg);
+            _ = expected.remove(vreg);
+            if (allocator_inst.getAllocation(vreg) != null) return error.FreeDidNotClearAllocation;
+            continue;
         }
-    }
 
-    return vcode;
+        const class = randomClass(rand);
+        const idx = rand.uintAtMost(u32, 255);
+        const vreg = VReg.new(idx, class);
+        const preg = allocator_inst.allocate(vreg) catch |err| switch (err) {
+            error.OutOfRegisters => continue,
+            else => return err,
+        };
+
+        const mapped = allocator_inst.getAllocation(vreg) orelse return error.MissingAllocationEntry;
+        if (!pregEq(mapped, preg)) return error.AllocationMapMismatch;
+
+        if (expected.get(vreg)) |prior| {
+            if (!pregEq(prior, preg)) return error.NonDeterministicAllocation;
+            continue;
+        }
+
+        var it = expected.iterator();
+        while (it.next()) |entry| {
+            const other_vreg = entry.key_ptr.*;
+            const other_preg = entry.value_ptr.*;
+            if (other_vreg.class() == vreg.class() and pregEq(other_preg, preg)) {
+                return error.DuplicatePhysRegAssignment;
+            }
+        }
+
+        try expected.put(vreg, preg);
+        try live.append(allocator, vreg);
+    }
+}
+
+fn buildRegs(allocator: std.mem.Allocator, class: RegClass, count: usize) !std.ArrayList(PReg) {
+    var regs = std.ArrayList(PReg){};
+    errdefer regs.deinit(allocator);
+    for (0..count) |i| {
+        const hw = std.math.cast(u6, i) orelse return error.InvalidRegIndex;
+        try regs.append(allocator, PReg.new(class, hw));
+    }
+    return regs;
+}
+
+fn randomClass(rand: std.Random) RegClass {
+    return switch (rand.uintAtMost(u8, 2)) {
+        0 => .int,
+        1 => .float,
+        else => .vector,
+    };
+}
+
+fn pregEq(a: PReg, b: PReg) bool {
+    return a.index() == b.index();
 }

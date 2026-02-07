@@ -72,6 +72,7 @@ pub const LinearScanAllocator = struct {
             .int => &self.available_int,
             .float => &self.available_float,
             .vector => &self.available_vector,
+            .scalable_vector, .predicate => return error.UnsupportedRegClass,
         };
 
         // Try to allocate from available pool
@@ -93,6 +94,7 @@ pub const LinearScanAllocator = struct {
                 .int => &self.available_int,
                 .float => &self.available_float,
                 .vector => &self.available_vector,
+                .scalable_vector, .predicate => return error.UnsupportedRegClass,
             };
             try list.append(self.allocator, preg);
         }
