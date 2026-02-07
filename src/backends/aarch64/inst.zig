@@ -3781,10 +3781,7 @@ pub const Inst = union(enum) {
             .call, .b, .b_cond, .nop, .dmb, .dsb, .fence, .epilogue_placeholder, .data, .brk, .udf, .bti, .csdb, .isb, .autiasp, .paciasp => {
                 // No register operands (labels/immediates/special only)
             },
-            else => {
-                // TODO: Implement for all instruction variants
-                // For now, emit no operands for unimplemented instructions
-            },
+            else => return error.UnimplementedInstruction,
         }
     }
 
