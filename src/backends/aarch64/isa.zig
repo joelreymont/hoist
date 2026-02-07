@@ -1593,11 +1593,7 @@ pub const Aarch64ISA = struct {
                 add_symbol_lo12.src = replaceReg(add_symbol_lo12.src, result);
                 add_symbol_lo12.dst = replaceWritableReg(add_symbol_lo12.dst, result);
             },
-            // TODO: Add more instruction types as needed
-            else => {
-                // For unimplemented instructions, do nothing
-                // This is safe because getOperands() returns empty lists for them
-            },
+            else => return error.UnimplementedInstruction,
         }
     }
 
