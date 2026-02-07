@@ -4,7 +4,7 @@
 
 **Status**: Functional AArch64 compiler with active parity closure
 **Test Coverage**: 2050+ tests (435 integration, 1618 unit)
-**Remaining Work**: Active dots in `.dots/` (ABI, exceptions, feature detection, perf)
+**Remaining Work**: Parity backlog in ABI, exceptions, feature detection, and performance
 
 ## Completed (High Confidence)
 
@@ -44,6 +44,8 @@
 
 ## Recent Completed Work
 
+- `5aed7747`: Added differential JIT/model fuzz harness in `fuzz/fuzz_compile.zig` and wired reproducible mismatch reporting
+- `e5ca8f13`: Rewrote `fuzz/fuzz_regalloc.zig` for current allocator API, restored `zig build fuzz`, and added unsupported-class handling in `src/machinst/regalloc.zig`
 - `6dc6cd6a`: Implemented AAPCS64 HVA argument mapping in `src/machinst/abi.zig`
 - `6d497e4e`: Fixed <=16B general struct argument chunking into X-register slots
 - `b2e6c627`: Implemented AAPCS64 struct return slot mapping (X0/X1, V0+, X8 sret)
@@ -78,4 +80,4 @@
 - Opcode audit and remaining tasks: `docs/arm64_parity_plan.md`
 - Feature gaps: `docs/feature_gap_analysis.md`
 - Cranelift gap summary: `docs/cranelift_gap_analysis.md`
-- Active work items: `.dots/*.md`
+- Active work items: `dot ls` (currently none open)
