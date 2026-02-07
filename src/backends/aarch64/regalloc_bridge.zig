@@ -805,6 +805,24 @@ pub const RegAllocBridge = struct {
         return std.math.cast(i16, slot.index) orelse error.SpillSlotOffsetOutOfRange;
     }
 
+    fn emitSpillAddr(self: *Self, list: *std.ArrayList(Inst), slot: regalloc2_types.SpillSlot, addr: Reg) !void {
+        try list.append(self.allocator, .{
+            .mov_imm = .{
+                .dst = reg_mod.WritableReg.init(addr),
+                .imm = slot.index,
+                .size = .size64,
+            },
+        });
+        try list.append(self.allocator, .{
+            .add_rr = .{
+                .dst = reg_mod.WritableReg.init(addr),
+                .src1 = spillBaseReg(),
+                .src2 = addr,
+                .size = .size64,
+            },
+        });
+    }
+
     fn emitSpillReload(self: *Self, mode: OperandMode, slot: regalloc2_types.SpillSlot, scratch: Reg) !void {
         const pre = self.spill_pre orelse return error.InvalidSpillEditState;
         const post = self.spill_post orelse return error.InvalidSpillEditState;
@@ -813,25 +831,52 @@ pub const RegAllocBridge = struct {
 
         switch (scratch.class()) {
             .int => {
+                const needs_addr_scratch = offset > 255;
                 if (mode == .use or mode == .use_def) {
-                    try pre.append(self.allocator, .{
-                        .ldr = .{
-                            .dst = reg_mod.WritableReg.init(scratch),
-                            .base = base,
-                            .offset = offset,
-                            .size = .size64,
-                        },
-                    });
+                    if (needs_addr_scratch) {
+                        const addr = try self.nextScratch(.int);
+                        try self.emitSpillAddr(pre, slot, addr);
+                        try pre.append(self.allocator, .{
+                            .ldr = .{
+                                .dst = reg_mod.WritableReg.init(scratch),
+                                .base = addr,
+                                .offset = 0,
+                                .size = .size64,
+                            },
+                        });
+                    } else {
+                        try pre.append(self.allocator, .{
+                            .ldr = .{
+                                .dst = reg_mod.WritableReg.init(scratch),
+                                .base = base,
+                                .offset = offset,
+                                .size = .size64,
+                            },
+                        });
+                    }
                 }
                 if (mode == .def or mode == .use_def) {
-                    try post.append(self.allocator, .{
-                        .str = .{
-                            .src = scratch,
-                            .base = base,
-                            .offset = offset,
-                            .size = .size64,
-                        },
-                    });
+                    if (needs_addr_scratch) {
+                        const addr = try self.nextScratch(.int);
+                        try self.emitSpillAddr(post, slot, addr);
+                        try post.append(self.allocator, .{
+                            .str = .{
+                                .src = scratch,
+                                .base = addr,
+                                .offset = 0,
+                                .size = .size64,
+                            },
+                        });
+                    } else {
+                        try post.append(self.allocator, .{
+                            .str = .{
+                                .src = scratch,
+                                .base = base,
+                                .offset = offset,
+                                .size = .size64,
+                            },
+                        });
+                    }
                 }
             },
             .float => {
@@ -1978,7 +2023,7 @@ test "RegAllocBridge applyAllocations rejects oversized spill slot offset" {
     try testing.expectError(error.SpillSlotOffsetOutOfRange, bridge.applyAllocations(&vcode));
 }
 
-test "RegAllocBridge applyAllocations accepts max spill slot offset" {
+test "RegAllocBridge applyAllocations materializes large int spill address" {
     const Allocation = regalloc2_types.Allocation;
     const SpillSlot = regalloc2_types.SpillSlot;
 
@@ -2006,13 +2051,69 @@ test "RegAllocBridge applyAllocations accepts max spill slot offset" {
 
     try bridge.applyAllocations(&vcode);
 
-    try testing.expectEqual(@as(usize, 3), vcode.insns.items.len);
-    try testing.expectEqual(@as(i16, 32_767), vcode.getInst(0).ldr.offset);
-    try testing.expectEqual(@as(u8, 9), vcode.getInst(0).ldr.dst.toReg().p.index);
-    try testing.expectEqual(@as(u8, 9), vcode.getInst(1).mov_rr.src.p.index);
-    try testing.expectEqual(@as(u8, 10), vcode.getInst(1).mov_rr.dst.toReg().p.index);
-    try testing.expectEqual(@as(i16, 32_767), vcode.getInst(2).str.offset);
-    try testing.expectEqual(@as(u8, 10), vcode.getInst(2).str.src.p.index);
+    try testing.expectEqual(@as(usize, 7), vcode.insns.items.len);
+
+    const addr_pre = switch (vcode.getInst(0)) {
+        .mov_imm => |mov| blk: {
+            try testing.expectEqual(@as(u64, 32_767), mov.imm);
+            try testing.expectEqual(inst_mod.OperandSize.size64, mov.size);
+            break :blk mov.dst.toReg();
+        },
+        else => return error.ExpectedInstructionNotFound,
+    };
+
+    switch (vcode.getInst(1)) {
+        .add_rr => |add| {
+            try testing.expect(add.dst.toReg().eq(addr_pre));
+            try testing.expect(add.src2.eq(addr_pre));
+            try testing.expectEqual(@as(u6, 31), add.src1.toRealReg().?.hwEnc());
+        },
+        else => return error.ExpectedInstructionNotFound,
+    }
+
+    const src_reload = switch (vcode.getInst(2)) {
+        .ldr => |ld| blk: {
+            try testing.expect(ld.base.eq(addr_pre));
+            try testing.expectEqual(@as(i16, 0), ld.offset);
+            break :blk ld.dst.toReg();
+        },
+        else => return error.ExpectedInstructionNotFound,
+    };
+
+    const dst_reg = switch (vcode.getInst(3)) {
+        .mov_rr => |mov| blk: {
+            try testing.expect(mov.src.eq(src_reload));
+            break :blk mov.dst.toReg();
+        },
+        else => return error.ExpectedInstructionNotFound,
+    };
+
+    const addr_post = switch (vcode.getInst(4)) {
+        .mov_imm => |mov| blk: {
+            try testing.expectEqual(@as(u64, 32_767), mov.imm);
+            try testing.expectEqual(inst_mod.OperandSize.size64, mov.size);
+            break :blk mov.dst.toReg();
+        },
+        else => return error.ExpectedInstructionNotFound,
+    };
+
+    switch (vcode.getInst(5)) {
+        .add_rr => |add| {
+            try testing.expect(add.dst.toReg().eq(addr_post));
+            try testing.expect(add.src2.eq(addr_post));
+            try testing.expectEqual(@as(u6, 31), add.src1.toRealReg().?.hwEnc());
+        },
+        else => return error.ExpectedInstructionNotFound,
+    }
+
+    switch (vcode.getInst(6)) {
+        .str => |st| {
+            try testing.expect(st.base.eq(addr_post));
+            try testing.expect(st.src.eq(dst_reg));
+            try testing.expectEqual(@as(i16, 0), st.offset);
+        },
+        else => return error.ExpectedInstructionNotFound,
+    }
 }
 
 test "RegAllocBridge passes through no-reg control variants" {
