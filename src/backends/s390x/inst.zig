@@ -501,6 +501,12 @@ pub const Inst = union(enum) {
         }
     }
 
+    /// Check if this instruction is a call (clobbers caller-saved registers).
+    pub fn isCall(self: *const Inst) bool {
+        _ = self;
+        return false; // TODO: add call detection for s390x
+    }
+
     /// Get defined (output) registers for this instruction.
     pub fn getDefs(self: *const Inst, allocator: std.mem.Allocator) ![]VReg {
         var collector = OperandCollector.init(allocator);

@@ -1026,6 +1026,14 @@ pub const Inst = union(enum) {
 
     // ============ Register allocation support ============
 
+    /// Check if this instruction is a call (clobbers caller-saved registers).
+    pub fn isCall(self: *const Inst) bool {
+        return switch (self.*) {
+            .call => true,
+            else => false,
+        };
+    }
+
     /// Get defined (output) registers for this instruction.
     pub fn getDefs(self: *const Inst, allocator: std.mem.Allocator) ![]VReg {
         var collector = OperandCollector.init(allocator);

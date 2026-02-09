@@ -3810,6 +3810,14 @@ pub const Inst = union(enum) {
         } };
     }
 
+    /// Check if this instruction is a call (clobbers caller-saved registers).
+    pub fn isCall(self: *const Inst) bool {
+        return switch (self.*) {
+            .call, .call_indirect, .blr => true,
+            else => false,
+        };
+    }
+
     /// Get defined (output) registers for this instruction.
     /// Returns a list of virtual registers written by this instruction.
     pub fn getDefs(self: *const Inst, allocator: std.mem.Allocator) ![]VReg {

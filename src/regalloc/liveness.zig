@@ -55,12 +55,18 @@ pub const LivenessInfo = struct {
     /// This enables O(1) lookup of a vreg's live range
     vreg_to_range: std.AutoHashMap(u32, u32),
 
+    /// Instruction indices of call/call_indirect instructions.
+    /// Live ranges that span any of these positions must be allocated
+    /// to callee-saved registers (or spilled).
+    call_positions: std.ArrayList(u32),
+
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) LivenessInfo {
         return .{
             .ranges = std.ArrayList(LiveRange){},
             .vreg_to_range = std.AutoHashMap(u32, u32).init(allocator),
+            .call_positions = std.ArrayList(u32){},
             .allocator = allocator,
         };
     }
@@ -68,6 +74,20 @@ pub const LivenessInfo = struct {
     pub fn deinit(self: *LivenessInfo) void {
         self.ranges.deinit(self.allocator);
         self.vreg_to_range.deinit();
+        self.call_positions.deinit(self.allocator);
+    }
+
+    /// Check if a live range spans any call instruction.
+    /// A range "spans" a call if the call occurs strictly inside [start, end),
+    /// meaning the value is defined before the call and used after it.
+    /// Values whose last use IS the call (arguments) don't need to survive it.
+    pub fn spansCall(self: *const LivenessInfo, range: LiveRange) bool {
+        for (self.call_positions.items) |call_pos| {
+            if (call_pos > range.start_inst and call_pos < range.end_inst) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// Add a live range for a virtual register
@@ -149,6 +169,11 @@ pub fn computeLiveness(
     // Forward scan through instructions
     for (insns, 0..) |inst, idx| {
         const inst_idx: u32 = @intCast(idx);
+
+        // Track call positions for caller-saved register handling
+        if (inst.isCall()) {
+            try info.call_positions.append(allocator, inst_idx);
+        }
 
         // Process definitions - mark start of live range
         const defs = try inst.getDefs(allocator);
@@ -415,6 +440,11 @@ pub fn computeLivenessWithCFG(
         for (insns, 0..) |inst, local_idx| {
             const inst_idx: u32 = start_inst + @as(u32, @intCast(local_idx));
 
+            // Track call positions for caller-saved register handling
+            if (inst.isCall()) {
+                try info.call_positions.append(allocator, inst_idx);
+            }
+
             const uses = try inst.getUses(allocator);
             defer allocator.free(uses);
             for (uses) |use| {
@@ -569,6 +599,7 @@ test "LivenessInfo basic operations" {
 const MockInst = struct {
     defs: []const machinst.VReg,
     uses: []const machinst.VReg,
+    is_call: bool = false,
 
     pub fn getDefs(self: MockInst, allocator: std.mem.Allocator) ![]machinst.VReg {
         return try allocator.dupe(machinst.VReg, self.defs);
@@ -576,6 +607,10 @@ const MockInst = struct {
 
     pub fn getUses(self: MockInst, allocator: std.mem.Allocator) ![]machinst.VReg {
         return try allocator.dupe(machinst.VReg, self.uses);
+    }
+
+    pub fn isCall(self: *const MockInst) bool {
+        return self.is_call;
     }
 };
 

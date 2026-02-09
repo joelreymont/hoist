@@ -314,7 +314,7 @@ pub const LinearScanAllocator = struct {
             try self.expireOldIntervals(range.start_inst, &result);
 
             // Try to allocate a free register for this range
-            const maybe_preg = try self.tryAllocateReg(range, &result);
+            const maybe_preg = try self.tryAllocateReg(range, &result, liveness_info);
 
             if (maybe_preg == null) {
                 // No free register available - try spilling
@@ -393,19 +393,26 @@ pub const LinearScanAllocator = struct {
         self: *LinearScanAllocator,
         range: liveness.LiveRange,
         result: *RegAllocResult,
+        liveness_info: *liveness.LivenessInfo,
     ) !?machinst.PReg {
         const free_regs = self.getFreeRegs(range.reg_class);
+
+        // Check if this range spans a call instruction.
+        // If so, only callee-saved registers are safe (they survive calls).
+        // On AArch64: x19-x28 are callee-saved, x0-x18 are caller-saved.
+        const spans_call = liveness_info.spansCall(range);
 
         // Check coalesce hint first (from already-allocated coalesce mates)
         if (self.getCoalesceHint(range.vreg, result)) |coalesce_hint| {
             if (coalesce_hint.class() == range.reg_class) {
-                if (self.regIndex(coalesce_hint)) |reg_idx| {
-                    if (free_regs.isSet(reg_idx)) {
-                        // Coalesce hint is available! Use it
-                        try result.assign(range.vreg, coalesce_hint);
-                        free_regs.unset(reg_idx);
-                        try self.active.append(self.allocator, range);
-                        return coalesce_hint;
+                if (!spans_call or isCalleeSaved(coalesce_hint)) {
+                    if (self.regIndex(coalesce_hint)) |reg_idx| {
+                        if (free_regs.isSet(reg_idx)) {
+                            try result.assign(range.vreg, coalesce_hint);
+                            free_regs.unset(reg_idx);
+                            try self.active.append(self.allocator, range);
+                            return coalesce_hint;
+                        }
                     }
                 }
             }
@@ -414,13 +421,14 @@ pub const LinearScanAllocator = struct {
         // Check explicit hint
         if (self.hints.get(range.vreg.index())) |hint| {
             if (hint.class() == range.reg_class) {
-                if (self.regIndex(hint)) |reg_idx| {
-                    if (free_regs.isSet(reg_idx)) {
-                        // Hint is available! Use it
-                        try result.assign(range.vreg, hint);
-                        free_regs.unset(reg_idx);
-                        try self.active.append(self.allocator, range);
-                        return hint;
+                if (!spans_call or isCalleeSaved(hint)) {
+                    if (self.regIndex(hint)) |reg_idx| {
+                        if (free_regs.isSet(reg_idx)) {
+                            try result.assign(range.vreg, hint);
+                            free_regs.unset(reg_idx);
+                            try self.active.append(self.allocator, range);
+                            return hint;
+                        }
                     }
                 }
             }
@@ -431,24 +439,31 @@ pub const LinearScanAllocator = struct {
         const num_regs = self.getNumRegs(range.reg_class);
         while (reg_idx < num_regs) : (reg_idx += 1) {
             if (free_regs.isSet(reg_idx)) {
-                // Found a free register!
                 const preg = self.regAt(range.reg_class, reg_idx);
 
-                // Assign it to the vreg
+                // Skip caller-saved registers if range spans a call
+                if (spans_call and !isCalleeSaved(preg)) continue;
+
                 try result.assign(range.vreg, preg);
-
-                // Mark as used
                 free_regs.unset(reg_idx);
-
-                // Add to active list
                 try self.active.append(self.allocator, range);
-
                 return preg;
             }
         }
 
-        // No free register available
+        // If spans_call and no callee-saved reg is free, fall through to spill.
+        // No free register available.
         return null;
+    }
+
+    /// Check if a physical register is callee-saved (preserved across calls).
+    /// AArch64: x19-x28 are callee-saved. V8-V15 (float) are callee-saved.
+    fn isCalleeSaved(preg: machinst.PReg) bool {
+        return switch (preg.class()) {
+            .int => preg.hwEnc() >= 19 and preg.hwEnc() <= 28,
+            .float, .vector => preg.hwEnc() >= 8 and preg.hwEnc() <= 15,
+            else => false,
+        };
     }
 
     /// Spill an active interval to free up a register.

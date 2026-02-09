@@ -1950,9 +1950,10 @@ fn emitLdr(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_
     const rn = try hwEnc(base);
     const imm9 = try encodeSignedImm9(offset);
 
-    // LDR (immediate): sf|11|111|0|00|01|imm9|0|Rn|Rt
+    // LDUR (integer, unscaled): size|11|1000|01|0|imm9|00|Rn|Rt
+    // bit 26 = V = 0 for integer (not SIMD)
     const insn: u32 = (sf_bit << 31) |
-        (0b11111000010 << 20) |
+        (0b11110000010 << 20) |
         (@as(u32, imm9) << 12) |
         (@as(u32, rn) << 5) |
         rt;
@@ -1967,9 +1968,10 @@ fn emitStr(src: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_
     const rn = try hwEnc(base);
     const imm9 = try encodeSignedImm9(offset);
 
-    // STR (immediate): sf|11|111|0|00|00|imm9|0|Rn|Rt
+    // STUR (integer, unscaled): size|11|1000|00|0|imm9|00|Rn|Rt
+    // bit 26 = V = 0 for integer (not SIMD)
     const insn: u32 = (sf_bit << 31) |
-        (0b11111000000 << 20) |
+        (0b11110000000 << 20) |
         (@as(u32, imm9) << 12) |
         (@as(u32, rn) << 5) |
         rt;
@@ -2474,9 +2476,12 @@ fn emitLdp(dst1: Reg, dst2: Reg, base: Reg, offset: i16, size: OperandSize, buff
     const scale: u4 = if (size == .size64) 3 else 2; // shift by 3 (÷8) for 64-bit, 2 (÷4) for 32-bit
     const imm7 = try encodeSignedImm7Scaled(offset, scale);
 
-    // LDP: sf|10|1|0|011|0|imm7|Rt2|Rn|Rt
+    // LDP (signed offset): sf|101|V=0|010|L=1|imm7|Rt2|Rn|Rt
+    // bits [29:27]=101, [26]=0 (GP), [25:23]=010 (signed offset), [22]=1 (load)
     const insn: u32 = (sf_bit << 31) |
-        (0b1010011 << 23) |
+        (0b101 << 27) |
+        (0b010 << 23) |
+        (0b1 << 22) |
         (@as(u32, imm7) << 15) |
         (@as(u32, rt2) << 10) |
         (@as(u32, rn) << 5) |
@@ -8430,7 +8435,8 @@ test "emit ldp 64-bit zero offset" {
 
     // Check encoding: sf|10|1|0|011|0|imm7|Rt2|Rn|Rt
     try testing.expectEqual(@as(u32, 1), (insn >> 31) & 1); // sf=1 (64-bit)
-    try testing.expectEqual(@as(u32, 0b1010011), (insn >> 23) & 0x7F); // opc|V|mode (note: bit 22 is 1 for LDP)
+    try testing.expectEqual(@as(u32, 0b1010010), (insn >> 23) & 0x7F); // opc|V|mode (signed offset variant)
+    try testing.expectEqual(@as(u32, 1), (insn >> 22) & 1); // L=1 (load)
     try testing.expectEqual(@as(u32, 0), (insn >> 15) & 0x7F); // imm7=0
     try testing.expectEqual(@as(u32, 1), (insn >> 10) & 0x1F); // Rt2=X1
     try testing.expectEqual(@as(u32, 2), (insn >> 5) & 0x1F); // Rn=X2
@@ -8532,7 +8538,8 @@ test "emit ldp 32-bit zero offset" {
 
     // Check encoding
     try testing.expectEqual(@as(u32, 0), (insn >> 31) & 1); // sf=0 (32-bit)
-    try testing.expectEqual(@as(u32, 0b1010011), (insn >> 23) & 0x7F); // opc|V|mode
+    try testing.expectEqual(@as(u32, 0b1010010), (insn >> 23) & 0x7F); // opc|V|mode (signed offset variant)
+    try testing.expectEqual(@as(u32, 1), (insn >> 22) & 1); // L=1 (load)
     try testing.expectEqual(@as(u32, 0), (insn >> 15) & 0x7F); // imm7=0
     try testing.expectEqual(@as(u32, 4), (insn >> 10) & 0x1F); // Rt2=W4
     try testing.expectEqual(@as(u32, 5), (insn >> 5) & 0x1F); // Rn=X5
