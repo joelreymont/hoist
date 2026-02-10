@@ -252,6 +252,20 @@ pub fn build(b: *std.Build) void {
     const run_e2e_tail_calls = b.addRunArtifact(e2e_tail_calls);
     test_step.dependOn(&run_e2e_tail_calls.step);
 
+    const e2e_merge = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/e2e_merge.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    e2e_merge.root_module.addImport("hoist", lib.root_module);
+    applyFlags(e2e_merge, enable_lto, debug_info, strip_debug, pic, single_threaded);
+    const run_e2e_merge = b.addRunArtifact(e2e_merge);
+    test_step.dependOn(&run_e2e_merge.step);
+
+
+
     const aarch64_struct_args = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/aarch64_struct_args.zig"),
