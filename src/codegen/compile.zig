@@ -640,6 +640,7 @@ fn insertSpillScratch(
     scratch_regs: ScratchRegs,
     vreg_origins: *const std.AutoHashMap(reg_mod.VReg, VRegOrigin),
     domtree: *const ir.DominatorTree,
+    spill_base_offset: u32,
 ) CodegenError!void {
     _ = domtree; // TODO: use for cross-block reload hoisting
     const OperandCollector = a64_inst.OperandCollector;
@@ -754,7 +755,7 @@ fn insertSpillScratch(
                         }
                     }
 
-                    try appendSpillLoad(&new_insns, allocator, &scratch_state, vreg.class(), preg, slot.offset);
+                    try appendSpillLoad(&new_insns, allocator, &scratch_state, vreg.class(), preg, slot.offset + spill_base_offset);
                 }
             }
 
@@ -773,7 +774,7 @@ fn insertSpillScratch(
                 const vreg = def_reg.toReg().toVReg() orelse continue;
                 const slot = result.getSpillSlot(vreg) orelse continue;
                 const preg = try mapScratch(&scratch_map, &scratch_state, vreg);
-                try appendSpillStore(&new_insns, allocator, &scratch_state, vreg.class(), preg, slot.offset);
+                try appendSpillStore(&new_insns, allocator, &scratch_state, vreg.class(), preg, slot.offset + spill_base_offset);
             }
         }
 
@@ -1984,7 +1985,15 @@ fn emitAArch64WithAllocation(
             try abi_callee.clobberCalleeSave(preg.*);
         }
     }
-    abi_callee.setLocalsSize(spill_bytes + vcode.out_stack_max);
+    // Calculate total stack slot size
+    var stack_slots_size: u32 = 0;
+    for (ctx.func.stack_slots.elems.items) |slot_data| {
+        const alignment = slot_data.alignment();
+        const mask = alignment - 1;
+        stack_slots_size = (stack_slots_size + mask) & ~mask;
+        stack_slots_size += slot_data.size;
+    }
+    abi_callee.setLocalsSize(spill_bytes + vcode.out_stack_max + stack_slots_size);
 
     // Emit function prologue
     try abi_callee.emitPrologue(&buffer);
@@ -2351,7 +2360,8 @@ fn resolveI128PairRegs(func: *Function, value: ir.Value) I128PairRegs {
 }
 
 fn stackSlotOffset(func: *Function, slot: StackSlot, out_stack_max: u32) i32 {
-    var offset: u32 = out_stack_max;
+    // Start after the FP/LR save area (16 bytes) and any outgoing call stack space.
+    var offset: u32 = out_stack_max + 16;
     const slots = func.stack_slots.elems.items;
     const slot_idx = slot.toIndex();
 
@@ -5225,6 +5235,79 @@ fn lowerInstructionAArch64(
                 });
             }
         },
+        .stack_store => |data| {
+            // Handle stack_store instructions: store value to stack slot
+            const VReg = @import("../machinst/reg.zig").VReg;
+            const RegClass = @import("../machinst/reg.zig").RegClass;
+            const Reg = @import("../machinst/reg.zig").Reg;
+
+            if (data.opcode != .stack_store) return error.LoweringFailed;
+
+            const value_type = ctx.func.dfg.valueType(data.arg) orelse return error.LoweringFailed;
+            const reg_class: RegClass = if (value_type.isVector() or value_type.isFloat())
+                .vector
+            else
+                .int;
+            const src_vreg = VReg.new(@intCast(data.arg.index + Reg.PINNED_VREGS), reg_class);
+            const src = Reg.fromVReg(src_vreg);
+
+            const slot_off = stackSlotOffset(ctx.func, data.stack_slot, out_stack_max);
+            const total_off: i64 = @as(i64, slot_off) + @as(i64, data.offset);
+            const sp = Reg.gpr(31);
+
+            if (value_type.isFloat() or value_type.isVector()) {
+                const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
+                const fpu_size: FpuOperandSize = switch (value_type.bits()) {
+                    32 => .size32,
+                    64 => .size64,
+                    128 => .size128,
+                    else => return error.LoweringFailed,
+                };
+                if (total_off >= 0 and total_off <= 4095) {
+                    try builder.emit(Inst{ .vstr = .{
+                        .src = src,
+                        .base = sp,
+                        .offset = @intCast(total_off),
+                        .size = fpu_size,
+                    } });
+                } else {
+                    return error.LoweringFailed; // TODO: large offset
+                }
+            } else {
+                const size: OperandSize = if (value_type.bits() == 64) .size64 else .size32;
+                if (total_off >= 0 and total_off <= 4095) {
+                    try builder.emit(Inst{ .str = .{
+                        .src = src,
+                        .base = sp,
+                        .offset = @intCast(total_off),
+                        .size = size,
+                    } });
+                } else {
+                    // Large offset: load into temp register, add to SP
+                    const WritableReg = @import("../machinst/reg.zig").WritableReg;
+                    const tmp_vreg = VReg.new(@intCast(next_tmp_vreg.*), RegClass.int);
+                    next_tmp_vreg.* += 1;
+                    const tmp = WritableReg.fromVReg(tmp_vreg);
+                    try builder.emit(Inst{ .mov_imm = .{
+                        .dst = tmp,
+                        .imm = @bitCast(total_off),
+                        .size = .size64,
+                    } });
+                    try builder.emit(Inst{ .add_rr = .{
+                        .dst = tmp,
+                        .src1 = sp,
+                        .src2 = tmp.toReg(),
+                        .size = .size64,
+                    } });
+                    try builder.emit(Inst{ .str = .{
+                        .src = src,
+                        .base = tmp.toReg(),
+                        .offset = 0,
+                        .size = size,
+                    } });
+                }
+            }
+        },
         .load => |data| {
             // Handle load instructions (load, uload8, sload8, uload16, sload16, uload32, sload32)
             const VReg = @import("../machinst/reg.zig").VReg;
@@ -5495,9 +5578,34 @@ fn lowerInstructionAArch64(
             }
         },
         .jump => |data| {
-            // Handle unconditional jump
+            // Handle unconditional jump with block parameter moves
+            const VReg = @import("../machinst/reg.zig").VReg;
+            const WritableReg = @import("../machinst/reg.zig").WritableReg;
+            const RegClass = @import("../machinst/reg.zig").RegClass;
+            const Reg = @import("../machinst/reg.zig").Reg;
             const inst_module = @import("../backends/aarch64/inst.zig");
             const BranchTarget = inst_module.BranchTarget;
+
+            // Emit moves for jump arguments → target block params (parallel copy).
+            // This implements phi resolution: jumpArgs(block, {v7, v11}) must
+            // move v7 and v11 into the registers assigned to block's params.
+            const jump_args = ctx.func.dfg.value_lists.asSlice(data.args);
+            const target_params = ctx.func.dfg.blockParams(data.destination);
+            if (jump_args.len == target_params.len) {
+                var phi_idx: usize = 0;
+                while (phi_idx < jump_args.len) : (phi_idx += 1) {
+                    const arg_vreg = VReg.new(@intCast(jump_args[phi_idx].index + Reg.PINNED_VREGS), RegClass.int);
+                    const param_vreg = VReg.new(@intCast(target_params[phi_idx].index + Reg.PINNED_VREGS), RegClass.int);
+                    // Only emit mov if source != destination
+                    if (arg_vreg.index() != param_vreg.index()) {
+                        try builder.emit(Inst{ .mov_rr = .{
+                            .dst = WritableReg.fromVReg(param_vreg),
+                            .src = Reg.fromVReg(arg_vreg),
+                            .size = .size64,
+                        } });
+                    }
+                }
+            }
 
             // Emit B instruction with block label
             const target_label = block_map.get(data.destination) orelse return error.LoweringFailed;
@@ -5514,32 +5622,71 @@ fn lowerInstructionAArch64(
             const Reg = @import("../machinst/reg.zig").Reg;
             const inst_module = @import("../backends/aarch64/inst.zig");
             const BranchTarget = inst_module.BranchTarget;
+            const CondCode = @import("../backends/aarch64/inst.zig").CondCode;
 
-            // Get condition value (i1)
-            const cond_vreg = VReg.new(@intCast(data.condition.index + Reg.PINNED_VREGS), RegClass.int);
-            const cond_reg = Reg.fromVReg(cond_vreg);
+            // Peephole: fuse icmp + brif into cmp + b.cc
+            // If the condition was produced by an icmp, emit cmp + conditional branch
+            // directly, skipping the cset instruction. This saves 1 instruction per branch.
+            const fused = fused_blk: {
+                // Peephole: fuse icmp + brif into cmp + b.cc
+                // The icmp handler already emits CMP + CSET. We replace CBNZ with B.cc,
+                // which uses the flags set by CMP directly. The CSET result becomes dead
+                // and will be eliminated.
+                const cond_def = ctx.func.dfg.valueDef(data.condition) orelse break :fused_blk false;
+                const cond_inst = cond_def.inst() orelse break :fused_blk false;
+                const cond_data = ctx.func.dfg.insts.get(cond_inst) orelse break :fused_blk false;
+                switch (cond_data.*) {
+                    .int_compare => |icmp_data| {
+                        // Map IntCC to ARM64 CondCode
+                        const cc: CondCode = switch (icmp_data.cond) {
+                            .eq => .eq, .ne => .ne,
+                            .slt => .lt, .sle => .le, .sgt => .gt, .sge => .ge,
+                            .ult => .cc, .ule => .ls, .ugt => .hi, .uge => .cs,
+                        };
 
-            // Optimize: Use CBNZ (compare and branch if non-zero) instead of CMP+B.ne
-            // This is more efficient for the common case of branching on a boolean condition
-            if (data.then_dest) |then_block| {
-                const then_label = block_map.get(then_block) orelse return error.LoweringFailed;
-                try builder.emit(Inst{
-                    .cbnz = .{
-                        .reg = cond_reg,
-                        .target = BranchTarget{ .label = then_label },
-                        .size = .size32,
+                        // Emit conditional branch to then block (uses flags from CMP already emitted by icmp)
+                        if (data.then_dest) |then_block| {
+                            const then_label = block_map.get(then_block) orelse break :fused_blk false;
+                            try builder.emit(Inst{ .b_cond = .{
+                                .cond = cc,
+                                .target = BranchTarget{ .label = then_label },
+                            } });
+                        }
+                        // Fall through to else block
+                        if (data.else_dest) |else_block| {
+                            const else_label = block_map.get(else_block) orelse break :fused_blk false;
+                            try builder.emit(Inst{ .b = .{ .target = BranchTarget{ .label = else_label } } });
+                        }
+                        break :fused_blk true;
                     },
-                });
-            }
+                    else => break :fused_blk false,
+                }
+            };
 
-            // Fall through or jump to else_dest
-            if (data.else_dest) |else_block| {
-                const else_label = block_map.get(else_block) orelse return error.LoweringFailed;
-                try builder.emit(Inst{
-                    .b = .{
-                        .target = BranchTarget{ .label = else_label },
-                    },
-                });
+            if (!fused) {
+                // Default path: CBNZ on the condition register
+                const cond_vreg = VReg.new(@intCast(data.condition.index + Reg.PINNED_VREGS), RegClass.int);
+                const cond_reg = Reg.fromVReg(cond_vreg);
+
+                if (data.then_dest) |then_block| {
+                    const then_label = block_map.get(then_block) orelse return error.LoweringFailed;
+                    try builder.emit(Inst{
+                        .cbnz = .{
+                            .reg = cond_reg,
+                            .target = BranchTarget{ .label = then_label },
+                            .size = .size32,
+                        },
+                    });
+                }
+
+                if (data.else_dest) |else_block| {
+                    const else_label = block_map.get(else_block) orelse return error.LoweringFailed;
+                    try builder.emit(Inst{
+                        .b = .{
+                            .target = BranchTarget{ .label = else_label },
+                        },
+                    });
+                }
             }
         },
         .int_compare => |data| {
@@ -6239,7 +6386,25 @@ fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
                 errdefer result.deinit();
 
                 if (result.vreg_to_spill.count() > 0) {
-                    try insertSpillScratch(ctx.allocator, vcode, &result, pools.scratch, &lowered.vreg_origins, &ctx.domtree);
+                    // Compute callee-save area size to rebase spill offsets.
+                    // Spill slots at offset 0 conflict with the FP/LR and callee-save
+                    // area at [SP+0..SP+16+csr_size]. Rebase by this amount.
+                    const abi_mod = @import("../backends/aarch64/abi.zig");
+                    const callee_saves = abi_mod.aapcs64CalleeSaves();
+                    // Count unique clobbered callee-saved registers (dedup like emit phase)
+                    var seen_csr: [32]bool = .{false} ** 32;
+                    var num_clobbered: u32 = 0;
+                    var preg_it = result.vreg_to_preg.valueIterator();
+                    while (preg_it.next()) |preg| {
+                        if (isCalleeSave(preg.*, callee_saves) and !seen_csr[preg.hwEnc()]) {
+                            seen_csr[preg.hwEnc()] = true;
+                            num_clobbered += 1;
+                        }
+                    }
+                    const callee_save_pairs = (num_clobbered + 1) / 2;
+                    const spill_base_offset: u32 = 16 + callee_save_pairs * 16;
+
+                    try insertSpillScratch(ctx.allocator, vcode, &result, pools.scratch, &lowered.vreg_origins, &ctx.domtree, spill_base_offset);
                 }
 
                 const spill_bytes: u32 = linear_scan.next_spill_offset;

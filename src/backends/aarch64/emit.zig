@@ -1950,10 +1950,10 @@ fn emitLdr(dst: Reg, base: Reg, offset: i16, size: OperandSize, buffer: *buffer_
     const rn = try hwEnc(base);
     const imm9 = try encodeSignedImm9(offset);
 
-    // LDUR (integer, unscaled): size|11|1000|01|0|imm9|00|Rn|Rt
-    // bit 26 = V = 0 for integer (not SIMD)
+    // LDUR (integer, unscaled): size|111|V=0|00|opc=01|0|imm9|00|Rn|Rt
+    // opc=01 at bits 23:22 → LDUR (load), V=0 for integer (not SIMD)
     const insn: u32 = (sf_bit << 31) |
-        (0b11110000010 << 20) |
+        (0b11110000100 << 20) |
         (@as(u32, imm9) << 12) |
         (@as(u32, rn) << 5) |
         rt;

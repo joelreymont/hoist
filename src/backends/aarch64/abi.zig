@@ -202,7 +202,11 @@ const aapcs64_float_rets = [_]PReg{
     PReg.new(.float, 7),
 };
 
-const aapcs64_callee_saves = [_]PReg{
+pub fn aapcs64CalleeSaves() []const PReg {
+    return &aapcs64_callee_saves;
+}
+
+pub const aapcs64_callee_saves = [_]PReg{
     PReg.new(.int, 19),
     PReg.new(.int, 20),
     PReg.new(.int, 21),

@@ -441,3 +441,92 @@ test "E2E: loop with accumulator phi" {
 
     try testing.expect(code.code.items.len > 0);
 }
+
+const JitMem = hoist.jit.memory.Mem;
+
+// Test: JIT execute while loop: sum(0..n) with I64
+// This verifies that loop phi codegen actually produces correct results.
+test "E2E JIT: while loop sum i64" {
+    // fn sum(n: i64) -> i64 { let s=0, i=0; while (i < n) { s += i; i += 1; } return s; }
+    var sig = Signature.init(testing.allocator, .system_v);
+    try sig.params.append(testing.allocator, AbiParam.new(Type.I64));
+    try sig.returns.append(testing.allocator, AbiParam.new(Type.I64));
+
+    var func = try Function.init(testing.allocator, "sum_loop", sig);
+    defer func.deinit();
+    var b2 = try FunctionBuilder.init(testing.allocator, &func);
+    defer b2.deinit();
+
+    // entry block
+    const entry = try func.dfg.addBlock();
+    try func.layout.appendBlock(entry);
+    const n_param = try func.dfg.appendBlockParam(entry, Type.I64);
+
+    // loop header with phi: (i, sum)
+    const header = try func.dfg.addBlock();
+    try func.layout.appendBlock(header);
+    const phi_i = try func.dfg.appendBlockParam(header, Type.I64);
+    const phi_sum = try func.dfg.appendBlockParam(header, Type.I64);
+
+    const body_blk = try func.dfg.addBlock();
+    try func.layout.appendBlock(body_blk);
+    const exit_blk = try func.dfg.addBlock();
+    try func.layout.appendBlock(exit_blk);
+
+    // Entry: jump to header with i=0, sum=0
+    b2.switchToBlock(entry);
+    const zero = try b2.iconst(Type.I64, 0);
+    try b2.jumpArgs(header, &.{ zero, zero });
+
+    // Header: if i < n then body else exit
+    b2.switchToBlock(header);
+    const cmp = try b2.icmp(Type.I8, .slt, phi_i, n_param);
+    try b2.brif(cmp, body_blk, exit_blk);
+
+    // Body: sum += i; i += 1; jump header
+    b2.switchToBlock(body_blk);
+    const new_sum = try b2.iadd(Type.I64, phi_sum, phi_i);
+    const one = try b2.iconst(Type.I64, 1);
+    const new_i = try b2.iadd(Type.I64, phi_i, one);
+    try b2.jumpArgs(header, &.{ new_i, new_sum });
+
+    // Exit: return sum
+    b2.switchToBlock(exit_blk);
+    try b2.retValues(&.{phi_sum});
+
+    // Compile
+    var ctx_builder = ContextBuilder.init(testing.allocator);
+    _ = try ctx_builder.targetNative();
+    var ctx = ctx_builder.optLevel(.none).callConv(.system_v).verification(true).build();
+
+    var code = ctx.compileFunction(&func) catch |err| {
+        std.debug.print("Compilation error: {s}\n", .{@errorName(err)});
+        return err;
+    };
+    defer code.deinit();
+
+    // JIT execute
+    var mem = try testing.allocator.create(JitMem);
+    mem.* = try JitMem.init(testing.allocator, code.code.items.len);
+    defer {
+        mem.deinit();
+        testing.allocator.destroy(mem);
+    }
+
+    const buf = try mem.alloc(code.code.items.len, 16);
+    try mem.writeExec(buf, code.code.items);
+    try mem.setExec(true);
+
+    const f: *const fn (i64) callconv(.c) i64 = @ptrCast(@alignCast(buf.ptr));
+
+    // sum(0) = 0
+    try testing.expectEqual(@as(i64, 0), f(0));
+    // sum(1) = 0
+    try testing.expectEqual(@as(i64, 0), f(1));
+    // sum(5) = 0+1+2+3+4 = 10
+    try testing.expectEqual(@as(i64, 10), f(5));
+    // sum(10) = 45
+    try testing.expectEqual(@as(i64, 45), f(10));
+    // sum(100) = 4950
+    try testing.expectEqual(@as(i64, 4950), f(100));
+}
