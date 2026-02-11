@@ -1363,7 +1363,8 @@
       (aarch64_cmp_rr ty x y IntCC.ule))
 
 ;; icmp with immediate form (12-bit unsigned immediate)
-(rule (lower (icmp cc ty x (iconst k)))
+;; Priority 2: prefer immediate form over register form when arg is iconst
+(rule 2 (lower (icmp cc ty x (iconst k)))
       (if-let (u64_from_i64 (uimm12 _)) k)
       (aarch64_cmp_imm ty x k cc))
 

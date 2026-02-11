@@ -272,6 +272,12 @@ pub const isplit_ext = Ir.isplit_ext;
 pub const iconst_ext = Ir.iconst_ext;
 pub const f32const_ext = Ir.f32const_ext;
 pub const f64const_ext = Ir.f64const_ext;
+
+/// Extractor: cast i64 to u64 if non-negative.
+pub fn u64_from_i64_ext(val: i64) ?u64 {
+    if (val >= 0) return @intCast(val);
+    return null;
+}
 pub const vconst_ext = Ir.vconst_ext;
 pub const shuffle_ext = Ir.shuffle_ext;
 pub const icmp_ext = Ir.icmp_ext;

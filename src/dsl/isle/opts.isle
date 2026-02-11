@@ -79,6 +79,11 @@
 (rule (simplify (udiv ty x (iconst 4)))
       (ushr ty x (iconst 2)))
 
+;; Fold icmp with immediate: icmp(cc, x, iconst(k)) => icmp_imm(cc, x, k)
+;; Enables CMP x, #imm on ARM64 instead of MOVZ + CMP
+(rule (simplify (icmp cc ty x (iconst k)))
+      (icmp_imm cc ty x k))
+
 ;; Comparison simplifications
 
 ;; x == x => true

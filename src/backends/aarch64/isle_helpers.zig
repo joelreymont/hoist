@@ -209,6 +209,12 @@ pub fn in_neg_uimm12_range(val: i64) bool {
 
 /// Extractor: Check if value fits in unsigned 12-bit (0-4095).
 /// Returns the value if valid, null otherwise.
+/// Extractor: cast i64 to u64 if non-negative.
+pub fn u64_from_i64_ext(val: i64) ?u64 {
+    if (val >= 0) return @intCast(val);
+    return null;
+}
+
 pub fn uimm12(val: u64) ?u64 {
     if (val <= 4095) return val;
     return null;
