@@ -35,6 +35,7 @@ pub fn main() !void {
         .optLevel(.aggressive)
         .optimization(true)
         .build();
+    defer ctx.deinit();
 
     for (0..iterations) |_| {
         // Measure IR construction time

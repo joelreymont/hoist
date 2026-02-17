@@ -46,6 +46,7 @@ test "E2E: return constant i32" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var verifier = Verifier.init(testing.allocator, &func);
     defer verifier.deinit();
     try verifier.verify();
@@ -97,6 +98,7 @@ test "E2E: simple arithmetic i32 add" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var verifier = Verifier.init(testing.allocator, &func);
     defer verifier.deinit();
     try verifier.verify();
@@ -148,6 +150,7 @@ test "E2E: arithmetic i64 multiply" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var verifier = Verifier.init(testing.allocator, &func);
     defer verifier.deinit();
     try verifier.verify();
@@ -214,6 +217,7 @@ test "E2E: constant computation with optimization" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.speed).optimize(true).build();
 
+    defer ctx.deinit();
     var verifier = Verifier.init(testing.allocator, &func);
     defer verifier.deinit();
     try verifier.verify();
@@ -266,6 +270,7 @@ test "E2E: aarch64 simple add" {
         .optLevel(.none)
         .callConv(.aapcs64)
         .build();
+    defer ctx.deinit();
 
     var verifier = Verifier.init(testing.allocator, &func);
     defer verifier.deinit();
@@ -313,6 +318,7 @@ test "E2E: verify compilation stages" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).verification(true).build();
 
+    defer ctx.deinit();
     const code = try ctx.compileFunction(&func);
     var code_copy = code;
     defer code_copy.deinit();

@@ -53,6 +53,7 @@ fn benchmarkIntArithmetic(allocator: std.mem.Allocator) !void {
         .optLevel(.aggressive)
         .optimization(true)
         .build();
+    defer ctx.deinit();
 
     for (0..iterations) |_| {
         var func = try createIntArithmeticFunction(allocator);
@@ -97,6 +98,7 @@ fn benchmarkVectorOps(allocator: std.mem.Allocator) !void {
         .optLevel(.aggressive)
         .optimization(true)
         .build();
+    defer ctx.deinit();
 
     for (0..iterations) |_| {
         var func = try createVectorFunction(allocator);
@@ -141,6 +143,7 @@ fn benchmarkMemoryOps(allocator: std.mem.Allocator) !void {
         .optLevel(.aggressive)
         .optimization(true)
         .build();
+    defer ctx.deinit();
 
     for (0..iterations) |_| {
         var func = try createMemoryFunction(allocator);
@@ -185,6 +188,7 @@ fn benchmarkMixedWorkload(allocator: std.mem.Allocator) !void {
         .optLevel(.aggressive)
         .optimization(true)
         .build();
+    defer ctx.deinit();
 
     for (0..iterations) |_| {
         var func = try createMixedFunction(allocator);
@@ -372,7 +376,7 @@ fn createMemoryFunction(allocator: std.mem.Allocator) !Function {
     const entry = try func.dfg.makeBlock();
     try func.layout.appendBlock(entry);
 
-    try func.dfg.setBlockParams(entry, &.{ ptr_ty });
+    try func.dfg.setBlockParams(entry, &.{ptr_ty});
 
     const params = func.dfg.blockParams(entry);
     const ptr = params[0];

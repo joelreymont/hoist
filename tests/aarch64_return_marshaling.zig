@@ -54,6 +54,7 @@ test "Return marshaling: single i32 in X0" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -101,6 +102,7 @@ test "Return marshaling: single f64 in V0" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -148,6 +150,7 @@ test "Return marshaling: i128 in X0+X1" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -203,6 +206,7 @@ test "Call marshaling: external call with i32 return" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -258,6 +262,7 @@ test "Call marshaling: external call with f64 return" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -311,6 +316,7 @@ test "Call marshaling: external call with multi i32 returns" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -363,6 +369,7 @@ test "Call marshaling: external call with mixed i64+f64 returns" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -418,6 +425,7 @@ test "Return marshaling: multi i32 in X0+X1" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -473,6 +481,7 @@ test "Return marshaling: mixed i64+f64 in X0+V0" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 

@@ -31,6 +31,9 @@ pub const Context = struct {
     /// Enable optimization passes.
     optimize: bool,
 
+    /// Reusable codegen pipeline context.
+    codegen_ctx: compile_mod.Context,
+
     pub fn init(allocator: Allocator) Context {
         return .{
             .allocator = allocator,
@@ -43,6 +46,7 @@ pub const Context = struct {
             .call_conv = defaultCallConv(.aarch64, .macos),
             .verify = true,
             .optimize = false,
+            .codegen_ctx = compile_mod.Context.init(allocator),
         };
     }
 
@@ -59,6 +63,10 @@ pub const Context = struct {
     pub fn setOptLevel(self: *Context, level: OptLevel) void {
         self.opt_level = level;
         self.optimize = level != .none;
+    }
+
+    pub fn deinit(self: *Context) void {
+        self.codegen_ctx.deinit();
     }
 
     /// Compile a function to machine code.
@@ -80,18 +88,17 @@ pub const Context = struct {
                 .aggressive => .speed_and_size,
             },
             .verify = self.verify,
+            .optimize = self.optimize,
             .features = self.target.features,
         };
 
-        // Create a codegen Context for compilation with the function
-        var codegen_ctx = compile_mod.Context.init(self.allocator);
-        defer codegen_ctx.deinit();
+        self.codegen_ctx.clear();
 
         // Call the main compilation pipeline
-        _ = try compile_mod.compile(&codegen_ctx, func, &target);
+        _ = try compile_mod.compile(&self.codegen_ctx, func, &target);
 
         // Take ownership of compiled code (transfers ownership, prevents double-free)
-        return codegen_ctx.takeCompiledCode().?;
+        return self.codegen_ctx.takeCompiledCode().?;
     }
 
     /// Get target ISA name string.
@@ -231,7 +238,8 @@ pub const ContextBuilder = struct {
 };
 
 test "Context basic" {
-    const ctx = Context.init(testing.allocator);
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
 
     // Default configuration
     try testing.expectEqual(Arch.aarch64, ctx.target.arch);
@@ -242,7 +250,8 @@ test "Context basic" {
 }
 
 test "Context with target" {
-    const ctx = Context.withTarget(testing.allocator, .aarch64, .macos);
+    var ctx = Context.withTarget(testing.allocator, .aarch64, .macos);
+    defer ctx.deinit();
 
     try testing.expectEqual(Arch.aarch64, ctx.target.arch);
     try testing.expectEqual(OS.macos, ctx.target.os);
@@ -251,6 +260,7 @@ test "Context with target" {
 
 test "Context optimization level" {
     var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
 
     ctx.setOptLevel(.aggressive);
     try testing.expectEqual(OptLevel.aggressive, ctx.opt_level);
@@ -262,11 +272,12 @@ test "Context optimization level" {
 
 test "ContextBuilder" {
     var builder = ContextBuilder.init(testing.allocator);
-    const ctx = builder
+    var ctx = builder
         .target(.aarch64, .linux)
         .optLevel(.moderate)
         .verification(false)
         .build();
+    defer ctx.deinit();
 
     try testing.expectEqual(Arch.aarch64, ctx.target.arch);
     try testing.expectEqual(OptLevel.moderate, ctx.opt_level);
@@ -275,6 +286,7 @@ test "ContextBuilder" {
 
 test "Context compile function" {
     var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
     ctx.verify = false; // Skip verification for stub function
 
     const sig = root.signature.Signature.init(testing.allocator, .fast);
@@ -290,6 +302,7 @@ test "Context compile function" {
 
 test "Context compile function unsupported target" {
     var ctx = Context.withTarget(testing.allocator, .x86_64, .linux);
+    defer ctx.deinit();
     ctx.verify = false;
 
     const sig = root.signature.Signature.init(testing.allocator, .fast);

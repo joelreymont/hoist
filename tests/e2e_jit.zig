@@ -242,6 +242,7 @@ test "JIT: compile and execute return constant i32" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -318,6 +319,7 @@ test "JIT: compile and execute multi-return i64 pair" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -387,6 +389,7 @@ test "JIT: compile and execute i32 add" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -458,6 +461,7 @@ test "JIT: compile and execute i64 multiply" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -712,6 +716,7 @@ test "try_call basic lowering" {
         _ = try ctx_builder.targetNative();
         var ctx = ctx_builder.optLevel(.none).build();
 
+        defer ctx.deinit();
         var code = try ctx.compileFunction(&func);
         defer code.deinit();
 
@@ -856,6 +861,7 @@ test "landing pad with exception edge" {
         _ = try ctx_builder.targetNative();
         var ctx = ctx_builder.optLevel(.none).build();
 
+        defer ctx.deinit();
         var code = try ctx.compileFunction(&func);
         defer code.deinit();
 
@@ -1032,6 +1038,7 @@ test "exception propagation with unwinding" {
         _ = try ctx_builder.targetNative();
         var ctx = ctx_builder.optLevel(.none).build();
 
+        defer ctx.deinit();
         var code = try ctx.compileFunction(&func);
         defer code.deinit();
 
@@ -1171,6 +1178,7 @@ test "try_call with external function reference" {
     _ = try ctx_builder.targetNative();
     var ctx = ctx_builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 

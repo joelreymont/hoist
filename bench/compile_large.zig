@@ -26,6 +26,7 @@ pub fn main() !void {
         .optLevel(.none)
         .optimization(false)
         .build();
+    defer ctx.deinit();
 
     for (sizes) |size| {
         var timer = try std.time.Timer.start();

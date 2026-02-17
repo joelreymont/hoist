@@ -100,6 +100,7 @@ test "E2E: conditional branch if-then-else" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     const code = try ctx.compileFunction(&func);
     var code_copy = code;
     defer code_copy.deinit();
@@ -243,6 +244,7 @@ test "E2E: br_table switch statement" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     const code = try ctx.compileFunction(&func);
     var code_copy = code;
     defer code_copy.deinit();
@@ -334,6 +336,7 @@ test "E2E: brz branch if zero" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     const code = try ctx.compileFunction(&func);
     var code_copy = code;
     defer code_copy.deinit();

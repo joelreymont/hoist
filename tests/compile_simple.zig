@@ -90,6 +90,7 @@ test "compile simple add function" {
         .verification(true)
         .optimization(false)
         .build();
+    defer ctx.deinit();
 
     var code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("Compilation failed: {}\n", .{err});
@@ -139,6 +140,7 @@ test "compile constant return" {
         .target(.aarch64, cfg.os)
         .optLevel(.none)
         .build();
+    defer ctx.deinit();
 
     var code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("Compilation failed: {}\n", .{err});
@@ -203,6 +205,7 @@ test "compile with optimization" {
         .optLevel(.basic)
         .optimization(true)
         .build();
+    defer ctx.deinit();
 
     var code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("Compilation failed: {}\n", .{err});
@@ -225,6 +228,7 @@ test "compile for aarch64" {
         .optLevel(.none)
         .callConv(cfg.call_conv)
         .build();
+    defer ctx.deinit();
 
     var code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("Compilation failed: {}\n", .{err});
@@ -255,6 +259,7 @@ test "jit smoke: aarch64 add" {
         .verification(true)
         .optimization(false)
         .build();
+    defer ctx.deinit();
 
     var code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("Compilation failed: {}\n", .{err});

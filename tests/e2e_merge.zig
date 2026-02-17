@@ -58,6 +58,7 @@ test "E2E: simplest merge with block param" {
     // Compile
     var ctx_builder = ContextBuilder.init(testing.allocator);
     var ctx = ctx_builder.optLevel(.none).callConv(.system_v).verification(false).build();
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -128,6 +129,7 @@ test "E2E: TCO loop with block params" {
     // Compile
     var ctx_builder = ContextBuilder.init(testing.allocator);
     var ctx = ctx_builder.optLevel(.none).callConv(.system_v).verification(false).build();
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -223,6 +225,7 @@ test "E2E: TCO 3-param with nested if" {
     // Compile
     var ctx_builder = ContextBuilder.init(testing.allocator);
     var ctx = ctx_builder.optLevel(.none).callConv(.system_v).verification(false).build();
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 

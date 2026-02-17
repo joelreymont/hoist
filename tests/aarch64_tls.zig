@@ -47,6 +47,7 @@ test "TLS: Local-Exec model small offset" {
     var builder = ContextBuilder.init(testing.allocator);
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
+    defer ctx.deinit();
     var result = try ctx.compileFunction(&func);
     defer result.deinit();
 
@@ -88,6 +89,7 @@ test "TLS: Local-Exec model large offset" {
     var builder = ContextBuilder.init(testing.allocator);
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
+    defer ctx.deinit();
     var result = try ctx.compileFunction(&func);
     defer result.deinit();
 
@@ -129,6 +131,7 @@ test "TLS: Local-Exec model zero offset" {
     var builder = ContextBuilder.init(testing.allocator);
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
+    defer ctx.deinit();
     var result = try ctx.compileFunction(&func);
     defer result.deinit();
 

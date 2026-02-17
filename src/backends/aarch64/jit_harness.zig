@@ -35,6 +35,7 @@ pub fn compileAndLoad(
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     const compiled = try ctx.compileFunction(func);
 
     // Allocate JIT memory

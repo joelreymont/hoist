@@ -135,6 +135,7 @@ test "E2E: while loop with phi node" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     const code = try ctx.compileFunction(&func);
     var code_copy = code;
     defer code_copy.deinit();
@@ -293,6 +294,7 @@ test "E2E: nested loops with phi nodes" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     const code = try ctx.compileFunction(&func);
     var code_copy = code;
     defer code_copy.deinit();
@@ -435,6 +437,7 @@ test "E2E: loop with accumulator phi" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     const code = try ctx.compileFunction(&func);
     var code_copy = code;
     defer code_copy.deinit();
@@ -499,6 +502,7 @@ test "E2E JIT: while loop sum i64" {
     _ = try ctx_builder.targetNative();
     var ctx = ctx_builder.optLevel(.none).callConv(.system_v).verification(true).build();
 
+    defer ctx.deinit();
     var code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("Compilation error: {s}\n", .{@errorName(err)});
         return err;

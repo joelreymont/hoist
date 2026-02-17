@@ -97,6 +97,7 @@ test "tail call: simple recursive countdown" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -155,6 +156,7 @@ test "tail call: to function with more arguments" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -202,6 +204,7 @@ test "tail call: indirect through function pointer" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -254,6 +257,7 @@ test "tail call: with floating point arguments" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -304,6 +308,7 @@ test "tail call: with stack arguments" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -356,6 +361,7 @@ test "tail call: indirect with stack arguments" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -404,6 +410,7 @@ test "tail call: mixed with regular calls" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -455,6 +462,7 @@ test "tail call: high-arity direct stress (20 i64 args)" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -508,6 +516,7 @@ test "tail call: high-arity indirect stress (20 i64 args)" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -568,6 +577,7 @@ test "tail call: mixed int/float stack stress" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 

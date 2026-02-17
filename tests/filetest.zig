@@ -127,6 +127,7 @@ fn runFiletest(alloc: Allocator, name: []const u8, src: []const u8) !void {
                 }
 
                 var ctx = Context.init(alloc);
+                defer ctx.deinit();
                 var code = ctx.compileFunction(func) catch |err| {
                     std.debug.print("filetest '{s}': compile error: {}\n", .{ name, err });
                     return error.CompileFailed;

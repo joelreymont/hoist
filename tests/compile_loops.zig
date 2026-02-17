@@ -87,6 +87,7 @@ test "compile conditional branch" {
         .target(.x86_64, .linux)
         .verify(true)
         .build();
+    defer ctx.deinit();
 
     const code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("Conditional branch compilation failed: {}\n", .{err});
@@ -205,6 +206,7 @@ test "compile simple loop" {
         .target(.x86_64, .linux)
         .verify(true)
         .build();
+    defer ctx.deinit();
 
     const code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("Loop compilation failed: {}\n", .{err});
@@ -314,6 +316,7 @@ test "compile jump table" {
         .target(.x86_64, .linux)
         .verify(true)
         .build();
+    defer ctx.deinit();
 
     const code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("Jump table compilation failed: {}\n", .{err});

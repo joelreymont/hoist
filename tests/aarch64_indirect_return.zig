@@ -102,6 +102,7 @@ test "indirect return: large struct returned via X8 pointer" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -161,6 +162,7 @@ test "indirect return: indirect call with large struct return" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -250,6 +252,7 @@ test "indirect return: callee writes to X8 pointer" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 
@@ -318,6 +321,7 @@ test "indirect return: call with args and sret pointer" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).build();
 
+    defer ctx.deinit();
     var code = try ctx.compileFunction(&func);
     defer code.deinit();
 

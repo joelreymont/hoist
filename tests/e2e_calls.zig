@@ -80,6 +80,7 @@ test "compile function with call" {
     _ = try builder.targetNative();
     var ctx = builder.optLevel(.none).callConv(.system_v).verify(true).build();
 
+    defer ctx.deinit();
     const code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("Call compilation failed: {}\n", .{err});
         return err;
@@ -156,6 +157,7 @@ test "compile function with multiple calls" {
     _ = try builder.targetNative();
     var ctx = builder.verify(true).build();
 
+    defer ctx.deinit();
     const code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("Multi-call compilation failed: {}\n", .{err});
         return err;
@@ -206,6 +208,7 @@ test "compile function with nullary call" {
     _ = try builder.targetNative();
     var ctx = builder.verify(true).build();
 
+    defer ctx.deinit();
     const code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("Nullary call compilation failed: {}\n", .{err});
         return err;
@@ -268,6 +271,7 @@ test "compile aarch64 function with call" {
         .callConv(.apple_aarch64)
         .verify(true)
         .build();
+    defer ctx.deinit();
 
     const code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("AArch64 call compilation failed: {}\n", .{err});
@@ -330,6 +334,7 @@ test "compile aarch64 preserve_all callconv" {
         .callConv(.preserve_all)
         .verify(true)
         .build();
+    defer ctx.deinit();
 
     const code = ctx.compileFunction(&func) catch |err| {
         std.debug.print("PreserveAll callconv compilation failed: {}\n", .{err});
