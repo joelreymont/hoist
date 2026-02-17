@@ -2612,7 +2612,7 @@ pub const Inst = union(enum) {
 
     /// Collect operands for register allocation.
     /// Called by regalloc to understand register use/def constraints.
-    pub fn getOperands(self: *const Inst, collector: *OperandCollector) !void {
+    pub fn getOperands(self: *const Inst, collector: anytype) !void {
         switch (self.*) {
             .mov_imm => |*i| {
                 try collector.regDef(i.dst);

@@ -7,6 +7,44 @@ const std = @import("std");
 const machinst = @import("../machinst/machinst.zig");
 const cfg_mod = @import("../ir/cfg.zig");
 
+const max_operand_regs: usize = 128;
+
+const StackOperandCollector = struct {
+    uses_buf: [max_operand_regs]machinst.Reg = undefined,
+    defs_buf: [max_operand_regs]machinst.WritableReg = undefined,
+    uses_len: usize = 0,
+    defs_len: usize = 0,
+
+    fn reset(self: *StackOperandCollector) void {
+        self.uses_len = 0;
+        self.defs_len = 0;
+    }
+
+    pub fn regUse(self: *StackOperandCollector, reg: machinst.Reg) !void {
+        if (self.uses_len >= max_operand_regs) return error.OutOfMemory;
+        self.uses_buf[self.uses_len] = reg;
+        self.uses_len += 1;
+    }
+
+    pub fn regDef(self: *StackOperandCollector, reg: machinst.WritableReg) !void {
+        if (self.defs_len >= max_operand_regs) return error.OutOfMemory;
+        self.defs_buf[self.defs_len] = reg;
+        self.defs_len += 1;
+    }
+
+    pub fn regLateDef(self: *StackOperandCollector, reg: machinst.WritableReg) !void {
+        return self.regDef(reg);
+    }
+
+    fn uses(self: *const StackOperandCollector) []const machinst.Reg {
+        return self.uses_buf[0..self.uses_len];
+    }
+
+    fn defs(self: *const StackOperandCollector) []const machinst.WritableReg {
+        return self.defs_buf[0..self.defs_len];
+    }
+};
+
 /// A live range represents the span of instructions where a virtual register is live.
 ///
 /// A virtual register is considered live between its definition point and its last use.
@@ -165,6 +203,8 @@ pub fn computeLiveness(
     // Track per-vreg information during the scan
     var vreg_info = std.AutoHashMap(u32, VRegInfo).init(allocator);
     defer vreg_info.deinit();
+    const has_get_operands = comptime @hasDecl(Inst, "getOperands");
+    var operand_collector = StackOperandCollector{};
 
     // Forward scan through instructions
     for (insns, 0..) |inst, idx| {
@@ -175,52 +215,102 @@ pub fn computeLiveness(
             try info.call_positions.append(allocator, inst_idx);
         }
 
-        // Process definitions - mark start of live range
-        const defs = try inst.getDefs(allocator);
-        defer allocator.free(defs);
+        if (comptime has_get_operands) {
+            operand_collector.reset();
+            try inst.getOperands(&operand_collector);
 
-        for (defs) |vreg| {
-            const entry = try vreg_info.getOrPut(vreg.index());
-            if (!entry.found_existing) {
-                entry.value_ptr.* = .{
-                    .first_def = inst_idx,
-                    .first_use = null,
-                    .last_use = inst_idx,
-                    .reg_class = vreg.class(),
-                };
-            } else {
-                // Multiple definitions - this is unusual but possible with phi nodes
-                // Keep the first definition
-                if (entry.value_ptr.first_def == null) {
-                    entry.value_ptr.first_def = inst_idx;
-                    if (entry.value_ptr.last_use < inst_idx) {
-                        entry.value_ptr.last_use = inst_idx;
+            // Process definitions - mark start of live range
+            for (operand_collector.defs()) |def| {
+                const vreg = def.toReg().toVReg() orelse continue;
+                const entry = try vreg_info.getOrPut(vreg.index());
+                if (!entry.found_existing) {
+                    entry.value_ptr.* = .{
+                        .first_def = inst_idx,
+                        .first_use = null,
+                        .last_use = inst_idx,
+                        .reg_class = vreg.class(),
+                    };
+                } else {
+                    // Multiple definitions - this is unusual but possible with phi nodes
+                    // Keep the first definition
+                    if (entry.value_ptr.first_def == null) {
+                        entry.value_ptr.first_def = inst_idx;
+                        if (entry.value_ptr.last_use < inst_idx) {
+                            entry.value_ptr.last_use = inst_idx;
+                        }
                     }
                 }
             }
-        }
 
-        // Process uses - extend live range
-        const uses = try inst.getUses(allocator);
-        defer allocator.free(uses);
-
-        for (uses) |vreg| {
-            const entry = try vreg_info.getOrPut(vreg.index());
-            if (!entry.found_existing) {
-                // Use before def - this can happen with function parameters
-                // Treat the use as both the start and current end
-                entry.value_ptr.* = .{
-                    .first_def = null, // No definition yet
-                    .first_use = inst_idx,
-                    .last_use = inst_idx,
-                    .reg_class = vreg.class(),
-                };
-            } else {
-                if (entry.value_ptr.first_use == null) {
-                    entry.value_ptr.first_use = inst_idx;
+            // Process uses - extend live range
+            for (operand_collector.uses()) |use| {
+                const vreg = use.toVReg() orelse continue;
+                const entry = try vreg_info.getOrPut(vreg.index());
+                if (!entry.found_existing) {
+                    // Use before def - this can happen with function parameters
+                    // Treat the use as both the start and current end
+                    entry.value_ptr.* = .{
+                        .first_def = null, // No definition yet
+                        .first_use = inst_idx,
+                        .last_use = inst_idx,
+                        .reg_class = vreg.class(),
+                    };
+                } else {
+                    if (entry.value_ptr.first_use == null) {
+                        entry.value_ptr.first_use = inst_idx;
+                    }
+                    // Update last use
+                    entry.value_ptr.last_use = inst_idx;
                 }
-                // Update last use
-                entry.value_ptr.last_use = inst_idx;
+            }
+        } else {
+            // Process definitions - mark start of live range
+            const defs = try inst.getDefs(allocator);
+            defer allocator.free(defs);
+
+            for (defs) |vreg| {
+                const entry = try vreg_info.getOrPut(vreg.index());
+                if (!entry.found_existing) {
+                    entry.value_ptr.* = .{
+                        .first_def = inst_idx,
+                        .first_use = null,
+                        .last_use = inst_idx,
+                        .reg_class = vreg.class(),
+                    };
+                } else {
+                    // Multiple definitions - this is unusual but possible with phi nodes
+                    // Keep the first definition
+                    if (entry.value_ptr.first_def == null) {
+                        entry.value_ptr.first_def = inst_idx;
+                        if (entry.value_ptr.last_use < inst_idx) {
+                            entry.value_ptr.last_use = inst_idx;
+                        }
+                    }
+                }
+            }
+
+            // Process uses - extend live range
+            const uses = try inst.getUses(allocator);
+            defer allocator.free(uses);
+
+            for (uses) |vreg| {
+                const entry = try vreg_info.getOrPut(vreg.index());
+                if (!entry.found_existing) {
+                    // Use before def - this can happen with function parameters
+                    // Treat the use as both the start and current end
+                    entry.value_ptr.* = .{
+                        .first_def = null, // No definition yet
+                        .first_use = inst_idx,
+                        .last_use = inst_idx,
+                        .reg_class = vreg.class(),
+                    };
+                } else {
+                    if (entry.value_ptr.first_use == null) {
+                        entry.value_ptr.first_use = inst_idx;
+                    }
+                    // Update last use
+                    entry.value_ptr.last_use = inst_idx;
+                }
             }
         }
     }
@@ -289,6 +379,8 @@ pub fn computeLivenessWithCFG(
         }
         block_live_out.deinit();
     }
+    const has_get_operands = comptime @hasDecl(Inst, "getOperands");
+    var operand_collector = StackOperandCollector{};
 
     // Initialize live_in and live_out sets for all blocks
     for (0..blocks.len) |block_idx| {
@@ -377,18 +469,37 @@ pub fn computeLivenessWithCFG(
             while (inst_idx >= 0) : (inst_idx -= 1) {
                 const inst = insns[@intCast(inst_idx)];
 
-                // Remove defs from live_in
-                const defs = try inst.getDefs(allocator);
-                defer allocator.free(defs);
-                for (defs) |def| {
-                    _ = new_live_in.remove(def.index());
-                }
+                if (comptime has_get_operands) {
+                    operand_collector.reset();
+                    try inst.getOperands(&operand_collector);
 
-                // Add uses to live_in
-                const uses = try inst.getUses(allocator);
-                defer allocator.free(uses);
-                for (uses) |use| {
-                    try new_live_in.put(use.index(), {});
+                    // Remove defs from live_in
+                    for (operand_collector.defs()) |def| {
+                        if (def.toReg().toVReg()) |vreg| {
+                            _ = new_live_in.remove(vreg.index());
+                        }
+                    }
+
+                    // Add uses to live_in
+                    for (operand_collector.uses()) |use| {
+                        if (use.toVReg()) |vreg| {
+                            try new_live_in.put(vreg.index(), {});
+                        }
+                    }
+                } else {
+                    // Remove defs from live_in
+                    const defs = try inst.getDefs(allocator);
+                    defer allocator.free(defs);
+                    for (defs) |def| {
+                        _ = new_live_in.remove(def.index());
+                    }
+
+                    // Add uses to live_in
+                    const uses = try inst.getUses(allocator);
+                    defer allocator.free(uses);
+                    for (uses) |use| {
+                        try new_live_in.put(use.index(), {});
+                    }
                 }
             }
 
@@ -445,35 +556,70 @@ pub fn computeLivenessWithCFG(
                 try info.call_positions.append(allocator, inst_idx);
             }
 
-            const uses = try inst.getUses(allocator);
-            defer allocator.free(uses);
-            for (uses) |use| {
-                const entry = try vreg_ranges.getOrPut(use.index());
-                if (!entry.found_existing) {
-                    entry.value_ptr.* = .{
-                        .start = inst_idx,
-                        .end = inst_idx,
-                        .class = use.class(),
-                    };
-                } else {
-                    entry.value_ptr.start = @min(entry.value_ptr.start, inst_idx);
-                    entry.value_ptr.end = @max(entry.value_ptr.end, inst_idx);
-                }
-            }
+            if (comptime has_get_operands) {
+                operand_collector.reset();
+                try inst.getOperands(&operand_collector);
 
-            const defs = try inst.getDefs(allocator);
-            defer allocator.free(defs);
-            for (defs) |def| {
-                const entry = try vreg_ranges.getOrPut(def.index());
-                if (!entry.found_existing) {
-                    entry.value_ptr.* = .{
-                        .start = inst_idx,
-                        .end = inst_idx,
-                        .class = def.class(),
-                    };
-                } else {
-                    entry.value_ptr.start = @min(entry.value_ptr.start, inst_idx);
-                    entry.value_ptr.end = @max(entry.value_ptr.end, inst_idx);
+                for (operand_collector.uses()) |use| {
+                    const vreg = use.toVReg() orelse continue;
+                    const entry = try vreg_ranges.getOrPut(vreg.index());
+                    if (!entry.found_existing) {
+                        entry.value_ptr.* = .{
+                            .start = inst_idx,
+                            .end = inst_idx,
+                            .class = vreg.class(),
+                        };
+                    } else {
+                        entry.value_ptr.start = @min(entry.value_ptr.start, inst_idx);
+                        entry.value_ptr.end = @max(entry.value_ptr.end, inst_idx);
+                    }
+                }
+
+                for (operand_collector.defs()) |def| {
+                    const vreg = def.toReg().toVReg() orelse continue;
+                    const entry = try vreg_ranges.getOrPut(vreg.index());
+                    if (!entry.found_existing) {
+                        entry.value_ptr.* = .{
+                            .start = inst_idx,
+                            .end = inst_idx,
+                            .class = vreg.class(),
+                        };
+                    } else {
+                        entry.value_ptr.start = @min(entry.value_ptr.start, inst_idx);
+                        entry.value_ptr.end = @max(entry.value_ptr.end, inst_idx);
+                    }
+                }
+            } else {
+                const uses = try inst.getUses(allocator);
+                defer allocator.free(uses);
+                for (uses) |use| {
+                    const entry = try vreg_ranges.getOrPut(use.index());
+                    if (!entry.found_existing) {
+                        entry.value_ptr.* = .{
+                            .start = inst_idx,
+                            .end = inst_idx,
+                            .class = use.class(),
+                        };
+                    } else {
+                        entry.value_ptr.start = @min(entry.value_ptr.start, inst_idx);
+                        entry.value_ptr.end = @max(entry.value_ptr.end, inst_idx);
+                    }
+                }
+
+                const defs = try inst.getDefs(allocator);
+                defer allocator.free(defs);
+                for (defs) |def| {
+                    const entry = try vreg_ranges.getOrPut(def.index());
+                    if (!entry.found_existing) {
+                        entry.value_ptr.* = .{
+                            .start = inst_idx,
+                            .end = inst_idx,
+                            .class = def.class(),
+                        };
+                    } else {
+                        entry.value_ptr.start = @min(entry.value_ptr.start, inst_idx);
+                        entry.value_ptr.end = @max(entry.value_ptr.end, inst_idx);
+                    }
                 }
             }
         }

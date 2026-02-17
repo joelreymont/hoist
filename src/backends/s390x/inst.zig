@@ -310,7 +310,7 @@ pub const Inst = union(enum) {
     ret,
 
     /// Get operands for register allocation.
-    pub fn getOperands(self: *const Inst, collector: *OperandCollector) !void {
+    pub fn getOperands(self: *const Inst, collector: anytype) !void {
         switch (self.*) {
             // ALU instructions with 2 sources
             .agr => |i| {
