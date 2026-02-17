@@ -66,12 +66,22 @@ pub fn build(b: *std.Build) void {
         "bench-report-path",
         "Perf report output path (default: /tmp/hoist-bench-report.md)",
     ) orelse "/tmp/hoist-bench-report.md";
+    const bench_report_json_path = b.option(
+        []const u8,
+        "bench-report-json-path",
+        "Perf JSON report output path (default: /tmp/hoist-bench-report.json)",
+    ) orelse "/tmp/hoist-bench-report.json";
 
     const bench_max_regress_pct = b.option(
         f64,
         "bench-max-regress-pct",
         "Maximum allowed regression percentage (default: 5.0)",
     ) orelse 5.0;
+    const bench_repeat = b.option(
+        usize,
+        "bench-repeat",
+        "Benchmark repetitions per run for median gate stability (default: 5)",
+    ) orelse 5;
 
     // Helper to apply flags to a compile step
     const applyFlags = struct {
@@ -563,6 +573,8 @@ pub fn build(b: *std.Build) void {
 
     const baseline_step = b.step("baseline", "Run benchmarks and write baseline logs to /tmp");
     const run_baseline = b.addRunArtifact(baseline);
+    run_baseline.addArg("--repeat");
+    run_baseline.addArg(b.fmt("{d}", .{bench_repeat}));
     run_baseline.addFileArg(bench_fib.getEmittedBin());
     run_baseline.addFileArg(bench_large.getEmittedBin());
     run_baseline.addFileArg(bench_aarch64.getEmittedBin());
@@ -572,6 +584,8 @@ pub fn build(b: *std.Build) void {
     const run_bench_log = b.addRunArtifact(baseline);
     run_bench_log.addArg("--out");
     run_bench_log.addArg(bench_current_path);
+    run_bench_log.addArg("--repeat");
+    run_bench_log.addArg(b.fmt("{d}", .{bench_repeat}));
     run_bench_log.addFileArg(bench_fib.getEmittedBin());
     run_bench_log.addFileArg(bench_large.getEmittedBin());
     run_bench_log.addFileArg(bench_aarch64.getEmittedBin());
@@ -581,6 +595,8 @@ pub fn build(b: *std.Build) void {
     const run_baseline_log = b.addRunArtifact(baseline);
     run_baseline_log.addArg("--out");
     run_baseline_log.addArg(bench_baseline_path);
+    run_baseline_log.addArg("--repeat");
+    run_baseline_log.addArg(b.fmt("{d}", .{bench_repeat}));
     run_baseline_log.addFileArg(bench_fib.getEmittedBin());
     run_baseline_log.addFileArg(bench_large.getEmittedBin());
     run_baseline_log.addFileArg(bench_aarch64.getEmittedBin());
@@ -604,8 +620,11 @@ pub fn build(b: *std.Build) void {
     run_bench_gate.addArg(bench_current_path);
     run_bench_gate.addArg("--out");
     run_bench_gate.addArg(bench_report_path);
+    run_bench_gate.addArg("--json-out");
+    run_bench_gate.addArg(bench_report_json_path);
     run_bench_gate.addArg("--max-regress-pct");
     run_bench_gate.addArg(b.fmt("{d}", .{bench_max_regress_pct}));
+    run_bench_gate.step.dependOn(&run_baseline_log.step);
     run_bench_gate.step.dependOn(&run_bench_log.step);
     bench_gate_step.dependOn(&run_bench_gate.step);
 

@@ -22,6 +22,7 @@ pub fn main() !void {
     var benches = std.ArrayList([]const u8){};
     defer benches.deinit(al);
     var out_path_opt: ?[]const u8 = null;
+    var repeat: usize = 1;
 
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
@@ -29,6 +30,13 @@ pub fn main() !void {
         if (std.mem.eql(u8, arg, "--out")) {
             if (i + 1 >= args.len) return error.InvalidArgs;
             out_path_opt = args[i + 1];
+            i += 1;
+            continue;
+        }
+        if (std.mem.eql(u8, arg, "--repeat")) {
+            if (i + 1 >= args.len) return error.InvalidArgs;
+            repeat = try std.fmt.parseUnsigned(usize, args[i + 1], 10);
+            if (repeat == 0) return error.InvalidArgs;
             i += 1;
             continue;
         }
@@ -47,23 +55,32 @@ pub fn main() !void {
     var buf: [512]u8 = undefined;
     const header = try std.fmt.bufPrint(&buf, "Hoist baseline run {d}\n", .{ts});
     try file.writeAll(header);
+    const repeat_line = try std.fmt.bufPrint(&buf, "repeat: {d}\n", .{repeat});
+    try file.writeAll(repeat_line);
 
     for (benches.items) |exe| {
-        const line = try std.fmt.bufPrint(&buf, "\n== {s} ==\n", .{exe});
-        try file.writeAll(line);
-        const out = try runBench(al, exe);
-        defer al.free(out.stdout);
-        defer al.free(out.stderr);
+        var run_idx: usize = 0;
+        while (run_idx < repeat) : (run_idx += 1) {
+            const line = try std.fmt.bufPrint(&buf, "\n== {s} [run {d}/{d}] ==\n", .{
+                exe,
+                run_idx + 1,
+                repeat,
+            });
+            try file.writeAll(line);
+            const out = try runBench(al, exe);
+            defer al.free(out.stdout);
+            defer al.free(out.stderr);
 
-        if (out.stdout.len != 0) try file.writeAll(out.stdout);
-        if (out.stderr.len != 0) {
-            try file.writeAll("\n-- stderr --\n");
-            try file.writeAll(out.stderr);
-        }
+            if (out.stdout.len != 0) try file.writeAll(out.stdout);
+            if (out.stderr.len != 0) {
+                try file.writeAll("\n-- stderr --\n");
+                try file.writeAll(out.stderr);
+            }
 
-        if (out.code != 0) {
-            std.debug.print("bench failed: {s} (code {d})\n", .{ exe, out.code });
-            return error.BenchFailed;
+            if (out.code != 0) {
+                std.debug.print("bench failed: {s} (code {d})\n", .{ exe, out.code });
+                return error.BenchFailed;
+            }
         }
     }
 

@@ -27,9 +27,9 @@
 - TLS and FP special values tests
 - AArch64 struct-arg ABI classification tests (`tests/aarch64_struct_args.zig`)
 - Baseline benchmark step: `zig build baseline` writes `/tmp/hoist-baseline-*.log`
-- Fixed baseline log step: `zig build baseline-log` writes `/tmp/hoist-baseline.log`
-- Bench baseline: `zig build bench-log` writes `/tmp/hoist-bench.log`
-- Perf gate + report: `zig build bench-gate` compares baseline/current and writes `/tmp/hoist-bench-report.md`
+- Fixed baseline log step: `zig build baseline-log` writes `/tmp/hoist-baseline.log` with configurable `-Dbench-repeat=N` sampling
+- Bench baseline: `zig build bench-log` writes `/tmp/hoist-bench.log` with configurable `-Dbench-repeat=N` sampling
+- Perf gate + reports: `zig build bench-gate` runs fresh baseline+current captures, compares metric medians, writes markdown `/tmp/hoist-bench-report.md`, and writes JSON `/tmp/hoist-bench-report.json`
 
 ## Partially Implemented / In Progress
 

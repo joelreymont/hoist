@@ -38,24 +38,70 @@ fn metricName(id: MetricId) []const u8 {
     };
 }
 
-const Metrics = struct {
-    values: [metric_ids.len]?u64 = [_]?u64{null} ** metric_ids.len,
+const MetricResult = struct {
+    id: MetricId,
+    baseline_median_us: f64,
+    current_median_us: f64,
+    delta_pct: f64,
+    baseline_n: usize,
+    current_n: usize,
+    regression: bool,
+};
 
-    fn set(self: *Metrics, id: MetricId, value: u64) void {
-        self.values[@intFromEnum(id)] = value;
+const MetricSamples = struct {
+    values: [metric_ids.len]std.ArrayListUnmanaged(u64) = [_]std.ArrayListUnmanaged(u64){.{}} ** metric_ids.len,
+
+    fn deinit(self: *MetricSamples, al: std.mem.Allocator) void {
+        for (&self.values) |*list| list.deinit(al);
     }
 
-    fn get(self: *const Metrics, id: MetricId) ?u64 {
-        return self.values[@intFromEnum(id)];
+    fn add(self: *MetricSamples, al: std.mem.Allocator, id: MetricId, value: u64) !void {
+        try self.values[@intFromEnum(id)].append(al, value);
     }
 
-    fn requireComplete(self: *const Metrics) !void {
+    fn slice(self: *const MetricSamples, id: MetricId) []const u64 {
+        return self.values[@intFromEnum(id)].items;
+    }
+
+    fn count(self: *const MetricSamples, id: MetricId) usize {
+        return self.slice(id).len;
+    }
+
+    fn requireComplete(self: *const MetricSamples) !void {
+        var expected_count: ?usize = null;
         for (metric_ids) |id| {
-            if (self.get(id) == null) {
+            const n = self.count(id);
+            if (n == 0) {
                 std.debug.print("missing metric: {s}\n", .{metricName(id)});
                 return error.MissingMetric;
             }
+            if (expected_count == null) {
+                expected_count = n;
+                continue;
+            }
+            if (n != expected_count.?) {
+                std.debug.print(
+                    "inconsistent samples for {s}: got {d}, expected {d}\n",
+                    .{ metricName(id), n, expected_count.? },
+                );
+                return error.InconsistentMetricSamples;
+            }
         }
+    }
+
+    fn median(self: *MetricSamples, id: MetricId) !f64 {
+        const idx = @intFromEnum(id);
+        const items = self.values[idx].items;
+        if (items.len == 0) return error.MissingMetric;
+
+        std.mem.sort(u64, items, {}, lessThanU64);
+        const mid = items.len / 2;
+        if ((items.len & 1) == 1) {
+            return @as(f64, @floatFromInt(items[mid]));
+        }
+        const left = @as(f64, @floatFromInt(items[mid - 1]));
+        const right = @as(f64, @floatFromInt(items[mid]));
+        return (left + right) / 2.0;
     }
 };
 
@@ -64,6 +110,27 @@ const Section = enum {
     vector,
     memory,
     mixed,
+};
+
+const JsonMetric = struct {
+    id: []const u8,
+    baseline_median_us: f64,
+    current_median_us: f64,
+    delta_pct: f64,
+    baseline_n: usize,
+    current_n: usize,
+    baseline_samples_us: []const u64,
+    current_samples_us: []const u64,
+    regression: bool,
+};
+
+const JsonReport = struct {
+    baseline: []const u8,
+    current: []const u8,
+    max_regress_pct: f64,
+    status: []const u8,
+    regressions: usize,
+    metrics: [metric_ids.len]JsonMetric,
 };
 
 pub fn main() !void {
@@ -77,6 +144,7 @@ pub fn main() !void {
     var baseline_path: ?[]const u8 = null;
     var current_path: ?[]const u8 = null;
     var out_path: []const u8 = "/tmp/hoist-bench-report.md";
+    var json_out_path: ?[]const u8 = null;
     var max_regress_pct: f64 = 5.0;
 
     var i: usize = 1;
@@ -93,6 +161,10 @@ pub fn main() !void {
         } else if (std.mem.eql(u8, arg, "--out")) {
             if (i + 1 >= args.len) return error.InvalidArgs;
             out_path = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--json-out")) {
+            if (i + 1 >= args.len) return error.InvalidArgs;
+            json_out_path = args[i + 1];
             i += 1;
         } else if (std.mem.eql(u8, arg, "--max-regress-pct")) {
             if (i + 1 >= args.len) return error.InvalidArgs;
@@ -118,50 +190,108 @@ pub fn main() !void {
     const current_text = try std.fs.cwd().readFileAlloc(al, current_file, 16 * 1024 * 1024);
     defer al.free(current_text);
 
-    const baseline = try parseMetrics(baseline_text);
+    var baseline = try parseMetrics(al, baseline_text);
+    defer baseline.deinit(al);
     try baseline.requireComplete();
-    const current = try parseMetrics(current_text);
+
+    var current = try parseMetrics(al, current_text);
+    defer current.deinit(al);
     try current.requireComplete();
 
-    var report = std.ArrayList(u8){};
-    defer report.deinit(al);
-    try report.writer(al).print("# Hoist Perf Gate Report\n\n", .{});
-    try report.writer(al).print("- Baseline: `{s}`\n", .{baseline_file});
-    try report.writer(al).print("- Current: `{s}`\n", .{current_file});
-    try report.writer(al).print("- Max allowed regression: {d:.2}%\n\n", .{max_regress_pct});
-    try report.appendSlice(al, "| Metric | Baseline (us) | Current (us) | Delta % |\n");
-    try report.appendSlice(al, "|---|---:|---:|---:|\n");
-
+    var results: [metric_ids.len]MetricResult = undefined;
     var regressions: usize = 0;
-    for (metric_ids) |id| {
-        const b = baseline.get(id).?;
-        const c = current.get(id).?;
-        const delta_pct = deltaPercent(b, c);
-        if (delta_pct > max_regress_pct) regressions += 1;
-        try report.writer(al).print("| {s} | {d} | {d} | {d:.2}% |\n", .{
-            metricName(id),
-            b,
-            c,
-            delta_pct,
-        });
+
+    for (metric_ids, 0..) |id, idx| {
+        const b_med = try baseline.median(id);
+        const c_med = try current.median(id);
+        const delta_pct = deltaPercent(b_med, c_med);
+        const reg = delta_pct > max_regress_pct;
+        regressions += @intFromBool(reg);
+        results[idx] = .{
+            .id = id,
+            .baseline_median_us = b_med,
+            .current_median_us = c_med,
+            .delta_pct = delta_pct,
+            .baseline_n = baseline.count(id),
+            .current_n = current.count(id),
+            .regression = reg,
+        };
     }
 
     const status = if (regressions == 0) "PASS" else "FAIL";
-    try report.writer(al).print("\nStatus: **{s}** ({d} regressions)\n", .{ status, regressions });
+
+    var report = std.ArrayList(u8){};
+    defer report.deinit(al);
+    const w = report.writer(al);
+    try w.print("# Hoist Perf Gate Report\n\n", .{});
+    try w.print("- Baseline: `{s}`\n", .{baseline_file});
+    try w.print("- Current: `{s}`\n", .{current_file});
+    try w.print("- Max allowed regression: {d:.2}%\n\n", .{max_regress_pct});
+    try report.appendSlice(al, "| Metric | Baseline median (us) | Current median (us) | Delta % | N (b/c) |\n");
+    try report.appendSlice(al, "|---|---:|---:|---:|---:|\n");
+
+    for (results) |r| {
+        try w.print("| {s} | {d:.2} | {d:.2} | {d:.2}% | {d}/{d} |\n", .{
+            metricName(r.id),
+            r.baseline_median_us,
+            r.current_median_us,
+            r.delta_pct,
+            r.baseline_n,
+            r.current_n,
+        });
+    }
+
+    try w.print("\nStatus: **{s}** ({d} regressions)\n", .{ status, regressions });
 
     var out_file = try std.fs.createFileAbsolute(out_path, .{ .truncate = true });
     defer out_file.close();
     try out_file.writeAll(report.items);
     try out_file.sync();
 
+    if (json_out_path) |json_path| {
+        var metrics_json: [metric_ids.len]JsonMetric = undefined;
+        for (results, 0..) |r, idx| {
+            metrics_json[idx] = .{
+                .id = metricName(r.id),
+                .baseline_median_us = r.baseline_median_us,
+                .current_median_us = r.current_median_us,
+                .delta_pct = r.delta_pct,
+                .baseline_n = r.baseline_n,
+                .current_n = r.current_n,
+                .baseline_samples_us = baseline.slice(r.id),
+                .current_samples_us = current.slice(r.id),
+                .regression = r.regression,
+            };
+        }
+
+        const json_report = JsonReport{
+            .baseline = baseline_file,
+            .current = current_file,
+            .max_regress_pct = max_regress_pct,
+            .status = status,
+            .regressions = regressions,
+            .metrics = metrics_json,
+        };
+
+        var json_file = try std.fs.createFileAbsolute(json_path, .{ .truncate = true });
+        defer json_file.close();
+        const json_text = try std.json.Stringify.valueAlloc(al, json_report, .{ .whitespace = .indent_2 });
+        defer al.free(json_text);
+        try json_file.writeAll(json_text);
+        try json_file.writeAll("\n");
+        try json_file.sync();
+        std.debug.print("perf json written: {s}\n", .{json_path});
+    }
+
     std.debug.print("perf report written: {s}\n", .{out_path});
     if (regressions != 0) return error.PerfRegression;
 }
 
-fn parseMetrics(text: []const u8) !Metrics {
-    var out = Metrics{};
-    var section: ?Section = null;
+fn parseMetrics(al: std.mem.Allocator, text: []const u8) !MetricSamples {
+    var out = MetricSamples{};
+    errdefer out.deinit(al);
 
+    var section: ?Section = null;
     var lines = std.mem.tokenizeScalar(u8, text, '\n');
     while (lines.next()) |line_raw| {
         const line = std.mem.trim(u8, line_raw, " \t\r");
@@ -186,7 +316,7 @@ fn parseMetrics(text: []const u8) !Metrics {
 
         if (std.mem.startsWith(u8, line, "Avg compilation:")) {
             const v = parseFirstUnsignedAfter(line, "Avg compilation:") orelse return error.ParseFailed;
-            out.set(.fib_compile_us, v);
+            try out.add(al, .fib_compile_us, v);
             continue;
         }
 
@@ -194,10 +324,10 @@ fn parseMetrics(text: []const u8) !Metrics {
             const size = parseFirstUnsignedAfter(line, "Size") orelse return error.ParseFailed;
             const compile_us = parseFirstUnsignedAfter(line, "compile") orelse return error.ParseFailed;
             switch (size) {
-                100 => out.set(.large_100_compile_us, compile_us),
-                500 => out.set(.large_500_compile_us, compile_us),
-                1000 => out.set(.large_1000_compile_us, compile_us),
-                5000 => out.set(.large_5000_compile_us, compile_us),
+                100 => try out.add(al, .large_100_compile_us, compile_us),
+                500 => try out.add(al, .large_500_compile_us, compile_us),
+                1000 => try out.add(al, .large_1000_compile_us, compile_us),
+                5000 => try out.add(al, .large_5000_compile_us, compile_us),
                 else => {},
             }
             continue;
@@ -207,10 +337,10 @@ fn parseMetrics(text: []const u8) !Metrics {
             const v = parseFirstUnsignedAfter(line, "Avg compile time:") orelse return error.ParseFailed;
             const s = section orelse continue;
             switch (s) {
-                .int => out.set(.int_compile_us, v),
-                .vector => out.set(.vector_compile_us, v),
-                .memory => out.set(.memory_compile_us, v),
-                .mixed => out.set(.mixed_compile_us, v),
+                .int => try out.add(al, .int_compile_us, v),
+                .vector => try out.add(al, .vector_compile_us, v),
+                .memory => try out.add(al, .memory_compile_us, v),
+                .mixed => try out.add(al, .mixed_compile_us, v),
             }
             continue;
         }
@@ -230,9 +360,11 @@ fn parseFirstUnsignedAfter(line: []const u8, needle: []const u8) ?u64 {
     return std.fmt.parseUnsigned(u64, line[start..i], 10) catch null;
 }
 
-fn deltaPercent(baseline: u64, current: u64) f64 {
-    if (baseline == 0) return 0.0;
-    const b = @as(f64, @floatFromInt(baseline));
-    const c = @as(f64, @floatFromInt(current));
-    return ((c - b) / b) * 100.0;
+fn lessThanU64(_: void, a: u64, b: u64) bool {
+    return a < b;
+}
+
+fn deltaPercent(baseline: f64, current: f64) f64 {
+    if (baseline == 0.0) return 0.0;
+    return ((current - baseline) / baseline) * 100.0;
 }
