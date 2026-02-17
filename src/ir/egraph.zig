@@ -573,31 +573,28 @@ pub const EqualitySaturation = struct {
     fn applyRule(self: *EqualitySaturation, rule: anytype) !bool {
         var changed = false;
 
-        const EClassSnapshot = struct {
-            id: EClassId,
-            nodes: []const ENode,
-        };
-
-        // Collect e-classes to process (snapshot to avoid iterator invalidation)
-        var eclasses = std.ArrayList(EClassSnapshot){};
-        defer {
-            for (eclasses.items) |ec| {
-                self.allocator.free(ec.nodes);
-            }
-            eclasses.deinit(self.allocator);
-        }
+        // Snapshot only e-class IDs; avoid duplicating all node arrays.
+        var eclass_ids = std.ArrayList(EClassId){};
+        defer eclass_ids.deinit(self.allocator);
 
         var class_iter = self.eg.classes.iterator();
         while (class_iter.next()) |entry| {
-            const eclass = entry.value_ptr;
-            const nodes_copy = try self.allocator.dupe(ENode, eclass.nodes.items);
-            try eclasses.append(self.allocator, .{ .id = eclass.id, .nodes = nodes_copy });
+            try eclass_ids.append(self.allocator, entry.key_ptr.*);
         }
 
-        // Now iterate over snapshot
-        for (eclasses.items) |ec| {
-            for (ec.nodes) |node| {
-                if (try self.matchAndRewrite(rule, node, ec.id)) {
+        // Iterate over classes by ID. For each class, process only nodes that
+        // existed at loop entry; new nodes are handled by later iterations.
+        for (eclass_ids.items) |eclass_id| {
+            const initial_len = blk: {
+                const eclass = self.eg.classes.get(eclass_id) orelse continue;
+                break :blk eclass.nodes.items.len;
+            };
+
+            var i: usize = 0;
+            while (i < initial_len) : (i += 1) {
+                const eclass = self.eg.classes.get(eclass_id) orelse break;
+                if (i >= eclass.nodes.items.len) break;
+                if (try self.matchAndRewrite(rule, eclass.nodes.items[i], eclass_id)) {
                     changed = true;
                 }
             }

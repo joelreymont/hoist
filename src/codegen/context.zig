@@ -12,6 +12,7 @@ const ControlFlowGraph = ir.ControlFlowGraph;
 const DominatorTree = ir.DominatorTree;
 const LoopInfo = ir.LoopInfo;
 const pipeline_state = @import("pipeline_state.zig");
+const egraph_rules = @import("../ir/egraph_rules.zig");
 
 pub const DebugOptions = struct {
     dump_ir: bool,
@@ -100,6 +101,9 @@ pub const Context = struct {
     /// Target configuration (features, arch).
     target: ?*const @import("compile.zig").Target,
 
+    /// Cached e-graph rewrite rules reused across compiles.
+    egraph_rules_cache: ?egraph_rules.StandardRules,
+
     pub fn init(allocator: std.mem.Allocator) Context {
         return .{
             .allocator = allocator,
@@ -118,6 +122,7 @@ pub const Context = struct {
             .want_disasm = false,
             .debug = DebugOptions.init(),
             .target = null,
+            .egraph_rules_cache = null,
         };
     }
 
@@ -139,6 +144,7 @@ pub const Context = struct {
             .want_disasm = false,
             .debug = DebugOptions.init(),
             .target = null,
+            .egraph_rules_cache = null,
         };
     }
 
@@ -170,6 +176,10 @@ pub const Context = struct {
         }
         if (self.s390x_lowered) |*state| {
             state.deinit();
+        }
+        if (self.egraph_rules_cache) |*rules| {
+            rules.deinit();
+            self.egraph_rules_cache = null;
         }
         self.debug.deinit(self.allocator);
     }

@@ -932,6 +932,9 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
         try ctx.domtree.compute(ctx.allocator, entry, &ctx.cfg);
     }
 
+    // Fast-compile mode: keep legality + CFG metadata, skip expensive opts.
+    if (!target.optimize) return;
+
     // 4. Eliminate unreachable code
     _ = try eliminateUnreachableCode(ctx);
     try dumpIrStage(ctx, "unreachable");
@@ -1131,13 +1134,15 @@ fn runEGraphOptimization(ctx: *Context) CodegenError!bool {
         };
     };
 
-    // Apply algebraic rewrites
-    var rules = egraph_rules.StandardRules.init(ctx.allocator) catch |err| {
-        return switch (err) {
-            error.OutOfMemory => CodegenError.OutOfMemory,
+    // Apply algebraic rewrites using cached rule set.
+    if (ctx.egraph_rules_cache == null) {
+        ctx.egraph_rules_cache = egraph_rules.StandardRules.init(ctx.allocator) catch |err| {
+            return switch (err) {
+                error.OutOfMemory => CodegenError.OutOfMemory,
+            };
         };
-    };
-    defer rules.deinit();
+    }
+    const rules = &(ctx.egraph_rules_cache orelse return error.OptimizationFailed);
 
     var saturation = egraph_mod.EqualitySaturation.init(ctx.allocator, &eg);
 
@@ -7033,6 +7038,8 @@ pub const Target = struct {
     opt_level: OptLevel,
     /// Enable verification.
     verify: bool,
+    /// Enable optimization passes.
+    optimize: bool = true,
     /// CPU features.
     features: @import("../target/features.zig").Features,
 
@@ -7054,6 +7061,7 @@ pub const Target = struct {
             .arch = arch,
             .opt_level = .none,
             .verify = false,
+            .optimize = true,
             .features = @import("../target/features.zig").Features.init(),
         };
     }
@@ -7068,6 +7076,7 @@ test "compile: target initialization" {
     try testing.expectEqual(Target.Architecture.aarch64, target.arch);
     try testing.expectEqual(Target.OptLevel.none, target.opt_level);
     try testing.expect(!target.verify);
+    try testing.expect(target.optimize);
 }
 
 test "compile: IR dump writes stage file" {
