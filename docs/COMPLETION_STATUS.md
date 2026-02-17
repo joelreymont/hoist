@@ -30,6 +30,12 @@
 - Fixed baseline log step: `zig build baseline-log` writes `/tmp/hoist-baseline.log` with configurable `-Dbench-repeat=N` sampling
 - Bench baseline: `zig build bench-log` writes `/tmp/hoist-bench.log` with configurable `-Dbench-repeat=N` sampling
 - Perf gate + reports: `zig build bench-gate` runs fresh baseline+current captures, compares metric medians, writes markdown `/tmp/hoist-bench-report.md`, and writes JSON `/tmp/hoist-bench-report.json`
+- Bench profile default: bench, baseline, and perf-gate executables use `-Dbench-optimize=ReleaseFast` by default (override with `-Dbench-optimize=<mode>`)
+- Canonical perf commands:
+  - `zig build bench-log -Dbench-repeat=5 --global-cache-dir .zig-global-cache`
+  - `zig build baseline-log -Dbench-repeat=5 --global-cache-dir .zig-global-cache`
+  - `zig build bench-gate -Dbench-repeat=5 --global-cache-dir .zig-global-cache`
+  - Explicit override example: `zig build bench-log -Dbench-optimize=Debug -Dbench-repeat=3 --global-cache-dir .zig-global-cache`
 
 ## Partially Implemented / In Progress
 
@@ -82,4 +88,4 @@
 - Opcode audit and remaining tasks: `docs/arm64_parity_plan.md`
 - Feature gaps: `docs/feature_gap_analysis.md`
 - Cranelift gap summary: `docs/cranelift_gap_analysis.md`
-- Active work items: `dot ls` (currently none open)
+- Active work items: `dot ls`

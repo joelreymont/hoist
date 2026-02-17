@@ -3,6 +3,11 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const bench_optimize = b.option(
+        std.builtin.OptimizeMode,
+        "bench-optimize",
+        "Optimization mode for benchmark and perf-gate executables (default: ReleaseFast)",
+    ) orelse .ReleaseFast;
 
     // Optimization levels (use -Doptimize=<level>):
     //   Debug        - No optimizations, safety checks enabled (default)
@@ -520,15 +525,21 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(standalone_e2e);
 
     // Benchmarks
+    const bench_hoist = b.createModule(.{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = bench_optimize,
+    });
+
     const bench_fib = b.addExecutable(.{
         .name = "bench_fib",
         .root_module = b.createModule(.{
             .root_source_file = b.path("bench/compile_fib.zig"),
             .target = target,
-            .optimize = optimize,
+            .optimize = bench_optimize,
         }),
     });
-    bench_fib.root_module.addImport("hoist", lib.root_module);
+    bench_fib.root_module.addImport("hoist", bench_hoist);
     applyFlags(bench_fib, enable_lto, debug_info, strip_debug, pic, single_threaded);
 
     const bench_large = b.addExecutable(.{
@@ -536,10 +547,10 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("bench/compile_large.zig"),
             .target = target,
-            .optimize = optimize,
+            .optimize = bench_optimize,
         }),
     });
-    bench_large.root_module.addImport("hoist", lib.root_module);
+    bench_large.root_module.addImport("hoist", bench_hoist);
     applyFlags(bench_large, enable_lto, debug_info, strip_debug, pic, single_threaded);
 
     const bench_aarch64 = b.addExecutable(.{
@@ -547,10 +558,10 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("bench/aarch64_perf.zig"),
             .target = target,
-            .optimize = optimize,
+            .optimize = bench_optimize,
         }),
     });
-    bench_aarch64.root_module.addImport("hoist", lib.root_module);
+    bench_aarch64.root_module.addImport("hoist", bench_hoist);
     applyFlags(bench_aarch64, enable_lto, debug_info, strip_debug, pic, single_threaded);
 
     const bench_step = b.step("bench", "Run benchmarks");
@@ -566,7 +577,7 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("tools/baseline.zig"),
             .target = target,
-            .optimize = optimize,
+            .optimize = bench_optimize,
         }),
     });
     applyFlags(baseline, enable_lto, debug_info, strip_debug, pic, single_threaded);
@@ -607,7 +618,7 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("tools/perf_gate.zig"),
             .target = target,
-            .optimize = optimize,
+            .optimize = bench_optimize,
         }),
     });
     applyFlags(perf_gate, enable_lto, debug_info, strip_debug, pic, single_threaded);
