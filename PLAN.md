@@ -128,6 +128,15 @@ Unify all parity/gap plans into one executable document where every actionable t
 - [x] Fix object writer issues (`dot:hoist-fix-obj-writers-75b5006b`)
 - [x] Branch relocations (`dot:hoist-branch-relocs-77085a9b`)
 
+### Compile Throughput 2-3x (Active)
+- [ ] 2-3x compile perf (`dot:hoist-2-3x-compile-dcc76f30`)
+- [x] Profile phase costs (`dot:hoist-profile-phase-costs-ab37034a`)
+- [ ] Kill alloc hotspots (`dot:hoist-kill-alloc-hotspots-5f73ff55`)
+- [ ] Reuse lowering state (`dot:hoist-reuse-lowering-state-06ae009d`)
+- [ ] Regalloc fast path (`dot:hoist-regalloc-fast-path-ae575e49`)
+- [ ] Addressing mode fusion (`dot:hoist-addressing-mode-fusion-a5d7bc09`)
+- [ ] Bench gate + report (`dot:hoist-bench-gate-report-a98c6e5d`)
+
 ## Source-ID Reconciliation
 - Full cross-source ID inventory: `/Users/joel/Work/hoist/docs/plan_dot_inventory.md`
 - Inventory result on this merge:

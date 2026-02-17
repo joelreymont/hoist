@@ -14,6 +14,41 @@ const LoopInfo = ir.LoopInfo;
 const pipeline_state = @import("pipeline_state.zig");
 const egraph_rules = @import("../ir/egraph_rules.zig");
 
+pub const CompileProfile = struct {
+    verify_ns: u64,
+    optimize_ns: u64,
+    lower_ns: u64,
+    regalloc_ns: u64,
+    rewrite_ns: u64,
+    phi_ns: u64,
+    emit_ns: u64,
+    total_ns: u64,
+
+    pub fn init() CompileProfile {
+        return .{
+            .verify_ns = 0,
+            .optimize_ns = 0,
+            .lower_ns = 0,
+            .regalloc_ns = 0,
+            .rewrite_ns = 0,
+            .phi_ns = 0,
+            .emit_ns = 0,
+            .total_ns = 0,
+        };
+    }
+
+    pub fn add(self: *CompileProfile, other: CompileProfile) void {
+        self.verify_ns += other.verify_ns;
+        self.optimize_ns += other.optimize_ns;
+        self.lower_ns += other.lower_ns;
+        self.regalloc_ns += other.regalloc_ns;
+        self.rewrite_ns += other.rewrite_ns;
+        self.phi_ns += other.phi_ns;
+        self.emit_ns += other.emit_ns;
+        self.total_ns += other.total_ns;
+    }
+};
+
 pub const DebugOptions = struct {
     dump_ir: bool,
     dump_dir: ?[]const u8,
@@ -104,6 +139,15 @@ pub const Context = struct {
     /// Cached e-graph rewrite rules reused across compiles.
     egraph_rules_cache: ?egraph_rules.StandardRules,
 
+    /// Last per-stage compile profile.
+    last_profile: CompileProfile,
+    /// Cumulative per-stage compile profile.
+    accum_profile: CompileProfile,
+    /// Number of compile invocations.
+    compile_count: u64,
+    /// Enable per-stage compile profiling.
+    profile_enabled: bool,
+
     pub fn init(allocator: std.mem.Allocator) Context {
         return .{
             .allocator = allocator,
@@ -123,6 +167,10 @@ pub const Context = struct {
             .debug = DebugOptions.init(),
             .target = null,
             .egraph_rules_cache = null,
+            .last_profile = CompileProfile.init(),
+            .accum_profile = CompileProfile.init(),
+            .compile_count = 0,
+            .profile_enabled = false,
         };
     }
 
@@ -145,6 +193,10 @@ pub const Context = struct {
             .debug = DebugOptions.init(),
             .target = null,
             .egraph_rules_cache = null,
+            .last_profile = CompileProfile.init(),
+            .accum_profile = CompileProfile.init(),
+            .compile_count = 0,
+            .profile_enabled = false,
         };
     }
 

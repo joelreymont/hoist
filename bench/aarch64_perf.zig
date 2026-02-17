@@ -10,6 +10,7 @@ const LoadData = hoist.instruction_data.LoadData;
 const StoreData = hoist.instruction_data.StoreData;
 const ContextBuilder = hoist.context.ContextBuilder;
 const MemFlags = hoist.memflags.MemFlags;
+const CompileProfile = hoist.codegen.compile.CompileProfile;
 
 /// Performance benchmark for aarch64 backend.
 /// Measures compile time, code size, and instruction throughput.
@@ -39,6 +40,18 @@ fn countInsts(func: *const Function) usize {
     return count;
 }
 
+fn printStageAverages(sum: CompileProfile, compile_count: u64) void {
+    if (compile_count == 0) return;
+    std.debug.print("  Stage avg verify: {d}us\n", .{(sum.verify_ns / compile_count) / 1000});
+    std.debug.print("  Stage avg optimize: {d}us\n", .{(sum.optimize_ns / compile_count) / 1000});
+    std.debug.print("  Stage avg lower: {d}us\n", .{(sum.lower_ns / compile_count) / 1000});
+    std.debug.print("  Stage avg regalloc: {d}us\n", .{(sum.regalloc_ns / compile_count) / 1000});
+    std.debug.print("  Stage avg rewrite: {d}us\n", .{(sum.rewrite_ns / compile_count) / 1000});
+    std.debug.print("  Stage avg phi: {d}us\n", .{(sum.phi_ns / compile_count) / 1000});
+    std.debug.print("  Stage avg emit: {d}us\n", .{(sum.emit_ns / compile_count) / 1000});
+    std.debug.print("  Stage avg total: {d}us\n", .{(sum.total_ns / compile_count) / 1000});
+}
+
 fn benchmarkIntArithmetic(allocator: std.mem.Allocator) !void {
     const iterations = 1000;
     std.debug.print("Integer Arithmetic Benchmark ({d} iterations)\n", .{iterations});
@@ -54,6 +67,8 @@ fn benchmarkIntArithmetic(allocator: std.mem.Allocator) !void {
         .optimization(true)
         .build();
     defer ctx.deinit();
+    ctx.setCompileProfiling(true);
+    ctx.resetCompileProfile();
 
     for (0..iterations) |_| {
         var func = try createIntArithmeticFunction(allocator);
@@ -82,6 +97,8 @@ fn benchmarkIntArithmetic(allocator: std.mem.Allocator) !void {
     std.debug.print("  Throughput:       {d:.2} insts/ms\n\n", .{
         @as(f64, @floatFromInt(avg_insts)) / (@as(f64, @floatFromInt(avg_time_us)) / 1000.0),
     });
+    printStageAverages(ctx.getAccumCompileProfile(), ctx.getCompileCount());
+    std.debug.print("\n", .{});
 }
 
 fn benchmarkVectorOps(allocator: std.mem.Allocator) !void {
@@ -99,6 +116,8 @@ fn benchmarkVectorOps(allocator: std.mem.Allocator) !void {
         .optimization(true)
         .build();
     defer ctx.deinit();
+    ctx.setCompileProfiling(true);
+    ctx.resetCompileProfile();
 
     for (0..iterations) |_| {
         var func = try createVectorFunction(allocator);
@@ -127,6 +146,8 @@ fn benchmarkVectorOps(allocator: std.mem.Allocator) !void {
     std.debug.print("  Throughput:       {d:.2} insts/ms\n\n", .{
         @as(f64, @floatFromInt(avg_insts)) / (@as(f64, @floatFromInt(avg_time_us)) / 1000.0),
     });
+    printStageAverages(ctx.getAccumCompileProfile(), ctx.getCompileCount());
+    std.debug.print("\n", .{});
 }
 
 fn benchmarkMemoryOps(allocator: std.mem.Allocator) !void {
@@ -144,6 +165,8 @@ fn benchmarkMemoryOps(allocator: std.mem.Allocator) !void {
         .optimization(true)
         .build();
     defer ctx.deinit();
+    ctx.setCompileProfiling(true);
+    ctx.resetCompileProfile();
 
     for (0..iterations) |_| {
         var func = try createMemoryFunction(allocator);
@@ -172,6 +195,8 @@ fn benchmarkMemoryOps(allocator: std.mem.Allocator) !void {
     std.debug.print("  Throughput:       {d:.2} insts/ms\n\n", .{
         @as(f64, @floatFromInt(avg_insts)) / (@as(f64, @floatFromInt(avg_time_us)) / 1000.0),
     });
+    printStageAverages(ctx.getAccumCompileProfile(), ctx.getCompileCount());
+    std.debug.print("\n", .{});
 }
 
 fn benchmarkMixedWorkload(allocator: std.mem.Allocator) !void {
@@ -189,6 +214,8 @@ fn benchmarkMixedWorkload(allocator: std.mem.Allocator) !void {
         .optimization(true)
         .build();
     defer ctx.deinit();
+    ctx.setCompileProfiling(true);
+    ctx.resetCompileProfile();
 
     for (0..iterations) |_| {
         var func = try createMixedFunction(allocator);
@@ -217,6 +244,8 @@ fn benchmarkMixedWorkload(allocator: std.mem.Allocator) !void {
     std.debug.print("  Throughput:       {d:.2} insts/ms\n\n", .{
         @as(f64, @floatFromInt(avg_insts)) / (@as(f64, @floatFromInt(avg_time_us)) / 1000.0),
     });
+    printStageAverages(ctx.getAccumCompileProfile(), ctx.getCompileCount());
+    std.debug.print("\n", .{});
 }
 
 /// Create function with integer arithmetic:

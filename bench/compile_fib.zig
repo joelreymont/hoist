@@ -12,6 +12,7 @@ const BranchData = hoist.instruction_data.BranchData;
 const Imm64 = hoist.immediates.Imm64;
 const IntCC = hoist.condcodes.IntCC;
 const ContextBuilder = hoist.context.ContextBuilder;
+const CompileProfile = hoist.codegen.compile.CompileProfile;
 
 /// Benchmark compilation of Fibonacci function.
 /// Measures IR construction and compilation time.
@@ -36,6 +37,8 @@ pub fn main() !void {
         .optimization(true)
         .build();
     defer ctx.deinit();
+    ctx.setCompileProfiling(true);
+    ctx.resetCompileProfile();
 
     for (0..iterations) |_| {
         // Measure IR construction time
@@ -58,12 +61,27 @@ pub fn main() !void {
     const avg_ir_ns = total_ir_time / iterations;
     const avg_compile_ns = total_compile_time / iterations;
     const avg_code_size = total_code_size / iterations;
+    const compile_count = ctx.getCompileCount();
+    const stage_sum = ctx.getAccumCompileProfile();
 
     std.debug.print("\nResults:\n", .{});
     std.debug.print("  Avg IR construction: {d}us\n", .{avg_ir_ns / 1000});
     std.debug.print("  Avg compilation:     {d}us\n", .{avg_compile_ns / 1000});
     std.debug.print("  Avg code size:       {d} bytes\n", .{avg_code_size});
     std.debug.print("  Total time:          {d}ms\n", .{(total_ir_time + total_compile_time) / 1_000_000});
+    printStageAverages(stage_sum, compile_count);
+}
+
+fn printStageAverages(sum: CompileProfile, compile_count: u64) void {
+    if (compile_count == 0) return;
+    std.debug.print("  Stage avg verify:    {d}us\n", .{(sum.verify_ns / compile_count) / 1000});
+    std.debug.print("  Stage avg optimize:  {d}us\n", .{(sum.optimize_ns / compile_count) / 1000});
+    std.debug.print("  Stage avg lower:     {d}us\n", .{(sum.lower_ns / compile_count) / 1000});
+    std.debug.print("  Stage avg regalloc:  {d}us\n", .{(sum.regalloc_ns / compile_count) / 1000});
+    std.debug.print("  Stage avg rewrite:   {d}us\n", .{(sum.rewrite_ns / compile_count) / 1000});
+    std.debug.print("  Stage avg phi:       {d}us\n", .{(sum.phi_ns / compile_count) / 1000});
+    std.debug.print("  Stage avg emit:      {d}us\n", .{(sum.emit_ns / compile_count) / 1000});
+    std.debug.print("  Stage avg total:     {d}us\n", .{(sum.total_ns / compile_count) / 1000});
 }
 
 /// Create IR for Fibonacci function:

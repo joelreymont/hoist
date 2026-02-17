@@ -101,6 +101,28 @@ pub const Context = struct {
         return self.codegen_ctx.takeCompiledCode().?;
     }
 
+    pub fn setCompileProfiling(self: *Context, enabled: bool) void {
+        self.codegen_ctx.profile_enabled = enabled;
+    }
+
+    pub fn resetCompileProfile(self: *Context) void {
+        self.codegen_ctx.last_profile = compile_mod.CompileProfile.init();
+        self.codegen_ctx.accum_profile = compile_mod.CompileProfile.init();
+        self.codegen_ctx.compile_count = 0;
+    }
+
+    pub fn getLastCompileProfile(self: *const Context) compile_mod.CompileProfile {
+        return self.codegen_ctx.last_profile;
+    }
+
+    pub fn getAccumCompileProfile(self: *const Context) compile_mod.CompileProfile {
+        return self.codegen_ctx.accum_profile;
+    }
+
+    pub fn getCompileCount(self: *const Context) u64 {
+        return self.codegen_ctx.compile_count;
+    }
+
     /// Get target ISA name string.
     fn targetISAName(arch: Arch) []const u8 {
         return switch (arch) {
@@ -288,6 +310,8 @@ test "Context compile function" {
     var ctx = Context.init(testing.allocator);
     defer ctx.deinit();
     ctx.verify = false; // Skip verification for stub function
+    ctx.setCompileProfiling(true);
+    ctx.resetCompileProfile();
 
     const sig = root.signature.Signature.init(testing.allocator, .fast);
     var func = try Function.init(testing.allocator, "test", sig);
@@ -298,6 +322,11 @@ test "Context compile function" {
 
     // Empty function produces minimal code
     try testing.expect(code.code.len == 0);
+    try testing.expectEqual(@as(u64, 1), ctx.getCompileCount());
+    try testing.expectEqual(
+        ctx.getLastCompileProfile().total_ns,
+        ctx.getAccumCompileProfile().total_ns,
+    );
 }
 
 test "Context compile function unsupported target" {

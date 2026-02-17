@@ -9,6 +9,7 @@ const InstructionData = hoist.instruction_data.InstructionData;
 const UnaryImmData = hoist.instruction_data.UnaryImmData;
 const Imm64 = hoist.immediates.Imm64;
 const ContextBuilder = hoist.context.ContextBuilder;
+const CompileProfile = hoist.codegen.compile.CompileProfile;
 
 /// Benchmark compilation of large functions.
 /// Tests scalability with many basic blocks and instructions.
@@ -27,8 +28,10 @@ pub fn main() !void {
         .optimization(false)
         .build();
     defer ctx.deinit();
+    ctx.setCompileProfiling(true);
 
     for (sizes) |size| {
+        ctx.resetCompileProfile();
         var timer = try std.time.Timer.start();
 
         const start = timer.read();
@@ -50,7 +53,22 @@ pub fn main() !void {
             compile_time / 1000,
             code.code.items.len,
         });
+        printStageAverages(ctx.getAccumCompileProfile(), ctx.getCompileCount());
     }
+}
+
+fn printStageAverages(sum: CompileProfile, compile_count: u64) void {
+    if (compile_count == 0) return;
+    std.debug.print("  stage(us): verify={d} opt={d} lower={d} regalloc={d} rewrite={d} phi={d} emit={d} total={d}\n", .{
+        (sum.verify_ns / compile_count) / 1000,
+        (sum.optimize_ns / compile_count) / 1000,
+        (sum.lower_ns / compile_count) / 1000,
+        (sum.regalloc_ns / compile_count) / 1000,
+        (sum.rewrite_ns / compile_count) / 1000,
+        (sum.phi_ns / compile_count) / 1000,
+        (sum.emit_ns / compile_count) / 1000,
+        (sum.total_ns / compile_count) / 1000,
+    });
 }
 
 /// Create large function with many sequential arithmetic operations.

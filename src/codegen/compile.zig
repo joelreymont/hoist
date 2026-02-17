@@ -13,6 +13,7 @@
 const std = @import("std");
 pub const Context = @import("context.zig").Context;
 pub const CompiledCode = @import("context.zig").CompiledCode;
+pub const CompileProfile = @import("context.zig").CompileProfile;
 const Relocation = @import("context.zig").Relocation;
 const RelocKind = @import("context.zig").RelocKind;
 const Function = @import("../ir/function.zig").Function;
@@ -178,6 +179,10 @@ pub const CodegenError = error{
 pub const CompileResult = CodegenError!*const CompiledCode;
 
 pub const VRegOrigin = pipeline_state.VRegOrigin;
+
+fn elapsedNs(start: i128, end: i128) u64 {
+    return if (end > start) @as(u64, @intCast(end - start)) else 0;
+}
 
 const scratch_int_regs = [_]reg_mod.PReg{
     reg_mod.PReg.new(.int, 9),
@@ -819,6 +824,21 @@ pub fn compile(
     func: *Function,
     target: *const Target,
 ) CompileResult {
+    const do_profile = ctx.profile_enabled;
+    var total_start: i128 = 0;
+    if (do_profile) {
+        total_start = std.time.nanoTimestamp();
+        ctx.last_profile = CompileProfile.init();
+    }
+    defer {
+        if (do_profile) {
+            const end = std.time.nanoTimestamp();
+            ctx.last_profile.total_ns = elapsedNs(total_start, end);
+            ctx.accum_profile.add(ctx.last_profile);
+            ctx.compile_count += 1;
+        }
+    }
+
     ctx.debug.loadFromEnv(ctx.allocator) catch |err| switch (err) {
         error.OutOfMemory => return CodegenError.OutOfMemory,
         error.InvalidWtf8 => return CodegenError.OptimizationFailed,
@@ -834,28 +854,63 @@ pub fn compile(
     ctx.clearS390xState();
 
     // 1. Verify IR (if enabled)
+    const verify_start = if (do_profile) std.time.nanoTimestamp() else 0;
     try verifyIf(ctx, func, target);
+    if (do_profile) {
+        const verify_end = std.time.nanoTimestamp();
+        ctx.last_profile.verify_ns = elapsedNs(verify_start, verify_end);
+    }
     try dumpIrStage(ctx, "verify");
 
     // 2. Optimize IR
+    const optimize_start = if (do_profile) std.time.nanoTimestamp() else 0;
     try optimize(ctx, target);
+    if (do_profile) {
+        const optimize_end = std.time.nanoTimestamp();
+        ctx.last_profile.optimize_ns = elapsedNs(optimize_start, optimize_end);
+    }
 
     try dumpIrStage(ctx, "pre_lower");
 
     // 3. Lower to VCode via ISLE
+    const lower_start = if (do_profile) std.time.nanoTimestamp() else 0;
     try lower(ctx, target);
+    if (do_profile) {
+        const lower_end = std.time.nanoTimestamp();
+        ctx.last_profile.lower_ns = elapsedNs(lower_start, lower_end);
+    }
 
     // 4. Register allocation
+    const regalloc_start = if (do_profile) std.time.nanoTimestamp() else 0;
     try allocateRegisters(ctx, target);
+    if (do_profile) {
+        const regalloc_end = std.time.nanoTimestamp();
+        ctx.last_profile.regalloc_ns = elapsedNs(regalloc_start, regalloc_end);
+    }
 
     // 5. Rewrite vregs to pregs
+    const rewrite_start = if (do_profile) std.time.nanoTimestamp() else 0;
     try rewriteRegisters(ctx, target);
+    if (do_profile) {
+        const rewrite_end = std.time.nanoTimestamp();
+        ctx.last_profile.rewrite_ns = elapsedNs(rewrite_start, rewrite_end);
+    }
 
     // 5b. Resolve phi copy conflicts (parallel copy resolution)
+    const phi_start = if (do_profile) std.time.nanoTimestamp() else 0;
     try resolvePhiCopies(ctx, target);
+    if (do_profile) {
+        const phi_end = std.time.nanoTimestamp();
+        ctx.last_profile.phi_ns = elapsedNs(phi_start, phi_end);
+    }
 
     // 6. Emit machine code
+    const emit_start = if (do_profile) std.time.nanoTimestamp() else 0;
     try emit(ctx, target);
+    if (do_profile) {
+        const emit_end = std.time.nanoTimestamp();
+        ctx.last_profile.emit_ns = elapsedNs(emit_start, emit_end);
+    }
 
     return ctx.getCompiledCode() orelse return error.EmissionFailed;
 }
