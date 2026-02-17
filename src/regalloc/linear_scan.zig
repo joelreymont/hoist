@@ -304,12 +304,20 @@ pub const LinearScanAllocator = struct {
         var result = RegAllocResult.init(self.allocator);
         errdefer result.deinit();
 
-        // Get live ranges sorted by start position
-        const sorted_ranges = try liveness_info.getRangesSortedByStart();
-        defer self.allocator.free(sorted_ranges);
+        self.active.clearRetainingCapacity();
+        self.inactive.clearRetainingCapacity();
+        self.next_spill_offset = 0;
+        self.free_spill_slots_8.clearRetainingCapacity();
+        self.free_spill_slots_16.clearRetainingCapacity();
+
+        std.mem.sort(liveness.LiveRange, liveness_info.ranges.items, {}, struct {
+            fn lessThan(_: void, a: liveness.LiveRange, b: liveness.LiveRange) bool {
+                return a.start_inst < b.start_inst;
+            }
+        }.lessThan);
 
         // Main allocation loop: process each live range in order
-        for (sorted_ranges) |range| {
+        for (liveness_info.ranges.items) |range| {
             // Expire old intervals that have ended before this range starts
             try self.expireOldIntervals(range.start_inst, &result);
 
@@ -326,7 +334,7 @@ pub const LinearScanAllocator = struct {
                     const free_regs = self.getFreeRegs(range.reg_class);
                     const reg_idx = try self.requireRegIndex(preg);
                     free_regs.unset(reg_idx);
-                    try self.active.append(self.allocator, range);
+                    try self.insertActiveSorted(range);
                 } else {
                     // Current interval ends latest; spill it directly.
                     const spill_slot = try self.allocateSpillSlot(range.reg_class);
@@ -351,33 +359,35 @@ pub const LinearScanAllocator = struct {
         current_pos: u32,
         result: *RegAllocResult,
     ) !void {
-        // Iterate through active intervals in order
-        // Remove those that have ended before current_pos
-        var i: usize = 0;
-        while (i < self.active.items.len) {
-            const range = self.active.items[i];
+        var expired: usize = 0;
+        while (expired < self.active.items.len) : (expired += 1) {
+            const range = self.active.items[expired];
+            if (range.end_inst >= current_pos) break;
 
-            if (range.end_inst < current_pos) {
-                // This interval has ended - free its register or spill slot
-                if (result.getPhysReg(range.vreg)) |preg| {
-                    // Had a register - mark it as free
-                    const free_regs = self.getFreeRegs(range.reg_class);
-                    const reg_idx = try self.requireRegIndex(preg);
-                    free_regs.set(reg_idx);
-                } else if (result.getSpillSlot(range.vreg)) |slot| {
-                    // Was spilled - free the spill slot for reuse
-                    try self.freeSpillSlot(slot, range.reg_class);
-                }
-
-                // Remove from active list (swap with last element for O(1) removal)
-                _ = self.active.swapRemove(i);
-                // Don't increment i - we need to check the element that was swapped here
-            } else {
-                // Still active - intervals are sorted by end time, so we can stop
-                // Actually, they're sorted by start time, so we need to check all
-                i += 1;
+            if (result.getPhysReg(range.vreg)) |preg| {
+                const free_regs = self.getFreeRegs(range.reg_class);
+                const reg_idx = try self.requireRegIndex(preg);
+                free_regs.set(reg_idx);
+            } else if (result.getSpillSlot(range.vreg)) |slot| {
+                try self.freeSpillSlot(slot, range.reg_class);
             }
         }
+
+        if (expired > 0) {
+            const remaining = self.active.items.len - expired;
+            std.mem.copyForwards(
+                liveness.LiveRange,
+                self.active.items[0..remaining],
+                self.active.items[expired..],
+            );
+            self.active.items.len = remaining;
+        }
+    }
+
+    fn insertActiveSorted(self: *LinearScanAllocator, range: liveness.LiveRange) !void {
+        var idx: usize = 0;
+        while (idx < self.active.items.len and self.active.items[idx].end_inst <= range.end_inst) : (idx += 1) {}
+        try self.active.insert(self.allocator, idx, range);
     }
 
     /// Try to allocate a physical register for the given live range.
@@ -410,7 +420,7 @@ pub const LinearScanAllocator = struct {
                         if (free_regs.isSet(reg_idx)) {
                             try result.assign(range.vreg, coalesce_hint);
                             free_regs.unset(reg_idx);
-                            try self.active.append(self.allocator, range);
+                            try self.insertActiveSorted(range);
                             return coalesce_hint;
                         }
                     }
@@ -426,7 +436,7 @@ pub const LinearScanAllocator = struct {
                         if (free_regs.isSet(reg_idx)) {
                             try result.assign(range.vreg, hint);
                             free_regs.unset(reg_idx);
-                            try self.active.append(self.allocator, range);
+                            try self.insertActiveSorted(range);
                             return hint;
                         }
                     }
@@ -446,7 +456,7 @@ pub const LinearScanAllocator = struct {
 
                 try result.assign(range.vreg, preg);
                 free_regs.unset(reg_idx);
-                try self.active.append(self.allocator, range);
+                try self.insertActiveSorted(range);
                 return preg;
             }
         }
@@ -503,7 +513,7 @@ pub const LinearScanAllocator = struct {
         const preg = result.getPhysReg(spill_range.vreg) orelse return null;
 
         // Remove from active list
-        _ = self.active.swapRemove(spill_idx);
+        _ = self.active.orderedRemove(spill_idx);
 
         // Mark register as free
         const free_regs = self.getFreeRegs(spill_range.reg_class);
@@ -777,6 +787,39 @@ test "LinearScanAllocator register reuse after expiry" {
 
     // v2 should reuse one of the registers from v0 or v1
     try std.testing.expect(p2.?.index() == p0.?.index() or p2.?.index() == p1.?.index());
+}
+
+test "LinearScanAllocator handles unsorted input ranges" {
+    const allocator = std.testing.allocator;
+
+    var lsa = try LinearScanAllocator.init(allocator, 2, 2, 2);
+    defer lsa.deinit();
+
+    var info = liveness.LivenessInfo.init(allocator);
+    defer info.deinit();
+
+    const v0 = machinst.VReg.new(0, .int);
+    const v1 = machinst.VReg.new(1, .int);
+
+    // Add out of order by start_inst.
+    try info.addRange(.{
+        .vreg = v1,
+        .start_inst = 10,
+        .end_inst = 20,
+        .reg_class = .int,
+    });
+    try info.addRange(.{
+        .vreg = v0,
+        .start_inst = 0,
+        .end_inst = 5,
+        .reg_class = .int,
+    });
+
+    var result = try lsa.allocate(&info);
+    defer result.deinit();
+
+    try std.testing.expect(result.getPhysReg(v0) != null);
+    try std.testing.expect(result.getPhysReg(v1) != null);
 }
 
 test "LinearScanAllocator spill slot reuse" {
