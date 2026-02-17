@@ -6450,15 +6450,18 @@ fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
             if (ctx.aarch64_lowered) |*lowered| {
                 const vcode = &lowered.vcode;
 
-                var block_insns = std.AutoHashMap(u32, []const Inst).init(ctx.allocator);
-                defer block_insns.deinit();
+                var block_insns = try ctx.allocator.alloc(?[]const Inst, ctx.cfg.data.items.len);
+                defer ctx.allocator.free(block_insns);
+                for (block_insns) |*entry| {
+                    entry.* = null;
+                }
 
                 var block_iter = ctx.func.layout.blockIter();
                 while (block_iter.next()) |block| {
                     const vcode_block = lowered.ir_to_vcode_blocks.get(block) orelse return error.LoweringFailed;
                     const vblock = vcode.blocks.items[@intCast(vcode_block)];
                     const block_id: u32 = @intCast(block.toIndex());
-                    try block_insns.put(block_id, vcode.insns.items[vblock.insn_start..vblock.insn_end]);
+                    block_insns[block_id] = vcode.insns.items[vblock.insn_start..vblock.insn_end];
                 }
 
                 var liveness_info = try liveness_mod.computeLivenessWithCFG(

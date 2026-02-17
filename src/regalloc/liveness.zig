@@ -355,116 +355,104 @@ pub fn computeLiveness(
 pub fn computeLivenessWithCFG(
     comptime Inst: type,
     blocks: []const cfg_mod.CFGNode,
-    block_insns: std.AutoHashMap(u32, []const Inst),
+    block_insns: []const ?[]const Inst,
     allocator: std.mem.Allocator,
 ) !LivenessInfo {
+    std.debug.assert(blocks.len == block_insns.len);
+
     var info = LivenessInfo.init(allocator);
     errdefer info.deinit();
 
-    // Track per-vreg information for all blocks
-    var block_live_in = std.AutoHashMap(u32, std.AutoHashMap(u32, void)).init(allocator);
+    var block_live_in = try allocator.alloc(std.AutoHashMap(u32, void), blocks.len);
     defer {
-        var it = block_live_in.valueIterator();
-        while (it.next()) |set| {
+        for (block_live_in) |*set| {
             set.deinit();
         }
-        block_live_in.deinit();
+        allocator.free(block_live_in);
     }
 
-    var block_live_out = std.AutoHashMap(u32, std.AutoHashMap(u32, void)).init(allocator);
+    var block_live_out = try allocator.alloc(std.AutoHashMap(u32, void), blocks.len);
     defer {
-        var it = block_live_out.valueIterator();
-        while (it.next()) |set| {
+        for (block_live_out) |*set| {
             set.deinit();
         }
-        block_live_out.deinit();
+        allocator.free(block_live_out);
     }
+
     const has_get_operands = comptime @hasDecl(Inst, "getOperands");
     var operand_collector = StackOperandCollector{};
 
-    // Initialize live_in and live_out sets for all blocks
     for (0..blocks.len) |block_idx| {
-        const block_id: u32 = @intCast(block_idx);
-        const live_in_set = std.AutoHashMap(u32, void).init(allocator);
-        const live_out_set = std.AutoHashMap(u32, void).init(allocator);
-        try block_live_in.put(block_id, live_in_set);
-        try block_live_out.put(block_id, live_out_set);
+        block_live_in[block_idx] = std.AutoHashMap(u32, void).init(allocator);
+        block_live_out[block_idx] = std.AutoHashMap(u32, void).init(allocator);
     }
 
-    // Iteratively compute liveness until fixed point
+    var new_live_out = std.AutoHashMap(u32, void).init(allocator);
+    defer new_live_out.deinit();
+
+    var new_live_in = std.AutoHashMap(u32, void).init(allocator);
+    defer new_live_in.deinit();
+
+    const Set = std.AutoHashMap(u32, void);
+
+    const setChanged = struct {
+        fn check(old_set: *const Set, new_set: *const Set) bool {
+            if (old_set.count() != new_set.count()) return true;
+            var it = new_set.keyIterator();
+            while (it.next()) |vreg_id| {
+                if (!old_set.contains(vreg_id.*)) return true;
+            }
+            return false;
+        }
+    }.check;
+
     var changed = true;
     while (changed) {
         changed = false;
 
-        // Process blocks in reverse order (backward analysis)
         var block_idx: i32 = @intCast(blocks.len - 1);
         while (block_idx >= 0) : (block_idx -= 1) {
-            const block_id: u32 = @intCast(block_idx);
-            const block = &blocks[@intCast(block_idx)];
+            const idx: usize = @intCast(block_idx);
+            const block = &blocks[idx];
 
-            // Compute live_out[B] = ∪(live_in[normal_successors ∪ exception_successors])
-            var new_live_out = std.AutoHashMap(u32, void).init(allocator);
-            defer new_live_out.deinit();
+            new_live_out.clearRetainingCapacity();
 
-            // Add live_in from all normal successors
             var succ_iter = block.successors.keyIterator();
             while (succ_iter.next()) |succ_block| {
                 const succ_id = succ_block.toIndex();
-                if (block_live_in.get(@intCast(succ_id))) |succ_live_in| {
-                    var vreg_iter = succ_live_in.keyIterator();
-                    while (vreg_iter.next()) |vreg_id| {
-                        try new_live_out.put(vreg_id.*, {});
-                    }
+                const succ_live_in = &block_live_in[succ_id];
+                var vreg_iter = succ_live_in.keyIterator();
+                while (vreg_iter.next()) |vreg_id| {
+                    try new_live_out.put(vreg_id.*, {});
                 }
             }
 
-            // Add live_in from all exception successors (exception edges)
             var exc_succ_iter = block.exception_successors.keyIterator();
             while (exc_succ_iter.next()) |exc_succ_block| {
                 const exc_succ_id = exc_succ_block.toIndex();
-                if (block_live_in.get(@intCast(exc_succ_id))) |exc_succ_live_in| {
-                    var vreg_iter = exc_succ_live_in.keyIterator();
-                    while (vreg_iter.next()) |vreg_id| {
-                        try new_live_out.put(vreg_id.*, {});
-                    }
+                const exc_succ_live_in = &block_live_in[exc_succ_id];
+                var vreg_iter = exc_succ_live_in.keyIterator();
+                while (vreg_iter.next()) |vreg_id| {
+                    try new_live_out.put(vreg_id.*, {});
                 }
             }
 
-            // Check if live_out changed
-            var old_live_out = block_live_out.getPtr(block_id) orelse continue;
-            if (old_live_out.count() != new_live_out.count()) {
-                changed = true;
-            } else {
-                var iter = new_live_out.keyIterator();
-                while (iter.next()) |vreg_id| {
-                    if (!old_live_out.contains(vreg_id.*)) {
-                        changed = true;
-                        break;
-                    }
-                }
-            }
-
-            // Update live_out
+            const old_live_out = &block_live_out[idx];
+            changed = changed or setChanged(old_live_out, &new_live_out);
             old_live_out.clearRetainingCapacity();
-            var iter = new_live_out.keyIterator();
-            while (iter.next()) |vreg_id| {
+            var out_iter = new_live_out.keyIterator();
+            while (out_iter.next()) |vreg_id| {
                 try old_live_out.put(vreg_id.*, {});
             }
 
-            // Compute live_in[B] = uses[B] ∪ (live_out[B] - defs[B])
-            const insns = block_insns.get(block_id) orelse continue;
+            const insns = block_insns[idx] orelse continue;
 
-            var new_live_in = std.AutoHashMap(u32, void).init(allocator);
-            defer new_live_in.deinit();
-
-            // Start with live_out
-            var live_out = old_live_out;
-            var lo_iter = live_out.keyIterator();
+            new_live_in.clearRetainingCapacity();
+            var lo_iter = old_live_out.keyIterator();
             while (lo_iter.next()) |vreg_id| {
                 try new_live_in.put(vreg_id.*, {});
             }
 
-            // Process instructions in reverse order
             var inst_idx: i32 = @intCast(insns.len - 1);
             while (inst_idx >= 0) : (inst_idx -= 1) {
                 const inst = insns[@intCast(inst_idx)];
@@ -473,28 +461,24 @@ pub fn computeLivenessWithCFG(
                     operand_collector.reset();
                     try inst.getOperands(&operand_collector);
 
-                    // Remove defs from live_in
                     for (operand_collector.defs()) |def| {
                         if (def.toReg().toVReg()) |vreg| {
                             _ = new_live_in.remove(vreg.index());
                         }
                     }
 
-                    // Add uses to live_in
                     for (operand_collector.uses()) |use| {
                         if (use.toVReg()) |vreg| {
                             try new_live_in.put(vreg.index(), {});
                         }
                     }
                 } else {
-                    // Remove defs from live_in
                     const defs = try inst.getDefs(allocator);
                     defer allocator.free(defs);
                     for (defs) |def| {
                         _ = new_live_in.remove(def.index());
                     }
 
-                    // Add uses to live_in
                     const uses = try inst.getUses(allocator);
                     defer allocator.free(uses);
                     for (uses) |use| {
@@ -503,21 +487,8 @@ pub fn computeLivenessWithCFG(
                 }
             }
 
-            // Check if live_in changed
-            var old_live_in = block_live_in.getPtr(block_id) orelse continue;
-            if (old_live_in.count() != new_live_in.count()) {
-                changed = true;
-            } else {
-                var in_iter = new_live_in.keyIterator();
-                while (in_iter.next()) |vreg_id| {
-                    if (!old_live_in.contains(vreg_id.*)) {
-                        changed = true;
-                        break;
-                    }
-                }
-            }
-
-            // Update live_in
+            const old_live_in = &block_live_in[idx];
+            changed = changed or setChanged(old_live_in, &new_live_in);
             old_live_in.clearRetainingCapacity();
             var in_iter = new_live_in.keyIterator();
             while (in_iter.next()) |vreg_id| {
@@ -536,14 +507,13 @@ pub fn computeLivenessWithCFG(
     var inst_cursor: u32 = 0;
     for (0..blocks.len) |block_idx| {
         block_starts[block_idx] = inst_cursor;
-        if (block_insns.get(@intCast(block_idx))) |insns| {
+        if (block_insns[block_idx]) |insns| {
             inst_cursor += @intCast(insns.len);
         }
     }
 
     for (0..blocks.len) |block_idx| {
-        const block_id: u32 = @intCast(block_idx);
-        const insns = block_insns.get(block_id) orelse continue;
+        const insns = block_insns[block_idx] orelse continue;
         if (insns.len == 0) continue;
 
         const start_inst = block_starts[block_idx];
@@ -626,29 +596,26 @@ pub fn computeLivenessWithCFG(
     }
 
     for (0..blocks.len) |block_idx| {
-        const block_id: u32 = @intCast(block_idx);
-        const insns = block_insns.get(block_id) orelse continue;
+        const insns = block_insns[block_idx] orelse continue;
         if (insns.len == 0) continue;
 
         const start_inst = block_starts[block_idx];
         const end_inst = start_inst + @as(u32, @intCast(insns.len)) - 1;
 
-        if (block_live_in.get(block_id)) |live_in| {
-            var vreg_iter = live_in.keyIterator();
-            while (vreg_iter.next()) |vreg_id| {
-                const entry = vreg_ranges.getPtr(vreg_id.*) orelse continue;
-                entry.start = @min(entry.start, start_inst);
-                entry.end = @max(entry.end, end_inst);
-            }
+        const live_in = &block_live_in[block_idx];
+        var in_iter = live_in.keyIterator();
+        while (in_iter.next()) |vreg_id| {
+            const entry = vreg_ranges.getPtr(vreg_id.*) orelse continue;
+            entry.start = @min(entry.start, start_inst);
+            entry.end = @max(entry.end, end_inst);
         }
 
-        if (block_live_out.get(block_id)) |live_out| {
-            var vreg_iter = live_out.keyIterator();
-            while (vreg_iter.next()) |vreg_id| {
-                const entry = vreg_ranges.getPtr(vreg_id.*) orelse continue;
-                entry.start = @min(entry.start, start_inst);
-                entry.end = @max(entry.end, end_inst);
-            }
+        const live_out = &block_live_out[block_idx];
+        var out_iter = live_out.keyIterator();
+        while (out_iter.next()) |vreg_id| {
+            const entry = vreg_ranges.getPtr(vreg_id.*) orelse continue;
+            entry.start = @min(entry.start, start_inst);
+            entry.end = @max(entry.end, end_inst);
         }
     }
 
@@ -907,4 +874,45 @@ test "computeLiveness different register classes" {
     try std.testing.expectEqual(machinst.RegClass.int, r0.?.reg_class);
     try std.testing.expectEqual(machinst.RegClass.float, r1.?.reg_class);
     try std.testing.expectEqual(machinst.RegClass.vector, r2.?.reg_class);
+}
+
+test "computeLivenessWithCFG indexed block slices" {
+    const allocator = std.testing.allocator;
+    const Block = @import("../ir/entities.zig").Block;
+
+    const v0 = machinst.VReg.new(7, .int);
+
+    var nodes = try allocator.alloc(cfg_mod.CFGNode, 2);
+    defer allocator.free(nodes);
+    nodes[0] = cfg_mod.CFGNode.init(allocator);
+    nodes[1] = cfg_mod.CFGNode.init(allocator);
+    defer {
+        nodes[0].predecessors.deinit();
+        nodes[0].successors.deinit();
+        nodes[0].exception_successors.deinit();
+        nodes[1].predecessors.deinit();
+        nodes[1].successors.deinit();
+        nodes[1].exception_successors.deinit();
+    }
+
+    try nodes[0].successors.put(Block.new(1), {});
+
+    const block0 = [_]MockInst{
+        .{ .defs = &[_]machinst.VReg{v0}, .uses = &[_]machinst.VReg{} },
+    };
+    const block1 = [_]MockInst{
+        .{ .defs = &[_]machinst.VReg{}, .uses = &[_]machinst.VReg{v0} },
+    };
+    const block_insns = [_]?[]const MockInst{
+        block0[0..],
+        block1[0..],
+    };
+
+    var info = try computeLivenessWithCFG(MockInst, nodes, &block_insns, allocator);
+    defer info.deinit();
+
+    const range = info.getRange(v0);
+    try std.testing.expect(range != null);
+    try std.testing.expectEqual(@as(u32, 0), range.?.start_inst);
+    try std.testing.expectEqual(@as(u32, 1), range.?.end_inst);
 }
