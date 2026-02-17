@@ -17,6 +17,16 @@ pub const BlockIndex = u32;
 /// Index to an instruction in VCode.
 pub const InsnIndex = u32;
 
+/// Records a group of phi copy MOV instructions emitted during jump lowering.
+/// After register allocation, these groups are resolved using parallel copy
+/// to avoid physical register conflicts.
+pub const PhiCopyGroup = struct {
+    /// Index of the first MOV instruction in the VCode insns array.
+    first_insn: InsnIndex,
+    /// Number of MOV instructions in this group.
+    count: u32,
+};
+
 /// A basic block in VCode.
 pub const VCodeBlock = struct {
     /// Start index of instructions in this block.
@@ -55,6 +65,10 @@ pub fn VCode(comptime Inst: type) type {
         preds: std.ArrayList(BlockIndex),
         /// Block parameter lists (concatenated for all blocks).
         block_params: std.ArrayList(VReg),
+        /// Phi copy groups: records of (insn_start, count) for each set of
+        /// phi MOVs emitted during jump lowering. Used by resolvePhiCopies
+        /// after register allocation to fix parallel copy conflicts.
+        phi_copy_groups: std.ArrayList(PhiCopyGroup),
         /// Max outgoing stack arg space (bytes).
         out_stack_max: u32,
         /// Allocator.
@@ -70,6 +84,7 @@ pub fn VCode(comptime Inst: type) type {
                 .succs = std.ArrayList(BlockIndex){},
                 .preds = std.ArrayList(BlockIndex){},
                 .block_params = std.ArrayList(VReg){},
+                .phi_copy_groups = std.ArrayList(PhiCopyGroup){},
                 .out_stack_max = 0,
                 .allocator = allocator,
             };
@@ -81,6 +96,7 @@ pub fn VCode(comptime Inst: type) type {
             self.succs.deinit(self.allocator);
             self.preds.deinit(self.allocator);
             self.block_params.deinit(self.allocator);
+            self.phi_copy_groups.deinit(self.allocator);
         }
 
         /// Add an instruction to the current block being built.

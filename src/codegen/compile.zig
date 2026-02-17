@@ -701,6 +701,9 @@ fn insertSpillScratch(
     // Second pass: rewrite with spill/reload
     var new_insns = std.ArrayList(a64_inst.Inst){};
     errdefer new_insns.deinit(allocator);
+    const old_insn_len = vcode.insns.items.len;
+    const insn_map = try allocator.alloc(u32, old_insn_len);
+    defer allocator.free(insn_map);
 
     var scratch_state = ScratchState.init(scratch_regs);
     var scratch_map = ScratchMap{};
@@ -710,7 +713,7 @@ fn insertSpillScratch(
         const old_insns = vcode.insns.items[old_block.insn_start..old_block.insn_end];
         const new_start: u32 = @intCast(new_insns.items.len);
 
-        for (old_insns) |inst| {
+        for (old_insns, 0..) |inst, old_off| {
             scratch_state.reset();
             scratch_map.reset();
 
@@ -765,6 +768,10 @@ fn insertSpillScratch(
                 _ = try mapScratch(&scratch_map, &scratch_state, vreg);
             }
 
+            const old_insn_idx = old_block.insn_start + @as(u32, @intCast(old_off));
+            const rewritten_idx: u32 = @intCast(new_insns.items.len);
+            insn_map[old_insn_idx] = rewritten_idx;
+
             var rewritten = inst;
             const mapper = RegMapper{ .result = result, .scratch = &scratch_map };
             try rewriteInstRegs(&rewritten, mapper);
@@ -780,6 +787,14 @@ fn insertSpillScratch(
 
         block.insn_start = new_start;
         block.insn_end = @intCast(new_insns.items.len);
+    }
+
+    // Remap phi-copy group first-insn indices into the rewritten instruction
+    // stream. Group counts remain unchanged; resolvePhiCopies scans forward to
+    // find count MOVs starting at first_insn.
+    for (vcode.phi_copy_groups.items) |*group| {
+        if (group.first_insn >= old_insn_len) return error.RegisterAllocationFailed;
+        group.first_insn = insn_map[group.first_insn];
     }
 
     var old_insns = vcode.insns;
@@ -835,6 +850,9 @@ pub fn compile(
 
     // 5. Rewrite vregs to pregs
     try rewriteRegisters(ctx, target);
+
+    // 5b. Resolve phi copy conflicts (parallel copy resolution)
+    try resolvePhiCopies(ctx, target);
 
     // 6. Emit machine code
     try emit(ctx, target);
@@ -5589,9 +5607,17 @@ fn lowerInstructionAArch64(
             // Emit moves for jump arguments → target block params (parallel copy).
             // This implements phi resolution: jumpArgs(block, {v7, v11}) must
             // move v7 and v11 into the registers assigned to block's params.
+            // The MOVs are recorded as a phi copy group so that after register
+            // allocation, resolvePhiCopies() can reorder them to avoid physical
+            // register conflicts (using parallel_copy.resolve with scratch reg).
             const jump_args = ctx.func.dfg.value_lists.asSlice(data.args);
             const target_params = ctx.func.dfg.blockParams(data.destination);
             if (jump_args.len == target_params.len) {
+                // VCodeBuilder buffers current-block instructions in
+                // current_block_insns until finishBlock(), so absolute index is
+                // committed-insn count plus buffered-insn count.
+                const first_insn: u32 = @intCast(builder.vcode.insns.items.len + builder.current_block_insns.items.len);
+                var phi_count: u32 = 0;
                 var phi_idx: usize = 0;
                 while (phi_idx < jump_args.len) : (phi_idx += 1) {
                     const arg_vreg = VReg.new(@intCast(jump_args[phi_idx].index + Reg.PINNED_VREGS), RegClass.int);
@@ -5603,7 +5629,15 @@ fn lowerInstructionAArch64(
                             .src = Reg.fromVReg(arg_vreg),
                             .size = .size64,
                         } });
+                        phi_count += 1;
                     }
+                }
+                // Record phi copy group for post-regalloc resolution
+                if (phi_count >= 2) {
+                    try builder.vcode.phi_copy_groups.append(builder.vcode.allocator, vcode_mod.PhiCopyGroup{
+                        .first_insn = first_insn,
+                        .count = phi_count,
+                    });
                 }
             }
 
@@ -5639,9 +5673,16 @@ fn lowerInstructionAArch64(
                     .int_compare => |icmp_data| {
                         // Map IntCC to ARM64 CondCode
                         const cc: CondCode = switch (icmp_data.cond) {
-                            .eq => .eq, .ne => .ne,
-                            .slt => .lt, .sle => .le, .sgt => .gt, .sge => .ge,
-                            .ult => .cc, .ule => .ls, .ugt => .hi, .uge => .cs,
+                            .eq => .eq,
+                            .ne => .ne,
+                            .slt => .lt,
+                            .sle => .le,
+                            .sgt => .gt,
+                            .sge => .ge,
+                            .ult => .cc,
+                            .ule => .ls,
+                            .ugt => .hi,
+                            .uge => .cs,
                         };
 
                         // Emit conditional branch to then block (uses flags from CMP already emitted by icmp)
@@ -6555,6 +6596,219 @@ fn rewriteRegisters(ctx: *Context, target: *const Target) CodegenError!void {
     }
 }
 
+/// Resolve phi copy conflicts after register allocation.
+///
+/// During lowering, jump instructions emit sequential MOV instructions for
+/// block arguments → block parameters (phi resolution). These MOVs use virtual
+/// registers, and liveness analysis uses them to compute live ranges correctly.
+///
+/// After register allocation rewrites vregs to pregs, sequential MOVs can have
+/// physical register conflicts. For example:
+///   MOV x0, x1   ; clobbers x0
+///   MOV x1, x0   ; reads clobbered x0 — WRONG, wanted original x0
+///
+/// This pass uses parallel_copy.resolve() to reorder the MOVs and break cycles
+/// with a conflict-free caller-saved scratch register, producing correct move
+/// sequences.
+fn pickPhiScratchReg(moves: []const @import("../machinst/parallel_copy.zig").Move) ?u8 {
+    // Prefer caller-saved temporaries first.
+    const candidates = [_]u8{ 16, 17, 15, 14, 13, 12, 11, 10, 9 };
+
+    candidate: for (candidates) |cand| {
+        for (moves) |move| {
+            switch (move.src) {
+                .reg => |r| if (r == cand) continue :candidate,
+                .stack => {},
+            }
+            switch (move.dst) {
+                .reg => |r| if (r == cand) continue :candidate,
+                .stack => {},
+            }
+        }
+        return cand;
+    }
+    return null;
+}
+
+fn resolvePhiCopies(ctx: *Context, target: *const Target) CodegenError!void {
+    switch (target.arch) {
+        .aarch64 => {
+            const lowered = &(ctx.aarch64_lowered orelse return error.LoweringFailed);
+            const phi_groups = lowered.vcode.phi_copy_groups.items;
+            if (phi_groups.len == 0) return;
+
+            const parallel_copy = @import("../machinst/parallel_copy.zig");
+            const allocator = ctx.allocator;
+
+            for (phi_groups) |group| {
+                // Extract physical register src/dst pairs from rewritten MOVs.
+                // With spill rewriting, phi MOVs may no longer be contiguous:
+                // scan forward from first_insn and collect exactly group.count
+                // mov_rr instructions in order.
+                var moves = std.ArrayList(parallel_copy.Move){};
+                defer moves.deinit(allocator);
+                var move_insn_indices = std.ArrayList(u32){};
+                defer move_insn_indices.deinit(allocator);
+
+                var scan_idx: usize = group.first_insn;
+                while (scan_idx < lowered.vcode.insns.items.len and move_insn_indices.items.len < group.count) : (scan_idx += 1) {
+                    const inst = lowered.vcode.insns.items[scan_idx];
+                    switch (inst) {
+                        .mov_rr => |mov| {
+                            try move_insn_indices.append(allocator, @intCast(scan_idx));
+                            const src_preg = mov.src.toRealReg() orelse return error.LoweringFailed;
+                            const dst_preg = mov.dst.toReg().toRealReg() orelse return error.LoweringFailed;
+                            if (src_preg.class() != .int or dst_preg.class() != .int) return error.LoweringFailed;
+                            const src_hw: u8 = src_preg.hwEnc();
+                            const dst_hw: u8 = dst_preg.hwEnc();
+                            if (src_hw != dst_hw) {
+                                try moves.append(allocator, .{
+                                    .src = .{ .reg = src_hw },
+                                    .dst = .{ .reg = dst_hw },
+                                    .origin = moves.items.len,
+                                });
+                            }
+                        },
+                        else => {},
+                    }
+                }
+
+                if (move_insn_indices.items.len != group.count) return error.LoweringFailed;
+
+                var has_conflict = false;
+                for (moves.items, 0..) |mv, i| {
+                    const dst_hw = switch (mv.dst) {
+                        .reg => |r| r,
+                        .stack => return error.LoweringFailed,
+                    };
+                    for (moves.items[i + 1 ..]) |later| {
+                        const later_src_hw = switch (later.src) {
+                            .reg => |r| r,
+                            .stack => return error.LoweringFailed,
+                        };
+                        if (dst_hw == later_src_hw) {
+                            has_conflict = true;
+                            break;
+                        }
+                    }
+                    if (has_conflict) break;
+                }
+
+                if (!has_conflict or moves.items.len < 2) continue;
+
+                const scratch_hw = pickPhiScratchReg(moves.items) orelse return error.LoweringFailed;
+
+                // Resolve using parallel copy algorithm with a conflict-free scratch.
+                var resolved = parallel_copy.resolve(
+                    allocator,
+                    moves.items,
+                    .{ .reg = scratch_hw },
+                ) catch |err| return switch (err) {
+                    error.OutOfMemory => error.OutOfMemory,
+                    error.TempRequired, error.TempConflict, error.DuplicateDestination => error.LoweringFailed,
+                };
+                defer resolved.deinit(allocator);
+
+                // Replace the original MOV sequence with the resolved sequence.
+                // If resolved has more moves than original (cycle-breaking), we need
+                // to insert extra instructions.
+                const Inst = a64_inst.Inst;
+
+                if (resolved.items.len <= group.count) {
+                    // Fits in existing phi move slots — rewrite in-place, NOP the rest.
+                    for (resolved.items, 0..) |move, i| {
+                        const insn_idx = move_insn_indices.items[i];
+                        const src_hw = switch (move.src) {
+                            .reg => |r| r,
+                            .stack => return error.LoweringFailed,
+                        };
+                        const dst_hw = switch (move.dst) {
+                            .reg => |r| r,
+                            .stack => return error.LoweringFailed,
+                        };
+                        const src_preg = reg_mod.PReg.new(.int, @truncate(src_hw));
+                        const dst_preg = reg_mod.PReg.new(.int, @truncate(dst_hw));
+                        lowered.vcode.insns.items[insn_idx] = Inst{ .mov_rr = .{
+                            .dst = reg_mod.WritableReg.fromReg(reg_mod.Reg.fromPReg(dst_preg)),
+                            .src = reg_mod.Reg.fromPReg(src_preg),
+                            .size = .size64,
+                        } };
+                    }
+                    // NOP remaining original phi move slots.
+                    for (resolved.items.len..group.count) |i| {
+                        const insn_idx = move_insn_indices.items[i];
+                        lowered.vcode.insns.items[insn_idx] = Inst{ .nop = {} };
+                    }
+                } else {
+                    // Need more slots than available — insert extra instructions.
+                    // Rewrite existing slots first.
+                    for (0..group.count) |i| {
+                        const insn_idx = move_insn_indices.items[i];
+                        const move = resolved.items[i];
+                        const src_hw = switch (move.src) {
+                            .reg => |r| r,
+                            .stack => return error.LoweringFailed,
+                        };
+                        const dst_hw = switch (move.dst) {
+                            .reg => |r| r,
+                            .stack => return error.LoweringFailed,
+                        };
+                        const src_preg = reg_mod.PReg.new(.int, @truncate(src_hw));
+                        const dst_preg = reg_mod.PReg.new(.int, @truncate(dst_hw));
+                        lowered.vcode.insns.items[insn_idx] = Inst{ .mov_rr = .{
+                            .dst = reg_mod.WritableReg.fromReg(reg_mod.Reg.fromPReg(dst_preg)),
+                            .src = reg_mod.Reg.fromPReg(src_preg),
+                            .size = .size64,
+                        } };
+                    }
+                    // Insert remaining instructions after the last original slot
+                    const last_move_idx = move_insn_indices.items[group.count - 1];
+                    const insert_pos = last_move_idx + 1;
+                    const extra = resolved.items[group.count..];
+                    var extra_insns = try allocator.alloc(Inst, extra.len);
+                    defer allocator.free(extra_insns);
+                    for (extra, 0..) |move, i| {
+                        const src_hw = switch (move.src) {
+                            .reg => |r| r,
+                            .stack => return error.LoweringFailed,
+                        };
+                        const dst_hw = switch (move.dst) {
+                            .reg => |r| r,
+                            .stack => return error.LoweringFailed,
+                        };
+                        const src_preg = reg_mod.PReg.new(.int, @truncate(src_hw));
+                        const dst_preg = reg_mod.PReg.new(.int, @truncate(dst_hw));
+                        extra_insns[i] = Inst{ .mov_rr = .{
+                            .dst = reg_mod.WritableReg.fromReg(reg_mod.Reg.fromPReg(dst_preg)),
+                            .src = reg_mod.Reg.fromPReg(src_preg),
+                            .size = .size64,
+                        } };
+                    }
+                    try lowered.vcode.insns.insertSlice(allocator, insert_pos, extra_insns);
+
+                    // Fixup: all subsequent phi_copy_groups and block boundaries
+                    // need their indices shifted by the number of inserted instructions.
+                    const shift: u32 = @intCast(extra.len);
+                    for (lowered.vcode.phi_copy_groups.items) |*g| {
+                        if (g.first_insn > last_move_idx) {
+                            g.first_insn += shift;
+                        }
+                    }
+                    for (lowered.vcode.blocks.items) |*block| {
+                        if (block.insn_start > last_move_idx) {
+                            block.insn_start += shift;
+                        }
+                        if (block.insn_end > last_move_idx) {
+                            block.insn_end += shift;
+                        }
+                    }
+                }
+            }
+        },
+        else => {}, // Other architectures: no phi copy resolution yet
+    }
+}
+
 /// Emit machine code.
 fn emit(ctx: *Context, target: *const Target) CodegenError!void {
     switch (target.arch) {
@@ -7447,6 +7701,38 @@ test "rewriteRegisters: no vregs after regalloc" {
             try testing.expect(def_reg.toReg().toVReg() == null);
         }
     }
+}
+
+test "pickPhiScratchReg picks first free caller-saved reg" {
+    const parallel_copy = @import("../machinst/parallel_copy.zig");
+    const moves = [_]parallel_copy.Move{
+        .{ .src = .{ .reg = 16 }, .dst = .{ .reg = 17 }, .origin = 0 },
+        .{ .src = .{ .reg = 15 }, .dst = .{ .reg = 14 }, .origin = 1 },
+        .{ .src = .{ .reg = 13 }, .dst = .{ .reg = 12 }, .origin = 2 },
+        .{ .src = .{ .reg = 11 }, .dst = .{ .reg = 10 }, .origin = 3 },
+    };
+
+    const scratch = pickPhiScratchReg(&moves);
+    try testing.expect(scratch != null);
+    try testing.expectEqual(@as(u8, 9), scratch.?);
+}
+
+test "pickPhiScratchReg returns null when all candidates conflict" {
+    const parallel_copy = @import("../machinst/parallel_copy.zig");
+    const moves = [_]parallel_copy.Move{
+        .{ .src = .{ .reg = 16 }, .dst = .{ .reg = 0 }, .origin = 0 },
+        .{ .src = .{ .reg = 17 }, .dst = .{ .reg = 1 }, .origin = 1 },
+        .{ .src = .{ .reg = 15 }, .dst = .{ .reg = 2 }, .origin = 2 },
+        .{ .src = .{ .reg = 14 }, .dst = .{ .reg = 3 }, .origin = 3 },
+        .{ .src = .{ .reg = 13 }, .dst = .{ .reg = 4 }, .origin = 4 },
+        .{ .src = .{ .reg = 12 }, .dst = .{ .reg = 5 }, .origin = 5 },
+        .{ .src = .{ .reg = 11 }, .dst = .{ .reg = 6 }, .origin = 6 },
+        .{ .src = .{ .reg = 10 }, .dst = .{ .reg = 7 }, .origin = 7 },
+        .{ .src = .{ .reg = 9 }, .dst = .{ .reg = 8 }, .origin = 8 },
+    };
+
+    const scratch = pickPhiScratchReg(&moves);
+    try testing.expect(scratch == null);
 }
 
 test "compile: emits prologue and epilogue" {
