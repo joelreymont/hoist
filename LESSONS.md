@@ -27,6 +27,15 @@
 - Replacing liveness vreg range lookup with a dense index table (`src/regalloc/liveness.zig`) improved single-thread compile medians in same-tree A/B: large(100) +6.38%, large(1000) +5.23%, large(5000) +5.52%, memory +6.67%, mixed +5.26%, with zero regressions.
 - Persisting AArch64 linear-scan allocator setup in codegen state (reusing register pools and allocator internals across compiles) improved same-tree A/B medians: fib +35.71%, large(100) +15.15%, large(500) +6.25%, large(1000) +5.94%, int +31.82%, vector +28.57%, memory +42.86%, with zero gate regressions.
 - Gating coalesce-pair collection by move density (`min_movs=8`, `min_mov_density_permille=12`) removed low-value coalesce work and improved targeted medians in same-tree A/B: int +6.67%, vector +6.67%, mixed +5.56%, with zero gate regressions.
+- Removing unused LowerCtx value-use analysis (`computeValueUses` + `value_uses` map) reduced lowering overhead and improved same-tree A/B medians: large(100) +5.00%, large(500) +8.82%, mixed +5.26%, with zero gate regressions.
+- Trimming non-constant `vreg_origins` writes in AArch64 lowering (keeping constant origins only) improved repeat-9 parent-vs-candidate medians broadly: fib +5.00%, large(100) +7.04%, large(500) +15.26%, large(1000) +14.20%, large(5000) +15.24%, int +11.76%, vector +6.25%, mixed +10.00%, parallel batch +13.01%, with zero gate regressions.
+- Removing the dead pre-scan maps in `insertSpillScratch` improved repeat-9 parent-vs-candidate medians: large(100) +8.13%, large(500) +8.16%, large(1000) +8.24%, large(5000) +9.83%, int +6.67%, mixed +5.56%, with zero gate regressions.
+- Replacing per-operand spill-slot hash lookups with a dense spill-slot side table in `insertSpillScratch` improved repeat-9 parent-vs-candidate medians: fib +5.56%, large(100) +11.90%, large(500) +13.40%, large(1000) +7.92%, large(5000) +10.14%, mixed +5.56%, with zero gate regressions.
+- Adding a simple-stream fast path in AArch64 rewrite (`mov_imm`/`add_rr`/`ret`) improved repeat-9 parent-vs-candidate medians on fib and small-large workloads: fib +5.26%, large(100) +5.04%, with zero gate regressions.
+- Reusing one `OperandCollector` per block in `insertSpillScratch` second pass (with `clearRetainingCapacity()` per instruction) improved repeat-9 parent-vs-candidate micro medians: int +6.25%, vector +6.25%, memory +11.11%, mixed +5.26%, with zero gate regressions.
+- Reserving `new_insns` capacity up front in `insertSpillScratch` improved repeat-9 parent-vs-candidate `large(100)` compile median by +8.87% with zero gate regressions.
+- Skipping coalesce-pair collection on no-opt AArch64 path (`target.optimize=false`) delivered sustained repeat-9 rerun gains: fib +17.39%, large(100) +15.49%, large(500) +6.14%, large(5000) +9.75%, mixed +9.52%, serial batch +13.06%, parallel batch +29.46%, with zero gate regressions.
+- Skipping AArch64 peephole loops when `target.optimize=false` produced stable repeat-9 compile wins on large functions: large(100) +12.00%, large(500) +7.07%, with zero gate regressions.
 
 ## Did Not Work Well
 - VCode clear-retain reuse path caused repeatable regressions and was discarded.
@@ -47,7 +56,6 @@
 - Skipping complexity estimation on no-opt path did not pass the A/B gate under current noise envelope; discarded.
 - Lazily computing domtree on no-opt path delivered sub-5% improvements only; discarded.
 - Rewriting unreachable elimination to array-based reachability did not clear the gate due serial-batch regression noise; discarded.
-- Removing the dead pre-scan maps in `insertSpillScratch` failed same-tree A/B (`large(100)` regressed +8.13%); discarded.
 - Bounding AArch64 peephole iterations by block size regressed key compile metrics (`large(100)` and micro benches) and failed gate; discarded.
 - Moving `try_call` terminator branch detection to a post-loop single check did not produce >=5% positive gains; discarded.
 - Precomputing a no-call fast path in linear scan (`spansCall` bypass when no call positions) showed unstable/sub-5% results across reruns; discarded.
@@ -60,6 +68,33 @@
 - Replacing lowering block-label hash maps with dense block-index tables regressed multiple small AArch64 benchmark medians under gate; discarded.
 - Deferring AArch64 rewrite to emit for phi-free functions regressed `large(100)` under gate (`+9.82%`) and was discarded.
 - Reusing AArch64 ABI signature type buffers did not produce >=5% retained gains on tracked key metrics and was discarded.
+- Caching CFG block use/def metadata in `computeLivenessWithCFGInto` removed repeated operand decoding but produced only sub-5% retained gains (best serial-batch +3.63%) and a micro-benchmark regression (`aarch64 vector` +7.14%, 1us); discarded.
+- Replacing `vreg_origins` hash map with a dense touched-index table regressed key micro and batch metrics in repeat-9 parent-vs-candidate A/B (`fib` +5.56%, `int` +14.29%, `vector` +7.14%, `mixed` +5.88%, `serial batch` +6.27%, `parallel batch` +6.73%); discarded.
+- Gating AArch64 peephole loops by `target.optimize` in the current retained tree did not produce >=5% positive gains in immediate repeat-9 A/B and introduced small regressions in memory/mixed micro suites; discarded.
+- Replacing per-use `vreg_origins` hash lookups with a dense origin lookup table in `insertSpillScratch` did not produce >=5% retained gains and regressed micro int compile (`aarch64 int` +7.14%); discarded.
+- Extending the simple rewrite fast path to include spill ops (`mov_rr`/`add_imm`/`ldr`/`str`/`vldr`/`vstr`) regressed fib and micro suites in repeat-9 A/B (`fib` +11.11%, `int` +6.67%, `vector` +6.67%, `memory` +12.50%, `mixed` +5.56%); discarded.
+- Changing spill-rewrite reserve sizing to a spill-count heuristic (`old_insn_len + spill_count*4`) produced mixed deltas and regressed key large metrics in repeat-9 A/B; discarded.
+- Dense `RegAllocResult`/hint lookup tables in `linear_scan` showed mixed A/B deltas with key regressions (`large(100)` +23.53%, `parallel batch` +5.04%); discarded.
+- Reusing `aarch64::applyAllocations` directly from `src/codegen/compile.zig` introduced test-root import coupling (`root.aarch64_inst` unavailable in test runner contexts); discarded.
+- Switching linear-scan active insertion to binary-search index selection reduced search complexity but delivered only sub-5% gains on tracked metrics; discarded per threshold policy.
+- Lazy head-index active-list compaction in linear scan regressed `large(100)` (+6.50%) in same-tree A/B despite batch wins; discarded.
+- Single-block lower fast path (bypassing RPO setup) regressed `large(1000)` (+5.22%) and `parallel batch` (+5.25%) in same-tree A/B; discarded.
+- Dense vreg lookup side-table in rewrite pass regressed `large(100)` (+7.02%) and did not improve key batch metrics; discarded.
+- Pre-reserving VCode capacities from IR size in lowering regressed `large(100)` (+18.42%) despite minor large-function wins; discarded.
+- Raising alias-analysis complexity threshold to 224 regressed core compile metrics (`large(100)` +21.05%, `parallel batch` +11.34%); discarded.
+- Lazily building CFG/domtree by pass demand produced strong micro-bench gains but regressed core compile gate metrics (`large(100)` +35.96%, `parallel batch` +6.12%); discarded.
+- Pre-reserving lowering hash maps/RPO vectors increased compile cost (`large(100)` +30.70%) and failed the gate; discarded.
+- Binary-search `spansCall` in liveness looked positive in one run but failed stability rerun (`large(100)` +8.77%); discarded.
+- Sorting CFG-emitted liveness ranges to skip linear-scan sort looked positive in one run but failed rerun stability (`large(100)` +8.77%); discarded.
+- Skipping dominator-tree build on no-opt path looked strong in one run but failed rerun stability (`large(500)` +6.45%); discarded.
+- Minimal single-block lowering fast path (bypassing normal RPO setup) showed unstable rerun regressions (`large(100)` +6.14%); discarded.
+- Removing lower-stage value-use analysis from current tree did not produce retained >=5% wins and showed mixed micro-bench regressions (`aarch64 vector` +7.14%, `aarch64 mixed` +5.88%, below absolute fail floor); discarded.
+- Reusing the temporary AArch64 block-index map across compiles regressed key gate metrics (`fib` +5.56%, `large(100)` +6.72%, `serial batch` +5.06%); discarded.
+- Folding `iadd` iconst to immediate plus post-lower dead `mov_imm` removal added substantial lowering overhead and regressed broadly (`large(100)` +28.57%, `large(5000)` +21.64%, micro suites +41-50%); discarded.
+- Retaining VCode array capacities in `AArch64Lowered.resetForReuse()` hurt large-function medians (`large(100)` +16.81%, `large(500)` +7.12%, `large(1000)` +5.01%) despite micro-bench wins; discarded.
+- Retesting VCode-capacity retention against a fresh in-session baseline showed one promising run but failed stability rerun (no sustained >=5% key-metric gains and mixed micro regressions); discarded.
+- Compacting `VRegOrigin` payload after removing binop tracking improved several metrics but did not sustain >=5% gains across key tracked medians; discarded per threshold policy.
+- Bypassing per-block instruction copy in no-opt emit path did not produce qualifying compile-time gains (<5% across tracked medians); discarded.
 
 ## Process Lessons
 - Always benchmark with repeated runs and medians (`bench-repeat=5`) before keeping an optimization.
@@ -67,3 +102,5 @@
 - Keep failed optimization attempts documented with report paths so they are not retried blindly.
 - Favor instrumentation and gate coverage first, then optimization work.
 - Keep a compare-only gate path (`zig build bench-compare`) so same-tree A/B can compare fixed logs without rerunning benchmarks and overwriting inputs.
+- For same-tree A/B against parent revisions, capture baseline in a separate `jj` workspace and compare fixed log files to avoid stale baseline noise.
+- Parent-baseline logs go stale under thermal/load drift; verify gate stability with a no-change control run and refresh baselines in-session before evaluating candidate dots.

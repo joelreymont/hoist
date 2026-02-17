@@ -649,6 +649,36 @@ fn rewriteInstRegs(inst: *a64_inst.Inst, map: RegMapper) CodegenError!void {
     try rewriteValue(a64_inst.Inst, inst, map);
 }
 
+fn rewriteAArch64SimpleFast(
+    vcode: *vcode_mod.VCode(a64_inst.Inst),
+    result: *linear_scan_mod.RegAllocResult,
+) CodegenError!bool {
+    for (vcode.insns.items) |inst| {
+        switch (inst) {
+            .mov_imm, .add_rr, .ret => {},
+            else => return false,
+        }
+    }
+
+    const mapper = RegMapper{ .result = result, .scratch = null };
+    for (vcode.insns.items) |*inst| {
+        switch (inst.*) {
+            .mov_imm => |*mov| {
+                mov.dst = try mapper.wreg(mov.dst);
+            },
+            .add_rr => |*add| {
+                add.dst = try mapper.wreg(add.dst);
+                add.src1 = try mapper.reg(add.src1);
+                add.src2 = try mapper.reg(add.src2);
+            },
+            .ret => {},
+            else => unreachable,
+        }
+    }
+
+    return true;
+}
+
 fn insertSpillScratch(
     allocator: std.mem.Allocator,
     vcode: *@import("../machinst/vcode.zig").VCode(a64_inst.Inst),
@@ -660,86 +690,67 @@ fn insertSpillScratch(
 ) CodegenError!void {
     _ = domtree; // TODO: use for cross-block reload hoisting
     const OperandCollector = a64_inst.OperandCollector;
+    const SpillSlot = linear_scan_mod.SpillSlot;
 
-    // First pass: collect spilled vreg uses per block
-    var block_spill_uses = std.AutoHashMap(u32, std.AutoHashMap(reg_mod.VReg, void)).init(allocator);
-    defer {
-        var it = block_spill_uses.valueIterator();
-        while (it.next()) |v| v.deinit();
-        block_spill_uses.deinit();
-    }
-
-    // Also track which blocks use each spilled vreg (for hoisting analysis)
-    const BlockList = std.ArrayListUnmanaged(u32);
-    var vreg_use_blocks = std.AutoHashMap(reg_mod.VReg, BlockList).init(allocator);
-    defer {
-        var it = vreg_use_blocks.valueIterator();
-        while (it.next()) |v| v.deinit(allocator);
-        vreg_use_blocks.deinit();
-    }
-
-    for (vcode.blocks.items, 0..) |old_block, block_idx| {
-        const old_insns = vcode.insns.items[old_block.insn_start..old_block.insn_end];
-        var block_uses = std.AutoHashMap(reg_mod.VReg, void).init(allocator);
-
-        for (old_insns) |inst| {
-            var collector = OperandCollector.init(allocator);
-            defer collector.deinit();
-            try inst.getOperands(&collector);
-
-            for (collector.uses.items) |use_reg| {
-                const vreg = use_reg.toVReg() orelse continue;
-                if (result.getSpillSlot(vreg) != null) {
-                    try block_uses.put(vreg, {});
-
-                    // Track block -> vreg mapping for hoisting
-                    const gop = try vreg_use_blocks.getOrPut(vreg);
-                    if (!gop.found_existing) {
-                        gop.value_ptr.* = .{};
-                    }
-                    try gop.value_ptr.append(allocator, @intCast(block_idx));
-                }
-            }
+    const spill_table_len: usize = blk: {
+        var max_idx: u32 = 0;
+        var any = false;
+        var it = result.vreg_to_spill.iterator();
+        while (it.next()) |entry| {
+            any = true;
+            max_idx = @max(max_idx, entry.key_ptr.*);
         }
+        break :blk if (any) @as(usize, max_idx) + 1 else 0;
+    };
 
-        if (block_uses.count() > 0) {
-            try block_spill_uses.put(@intCast(block_idx), block_uses);
-        } else {
-            block_uses.deinit();
+    const spill_slots = try allocator.alloc(?SpillSlot, spill_table_len);
+    defer allocator.free(spill_slots);
+    @memset(spill_slots, null);
+    if (spill_table_len != 0) {
+        var it = result.vreg_to_spill.iterator();
+        while (it.next()) |entry| {
+            spill_slots[entry.key_ptr.*] = entry.value_ptr.*;
         }
     }
 
-    // vreg_use_blocks now contains per-vreg block usage info
-    // This can be used for hoisting analysis: vregs used only in one block
-    // are candidates for block-entry reload hoisting.
-    // TODO: Emit hoisted reloads (requires persisting pregs across instructions)
+    const lookupSpillSlot = struct {
+        fn get(table: []const ?SpillSlot, vreg: reg_mod.VReg) ?SpillSlot {
+            const idx = vreg.index();
+            if (idx >= table.len) return null;
+            return table[idx];
+        }
+    }.get;
 
     // Second pass: rewrite with spill/reload
     var new_insns = std.ArrayList(a64_inst.Inst){};
     errdefer new_insns.deinit(allocator);
     const old_insn_len = vcode.insns.items.len;
+    const reserve_insns = old_insn_len + old_insn_len / 2;
+    try new_insns.ensureTotalCapacity(allocator, reserve_insns);
     const insn_map = try allocator.alloc(u32, old_insn_len);
     defer allocator.free(insn_map);
 
     var scratch_state = ScratchState.init(scratch_regs);
     var scratch_map = ScratchMap{};
 
-    for (vcode.blocks.items, 0..) |*block, block_idx| {
-        const old_block = vcode.blocks.items[block_idx];
+    for (vcode.blocks.items) |*block| {
+        const old_block = block.*;
         const old_insns = vcode.insns.items[old_block.insn_start..old_block.insn_end];
         const new_start: u32 = @intCast(new_insns.items.len);
+        var collector = OperandCollector.init(allocator);
+        defer collector.deinit();
 
         for (old_insns, 0..) |inst, old_off| {
             scratch_state.reset();
             scratch_map.reset();
 
-            var collector = OperandCollector.init(allocator);
-            defer collector.deinit();
+            collector.uses.clearRetainingCapacity();
+            collector.defs.clearRetainingCapacity();
             try inst.getOperands(&collector);
 
             for (collector.uses.items) |use_reg| {
                 const vreg = use_reg.toVReg() orelse continue;
-                const slot = result.getSpillSlot(vreg) orelse continue;
+                const slot = lookupSpillSlot(spill_slots, vreg) orelse continue;
                 if (scratch_map.get(vreg) == null) {
                     const preg = try mapScratch(&scratch_map, &scratch_state, vreg);
 
@@ -780,7 +791,7 @@ fn insertSpillScratch(
 
             for (collector.defs.items) |def_reg| {
                 const vreg = def_reg.toReg().toVReg() orelse continue;
-                _ = result.getSpillSlot(vreg) orelse continue;
+                _ = lookupSpillSlot(spill_slots, vreg) orelse continue;
                 _ = try mapScratch(&scratch_map, &scratch_state, vreg);
             }
 
@@ -795,7 +806,7 @@ fn insertSpillScratch(
 
             for (collector.defs.items) |def_reg| {
                 const vreg = def_reg.toReg().toVReg() orelse continue;
-                const slot = result.getSpillSlot(vreg) orelse continue;
+                const slot = lookupSpillSlot(spill_slots, vreg) orelse continue;
                 const preg = try mapScratch(&scratch_map, &scratch_state, vreg);
                 try appendSpillStore(&new_insns, allocator, &scratch_state, vreg.class(), preg, slot.offset + spill_base_offset);
             }
@@ -2742,7 +2753,6 @@ fn lowerInstructionAArch64(
                         .size = vec_size,
                     } });
 
-                    try vreg_origins.put(result_vreg, VRegOrigin.forBinop(.iadd, arg0_vreg, arg1_vreg));
                 } else {
                     const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
                     const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
@@ -2767,8 +2777,6 @@ fn lowerInstructionAArch64(
                         },
                     });
 
-                    // Track origin for rematerialization
-                    try vreg_origins.put(result_vreg, VRegOrigin.forBinop(.iadd, arg0_vreg, arg1_vreg));
                 }
             } else if (data.opcode == .isub) {
                 const VReg = @import("../machinst/reg.zig").VReg;
@@ -2801,8 +2809,6 @@ fn lowerInstructionAArch64(
                     },
                 });
 
-                // Track origin for rematerialization
-                try vreg_origins.put(result_vreg, VRegOrigin.forBinop(.isub, arg0_vreg, arg1_vreg));
             } else if (data.opcode == .imul) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
@@ -2830,7 +2836,6 @@ fn lowerInstructionAArch64(
                         .size = vec_size,
                     } });
 
-                    try vreg_origins.put(result_vreg, VRegOrigin.forBinop(.imul, arg0_vreg, arg1_vreg));
                 } else {
                     // Map IR values to virtual registers
                     // Offset by PINNED_VREGS to avoid collision with physical registers
@@ -2857,7 +2862,6 @@ fn lowerInstructionAArch64(
                         },
                     });
 
-                    try vreg_origins.put(result_vreg, VRegOrigin.forBinop(.imul, arg0_vreg, arg1_vreg));
                 }
             } else if (data.opcode == .smulhi or data.opcode == .umulhi) {
                 const VReg = @import("../machinst/reg.zig").VReg;
@@ -3224,8 +3228,6 @@ fn lowerInstructionAArch64(
                     }
                 }
 
-                // Track origin for rematerialization
-                try vreg_origins.put(result_vreg, VRegOrigin.forBinop(data.opcode, arg0_vreg, arg1_vreg));
             } else if (data.opcode == .band_not or data.opcode == .bor_not or data.opcode == .bxor_not) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
@@ -3464,7 +3466,6 @@ fn lowerInstructionAArch64(
                     };
                     try builder.emit(inst_vec);
 
-                    try vreg_origins.put(result_vreg, VRegOrigin.forBinop(data.opcode, arg0_vreg, arg1_vreg));
                 } else {
                     const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
                     const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
@@ -6592,7 +6593,9 @@ fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
 
                     const linear_scan = &(state.linear_scan orelse return error.RegisterAllocationFailed);
                     linear_scan.resetForReuse();
-                    try collectCoalescePairs(Inst, vcode, liveness_info, linear_scan);
+                    if (target.optimize) {
+                        try collectCoalescePairs(Inst, vcode, liveness_info, linear_scan);
+                    }
                     try linear_scan.allocateInto(liveness_info, &state.result);
 
                     if (state.result.vreg_to_spill.count() > 0) {
@@ -6720,8 +6723,10 @@ fn rewriteRegisters(ctx: *Context, target: *const Target) CodegenError!void {
         .aarch64 => {
             if (ctx.aarch64_lowered) |*lowered| {
                 if (ctx.aarch64_regalloc) |*regalloc| {
-                    for (lowered.vcode.insns.items) |*inst| {
-                        try rewriteInstRegs(inst, RegMapper{ .result = &regalloc.result, .scratch = null });
+                    if (!try rewriteAArch64SimpleFast(&lowered.vcode, &regalloc.result)) {
+                        for (lowered.vcode.insns.items) |*inst| {
+                            try rewriteInstRegs(inst, RegMapper{ .result = &regalloc.result, .scratch = null });
+                        }
                     }
                 } else return error.RegisterAllocationFailed;
             } else return error.LoweringFailed;
