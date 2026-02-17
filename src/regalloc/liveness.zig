@@ -8,6 +8,7 @@ const machinst = @import("../machinst/machinst.zig");
 const cfg_mod = @import("../ir/cfg.zig");
 
 const max_operand_regs: usize = 128;
+const invalid_range_idx: u32 = std.math.maxInt(u32);
 
 const StackOperandCollector = struct {
     uses_buf: [max_operand_regs]machinst.Reg = undefined,
@@ -89,30 +90,41 @@ pub const LivenessInfo = struct {
     /// All live ranges in the function
     ranges: std.ArrayList(LiveRange),
 
-    /// Map from vreg index to its live range index in the ranges array
-    /// This enables O(1) lookup of a vreg's live range
-    vreg_to_range: std.AutoHashMap(u32, u32),
+    /// Dense map from vreg index to live-range index in `ranges`.
+    /// Unused entries are `invalid_range_idx`.
+    vreg_to_range_dense: std.ArrayList(u32),
 
     /// Instruction indices of call/call_indirect instructions.
     /// Live ranges that span any of these positions must be allocated
     /// to callee-saved registers (or spilled).
     call_positions: std.ArrayList(u32),
 
+    /// True if `ranges` are sorted by `start_inst` ascending.
+    ranges_sorted_by_start: bool,
+
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) LivenessInfo {
         return .{
             .ranges = std.ArrayList(LiveRange){},
-            .vreg_to_range = std.AutoHashMap(u32, u32).init(allocator),
+            .vreg_to_range_dense = std.ArrayList(u32){},
             .call_positions = std.ArrayList(u32){},
+            .ranges_sorted_by_start = false,
             .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *LivenessInfo) void {
         self.ranges.deinit(self.allocator);
-        self.vreg_to_range.deinit();
+        self.vreg_to_range_dense.deinit(self.allocator);
         self.call_positions.deinit(self.allocator);
+    }
+
+    pub fn clearRetainingCapacity(self: *LivenessInfo) void {
+        self.ranges.clearRetainingCapacity();
+        @memset(self.vreg_to_range_dense.items, invalid_range_idx);
+        self.call_positions.clearRetainingCapacity();
+        self.ranges_sorted_by_start = false;
     }
 
     /// Check if a live range spans any call instruction.
@@ -132,14 +144,31 @@ pub const LivenessInfo = struct {
     pub fn addRange(self: *LivenessInfo, range: LiveRange) !void {
         const range_idx: u32 = @intCast(self.ranges.items.len);
         try self.ranges.append(self.allocator, range);
-        try self.vreg_to_range.put(range.vreg.index(), range_idx);
+        try self.setRangeIndex(range.vreg.index(), range_idx);
+        self.ranges_sorted_by_start = false;
     }
 
     /// Get the live range for a given virtual register
     /// Returns null if the vreg has no recorded live range
     pub fn getRange(self: *LivenessInfo, vreg: machinst.VReg) ?*const LiveRange {
-        const range_idx = self.vreg_to_range.get(vreg.index()) orelse return null;
+        const vreg_idx = vreg.index();
+        if (vreg_idx >= self.vreg_to_range_dense.items.len) return null;
+        const range_idx = self.vreg_to_range_dense.items[vreg_idx];
+        if (range_idx == invalid_range_idx) return null;
         return &self.ranges.items[range_idx];
+    }
+
+    fn setRangeIndex(self: *LivenessInfo, vreg_idx: u32, range_idx: u32) !void {
+        try self.ensureDenseCapacity(vreg_idx);
+        self.vreg_to_range_dense.items[vreg_idx] = range_idx;
+    }
+
+    fn ensureDenseCapacity(self: *LivenessInfo, vreg_idx: u32) !void {
+        if (vreg_idx < self.vreg_to_range_dense.items.len) return;
+        const old_len = self.vreg_to_range_dense.items.len;
+        const new_len: usize = @as(usize, vreg_idx) + 1;
+        try self.vreg_to_range_dense.resize(self.allocator, new_len);
+        @memset(self.vreg_to_range_dense.items[old_len..new_len], invalid_range_idx);
     }
 
     /// Get all live ranges, sorted by start instruction
@@ -172,14 +201,6 @@ pub const LivenessInfo = struct {
     }
 };
 
-/// Helper to track per-vreg information during liveness computation
-const VRegInfo = struct {
-    first_def: ?u32,
-    first_use: ?u32,
-    last_use: u32,
-    reg_class: machinst.RegClass,
-};
-
 /// Compute liveness information for all virtual registers in a function.
 ///
 /// This performs a simple intra-block forward scan:
@@ -199,10 +220,24 @@ pub fn computeLiveness(
 ) !LivenessInfo {
     var info = LivenessInfo.init(allocator);
     errdefer info.deinit();
+    try computeLivenessInto(Inst, insns, &info);
+    return info;
+}
 
-    // Track per-vreg information during the scan
-    var vreg_info = std.AutoHashMap(u32, VRegInfo).init(allocator);
-    defer vreg_info.deinit();
+pub fn computeLivenessInto(
+    comptime Inst: type,
+    insns: []const Inst,
+    info: *LivenessInfo,
+) !void {
+    info.clearRetainingCapacity();
+    const allocator = info.allocator;
+
+    if (insns.len > 0) {
+        // Single-block fast path sees monotonic vreg growth on synthetic and real workloads.
+        // Pre-sizing avoids repeated range growth while building ranges.
+        try info.ranges.ensureTotalCapacity(allocator, insns.len);
+    }
+
     const has_get_operands = comptime @hasDecl(Inst, "getOperands");
     var operand_collector = StackOperandCollector{};
 
@@ -219,123 +254,51 @@ pub fn computeLiveness(
             operand_collector.reset();
             try inst.getOperands(&operand_collector);
 
-            // Process definitions - mark start of live range
             for (operand_collector.defs()) |def| {
                 const vreg = def.toReg().toVReg() orelse continue;
-                const entry = try vreg_info.getOrPut(vreg.index());
-                if (!entry.found_existing) {
-                    entry.value_ptr.* = .{
-                        .first_def = inst_idx,
-                        .first_use = null,
-                        .last_use = inst_idx,
-                        .reg_class = vreg.class(),
-                    };
-                } else {
-                    // Multiple definitions - this is unusual but possible with phi nodes
-                    // Keep the first definition
-                    if (entry.value_ptr.first_def == null) {
-                        entry.value_ptr.first_def = inst_idx;
-                        if (entry.value_ptr.last_use < inst_idx) {
-                            entry.value_ptr.last_use = inst_idx;
-                        }
-                    }
-                }
+                try noteRangeUse(info, vreg, inst_idx);
             }
 
-            // Process uses - extend live range
             for (operand_collector.uses()) |use| {
                 const vreg = use.toVReg() orelse continue;
-                const entry = try vreg_info.getOrPut(vreg.index());
-                if (!entry.found_existing) {
-                    // Use before def - this can happen with function parameters
-                    // Treat the use as both the start and current end
-                    entry.value_ptr.* = .{
-                        .first_def = null, // No definition yet
-                        .first_use = inst_idx,
-                        .last_use = inst_idx,
-                        .reg_class = vreg.class(),
-                    };
-                } else {
-                    if (entry.value_ptr.first_use == null) {
-                        entry.value_ptr.first_use = inst_idx;
-                    }
-                    // Update last use
-                    entry.value_ptr.last_use = inst_idx;
-                }
+                try noteRangeUse(info, vreg, inst_idx);
             }
         } else {
-            // Process definitions - mark start of live range
             const defs = try inst.getDefs(allocator);
             defer allocator.free(defs);
-
             for (defs) |vreg| {
-                const entry = try vreg_info.getOrPut(vreg.index());
-                if (!entry.found_existing) {
-                    entry.value_ptr.* = .{
-                        .first_def = inst_idx,
-                        .first_use = null,
-                        .last_use = inst_idx,
-                        .reg_class = vreg.class(),
-                    };
-                } else {
-                    // Multiple definitions - this is unusual but possible with phi nodes
-                    // Keep the first definition
-                    if (entry.value_ptr.first_def == null) {
-                        entry.value_ptr.first_def = inst_idx;
-                        if (entry.value_ptr.last_use < inst_idx) {
-                            entry.value_ptr.last_use = inst_idx;
-                        }
-                    }
-                }
+                try noteRangeUse(info, vreg, inst_idx);
             }
 
-            // Process uses - extend live range
             const uses = try inst.getUses(allocator);
             defer allocator.free(uses);
-
             for (uses) |vreg| {
-                const entry = try vreg_info.getOrPut(vreg.index());
-                if (!entry.found_existing) {
-                    // Use before def - this can happen with function parameters
-                    // Treat the use as both the start and current end
-                    entry.value_ptr.* = .{
-                        .first_def = null, // No definition yet
-                        .first_use = inst_idx,
-                        .last_use = inst_idx,
-                        .reg_class = vreg.class(),
-                    };
-                } else {
-                    if (entry.value_ptr.first_use == null) {
-                        entry.value_ptr.first_use = inst_idx;
-                    }
-                    // Update last use
-                    entry.value_ptr.last_use = inst_idx;
-                }
+                try noteRangeUse(info, vreg, inst_idx);
             }
         }
     }
+    info.ranges_sorted_by_start = true;
+}
 
-    // Convert vreg_info to live ranges
-    var iter = vreg_info.iterator();
-    while (iter.next()) |entry| {
-        const vreg_idx = entry.key_ptr.*;
-        const vinfo = entry.value_ptr.*;
-
-        // Start is either first definition or first use (for parameters)
-        const start = if (vinfo.first_def) |def|
-            if (vinfo.first_use) |use| @min(def, use) else def
-        else
-            vinfo.first_use orelse 0;
-
-        try info.addRange(.{
-            .vreg = machinst.VReg.new(vreg_idx, vinfo.reg_class),
-            .start_inst = start,
-            .end_inst = vinfo.last_use,
-            .reg_class = vinfo.reg_class,
-        });
+fn noteRangeUse(info: *LivenessInfo, vreg: machinst.VReg, inst_idx: u32) !void {
+    const vreg_idx = vreg.index();
+    try info.ensureDenseCapacity(vreg_idx);
+    const range_idx = info.vreg_to_range_dense.items[vreg_idx];
+    if (range_idx != invalid_range_idx) {
+        const range = &info.ranges.items[range_idx];
+        range.start_inst = @min(range.start_inst, inst_idx);
+        range.end_inst = @max(range.end_inst, inst_idx);
+        return;
     }
 
-    return info;
+    const new_idx: u32 = @intCast(info.ranges.items.len);
+    try info.ranges.append(info.allocator, .{
+        .vreg = vreg,
+        .start_inst = inst_idx,
+        .end_inst = inst_idx,
+        .reg_class = vreg.class(),
+    });
+    info.vreg_to_range_dense.items[vreg_idx] = new_idx;
 }
 
 /// Compute liveness information using control flow graph aware dataflow analysis.
@@ -358,10 +321,21 @@ pub fn computeLivenessWithCFG(
     block_insns: []const ?[]const Inst,
     allocator: std.mem.Allocator,
 ) !LivenessInfo {
-    std.debug.assert(blocks.len == block_insns.len);
-
     var info = LivenessInfo.init(allocator);
     errdefer info.deinit();
+    try computeLivenessWithCFGInto(Inst, blocks, block_insns, &info);
+    return info;
+}
+
+pub fn computeLivenessWithCFGInto(
+    comptime Inst: type,
+    blocks: []const cfg_mod.CFGNode,
+    block_insns: []const ?[]const Inst,
+    info: *LivenessInfo,
+) !void {
+    std.debug.assert(blocks.len == block_insns.len);
+    info.clearRetainingCapacity();
+    const allocator = info.allocator;
 
     var block_live_in = try allocator.alloc(std.AutoHashMap(u32, void), blocks.len);
     defer {
@@ -631,8 +605,6 @@ pub fn computeLivenessWithCFG(
             .reg_class = range_info.class,
         });
     }
-
-    return info;
 }
 
 test "LiveRange.overlaps" {
@@ -727,6 +699,25 @@ const MockInst = struct {
     }
 };
 
+const PerfInst = struct {
+    defs: []const machinst.VReg,
+    uses: []const machinst.VReg,
+    is_call: bool = false,
+
+    pub fn getOperands(self: PerfInst, collector: anytype) !void {
+        for (self.uses) |use| {
+            try collector.regUse(machinst.Reg.fromVReg(use));
+        }
+        for (self.defs) |def| {
+            try collector.regDef(machinst.WritableReg.fromVReg(def));
+        }
+    }
+
+    pub fn isCall(self: *const PerfInst) bool {
+        return self.is_call;
+    }
+};
+
 test "computeLiveness simple def-use pattern" {
     const allocator = std.testing.allocator;
 
@@ -759,6 +750,42 @@ test "computeLiveness simple def-use pattern" {
 
     // v0 and v1 should overlap at instruction 1
     try std.testing.expect(r0.?.overlaps(r1.?.*));
+}
+
+test "computeLivenessInto matches computeLiveness" {
+    const allocator = std.testing.allocator;
+
+    const v0 = machinst.VReg.new(0, .int);
+    const v1 = machinst.VReg.new(1, .int);
+    const v2 = machinst.VReg.new(2, .float);
+
+    const insns = [_]MockInst{
+        .{ .defs = &[_]machinst.VReg{v0}, .uses = &[_]machinst.VReg{} },
+        .{ .defs = &[_]machinst.VReg{v1}, .uses = &[_]machinst.VReg{v0} },
+        .{ .defs = &[_]machinst.VReg{}, .uses = &[_]machinst.VReg{v1}, .is_call = true },
+        .{ .defs = &[_]machinst.VReg{v2}, .uses = &[_]machinst.VReg{} },
+        .{ .defs = &[_]machinst.VReg{}, .uses = &[_]machinst.VReg{v2} },
+    };
+
+    var owned = try computeLiveness(MockInst, &insns, allocator);
+    defer owned.deinit();
+
+    var reused = LivenessInfo.init(allocator);
+    defer reused.deinit();
+    try computeLivenessInto(MockInst, &insns, &reused);
+
+    try std.testing.expectEqual(owned.ranges.items.len, reused.ranges.items.len);
+    try std.testing.expectEqual(owned.call_positions.items.len, reused.call_positions.items.len);
+
+    for ([_]machinst.VReg{ v0, v1, v2 }) |vreg| {
+        const a = owned.getRange(vreg);
+        const b = reused.getRange(vreg);
+        try std.testing.expect(a != null);
+        try std.testing.expect(b != null);
+        try std.testing.expectEqual(a.?.start_inst, b.?.start_inst);
+        try std.testing.expectEqual(a.?.end_inst, b.?.end_inst);
+        try std.testing.expectEqual(a.?.reg_class, b.?.reg_class);
+    }
 }
 
 test "computeLiveness non-overlapping ranges" {
@@ -915,4 +942,65 @@ test "computeLivenessWithCFG indexed block slices" {
     try std.testing.expect(range != null);
     try std.testing.expectEqual(@as(u32, 0), range.?.start_inst);
     try std.testing.expectEqual(@as(u32, 1), range.?.end_inst);
+}
+
+test "computeLivenessWithCFG perf sanity on wide CFG" {
+    const allocator = std.testing.allocator;
+    const Block = @import("../ir/entities.zig").Block;
+    const block_count: usize = 192;
+    const live_width: usize = 96;
+    const iterations: usize = 16;
+
+    var nodes = try allocator.alloc(cfg_mod.CFGNode, block_count);
+    defer allocator.free(nodes);
+    for (0..block_count) |i| {
+        nodes[i] = cfg_mod.CFGNode.init(allocator);
+    }
+    defer {
+        for (nodes) |*node| {
+            node.predecessors.deinit();
+            node.successors.deinit();
+            node.exception_successors.deinit();
+        }
+    }
+    for (0..block_count - 1) |i| {
+        try nodes[i].successors.put(Block.new(@intCast(i + 1)), {});
+    }
+
+    var def_storage = try allocator.alloc(machinst.VReg, block_count);
+    defer allocator.free(def_storage);
+    var use_storage = try allocator.alloc(machinst.VReg, block_count * live_width);
+    defer allocator.free(use_storage);
+    var insts = try allocator.alloc(PerfInst, block_count);
+    defer allocator.free(insts);
+    var block_insns = try allocator.alloc(?[]const PerfInst, block_count);
+    defer allocator.free(block_insns);
+
+    for (0..block_count) |i| {
+        def_storage[i] = machinst.VReg.new(@intCast(10_000 + i), .int);
+        const use_len = @min(i, live_width);
+        const base = i * live_width;
+        for (0..use_len) |j| {
+            use_storage[base + j] = machinst.VReg.new(@intCast(10_000 + i - 1 - j), .int);
+        }
+        insts[i] = .{
+            .defs = def_storage[i .. i + 1],
+            .uses = use_storage[base .. base + use_len],
+            .is_call = false,
+        };
+        block_insns[i] = insts[i .. i + 1];
+    }
+
+    var info = LivenessInfo.init(allocator);
+    defer info.deinit();
+
+    var timer = try std.time.Timer.start();
+    for (0..iterations) |_| {
+        try computeLivenessWithCFGInto(PerfInst, nodes, block_insns, &info);
+    }
+    const avg_us = (timer.read() / iterations) / 1000;
+
+    try std.testing.expect(info.ranges.items.len >= block_count);
+    // Generous Debug-mode bound; catches accidental quadratic regressions.
+    try std.testing.expect(avg_us < 200_000);
 }

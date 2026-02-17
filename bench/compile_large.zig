@@ -10,13 +10,16 @@ const UnaryImmData = hoist.instruction_data.UnaryImmData;
 const Imm64 = hoist.immediates.Imm64;
 const ContextBuilder = hoist.context.ContextBuilder;
 const CompileProfile = hoist.codegen.compile.CompileProfile;
+const counting_allocator = @import("counting_allocator.zig");
 
 /// Benchmark compilation of large functions.
 /// Tests scalability with many basic blocks and instructions.
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    var churn_alloc = counting_allocator.CountingAllocator.init(gpa.allocator());
+    churn_alloc.reset();
+    const allocator = churn_alloc.allocator();
 
     const sizes = [_]usize{ 100, 500, 1000, 5000 };
 
@@ -34,17 +37,19 @@ pub fn main() !void {
         ctx.resetCompileProfile();
         var timer = try std.time.Timer.start();
 
+        const ir_churn_start = churn_alloc.snapshot();
         const start = timer.read();
         var func = try createLargeFunction(allocator, size);
-        defer func.deinit();
         const ir_time = timer.read() - start;
+        const ir_churn = counting_allocator.Stats.delta(churn_alloc.snapshot(), ir_churn_start);
 
+        const compile_churn_start = churn_alloc.snapshot();
         const compile_start = timer.read();
         var code = ctx.compileFunction(&func) catch |err| {
+            func.deinit();
             std.debug.print("Size {d}: compilation failed - {}\n", .{ size, err });
             continue;
         };
-        defer code.deinit();
         const compile_time = timer.read() - compile_start;
 
         std.debug.print("Size {d:>5} insts: IR {d:>6}us, compile {d:>6}us, code {d:>5} bytes\n", .{
@@ -53,6 +58,11 @@ pub fn main() !void {
             compile_time / 1000,
             code.code.items.len,
         });
+        code.deinit();
+        func.deinit();
+        const compile_churn = counting_allocator.Stats.delta(churn_alloc.snapshot(), compile_churn_start);
+        printChurn("  churn ir", ir_churn);
+        printChurn("  churn compile", compile_churn);
         printStageAverages(ctx.getAccumCompileProfile(), ctx.getCompileCount());
     }
 }
@@ -69,6 +79,21 @@ fn printStageAverages(sum: CompileProfile, compile_count: u64) void {
         (sum.emit_ns / compile_count) / 1000,
         (sum.total_ns / compile_count) / 1000,
     });
+}
+
+fn printChurn(label: []const u8, churn: counting_allocator.Stats) void {
+    std.debug.print(
+        "{s}: allocs={d} frees={d} resize={d} remap={d} alloc_bytes={d} free_bytes={d}\n",
+        .{
+            label,
+            churn.alloc_calls,
+            churn.free_calls,
+            churn.resize_calls,
+            churn.remap_calls,
+            churn.alloc_bytes,
+            churn.free_bytes,
+        },
+    );
 }
 
 /// Create large function with many sequential arithmetic operations.

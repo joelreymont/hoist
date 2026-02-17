@@ -11,21 +11,24 @@ const StoreData = hoist.instruction_data.StoreData;
 const ContextBuilder = hoist.context.ContextBuilder;
 const MemFlags = hoist.memflags.MemFlags;
 const CompileProfile = hoist.codegen.compile.CompileProfile;
+const counting_allocator = @import("counting_allocator.zig");
 
 /// Performance benchmark for aarch64 backend.
 /// Measures compile time, code size, and instruction throughput.
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    var churn_alloc = counting_allocator.CountingAllocator.init(gpa.allocator());
+    churn_alloc.reset();
+    const allocator = churn_alloc.allocator();
 
     std.debug.print("aarch64 Backend Performance Benchmark\n", .{});
     std.debug.print("======================================\n\n", .{});
 
-    try benchmarkIntArithmetic(allocator);
-    try benchmarkVectorOps(allocator);
-    try benchmarkMemoryOps(allocator);
-    try benchmarkMixedWorkload(allocator);
+    try benchmarkIntArithmetic(allocator, &churn_alloc);
+    try benchmarkVectorOps(allocator, &churn_alloc);
+    try benchmarkMemoryOps(allocator, &churn_alloc);
+    try benchmarkMixedWorkload(allocator, &churn_alloc);
 }
 
 fn countInsts(func: *const Function) usize {
@@ -52,7 +55,23 @@ fn printStageAverages(sum: CompileProfile, compile_count: u64) void {
     std.debug.print("  Stage avg total: {d}us\n", .{(sum.total_ns / compile_count) / 1000});
 }
 
-fn benchmarkIntArithmetic(allocator: std.mem.Allocator) !void {
+fn printChurnAverages(label: []const u8, churn: counting_allocator.Stats, iterations: usize) void {
+    const iters_u64: u64 = @intCast(iterations);
+    std.debug.print(
+        "  Churn {s}: allocs={d} frees={d} resize={d} remap={d} alloc_bytes={d} free_bytes={d}\n",
+        .{
+            label,
+            churn.alloc_calls / iters_u64,
+            churn.free_calls / iters_u64,
+            churn.resize_calls / iters_u64,
+            churn.remap_calls / iters_u64,
+            churn.alloc_bytes / iters_u64,
+            churn.free_bytes / iters_u64,
+        },
+    );
+}
+
+fn benchmarkIntArithmetic(allocator: std.mem.Allocator, churn_alloc: *counting_allocator.CountingAllocator) !void {
     const iterations = 1000;
     std.debug.print("Integer Arithmetic Benchmark ({d} iterations)\n", .{iterations});
 
@@ -60,6 +79,8 @@ fn benchmarkIntArithmetic(allocator: std.mem.Allocator) !void {
     var total_time: u64 = 0;
     var total_size: usize = 0;
     var total_insts: usize = 0;
+    var build_churn = counting_allocator.Stats{};
+    var compile_churn = counting_allocator.Stats{};
 
     var builder = ContextBuilder.init(allocator);
     var ctx = (try builder.targetNative())
@@ -71,12 +92,15 @@ fn benchmarkIntArithmetic(allocator: std.mem.Allocator) !void {
     ctx.resetCompileProfile();
 
     for (0..iterations) |_| {
+        const build_churn_start = churn_alloc.snapshot();
         var func = try createIntArithmeticFunction(allocator);
-        defer func.deinit();
+        const build_churn_end = churn_alloc.snapshot();
+        build_churn.addAssign(counting_allocator.Stats.delta(build_churn_end, build_churn_start));
 
         const inst_count = countInsts(&func);
         total_insts += inst_count;
 
+        const compile_churn_start = churn_alloc.snapshot();
         const start = timer.read();
         var code = try ctx.compileFunction(&func);
         const end = timer.read();
@@ -85,6 +109,9 @@ fn benchmarkIntArithmetic(allocator: std.mem.Allocator) !void {
         total_size += code.code.items.len;
 
         code.deinit();
+        func.deinit();
+        const compile_churn_end = churn_alloc.snapshot();
+        compile_churn.addAssign(counting_allocator.Stats.delta(compile_churn_end, compile_churn_start));
     }
 
     const avg_time_us = (total_time / iterations) / 1000;
@@ -97,11 +124,13 @@ fn benchmarkIntArithmetic(allocator: std.mem.Allocator) !void {
     std.debug.print("  Throughput:       {d:.2} insts/ms\n\n", .{
         @as(f64, @floatFromInt(avg_insts)) / (@as(f64, @floatFromInt(avg_time_us)) / 1000.0),
     });
+    printChurnAverages("build", build_churn, iterations);
+    printChurnAverages("compile", compile_churn, iterations);
     printStageAverages(ctx.getAccumCompileProfile(), ctx.getCompileCount());
     std.debug.print("\n", .{});
 }
 
-fn benchmarkVectorOps(allocator: std.mem.Allocator) !void {
+fn benchmarkVectorOps(allocator: std.mem.Allocator, churn_alloc: *counting_allocator.CountingAllocator) !void {
     const iterations = 1000;
     std.debug.print("Vector Operations Benchmark ({d} iterations)\n", .{iterations});
 
@@ -109,6 +138,8 @@ fn benchmarkVectorOps(allocator: std.mem.Allocator) !void {
     var total_time: u64 = 0;
     var total_size: usize = 0;
     var total_insts: usize = 0;
+    var build_churn = counting_allocator.Stats{};
+    var compile_churn = counting_allocator.Stats{};
 
     var builder = ContextBuilder.init(allocator);
     var ctx = (try builder.targetNative())
@@ -120,12 +151,15 @@ fn benchmarkVectorOps(allocator: std.mem.Allocator) !void {
     ctx.resetCompileProfile();
 
     for (0..iterations) |_| {
+        const build_churn_start = churn_alloc.snapshot();
         var func = try createVectorFunction(allocator);
-        defer func.deinit();
+        const build_churn_end = churn_alloc.snapshot();
+        build_churn.addAssign(counting_allocator.Stats.delta(build_churn_end, build_churn_start));
 
         const inst_count = countInsts(&func);
         total_insts += inst_count;
 
+        const compile_churn_start = churn_alloc.snapshot();
         const start = timer.read();
         var code = try ctx.compileFunction(&func);
         const end = timer.read();
@@ -134,6 +168,9 @@ fn benchmarkVectorOps(allocator: std.mem.Allocator) !void {
         total_size += code.code.items.len;
 
         code.deinit();
+        func.deinit();
+        const compile_churn_end = churn_alloc.snapshot();
+        compile_churn.addAssign(counting_allocator.Stats.delta(compile_churn_end, compile_churn_start));
     }
 
     const avg_time_us = (total_time / iterations) / 1000;
@@ -146,11 +183,13 @@ fn benchmarkVectorOps(allocator: std.mem.Allocator) !void {
     std.debug.print("  Throughput:       {d:.2} insts/ms\n\n", .{
         @as(f64, @floatFromInt(avg_insts)) / (@as(f64, @floatFromInt(avg_time_us)) / 1000.0),
     });
+    printChurnAverages("build", build_churn, iterations);
+    printChurnAverages("compile", compile_churn, iterations);
     printStageAverages(ctx.getAccumCompileProfile(), ctx.getCompileCount());
     std.debug.print("\n", .{});
 }
 
-fn benchmarkMemoryOps(allocator: std.mem.Allocator) !void {
+fn benchmarkMemoryOps(allocator: std.mem.Allocator, churn_alloc: *counting_allocator.CountingAllocator) !void {
     const iterations = 1000;
     std.debug.print("Memory Operations Benchmark ({d} iterations)\n", .{iterations});
 
@@ -158,6 +197,8 @@ fn benchmarkMemoryOps(allocator: std.mem.Allocator) !void {
     var total_time: u64 = 0;
     var total_size: usize = 0;
     var total_insts: usize = 0;
+    var build_churn = counting_allocator.Stats{};
+    var compile_churn = counting_allocator.Stats{};
 
     var builder = ContextBuilder.init(allocator);
     var ctx = (try builder.targetNative())
@@ -169,12 +210,15 @@ fn benchmarkMemoryOps(allocator: std.mem.Allocator) !void {
     ctx.resetCompileProfile();
 
     for (0..iterations) |_| {
+        const build_churn_start = churn_alloc.snapshot();
         var func = try createMemoryFunction(allocator);
-        defer func.deinit();
+        const build_churn_end = churn_alloc.snapshot();
+        build_churn.addAssign(counting_allocator.Stats.delta(build_churn_end, build_churn_start));
 
         const inst_count = countInsts(&func);
         total_insts += inst_count;
 
+        const compile_churn_start = churn_alloc.snapshot();
         const start = timer.read();
         var code = try ctx.compileFunction(&func);
         const end = timer.read();
@@ -183,6 +227,9 @@ fn benchmarkMemoryOps(allocator: std.mem.Allocator) !void {
         total_size += code.code.items.len;
 
         code.deinit();
+        func.deinit();
+        const compile_churn_end = churn_alloc.snapshot();
+        compile_churn.addAssign(counting_allocator.Stats.delta(compile_churn_end, compile_churn_start));
     }
 
     const avg_time_us = (total_time / iterations) / 1000;
@@ -195,11 +242,13 @@ fn benchmarkMemoryOps(allocator: std.mem.Allocator) !void {
     std.debug.print("  Throughput:       {d:.2} insts/ms\n\n", .{
         @as(f64, @floatFromInt(avg_insts)) / (@as(f64, @floatFromInt(avg_time_us)) / 1000.0),
     });
+    printChurnAverages("build", build_churn, iterations);
+    printChurnAverages("compile", compile_churn, iterations);
     printStageAverages(ctx.getAccumCompileProfile(), ctx.getCompileCount());
     std.debug.print("\n", .{});
 }
 
-fn benchmarkMixedWorkload(allocator: std.mem.Allocator) !void {
+fn benchmarkMixedWorkload(allocator: std.mem.Allocator, churn_alloc: *counting_allocator.CountingAllocator) !void {
     const iterations = 1000;
     std.debug.print("Mixed Workload Benchmark ({d} iterations)\n", .{iterations});
 
@@ -207,6 +256,8 @@ fn benchmarkMixedWorkload(allocator: std.mem.Allocator) !void {
     var total_time: u64 = 0;
     var total_size: usize = 0;
     var total_insts: usize = 0;
+    var build_churn = counting_allocator.Stats{};
+    var compile_churn = counting_allocator.Stats{};
 
     var builder = ContextBuilder.init(allocator);
     var ctx = (try builder.targetNative())
@@ -218,12 +269,15 @@ fn benchmarkMixedWorkload(allocator: std.mem.Allocator) !void {
     ctx.resetCompileProfile();
 
     for (0..iterations) |_| {
+        const build_churn_start = churn_alloc.snapshot();
         var func = try createMixedFunction(allocator);
-        defer func.deinit();
+        const build_churn_end = churn_alloc.snapshot();
+        build_churn.addAssign(counting_allocator.Stats.delta(build_churn_end, build_churn_start));
 
         const inst_count = countInsts(&func);
         total_insts += inst_count;
 
+        const compile_churn_start = churn_alloc.snapshot();
         const start = timer.read();
         var code = try ctx.compileFunction(&func);
         const end = timer.read();
@@ -232,6 +286,9 @@ fn benchmarkMixedWorkload(allocator: std.mem.Allocator) !void {
         total_size += code.code.items.len;
 
         code.deinit();
+        func.deinit();
+        const compile_churn_end = churn_alloc.snapshot();
+        compile_churn.addAssign(counting_allocator.Stats.delta(compile_churn_end, compile_churn_start));
     }
 
     const avg_time_us = (total_time / iterations) / 1000;
@@ -244,6 +301,8 @@ fn benchmarkMixedWorkload(allocator: std.mem.Allocator) !void {
     std.debug.print("  Throughput:       {d:.2} insts/ms\n\n", .{
         @as(f64, @floatFromInt(avg_insts)) / (@as(f64, @floatFromInt(avg_time_us)) / 1000.0),
     });
+    printChurnAverages("build", build_churn, iterations);
+    printChurnAverages("compile", compile_churn, iterations);
     printStageAverages(ctx.getAccumCompileProfile(), ctx.getCompileCount());
     std.debug.print("\n", .{});
 }

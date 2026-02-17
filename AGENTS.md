@@ -2,6 +2,7 @@
 - Cranelift: `~/Work/wasmtime/cranelift/`
 - Parity plan: `/Users/joel/Work/hoist/PLAN.md` (merged canonical)
 - Status: `docs/COMPLETION_STATUS.md`
+- Lessons: `/Users/joel/Work/hoist/LESSONS.md` (keep current)
 - Zig docs (global): `~/.agents/docs/zig.md` (update with new Zig API info)
 - Dot tasks: use `dot` CLI/skill (dot skill) for `.dots/*.md` (no manual edits)
 
@@ -40,3 +41,4 @@ New instructions: `isle_impl.zig` → `inst.zig` → `getOperands()` → `emitAA
 
 ### Workflow
 - Commit after each significant feature/fix and after closing a dot
+- Update `LESSONS.md` after each significant performance dot/feature; record baseline, result, keep/discard

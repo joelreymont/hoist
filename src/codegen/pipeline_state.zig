@@ -58,8 +58,22 @@ pub const AArch64RegAlloc = struct {
     allocator: std.mem.Allocator,
     result: linear_scan_mod.RegAllocResult,
     spill_bytes: u32,
+    linear_scan: ?linear_scan_mod.LinearScanAllocator,
+    pool_key: u64,
+
+    pub fn resetForReuse(self: *AArch64RegAlloc) void {
+        self.result.clearRetainingCapacity();
+        self.spill_bytes = 0;
+        if (self.linear_scan) |*scan| {
+            scan.resetForReuse();
+        }
+    }
 
     pub fn deinit(self: *AArch64RegAlloc) void {
+        if (self.linear_scan) |*scan| {
+            scan.deinit();
+            self.linear_scan = null;
+        }
         self.result.deinit();
         self.* = undefined;
     }
@@ -131,4 +145,24 @@ test "AArch64Lowered resetForReuse clears maps" {
     try std.testing.expectEqual(@as(usize, 0), lowered.vreg_origins.count());
     try std.testing.expectEqual(@as(usize, 0), lowered.ir_to_vcode_blocks.count());
     try std.testing.expectEqual(@as(usize, 0), lowered.vcode.numInsns());
+}
+
+test "AArch64RegAlloc resetForReuse clears result" {
+    var state = AArch64RegAlloc{
+        .allocator = std.testing.allocator,
+        .result = linear_scan_mod.RegAllocResult.init(std.testing.allocator),
+        .spill_bytes = 64,
+        .linear_scan = null,
+        .pool_key = 0,
+    };
+    defer state.deinit();
+
+    try state.result.assign(reg_mod.VReg.new(3, .int), reg_mod.PReg.new(.int, 1));
+    try state.result.assignSpillSlot(reg_mod.VReg.new(9, .int), .{ .offset = 128 });
+
+    state.resetForReuse();
+
+    try std.testing.expectEqual(@as(usize, 0), state.result.vreg_to_preg.count());
+    try std.testing.expectEqual(@as(usize, 0), state.result.vreg_to_spill.count());
+    try std.testing.expectEqual(@as(u32, 0), state.spill_bytes);
 }

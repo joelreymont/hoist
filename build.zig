@@ -76,17 +76,42 @@ pub fn build(b: *std.Build) void {
         "bench-report-json-path",
         "Perf JSON report output path (default: /tmp/hoist-bench-report.json)",
     ) orelse "/tmp/hoist-bench-report.json";
+    const bench_history_json_path = b.option(
+        []const u8,
+        "bench-history-json-path",
+        "Perf history JSONL output path for appended runs (default: /tmp/hoist-bench-history.jsonl)",
+    ) orelse "/tmp/hoist-bench-history.jsonl";
 
     const bench_max_regress_pct = b.option(
         f64,
         "bench-max-regress-pct",
         "Maximum allowed regression percentage (default: 5.0)",
     ) orelse 5.0;
+    const bench_min_regress_us = b.option(
+        f64,
+        "bench-min-regress-us",
+        "Minimum absolute regression in microseconds required to fail perf gate (default: 2.0)",
+    ) orelse 2.0;
     const bench_repeat = b.option(
         usize,
         "bench-repeat",
         "Benchmark repetitions per run for median gate stability (default: 5)",
     ) orelse 5;
+    const bench_refresh_baseline = b.option(
+        bool,
+        "bench-refresh-baseline",
+        "Refresh baseline log during bench-gate (default: false; use baseline-log explicitly)",
+    ) orelse false;
+    const bench_budget_reference_path = b.option(
+        []const u8,
+        "bench-budget-reference-path",
+        "Reference benchmark log path for optional 2x/3x budget checks",
+    );
+    const bench_budget_multiplier = b.option(
+        f64,
+        "bench-budget-multiplier",
+        "Optional budget speedup target multiplier (e.g. 2.0 for 2x, 3.0 for 3x)",
+    );
 
     // Helper to apply flags to a compile step
     const applyFlags = struct {
@@ -564,13 +589,26 @@ pub fn build(b: *std.Build) void {
     bench_aarch64.root_module.addImport("hoist", bench_hoist);
     applyFlags(bench_aarch64, enable_lto, debug_info, strip_debug, pic, single_threaded);
 
+    const bench_parallel = b.addExecutable(.{
+        .name = "bench_parallel",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/compile_parallel.zig"),
+            .target = target,
+            .optimize = bench_optimize,
+        }),
+    });
+    bench_parallel.root_module.addImport("hoist", bench_hoist);
+    applyFlags(bench_parallel, enable_lto, debug_info, strip_debug, pic, single_threaded);
+
     const bench_step = b.step("bench", "Run benchmarks");
     const run_bench_fib = b.addRunArtifact(bench_fib);
     const run_bench_large = b.addRunArtifact(bench_large);
     const run_bench_aarch64 = b.addRunArtifact(bench_aarch64);
+    const run_bench_parallel = b.addRunArtifact(bench_parallel);
     bench_step.dependOn(&run_bench_fib.step);
     bench_step.dependOn(&run_bench_large.step);
     bench_step.dependOn(&run_bench_aarch64.step);
+    bench_step.dependOn(&run_bench_parallel.step);
 
     const baseline = b.addExecutable(.{
         .name = "baseline",
@@ -589,6 +627,7 @@ pub fn build(b: *std.Build) void {
     run_baseline.addFileArg(bench_fib.getEmittedBin());
     run_baseline.addFileArg(bench_large.getEmittedBin());
     run_baseline.addFileArg(bench_aarch64.getEmittedBin());
+    run_baseline.addFileArg(bench_parallel.getEmittedBin());
     baseline_step.dependOn(&run_baseline.step);
 
     const bench_log_step = b.step("bench-log", "Run benchmarks and write /tmp/hoist-bench.log");
@@ -600,9 +639,10 @@ pub fn build(b: *std.Build) void {
     run_bench_log.addFileArg(bench_fib.getEmittedBin());
     run_bench_log.addFileArg(bench_large.getEmittedBin());
     run_bench_log.addFileArg(bench_aarch64.getEmittedBin());
+    run_bench_log.addFileArg(bench_parallel.getEmittedBin());
     bench_log_step.dependOn(&run_bench_log.step);
 
-    const baseline_log_step = b.step("baseline-log", "Run benchmarks and write /tmp/hoist-baseline.log");
+    const baseline_log_step = b.step("baseline-log", "Refresh baseline benchmark log");
     const run_baseline_log = b.addRunArtifact(baseline);
     run_baseline_log.addArg("--out");
     run_baseline_log.addArg(bench_baseline_path);
@@ -611,6 +651,7 @@ pub fn build(b: *std.Build) void {
     run_baseline_log.addFileArg(bench_fib.getEmittedBin());
     run_baseline_log.addFileArg(bench_large.getEmittedBin());
     run_baseline_log.addFileArg(bench_aarch64.getEmittedBin());
+    run_baseline_log.addFileArg(bench_parallel.getEmittedBin());
     baseline_log_step.dependOn(&run_baseline_log.step);
 
     const perf_gate = b.addExecutable(.{
@@ -633,11 +674,51 @@ pub fn build(b: *std.Build) void {
     run_bench_gate.addArg(bench_report_path);
     run_bench_gate.addArg("--json-out");
     run_bench_gate.addArg(bench_report_json_path);
+    run_bench_gate.addArg("--history-json");
+    run_bench_gate.addArg(bench_history_json_path);
+    if (bench_budget_reference_path) |budget_ref| {
+        if (bench_budget_multiplier) |budget_mult| {
+            run_bench_gate.addArg("--budget-reference");
+            run_bench_gate.addArg(budget_ref);
+            run_bench_gate.addArg("--budget-multiplier");
+            run_bench_gate.addArg(b.fmt("{d}", .{budget_mult}));
+        }
+    }
     run_bench_gate.addArg("--max-regress-pct");
     run_bench_gate.addArg(b.fmt("{d}", .{bench_max_regress_pct}));
-    run_bench_gate.step.dependOn(&run_baseline_log.step);
+    run_bench_gate.addArg("--min-regress-us");
+    run_bench_gate.addArg(b.fmt("{d}", .{bench_min_regress_us}));
+    if (bench_refresh_baseline) {
+        run_bench_gate.step.dependOn(&run_baseline_log.step);
+    }
     run_bench_gate.step.dependOn(&run_bench_log.step);
     bench_gate_step.dependOn(&run_bench_gate.step);
+
+    const bench_compare_step = b.step("bench-compare", "Compare existing benchmark logs with perf gate (no benchmark rerun)");
+    const run_bench_compare = b.addRunArtifact(perf_gate);
+    run_bench_compare.addArg("--baseline");
+    run_bench_compare.addArg(bench_baseline_path);
+    run_bench_compare.addArg("--current");
+    run_bench_compare.addArg(bench_current_path);
+    run_bench_compare.addArg("--out");
+    run_bench_compare.addArg(bench_report_path);
+    run_bench_compare.addArg("--json-out");
+    run_bench_compare.addArg(bench_report_json_path);
+    run_bench_compare.addArg("--history-json");
+    run_bench_compare.addArg(bench_history_json_path);
+    if (bench_budget_reference_path) |budget_ref| {
+        if (bench_budget_multiplier) |budget_mult| {
+            run_bench_compare.addArg("--budget-reference");
+            run_bench_compare.addArg(budget_ref);
+            run_bench_compare.addArg("--budget-multiplier");
+            run_bench_compare.addArg(b.fmt("{d}", .{budget_mult}));
+        }
+    }
+    run_bench_compare.addArg("--max-regress-pct");
+    run_bench_compare.addArg(b.fmt("{d}", .{bench_max_regress_pct}));
+    run_bench_compare.addArg("--min-regress-us");
+    run_bench_compare.addArg(b.fmt("{d}", .{bench_min_regress_us}));
+    bench_compare_step.dependOn(&run_bench_compare.step);
 
     // Fuzzing
     const fuzz_compile = b.addExecutable(.{

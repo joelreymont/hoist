@@ -13,6 +13,7 @@ const DominatorTree = ir.DominatorTree;
 const LoopInfo = ir.LoopInfo;
 const pipeline_state = @import("pipeline_state.zig");
 const egraph_rules = @import("../ir/egraph_rules.zig");
+const liveness_mod = @import("../regalloc/liveness.zig");
 
 pub const CompileProfile = struct {
     verify_ns: u64,
@@ -117,6 +118,8 @@ pub const Context = struct {
     aarch64_lowered: ?pipeline_state.AArch64Lowered,
     /// AArch64 register allocation state for current compilation.
     aarch64_regalloc: ?pipeline_state.AArch64RegAlloc,
+    /// AArch64 liveness state for current compilation.
+    aarch64_liveness: ?liveness_mod.LivenessInfo,
     /// x64 lowering state for current compilation.
     x64_lowered: ?pipeline_state.X64Lowered,
     /// RISC-V lowering state for current compilation.
@@ -158,6 +161,7 @@ pub const Context = struct {
             .compiled_code = null,
             .aarch64_lowered = null,
             .aarch64_regalloc = null,
+            .aarch64_liveness = null,
             .x64_lowered = null,
             .riscv64_lowered = null,
             .riscv64_regalloc = null,
@@ -184,6 +188,7 @@ pub const Context = struct {
             .compiled_code = null,
             .aarch64_lowered = null,
             .aarch64_regalloc = null,
+            .aarch64_liveness = null,
             .x64_lowered = null,
             .riscv64_lowered = null,
             .riscv64_regalloc = null,
@@ -209,6 +214,9 @@ pub const Context = struct {
             code.deinit();
         }
         if (self.aarch64_regalloc) |*state| {
+            state.deinit();
+        }
+        if (self.aarch64_liveness) |*state| {
             state.deinit();
         }
         if (self.aarch64_lowered) |*state| {
@@ -238,8 +246,10 @@ pub const Context = struct {
 
     pub fn clearAArch64State(self: *Context) void {
         if (self.aarch64_regalloc) |*state| {
-            state.deinit();
-            self.aarch64_regalloc = null;
+            state.resetForReuse();
+        }
+        if (self.aarch64_liveness) |*state| {
+            state.clearRetainingCapacity();
         }
         if (self.aarch64_lowered) |*state| {
             state.resetForReuse();

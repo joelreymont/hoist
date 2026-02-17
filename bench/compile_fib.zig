@@ -13,13 +13,16 @@ const Imm64 = hoist.immediates.Imm64;
 const IntCC = hoist.condcodes.IntCC;
 const ContextBuilder = hoist.context.ContextBuilder;
 const CompileProfile = hoist.codegen.compile.CompileProfile;
+const counting_allocator = @import("counting_allocator.zig");
 
 /// Benchmark compilation of Fibonacci function.
 /// Measures IR construction and compilation time.
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    var churn_alloc = counting_allocator.CountingAllocator.init(gpa.allocator());
+    churn_alloc.reset();
+    const allocator = churn_alloc.allocator();
 
     const iterations = 1000;
 
@@ -30,6 +33,8 @@ pub fn main() !void {
     var total_ir_time: u64 = 0;
     var total_compile_time: u64 = 0;
     var total_code_size: usize = 0;
+    var ir_churn = counting_allocator.Stats{};
+    var compile_churn = counting_allocator.Stats{};
 
     var builder = ContextBuilder.init(allocator);
     var ctx = (try builder.targetNative())
@@ -41,21 +46,27 @@ pub fn main() !void {
     ctx.resetCompileProfile();
 
     for (0..iterations) |_| {
+        const ir_churn_start = churn_alloc.snapshot();
         // Measure IR construction time
         const ir_start = timer.read();
         var func = try createFibFunction(allocator);
-        defer func.deinit();
         const ir_end = timer.read();
         total_ir_time += ir_end - ir_start;
+        const ir_churn_end = churn_alloc.snapshot();
+        ir_churn.addAssign(counting_allocator.Stats.delta(ir_churn_end, ir_churn_start));
 
         // Measure compilation time
+        const compile_churn_start = churn_alloc.snapshot();
         const compile_start = timer.read();
         var code = try ctx.compileFunction(&func);
-        defer code.deinit();
         const compile_end = timer.read();
         total_compile_time += compile_end - compile_start;
 
         total_code_size += code.code.items.len;
+        code.deinit();
+        func.deinit();
+        const compile_churn_end = churn_alloc.snapshot();
+        compile_churn.addAssign(counting_allocator.Stats.delta(compile_churn_end, compile_churn_start));
     }
 
     const avg_ir_ns = total_ir_time / iterations;
@@ -69,6 +80,8 @@ pub fn main() !void {
     std.debug.print("  Avg compilation:     {d}us\n", .{avg_compile_ns / 1000});
     std.debug.print("  Avg code size:       {d} bytes\n", .{avg_code_size});
     std.debug.print("  Total time:          {d}ms\n", .{(total_ir_time + total_compile_time) / 1_000_000});
+    printChurnAverages("IR", ir_churn, iterations);
+    printChurnAverages("compile", compile_churn, iterations);
     printStageAverages(stage_sum, compile_count);
 }
 
@@ -82,6 +95,22 @@ fn printStageAverages(sum: CompileProfile, compile_count: u64) void {
     std.debug.print("  Stage avg phi:       {d}us\n", .{(sum.phi_ns / compile_count) / 1000});
     std.debug.print("  Stage avg emit:      {d}us\n", .{(sum.emit_ns / compile_count) / 1000});
     std.debug.print("  Stage avg total:     {d}us\n", .{(sum.total_ns / compile_count) / 1000});
+}
+
+fn printChurnAverages(label: []const u8, churn: counting_allocator.Stats, iterations: usize) void {
+    const iters_u64: u64 = @intCast(iterations);
+    std.debug.print(
+        "  Churn {s}: allocs={d} frees={d} resize={d} remap={d} alloc_bytes={d} free_bytes={d}\n",
+        .{
+            label,
+            churn.alloc_calls / iters_u64,
+            churn.free_calls / iters_u64,
+            churn.resize_calls / iters_u64,
+            churn.remap_calls / iters_u64,
+            churn.alloc_bytes / iters_u64,
+            churn.free_bytes / iters_u64,
+        },
+    );
 }
 
 /// Create IR for Fibonacci function:

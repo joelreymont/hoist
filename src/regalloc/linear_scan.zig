@@ -69,6 +69,11 @@ pub const RegAllocResult = struct {
         self.vreg_to_spill.deinit();
     }
 
+    pub fn clearRetainingCapacity(self: *RegAllocResult) void {
+        self.vreg_to_preg.clearRetainingCapacity();
+        self.vreg_to_spill.clearRetainingCapacity();
+    }
+
     /// Get the physical register allocated to a virtual register
     pub fn getPhysReg(self: *RegAllocResult, vreg: machinst.VReg) ?machinst.PReg {
         return self.vreg_to_preg.get(vreg.index());
@@ -256,6 +261,34 @@ pub const LinearScanAllocator = struct {
         self.coalesce_mates.deinit();
     }
 
+    pub fn resetForReuse(self: *LinearScanAllocator) void {
+        self.active.clearRetainingCapacity();
+        self.inactive.clearRetainingCapacity();
+        self.next_spill_offset = 0;
+        self.free_spill_slots_8.clearRetainingCapacity();
+        self.free_spill_slots_16.clearRetainingCapacity();
+
+        self.hints.clearRetainingCapacity();
+        var mate_it = self.coalesce_mates.valueIterator();
+        while (mate_it.next()) |list| {
+            list.deinit(self.allocator);
+        }
+        self.coalesce_mates.clearRetainingCapacity();
+
+        var i: usize = 0;
+        while (i < self.int_regs.items.len) : (i += 1) {
+            self.free_int_regs.set(i);
+        }
+        i = 0;
+        while (i < self.float_regs.items.len) : (i += 1) {
+            self.free_float_regs.set(i);
+        }
+        i = 0;
+        while (i < self.vector_regs.items.len) : (i += 1) {
+            self.free_vector_regs.set(i);
+        }
+    }
+
     fn regIndex(self: *LinearScanAllocator, preg: machinst.PReg) ?u32 {
         const hw = preg.hwEnc();
         const idx = switch (preg.class()) {
@@ -303,6 +336,16 @@ pub const LinearScanAllocator = struct {
     ) !RegAllocResult {
         var result = RegAllocResult.init(self.allocator);
         errdefer result.deinit();
+        try self.allocateInto(liveness_info, &result);
+        return result;
+    }
+
+    pub fn allocateInto(
+        self: *LinearScanAllocator,
+        liveness_info: *liveness.LivenessInfo,
+        result: *RegAllocResult,
+    ) !void {
+        result.clearRetainingCapacity();
 
         self.active.clearRetainingCapacity();
         self.inactive.clearRetainingCapacity();
@@ -310,23 +353,26 @@ pub const LinearScanAllocator = struct {
         self.free_spill_slots_8.clearRetainingCapacity();
         self.free_spill_slots_16.clearRetainingCapacity();
 
-        std.mem.sort(liveness.LiveRange, liveness_info.ranges.items, {}, struct {
-            fn lessThan(_: void, a: liveness.LiveRange, b: liveness.LiveRange) bool {
-                return a.start_inst < b.start_inst;
-            }
-        }.lessThan);
+        if (!liveness_info.ranges_sorted_by_start) {
+            std.mem.sort(liveness.LiveRange, liveness_info.ranges.items, {}, struct {
+                fn lessThan(_: void, a: liveness.LiveRange, b: liveness.LiveRange) bool {
+                    return a.start_inst < b.start_inst;
+                }
+            }.lessThan);
+            liveness_info.ranges_sorted_by_start = true;
+        }
 
         // Main allocation loop: process each live range in order
         for (liveness_info.ranges.items) |range| {
             // Expire old intervals that have ended before this range starts
-            try self.expireOldIntervals(range.start_inst, &result);
+            try self.expireOldIntervals(range.start_inst, result);
 
             // Try to allocate a free register for this range
-            const maybe_preg = try self.tryAllocateReg(range, &result, liveness_info);
+            const maybe_preg = try self.tryAllocateReg(range, result, liveness_info);
 
             if (maybe_preg == null) {
                 // No free register available - try spilling
-                const spilled_reg = try self.spillInterval(range, &result);
+                const spilled_reg = try self.spillInterval(range, result);
 
                 if (spilled_reg) |preg| {
                     // Successfully spilled - allocate the freed register
@@ -342,8 +388,6 @@ pub const LinearScanAllocator = struct {
                 }
             }
         }
-
-        return result;
     }
 
     /// Expire old intervals that are no longer active.
@@ -1034,4 +1078,43 @@ test "LinearScanAllocator coalesce pairs" {
     // Both should have the same register
     try std.testing.expectEqual(v0_preg.?.index(), v1_preg.?.index());
     try std.testing.expectEqual(v0_preg.?.class(), v1_preg.?.class());
+}
+
+test "LinearScanAllocator perf sanity on synthetic ranges" {
+    const allocator = std.testing.allocator;
+    const range_count: usize = 4000;
+
+    var lsa = try LinearScanAllocator.init(allocator, 31, 32, 32);
+    defer lsa.deinit();
+
+    var info = liveness.LivenessInfo.init(allocator);
+    defer info.deinit();
+
+    for (0..range_count) |i| {
+        const reg_class: machinst.RegClass = switch (i % 3) {
+            0 => .int,
+            1 => .float,
+            else => .vector,
+        };
+        const start_inst: u32 = @intCast(i);
+        const span: u32 = 4 + @as(u32, @intCast(i % 9));
+        try info.addRange(.{
+            .vreg = machinst.VReg.new(@intCast(5000 + i), reg_class),
+            .start_inst = start_inst,
+            .end_inst = start_inst + span,
+            .reg_class = reg_class,
+        });
+    }
+
+    var timer = try std.time.Timer.start();
+    var result = try lsa.allocate(&info);
+    defer result.deinit();
+
+    const elapsed_us = timer.read() / 1000;
+
+    try std.testing.expect(
+        result.vreg_to_preg.count() + result.vreg_to_spill.count() == range_count,
+    );
+    // Debug builds vary by machine; this bound catches pathological regressions.
+    try std.testing.expect(elapsed_us < 200_000);
 }

@@ -1,0 +1,69 @@
+# Lessons
+
+## Maintenance Rule
+- Keep this file current after each significant dot/feature.
+- For every performance attempt, record:
+  - baseline used
+  - change tried
+  - measured result
+  - keep/discard decision
+- Keep only changes with >=5% improvement and no meaningful regressions in key gate metrics.
+
+## Worked Well
+- Reusing AArch64 regalloc state across compiles (`resetForReuse` + `allocateInto`) improved compile throughput on large workloads and serial batch compile.
+- Persisting reusable liveness buffers in codegen context reduced allocation churn and improved several large-workload compile metrics.
+- Single-block liveness fast path (`computeLivenessInto` + dispatch in `allocateRegisters`) delivered consistent compile-time gains in A/B runs, including fib +6.82%, large(100) +20.00%, large(500) +10.07%, large(1000) +12.73%, large(5000) +6.36%, serial batch +6.63%, parallel batch +8.76%.
+- Incremental in-place liveness range construction removed temporary per-vreg maps and conversion pass overhead for single-block flows; A/B showed fib +2.38%, large(100) +5.53%, large(500) +22.64%, large(1000) +28.70%, large(5000) +44.51%, int +8.11%, vector +8.33%, memory +9.38%, mixed +8.11%, parallel batch +2.69%.
+- Pre-sizing single-block liveness containers from instruction count improved compile metrics in A/B runs: large(100) +15.10%, large(500) +15.89%, large(1000) +9.87%, large(5000) +9.14%, memory +6.90%, mixed +8.57%.
+- Adding explicit parallel batch benchmark coverage (`bench/compile_parallel.zig`) exposed meaningful throughput gains and made regressions visible.
+- Extending perf gate/history (`tools/perf_gate.zig` + `build.zig`) made A/B checks repeatable and auditable.
+- Adding an absolute regression floor (`bench-min-regress-us`) reduced perf-gate false positives from microsecond-scale noise.
+- Adding allocation churn instrumentation (`bench/counting_allocator.zig`) made allocator-side regressions visible during tuning.
+- Switching `src/context.zig` default `Context.verify` to `false` (keeping explicit opt-in verification) improved single-thread compile metrics in A/B: fib +14.29%, large(100) +20.89%, large(500) +24.35%, large(1000) +24.07%, large(5000) +22.30%, int +14.29%, vector +11.76%, memory +10.71%, mixed +11.76%.
+- Gating `runRangeOptimization` by complexity (`default_range_min_complexity = 160`) delivered further single-thread compile wins in A/B: fib +16.22%, large(100) +11.54%, large(500) +5.19%, int +12.50%, vector +12.90%, memory +19.23%, mixed +18.75%.
+- Gating alias analysis by complexity (`default_alias_min_complexity = 160`) improved targeted single-thread metrics in A/B: large(100) +12.03%, memory +9.52%, mixed +7.69%.
+- Skipping unreachable/constant-phi passes for single-block functions yielded strong single-thread gains in A/B rerun: large(100) +5.93%, int +31.03%, vector +31.03%, memory +35.00%, mixed +32.00%.
+- Skipping constant-phi pass when there are no non-entry block params improved `fib` compile time by +12.50% in A/B while keeping gate green.
+- Replacing liveness vreg range lookup with a dense index table (`src/regalloc/liveness.zig`) improved single-thread compile medians in same-tree A/B: large(100) +6.38%, large(1000) +5.23%, large(5000) +5.52%, memory +6.67%, mixed +5.26%, with zero regressions.
+- Persisting AArch64 linear-scan allocator setup in codegen state (reusing register pools and allocator internals across compiles) improved same-tree A/B medians: fib +35.71%, large(100) +15.15%, large(500) +6.25%, large(1000) +5.94%, int +31.82%, vector +28.57%, memory +42.86%, with zero gate regressions.
+- Gating coalesce-pair collection by move density (`min_movs=8`, `min_mov_density_permille=12`) removed low-value coalesce work and improved targeted medians in same-tree A/B: int +6.67%, vector +6.67%, mixed +5.56%, with zero gate regressions.
+
+## Did Not Work Well
+- VCode clear-retain reuse path caused repeatable regressions and was discarded.
+- Replacing CFG live sets with dynamic bitsets regressed small-function and parallel-batch metrics in measured runs; discarded.
+- Dense side-table tracking for active interval pregs in linear scan regressed broad benchmark metrics; discarded.
+- Dense array-backed `RegAllocResult` side tables showed mixed gains with key regressions and was discarded.
+- Dense-vreg live-range reconstruction path improved one large metric but regressed key small/serial metrics; discarded.
+- Pre-sizing regalloc result maps/active lists in linear scan did not produce >=5% positive median gains; discarded.
+- Lazy head-index compaction for linear-scan active intervals regressed key compile metrics in A/B runs; discarded.
+- Skipping coalesce-pair collection in unoptimized mode produced mostly sub-5% gains; discarded per threshold policy.
+- Dense local vreg-index map for liveness updates regressed compile metrics across large and mixed benchmarks; discarded.
+- Reusing codegen context per parallel worker was out of scope for the current objective (single-thread improvements only); reverted.
+- Skipping CFG/domtree setup for no-opt single-block path regressed fib/serial metrics under A/B gate; discarded.
+- Gating alias analysis only when memory ops are present failed the A/B gate with regressions in tracked large metrics; discarded.
+- Caching the debug env probe (`HOIST_DUMP_IR`) did not produce a qualifying >5% improvement and failed gate noise checks; discarded.
+- Raising default e-graph threshold to 192 regressed key tracked metrics under A/B; discarded.
+- Gating coalesce-pair collection by complexity did not deliver >=5% single-thread improvements; discarded.
+- Skipping complexity estimation on no-opt path did not pass the A/B gate under current noise envelope; discarded.
+- Lazily computing domtree on no-opt path delivered sub-5% improvements only; discarded.
+- Rewriting unreachable elimination to array-based reachability did not clear the gate due serial-batch regression noise; discarded.
+- Removing the dead pre-scan maps in `insertSpillScratch` failed same-tree A/B (`large(100)` regressed +8.13%); discarded.
+- Bounding AArch64 peephole iterations by block size regressed key compile metrics (`large(100)` and micro benches) and failed gate; discarded.
+- Moving `try_call` terminator branch detection to a post-loop single check did not produce >=5% positive gains; discarded.
+- Precomputing a no-call fast path in linear scan (`spansCall` bypass when no call positions) showed unstable/sub-5% results across reruns; discarded.
+- Disabling coalesce-pair collection entirely regressed compile metrics (notably `large(100)`) and failed gate; coalescing is required in the default path.
+- Deduplicating coalesce mate edges looked promising in one run but failed same-tree rerun stability (no >=5% sustained gains); discarded.
+- Rewriting liveness `noteRangeUse` to single-probe `getOrPut` regressed same-tree A/B on large functions (`large(100)`/`large(5000)`); discarded.
+- Reusing one CFG-successor buffer across blocks in AArch64 lowering produced only sub-5% median gains in same-tree A/B; discarded per threshold policy.
+- Special-casing hot AArch64 instruction variants in `rewriteInstRegs` reduced some medium-size metrics but did not deliver a sustained >=5% single-thread win on key large/serial medians; discarded.
+- Skipping/short-circuiting AArch64 peephole work for no-candidate blocks improved serial batch slightly but did not reach >=5% retained key-metric gains; discarded.
+- Replacing lowering block-label hash maps with dense block-index tables regressed multiple small AArch64 benchmark medians under gate; discarded.
+- Deferring AArch64 rewrite to emit for phi-free functions regressed `large(100)` under gate (`+9.82%`) and was discarded.
+- Reusing AArch64 ABI signature type buffers did not produce >=5% retained gains on tracked key metrics and was discarded.
+
+## Process Lessons
+- Always benchmark with repeated runs and medians (`bench-repeat=5`) before keeping an optimization.
+- When validating targeted fast paths, run same-tree A/B by forcing the old path and compare logs with `tools/perf_gate.zig`.
+- Keep failed optimization attempts documented with report paths so they are not retried blindly.
+- Favor instrumentation and gate coverage first, then optimization work.
+- Keep a compare-only gate path (`zig build bench-compare`) so same-tree A/B can compare fixed logs without rerunning benchmarks and overwriting inputs.

@@ -10,6 +10,8 @@ const MetricId = enum(u8) {
     vector_compile_us,
     memory_compile_us,
     mixed_compile_us,
+    serial_batch_compile_us,
+    parallel_batch_compile_us,
 };
 
 const metric_ids = [_]MetricId{
@@ -17,6 +19,17 @@ const metric_ids = [_]MetricId{
     .large_100_compile_us,
     .large_500_compile_us,
     .large_1000_compile_us,
+    .large_5000_compile_us,
+    .int_compile_us,
+    .vector_compile_us,
+    .memory_compile_us,
+    .mixed_compile_us,
+    .serial_batch_compile_us,
+    .parallel_batch_compile_us,
+};
+
+const budget_metric_ids = [_]MetricId{
+    .fib_compile_us,
     .large_5000_compile_us,
     .int_compile_us,
     .vector_compile_us,
@@ -35,6 +48,8 @@ fn metricName(id: MetricId) []const u8 {
         .vector_compile_us => "aarch64 vector avg compile (us)",
         .memory_compile_us => "aarch64 memory avg compile (us)",
         .mixed_compile_us => "aarch64 mixed avg compile (us)",
+        .serial_batch_compile_us => "serial batch compile (us)",
+        .parallel_batch_compile_us => "parallel batch compile (us)",
     };
 }
 
@@ -46,6 +61,13 @@ const MetricResult = struct {
     baseline_n: usize,
     current_n: usize,
     regression: bool,
+};
+
+const BudgetViolation = struct {
+    id: MetricId,
+    reference_median_us: f64,
+    target_max_us: f64,
+    current_median_us: f64,
 };
 
 const MetricSamples = struct {
@@ -128,9 +150,29 @@ const JsonReport = struct {
     baseline: []const u8,
     current: []const u8,
     max_regress_pct: f64,
+    min_regress_us: f64,
     status: []const u8,
     regressions: usize,
     metrics: [metric_ids.len]JsonMetric,
+};
+
+const HistoryMetric = struct {
+    id: []const u8,
+    baseline_median_us: f64,
+    current_median_us: f64,
+    delta_pct: f64,
+    regression: bool,
+};
+
+const HistoryEntry = struct {
+    timestamp_unix: i64,
+    baseline: []const u8,
+    current: []const u8,
+    max_regress_pct: f64,
+    min_regress_us: f64,
+    status: []const u8,
+    regressions: usize,
+    metrics: [metric_ids.len]HistoryMetric,
 };
 
 pub fn main() !void {
@@ -145,7 +187,11 @@ pub fn main() !void {
     var current_path: ?[]const u8 = null;
     var out_path: []const u8 = "/tmp/hoist-bench-report.md";
     var json_out_path: ?[]const u8 = null;
+    var history_json_path: ?[]const u8 = null;
+    var budget_reference_path: ?[]const u8 = null;
+    var budget_multiplier: ?f64 = null;
     var max_regress_pct: f64 = 5.0;
+    var min_regress_us: f64 = 2.0;
 
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
@@ -166,9 +212,25 @@ pub fn main() !void {
             if (i + 1 >= args.len) return error.InvalidArgs;
             json_out_path = args[i + 1];
             i += 1;
+        } else if (std.mem.eql(u8, arg, "--history-json")) {
+            if (i + 1 >= args.len) return error.InvalidArgs;
+            history_json_path = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--budget-reference")) {
+            if (i + 1 >= args.len) return error.InvalidArgs;
+            budget_reference_path = args[i + 1];
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--budget-multiplier")) {
+            if (i + 1 >= args.len) return error.InvalidArgs;
+            budget_multiplier = try std.fmt.parseFloat(f64, args[i + 1]);
+            i += 1;
         } else if (std.mem.eql(u8, arg, "--max-regress-pct")) {
             if (i + 1 >= args.len) return error.InvalidArgs;
             max_regress_pct = try std.fmt.parseFloat(f64, args[i + 1]);
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--min-regress-us")) {
+            if (i + 1 >= args.len) return error.InvalidArgs;
+            min_regress_us = try std.fmt.parseFloat(f64, args[i + 1]);
             i += 1;
         } else {
             std.debug.print("unknown arg: {s}\n", .{arg});
@@ -184,10 +246,42 @@ pub fn main() !void {
         std.debug.print("missing --current <path>\n", .{});
         return error.InvalidArgs;
     };
+    if ((budget_reference_path == null) != (budget_multiplier == null)) {
+        std.debug.print("budget flags require both --budget-reference and --budget-multiplier\n", .{});
+        return error.InvalidArgs;
+    }
+    if (budget_multiplier) |multiplier| {
+        if (multiplier <= 1.0) {
+            std.debug.print("--budget-multiplier must be > 1.0\n", .{});
+            return error.InvalidArgs;
+        }
+    }
+    if (min_regress_us < 0.0) {
+        std.debug.print("--min-regress-us must be >= 0\n", .{});
+        return error.InvalidArgs;
+    }
 
-    const baseline_text = try std.fs.cwd().readFileAlloc(al, baseline_file, 16 * 1024 * 1024);
+    const baseline_text = std.fs.cwd().readFileAlloc(al, baseline_file, 16 * 1024 * 1024) catch |err| switch (err) {
+        error.FileNotFound => {
+            std.debug.print(
+                "baseline log not found: {s}\nrefresh it with: zig build baseline-log\n",
+                .{baseline_file},
+            );
+            return err;
+        },
+        else => return err,
+    };
     defer al.free(baseline_text);
-    const current_text = try std.fs.cwd().readFileAlloc(al, current_file, 16 * 1024 * 1024);
+    const current_text = std.fs.cwd().readFileAlloc(al, current_file, 16 * 1024 * 1024) catch |err| switch (err) {
+        error.FileNotFound => {
+            std.debug.print(
+                "current log not found: {s}\ngenerate it with: zig build bench-log\n",
+                .{current_file},
+            );
+            return err;
+        },
+        else => return err,
+    };
     defer al.free(current_text);
 
     var baseline = try parseMetrics(al, baseline_text);
@@ -205,7 +299,7 @@ pub fn main() !void {
         const b_med = try baseline.median(id);
         const c_med = try current.median(id);
         const delta_pct = deltaPercent(b_med, c_med);
-        const reg = delta_pct > max_regress_pct;
+        const reg = isRegression(b_med, c_med, max_regress_pct, min_regress_us);
         regressions += @intFromBool(reg);
         results[idx] = .{
             .id = id,
@@ -218,7 +312,20 @@ pub fn main() !void {
         };
     }
 
-    const status = if (regressions == 0) "PASS" else "FAIL";
+    var budget_violations = std.ArrayList(BudgetViolation){};
+    defer budget_violations.deinit(al);
+    if (budget_reference_path) |budget_ref_file| {
+        const budget_ref_text = try std.fs.cwd().readFileAlloc(al, budget_ref_file, 16 * 1024 * 1024);
+        defer al.free(budget_ref_text);
+        var budget_ref = try parseMetrics(al, budget_ref_text);
+        defer budget_ref.deinit(al);
+        try budget_ref.requireComplete();
+
+        budget_violations = try collectBudgetViolations(al, &budget_ref, &current, budget_multiplier.?);
+    }
+
+    const budget_failed = budget_violations.items.len != 0;
+    const status = if (regressions == 0 and !budget_failed) "PASS" else "FAIL";
 
     var report = std.ArrayList(u8){};
     defer report.deinit(al);
@@ -226,7 +333,13 @@ pub fn main() !void {
     try w.print("# Hoist Perf Gate Report\n\n", .{});
     try w.print("- Baseline: `{s}`\n", .{baseline_file});
     try w.print("- Current: `{s}`\n", .{current_file});
-    try w.print("- Max allowed regression: {d:.2}%\n\n", .{max_regress_pct});
+    try w.print("- Max allowed regression: {d:.2}%\n", .{max_regress_pct});
+    try w.print("- Min absolute regression: {d:.2}us\n", .{min_regress_us});
+    if (budget_reference_path) |budget_ref_file| {
+        try w.print("- Budget reference: `{s}`\n", .{budget_ref_file});
+        try w.print("- Budget multiplier: {d:.2}x\n", .{budget_multiplier.?});
+    }
+    try w.print("\n", .{});
     try report.appendSlice(al, "| Metric | Baseline median (us) | Current median (us) | Delta % | N (b/c) |\n");
     try report.appendSlice(al, "|---|---:|---:|---:|---:|\n");
 
@@ -239,6 +352,35 @@ pub fn main() !void {
             r.baseline_n,
             r.current_n,
         });
+    }
+
+    if (budget_reference_path != null) {
+        try report.appendSlice(al, "\n## Budget Check\n\n");
+        if (budget_failed) {
+            try report.appendSlice(al, "| Metric | Current median (us) | Target max (us) | Reference median (us) |\n");
+            try report.appendSlice(al, "|---|---:|---:|---:|\n");
+            for (budget_violations.items) |v| {
+                try w.print("| {s} | {d:.2} | {d:.2} | {d:.2} |\n", .{
+                    metricName(v.id),
+                    v.current_median_us,
+                    v.target_max_us,
+                    v.reference_median_us,
+                });
+                std.debug.print(
+                    "budget miss: {s}: current {d:.2}us exceeds {d:.2}x target {d:.2}us (reference {d:.2}us)\n",
+                    .{
+                        metricName(v.id),
+                        v.current_median_us,
+                        budget_multiplier.?,
+                        v.target_max_us,
+                        v.reference_median_us,
+                    },
+                );
+            }
+            try w.print("\nBudget status: **FAIL** ({d} metrics over target)\n", .{budget_violations.items.len});
+        } else {
+            try report.appendSlice(al, "Budget status: **PASS** (all tracked metrics meet target)\n");
+        }
     }
 
     try w.print("\nStatus: **{s}** ({d} regressions)\n", .{ status, regressions });
@@ -268,6 +410,7 @@ pub fn main() !void {
             .baseline = baseline_file,
             .current = current_file,
             .max_regress_pct = max_regress_pct,
+            .min_regress_us = min_regress_us,
             .status = status,
             .regressions = regressions,
             .metrics = metrics_json,
@@ -283,8 +426,83 @@ pub fn main() !void {
         std.debug.print("perf json written: {s}\n", .{json_path});
     }
 
+    if (history_json_path) |history_path| {
+        var metrics_history: [metric_ids.len]HistoryMetric = undefined;
+        for (results, 0..) |r, idx| {
+            metrics_history[idx] = .{
+                .id = metricName(r.id),
+                .baseline_median_us = r.baseline_median_us,
+                .current_median_us = r.current_median_us,
+                .delta_pct = r.delta_pct,
+                .regression = r.regression,
+            };
+        }
+
+        const history_entry = HistoryEntry{
+            .timestamp_unix = std.time.timestamp(),
+            .baseline = baseline_file,
+            .current = current_file,
+            .max_regress_pct = max_regress_pct,
+            .min_regress_us = min_regress_us,
+            .status = status,
+            .regressions = regressions,
+            .metrics = metrics_history,
+        };
+        try appendHistoryEntry(al, history_path, history_entry);
+        std.debug.print("perf history appended: {s}\n", .{history_path});
+    }
+
     std.debug.print("perf report written: {s}\n", .{out_path});
     if (regressions != 0) return error.PerfRegression;
+    if (budget_failed) return error.PerfBudgetMiss;
+}
+
+fn appendHistoryEntry(al: std.mem.Allocator, path: []const u8, entry: HistoryEntry) !void {
+    const create_flags = std.fs.File.CreateFlags{ .truncate = false, .read = true };
+    var file = if (std.fs.path.isAbsolute(path))
+        std.fs.openFileAbsolute(path, .{ .mode = .read_write }) catch |err| switch (err) {
+            error.FileNotFound => try std.fs.createFileAbsolute(path, create_flags),
+            else => return err,
+        }
+    else
+        std.fs.cwd().openFile(path, .{ .mode = .read_write }) catch |err| switch (err) {
+            error.FileNotFound => try std.fs.cwd().createFile(path, create_flags),
+            else => return err,
+        };
+    defer file.close();
+
+    try file.seekFromEnd(0);
+    const json_line = try std.json.Stringify.valueAlloc(al, entry, .{});
+    defer al.free(json_line);
+    try file.writeAll(json_line);
+    try file.writeAll("\n");
+    try file.sync();
+}
+
+fn collectBudgetViolations(
+    al: std.mem.Allocator,
+    reference: *MetricSamples,
+    current: *MetricSamples,
+    multiplier: f64,
+) !std.ArrayList(BudgetViolation) {
+    var out = std.ArrayList(BudgetViolation){};
+    errdefer out.deinit(al);
+
+    for (budget_metric_ids) |id| {
+        const ref_median = try reference.median(id);
+        const current_median = try current.median(id);
+        const target_max = ref_median / multiplier;
+        if (current_median > target_max) {
+            try out.append(al, .{
+                .id = id,
+                .reference_median_us = ref_median,
+                .target_max_us = target_max,
+                .current_median_us = current_median,
+            });
+        }
+    }
+
+    return out;
 }
 
 fn parseMetrics(al: std.mem.Allocator, text: []const u8) !MetricSamples {
@@ -344,6 +562,18 @@ fn parseMetrics(al: std.mem.Allocator, text: []const u8) !MetricSamples {
             }
             continue;
         }
+
+        if (std.mem.startsWith(u8, line, "Serial batch compile:")) {
+            const v = parseFirstUnsignedAfter(line, "Serial batch compile:") orelse return error.ParseFailed;
+            try out.add(al, .serial_batch_compile_us, v);
+            continue;
+        }
+
+        if (std.mem.startsWith(u8, line, "Parallel batch compile:")) {
+            const v = parseFirstUnsignedAfter(line, "Parallel batch compile:") orelse return error.ParseFailed;
+            try out.add(al, .parallel_batch_compile_us, v);
+            continue;
+        }
     }
 
     return out;
@@ -367,4 +597,95 @@ fn lessThanU64(_: void, a: u64, b: u64) bool {
 fn deltaPercent(baseline: f64, current: f64) f64 {
     if (baseline == 0.0) return 0.0;
     return ((current - baseline) / baseline) * 100.0;
+}
+
+fn isRegression(baseline: f64, current: f64, max_regress_pct: f64, min_regress_us: f64) bool {
+    return deltaPercent(baseline, current) > max_regress_pct and
+        (current - baseline) > min_regress_us;
+}
+
+test "appendHistoryEntry appends JSON lines" {
+    const testing = std.testing;
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const rel_path = try std.fmt.bufPrint(&path_buf, ".zig-cache/tmp/{s}/hist.jsonl", .{tmp.sub_path});
+
+    var metrics: [metric_ids.len]HistoryMetric = undefined;
+    for (&metrics, metric_ids) |*m, id| {
+        m.* = .{
+            .id = metricName(id),
+            .baseline_median_us = 100,
+            .current_median_us = 90,
+            .delta_pct = -10,
+            .regression = false,
+        };
+    }
+
+    const entry1 = HistoryEntry{
+        .timestamp_unix = 1,
+        .baseline = "b1",
+        .current = "c1",
+        .max_regress_pct = 5.0,
+        .min_regress_us = 2.0,
+        .status = "PASS",
+        .regressions = 0,
+        .metrics = metrics,
+    };
+    const entry2 = HistoryEntry{
+        .timestamp_unix = 2,
+        .baseline = "b2",
+        .current = "c2",
+        .max_regress_pct = 5.0,
+        .min_regress_us = 2.0,
+        .status = "PASS",
+        .regressions = 0,
+        .metrics = metrics,
+    };
+
+    try appendHistoryEntry(testing.allocator, rel_path, entry1);
+    try appendHistoryEntry(testing.allocator, rel_path, entry2);
+
+    const text = try std.fs.cwd().readFileAlloc(testing.allocator, rel_path, 1024 * 1024);
+    defer testing.allocator.free(text);
+
+    var line_count: usize = 0;
+    var lines = std.mem.tokenizeScalar(u8, text, '\n');
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        line_count += 1;
+        var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, line, .{});
+        defer parsed.deinit();
+    }
+    try testing.expectEqual(@as(usize, 2), line_count);
+}
+
+test "collectBudgetViolations flags breaches" {
+    const testing = std.testing;
+
+    var reference = MetricSamples{};
+    defer reference.deinit(testing.allocator);
+    var current = MetricSamples{};
+    defer current.deinit(testing.allocator);
+
+    for (metric_ids) |id| {
+        try reference.add(testing.allocator, id, 100);
+        try current.add(testing.allocator, id, 40);
+    }
+    // Breach fib for a 2x goal (target max 50us).
+    current.values[@intFromEnum(MetricId.fib_compile_us)].items[0] = 70;
+
+    var violations = try collectBudgetViolations(testing.allocator, &reference, &current, 2.0);
+    defer violations.deinit(testing.allocator);
+
+    try testing.expect(violations.items.len >= 1);
+    try testing.expectEqual(MetricId.fib_compile_us, violations.items[0].id);
+}
+
+test "isRegression requires percent and absolute thresholds" {
+    try std.testing.expect(!isRegression(100.0, 106.0, 5.0, 10.0));
+    try std.testing.expect(!isRegression(100.0, 103.0, 5.0, 2.0));
+    try std.testing.expect(isRegression(100.0, 111.0, 5.0, 2.0));
 }

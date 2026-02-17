@@ -211,6 +211,12 @@ const ScratchRegs = struct {
     vector: []const reg_mod.PReg,
 };
 
+const spill_scratch_regs = ScratchRegs{
+    .int = &scratch_int_regs,
+    .float = &scratch_float_regs,
+    .vector = &scratch_vector_regs,
+};
+
 const RegPools = struct {
     int: std.ArrayList(reg_mod.PReg),
     float: std.ArrayList(reg_mod.PReg),
@@ -289,6 +295,11 @@ fn buildAarch64Pools(
             .vector = &scratch_vector_regs,
         },
     };
+}
+
+fn aarch64PoolKey(call_conv: sig_mod.CallConv, has_sret: bool) u64 {
+    const conv_key: u64 = @intCast(@intFromEnum(call_conv));
+    return (conv_key << 1) | @as(u64, @intFromBool(has_sret));
 }
 
 const ScratchPool = struct {
@@ -962,6 +973,38 @@ fn verifyIf(ctx: *Context, func: *Function, target: *const Target) CodegenError!
     };
 }
 
+fn estimateFunctionComplexity(func: *const Function) u32 {
+    const block_count = func.layout.blocks.elems.items.len;
+    const inst_count = func.dfg.liveInstCount();
+    const value_count = func.dfg.values.elems.items.len;
+    const weighted = block_count * 16 + inst_count * 4 + value_count;
+    return @intCast(@min(weighted, std.math.maxInt(u32)));
+}
+
+pub const default_egraph_min_complexity: u32 = 96;
+pub const default_range_min_complexity: u32 = 160;
+pub const default_alias_min_complexity: u32 = 160;
+
+fn shouldRunEGraph(opt_level: Target.OptLevel, complexity: u32, min_complexity: u32) bool {
+    return opt_level != .none and complexity >= min_complexity;
+}
+
+fn isSingleBlockLayout(func: *const Function) bool {
+    const first = func.layout.first_block orelse return false;
+    const node = func.layout.blocks.get(first) orelse return false;
+    return node.next_block == null;
+}
+
+fn hasNonEntryBlockParams(func: *const Function) bool {
+    const entry = func.layout.entryBlock();
+    var block_iter = func.layout.blockIter();
+    while (block_iter.next()) |block| {
+        if (entry != null and block == entry.?) continue;
+        if (func.dfg.blockParams(block).len != 0) return true;
+    }
+    return false;
+}
+
 /// Optimize the function.
 ///
 /// Performs all optimization passes up to but not including lowering:
@@ -974,6 +1017,7 @@ fn verifyIf(ctx: *Context, func: *Function, target: *const Target) CodegenError!
 /// - E-graph optimization (if opt level > 0)
 fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
     const opt_level = target.opt_level;
+    const single_block = isSingleBlockLayout(ctx.func);
 
     // 1. Legalize IR
     try legalize(ctx);
@@ -986,33 +1030,40 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
     if (ctx.func.entryBlock()) |entry| {
         try ctx.domtree.compute(ctx.allocator, entry, &ctx.cfg);
     }
+    const complexity = estimateFunctionComplexity(ctx.func);
 
     // Fast-compile mode: keep legality + CFG metadata, skip expensive opts.
     if (!target.optimize) return;
 
-    // 4. Eliminate unreachable code
-    _ = try eliminateUnreachableCode(ctx);
-    try dumpIrStage(ctx, "unreachable");
+    if (!single_block) {
+        // 4. Eliminate unreachable code
+        _ = try eliminateUnreachableCode(ctx);
+        try dumpIrStage(ctx, "unreachable");
 
-    // 5. Remove constant phis
-    _ = try removeConstantPhis(ctx);
-    try dumpIrStage(ctx, "const_phis");
+        // 5. Remove constant phis
+        if (hasNonEntryBlockParams(ctx.func)) {
+            _ = try removeConstantPhis(ctx);
+            try dumpIrStage(ctx, "const_phis");
+        }
+    }
 
     // 6. Alias analysis (redundant load elimination, store-to-load forwarding)
-    _ = try runAliasAnalysis(ctx);
-    try dumpIrStage(ctx, "alias");
+    if (complexity >= default_alias_min_complexity) {
+        _ = try runAliasAnalysis(ctx);
+        try dumpIrStage(ctx, "alias");
+    }
 
     // 7. Resolve value aliases
     ctx.func.dfg.resolveAllAliases();
 
     // 8. Range-based optimization (if opt_level >= basic)
-    if (opt_level != .none) {
+    if (opt_level != .none and complexity >= default_range_min_complexity) {
         _ = try runRangeOptimization(ctx);
         try dumpIrStage(ctx, "range");
     }
 
-    // 9. E-graph optimization (if opt_level > 0)
-    if (opt_level != .none) {
+    // 9. E-graph optimization (for sufficiently complex functions)
+    if (shouldRunEGraph(opt_level, complexity, target.egraph_min_complexity)) {
         _ = try runEGraphOptimization(ctx);
         try dumpIrStage(ctx, "egraph");
     }
@@ -1889,8 +1940,7 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
     errdefer vcode.deinit();
 
     if (ctx.aarch64_regalloc) |*state| {
-        state.deinit();
-        ctx.aarch64_regalloc = null;
+        state.resetForReuse();
     }
     if (ctx.aarch64_lowered) |*state| {
         state.vcode.deinit();
@@ -1917,6 +1967,16 @@ fn collectCoalescePairs(
     liveness_info: *liveness_mod.LivenessInfo,
     linear_scan: *linear_scan_mod.LinearScanAllocator,
 ) !void {
+    const min_movs: usize = 8;
+    const min_mov_density_permille: usize = 12; // 1.2%
+
+    var mov_count: usize = 0;
+    for (vcode.insns.items) |inst| {
+        if (inst == .mov_rr) mov_count += 1;
+    }
+    if (mov_count < min_movs) return;
+    if (mov_count * 1000 < vcode.insns.items.len * min_mov_density_permille) return;
+
     for (vcode.insns.items) |inst| {
         // Check for mov_rr instruction
         if (inst == .mov_rr) {
@@ -2120,7 +2180,6 @@ fn emitAArch64WithAllocation(
             try buffer.registerBlockLabel(ir_block, label);
         }
 
-        // Collect block instructions for peephole passes
         const insn_start = vcode_block.insn_start;
         const insn_end = vcode_block.insn_end;
         var block_insts = std.ArrayList(a64_inst.Inst){};
@@ -2156,7 +2215,6 @@ fn emitAArch64WithAllocation(
             if (try peephole_mod.eliminateRedundantLoads(&peephole, &block_insts)) changed = true;
         }
 
-        // Emit optimized instructions
         for (block_insts.items) |inst| {
             switch (inst) {
                 .tailcall_sp => |data| {
@@ -6484,63 +6542,83 @@ fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
                     block_insns[block_id] = vcode.insns.items[vblock.insn_start..vblock.insn_end];
                 }
 
-                var liveness_info = try liveness_mod.computeLivenessWithCFG(
-                    Inst,
-                    ctx.cfg.data.items,
-                    block_insns,
-                    ctx.allocator,
-                );
-                defer liveness_info.deinit();
+                if (ctx.aarch64_liveness == null) {
+                    ctx.aarch64_liveness = liveness_mod.LivenessInfo.init(ctx.allocator);
+                }
+                if (ctx.aarch64_liveness == null) return error.OutOfMemory;
+                const liveness_info = &ctx.aarch64_liveness.?;
+
+                if (ctx.cfg.data.items.len == 1) {
+                    const single_block_insns: []const Inst = block_insns[0] orelse &[_]Inst{};
+                    try liveness_mod.computeLivenessInto(Inst, single_block_insns, liveness_info);
+                } else {
+                    try liveness_mod.computeLivenessWithCFGInto(
+                        Inst,
+                        ctx.cfg.data.items,
+                        block_insns,
+                        liveness_info,
+                    );
+                }
 
                 const has_sret = a64_abi.needsStructReturnPointer(ctx.func.sig.returns.items, null);
-                var pools = try buildAarch64Pools(ctx.allocator, ctx.func.sig.call_conv, has_sret);
-                defer pools.deinit(ctx.allocator);
+                const pool_key = aarch64PoolKey(ctx.func.sig.call_conv, has_sret);
 
-                var linear_scan = try linear_scan_mod.LinearScanAllocator.initWithRegs(
-                    ctx.allocator,
-                    pools.int.items,
-                    pools.float.items,
-                    pools.vector.items,
-                );
-                defer linear_scan.deinit();
-
-                try collectCoalescePairs(Inst, vcode, &liveness_info, &linear_scan);
-
-                var result = try linear_scan.allocate(&liveness_info);
-                errdefer result.deinit();
-
-                if (result.vreg_to_spill.count() > 0) {
-                    // Compute callee-save area size to rebase spill offsets.
-                    // Spill slots at offset 0 conflict with the FP/LR and callee-save
-                    // area at [SP+0..SP+16+csr_size]. Rebase by this amount.
-                    const abi_mod = @import("../backends/aarch64/abi.zig");
-                    const callee_saves = abi_mod.aapcs64CalleeSaves();
-                    // Count unique clobbered callee-saved registers (dedup like emit phase)
-                    var seen_csr: [32]bool = .{false} ** 32;
-                    var num_clobbered: u32 = 0;
-                    var preg_it = result.vreg_to_preg.valueIterator();
-                    while (preg_it.next()) |preg| {
-                        if (isCalleeSave(preg.*, callee_saves) and !seen_csr[preg.hwEnc()]) {
-                            seen_csr[preg.hwEnc()] = true;
-                            num_clobbered += 1;
-                        }
-                    }
-                    const callee_save_pairs = (num_clobbered + 1) / 2;
-                    const spill_base_offset: u32 = 16 + callee_save_pairs * 16;
-
-                    try insertSpillScratch(ctx.allocator, vcode, &result, pools.scratch, &lowered.vreg_origins, &ctx.domtree, spill_base_offset);
+                if (ctx.aarch64_regalloc == null) {
+                    ctx.aarch64_regalloc = .{
+                        .allocator = ctx.allocator,
+                        .result = linear_scan_mod.RegAllocResult.init(ctx.allocator),
+                        .spill_bytes = 0,
+                        .linear_scan = null,
+                        .pool_key = std.math.maxInt(u64),
+                    };
                 }
-
-                const spill_bytes: u32 = linear_scan.next_spill_offset;
 
                 if (ctx.aarch64_regalloc) |*state| {
-                    state.deinit();
-                }
-                ctx.aarch64_regalloc = .{
-                    .allocator = ctx.allocator,
-                    .result = result,
-                    .spill_bytes = spill_bytes,
-                };
+                    if (state.linear_scan == null or state.pool_key != pool_key) {
+                        if (state.linear_scan) |*scan| {
+                            scan.deinit();
+                            state.linear_scan = null;
+                        }
+                        var pools = try buildAarch64Pools(ctx.allocator, ctx.func.sig.call_conv, has_sret);
+                        defer pools.deinit(ctx.allocator);
+                        state.linear_scan = try linear_scan_mod.LinearScanAllocator.initWithRegs(
+                            ctx.allocator,
+                            pools.int.items,
+                            pools.float.items,
+                            pools.vector.items,
+                        );
+                        state.pool_key = pool_key;
+                    }
+
+                    const linear_scan = &(state.linear_scan orelse return error.RegisterAllocationFailed);
+                    linear_scan.resetForReuse();
+                    try collectCoalescePairs(Inst, vcode, liveness_info, linear_scan);
+                    try linear_scan.allocateInto(liveness_info, &state.result);
+
+                    if (state.result.vreg_to_spill.count() > 0) {
+                        // Compute callee-save area size to rebase spill offsets.
+                        // Spill slots at offset 0 conflict with the FP/LR and callee-save
+                        // area at [SP+0..SP+16+csr_size]. Rebase by this amount.
+                        const abi_mod = @import("../backends/aarch64/abi.zig");
+                        const callee_saves = abi_mod.aapcs64CalleeSaves();
+                        // Count unique clobbered callee-saved registers (dedup like emit phase)
+                        var seen_csr: [32]bool = .{false} ** 32;
+                        var num_clobbered: u32 = 0;
+                        var preg_it = state.result.vreg_to_preg.valueIterator();
+                        while (preg_it.next()) |preg| {
+                            if (isCalleeSave(preg.*, callee_saves) and !seen_csr[preg.hwEnc()]) {
+                                seen_csr[preg.hwEnc()] = true;
+                                num_clobbered += 1;
+                            }
+                        }
+                        const callee_save_pairs = (num_clobbered + 1) / 2;
+                        const spill_base_offset: u32 = 16 + callee_save_pairs * 16;
+
+                        try insertSpillScratch(ctx.allocator, vcode, &state.result, spill_scratch_regs, &lowered.vreg_origins, &ctx.domtree, spill_base_offset);
+                    }
+
+                    state.spill_bytes = linear_scan.next_spill_offset;
+                } else return error.RegisterAllocationFailed;
             } else return error.LoweringFailed;
         },
         .riscv64 => {
@@ -7118,6 +7196,8 @@ pub const Target = struct {
     verify: bool,
     /// Enable optimization passes.
     optimize: bool = true,
+    /// Minimum complexity required to run e-graph optimization.
+    egraph_min_complexity: u32 = default_egraph_min_complexity,
     /// CPU features.
     features: @import("../target/features.zig").Features,
 
@@ -7140,6 +7220,7 @@ pub const Target = struct {
             .opt_level = .none,
             .verify = false,
             .optimize = true,
+            .egraph_min_complexity = default_egraph_min_complexity,
             .features = @import("../target/features.zig").Features.init(),
         };
     }
@@ -7155,6 +7236,7 @@ test "compile: target initialization" {
     try testing.expectEqual(Target.OptLevel.none, target.opt_level);
     try testing.expect(!target.verify);
     try testing.expect(target.optimize);
+    try testing.expectEqual(default_egraph_min_complexity, target.egraph_min_complexity);
 }
 
 test "compile: IR dump writes stage file" {
@@ -7313,6 +7395,66 @@ test "optimize: x86_64 promotes narrow integer values" {
     try testing.expect(x_ty.eql(ir.Type.I32));
     try testing.expect(y_ty.eql(ir.Type.I32));
     try testing.expect(sum_ty.eql(ir.Type.I32));
+}
+
+test "optimize: egraph threshold controls pass activation" {
+    var sig_skip = ir.Signature.init(testing.allocator, .fast);
+    try sig_skip.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I64));
+    var func_skip = try Function.init(testing.allocator, "egraph_gate_skip", sig_skip);
+    defer func_skip.deinit();
+
+    var b_skip = try ir.FunctionBuilder.init(testing.allocator, &func_skip);
+    defer b_skip.deinit();
+
+    const block_skip = try b_skip.createBlock();
+    b_skip.switchToBlock(block_skip);
+    const one_skip = try b_skip.iconst(ir.Type.I64, 1);
+    const zero_skip = try b_skip.iconst(ir.Type.I64, 0);
+    const sum_skip = try b_skip.iadd(ir.Type.I64, one_skip, zero_skip);
+    try b_skip.retValues(&.{sum_skip});
+
+    var ctx_skip = Context.init(testing.allocator);
+    defer ctx_skip.deinit();
+    ctx_skip.func = &func_skip;
+
+    var target_skip = Target.init(.aarch64);
+    target_skip.verify = false;
+    target_skip.opt_level = .speed;
+    target_skip.optimize = true;
+    target_skip.egraph_min_complexity = std.math.maxInt(u32);
+    ctx_skip.target = &target_skip;
+
+    try optimize(&ctx_skip, &target_skip);
+    try testing.expect(ctx_skip.egraph_rules_cache == null);
+
+    var sig_run = ir.Signature.init(testing.allocator, .fast);
+    try sig_run.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.Type.I64));
+    var func_run = try Function.init(testing.allocator, "egraph_gate_run", sig_run);
+    defer func_run.deinit();
+
+    var b_run = try ir.FunctionBuilder.init(testing.allocator, &func_run);
+    defer b_run.deinit();
+
+    const block_run = try b_run.createBlock();
+    b_run.switchToBlock(block_run);
+    const one_run = try b_run.iconst(ir.Type.I64, 1);
+    const zero_run = try b_run.iconst(ir.Type.I64, 0);
+    const sum_run = try b_run.iadd(ir.Type.I64, one_run, zero_run);
+    try b_run.retValues(&.{sum_run});
+
+    var ctx_run = Context.init(testing.allocator);
+    defer ctx_run.deinit();
+    ctx_run.func = &func_run;
+
+    var target_run = Target.init(.aarch64);
+    target_run.verify = false;
+    target_run.opt_level = .speed;
+    target_run.optimize = true;
+    target_run.egraph_min_complexity = 0;
+    ctx_run.target = &target_run;
+
+    try optimize(&ctx_run, &target_run);
+    try testing.expect(ctx_run.egraph_rules_cache != null);
 }
 
 test "IRBuilder: initialization" {
@@ -9217,6 +9359,77 @@ test "IRBuilder: emit multiple iconsts" {
     _ = try builder.emitIconst(ir.Type.I32, 5);
 
     try testing.expectEqual(@as(usize, 5), func.dfg.insts.elems.items.len);
+}
+
+test "estimateFunctionComplexity is deterministic" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    var func = try Function.init(testing.allocator, "complexity_deterministic", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+    const one = try builder.iconst(ir.I64, 1);
+    const two = try builder.iconst(ir.I64, 2);
+    const sum = try builder.iadd(ir.I64, one, two);
+    const ret_inst = try func.dfg.makeInst(.{ .unary = .{ .opcode = .@"return", .arg = sum } });
+    try func.layout.appendInst(ret_inst, block);
+
+    const s1 = estimateFunctionComplexity(&func);
+    const s2 = estimateFunctionComplexity(&func);
+    try testing.expectEqual(s1, s2);
+}
+
+test "estimateFunctionComplexity grows with IR size" {
+    var sig_small = ir.Signature.init(testing.allocator, .fast);
+    try sig_small.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    var func_small = try Function.init(testing.allocator, "complexity_small", sig_small);
+    defer func_small.deinit();
+
+    var b_small = try ir.FunctionBuilder.init(testing.allocator, &func_small);
+    defer b_small.deinit();
+
+    const small_block = try b_small.createBlock();
+    b_small.switchToBlock(small_block);
+    const c0 = try b_small.iconst(ir.I64, 0);
+    const small_ret = try func_small.dfg.makeInst(.{ .unary = .{ .opcode = .@"return", .arg = c0 } });
+    try func_small.layout.appendInst(small_ret, small_block);
+
+    var sig_big = ir.Signature.init(testing.allocator, .fast);
+    try sig_big.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    var func_big = try Function.init(testing.allocator, "complexity_big", sig_big);
+    defer func_big.deinit();
+
+    var b_big = try ir.FunctionBuilder.init(testing.allocator, &func_big);
+    defer b_big.deinit();
+
+    const big_block = try b_big.createBlock();
+    b_big.switchToBlock(big_block);
+    const b0 = try b_big.iconst(ir.I64, 1);
+    const b1 = try b_big.iconst(ir.I64, 2);
+    const b2 = try b_big.iadd(ir.I64, b0, b1);
+    const b3 = try b_big.imul(ir.I64, b2, b1);
+    const big_ret = try func_big.dfg.makeInst(.{ .unary = .{ .opcode = .@"return", .arg = b3 } });
+    try func_big.layout.appendInst(big_ret, big_block);
+
+    const small_score = estimateFunctionComplexity(&func_small);
+    const big_score = estimateFunctionComplexity(&func_big);
+    try testing.expect(big_score > small_score);
+}
+
+test "shouldRunEGraph respects complexity threshold" {
+    try testing.expect(!shouldRunEGraph(.none, default_egraph_min_complexity * 4, default_egraph_min_complexity));
+    try testing.expect(!shouldRunEGraph(.speed, default_egraph_min_complexity - 1, default_egraph_min_complexity));
+    try testing.expect(shouldRunEGraph(.speed, default_egraph_min_complexity, default_egraph_min_complexity));
+    try testing.expect(shouldRunEGraph(.speed_and_size, default_egraph_min_complexity + 64, default_egraph_min_complexity));
+}
+
+test "shouldRunEGraph honors configured threshold" {
+    try testing.expect(!shouldRunEGraph(.speed, 200, 256));
+    try testing.expect(shouldRunEGraph(.speed, 256, 256));
 }
 
 test "IRBuilder: emit iadd" {

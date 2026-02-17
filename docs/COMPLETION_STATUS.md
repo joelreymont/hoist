@@ -30,11 +30,20 @@
 - Fixed baseline log step: `zig build baseline-log` writes `/tmp/hoist-baseline.log` with configurable `-Dbench-repeat=N` sampling
 - Bench baseline: `zig build bench-log` writes `/tmp/hoist-bench.log` with configurable `-Dbench-repeat=N` sampling
 - Perf gate + reports: `zig build bench-gate` runs fresh baseline+current captures, compares metric medians, writes markdown `/tmp/hoist-bench-report.md`, and writes JSON `/tmp/hoist-bench-report.json`
+- Perf compare-only step: `zig build bench-compare` compares existing baseline/current logs without rerunning benchmarks (same report/json outputs)
+- Perf history: `zig build bench-gate` appends timestamped JSONL entries to `/tmp/hoist-bench-history.jsonl` (override with `-Dbench-history-json-path=...`)
+- Perf gate stability floor: regression failures require both percentage threshold and absolute delta threshold (`-Dbench-min-regress-us`, default `2.0us`) to avoid micro-noise false positives
+- Budget guards: optional `-Dbench-budget-reference-path=<baseline.log>` with `-Dbench-budget-multiplier=<2|3>` enforces 2x/3x target checks on key metrics (`fib`, `large5000`, `int`, `vector`, `memory`, `mixed`)
 - Bench profile default: bench, baseline, and perf-gate executables use `-Dbench-optimize=ReleaseFast` by default (override with `-Dbench-optimize=<mode>`)
 - Canonical perf commands:
   - `zig build bench-log -Dbench-repeat=5 --global-cache-dir .zig-global-cache`
   - `zig build baseline-log -Dbench-repeat=5 --global-cache-dir .zig-global-cache`
   - `zig build bench-gate -Dbench-repeat=5 --global-cache-dir .zig-global-cache`
+  - `zig build bench-compare -Dbench-baseline-path=/tmp/hoist-ab-before.log -Dbench-current-path=/tmp/hoist-ab-after.log -Dbench-report-path=/tmp/hoist-ab-report.md -Dbench-report-json-path=/tmp/hoist-ab-report.json --global-cache-dir .zig-global-cache`
+  - `zig build bench-gate -Dbench-repeat=5 -Dbench-min-regress-us=2 --global-cache-dir .zig-global-cache`
+  - `zig build bench-gate -Dbench-repeat=5 -Dbench-history-json-path=/tmp/hoist-bench-history.jsonl --global-cache-dir .zig-global-cache`
+  - `zig build bench-gate -Dbench-repeat=5 -Dbench-budget-reference-path=/tmp/hoist-baseline.log -Dbench-budget-multiplier=2 --global-cache-dir .zig-global-cache`
+  - `zig build bench-gate -Dbench-repeat=5 -Dbench-budget-reference-path=/tmp/hoist-baseline.log -Dbench-budget-multiplier=3 --global-cache-dir .zig-global-cache`
   - Explicit override example: `zig build bench-log -Dbench-optimize=Debug -Dbench-repeat=3 --global-cache-dir .zig-global-cache`
 
 ## Partially Implemented / In Progress

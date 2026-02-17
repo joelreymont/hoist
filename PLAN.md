@@ -136,6 +136,26 @@ Unify all parity/gap plans into one executable document where every actionable t
 - [x] Regalloc fast path (`dot:hoist-regalloc-fast-path-ae575e49`)
 - [x] Addressing mode fusion (`dot:hoist-addressing-mode-fusion-a5d7bc09`)
 - [x] Bench gate + report (`dot:hoist-bench-gate-report-a98c6e5d`)
+- [x] Persist perf history JSONL (`dot:hoist-persist-perf-history-c733cedf`)
+- [x] Add budget guard thresholds (`dot:hoist-add-budget-guard-e707c938`)
+- [x] Document 2x/3x verification flow (`dot:hoist-doc-2x3x-verification-149bc1b6`)
+- [x] Single-thread perf follow-up (`dot:hoist-hoist-single-thread-e3e5b8d6`)
+- [x] Dense liveness map (`dot:hoist-dense-liveness-map-ed60eafe`)
+- [x] Fast rewrite scan (discarded: <5% retained gain) (`dot:hoist-fast-rewrite-scan-549ead70`)
+- [x] Persist regalloc state (`dot:hoist-persist-regalloc-state-2b711aef`)
+- [x] Next single-thread perf pass (`dot:hoist-hoist-next-single-3414e8b7`)
+- [x] Peephole fast skip (discarded: <5% retained gain) (`dot:hoist-peephole-fast-skip-6378ba8e`)
+- [x] Dense block map (discarded: perf regressions) (`dot:hoist-dense-block-map-9c36344d`)
+- [x] Coalesce density gate (`dot:hoist-coalesce-density-gate-8244fdd2`)
+- [x] Rewrite pass removal (discarded: perf regressions) (`dot:hoist-rewrite-pass-removal-9a835e88`)
+- [x] ABI setup cache (discarded: <5% retained gain) (`dot:hoist-abi-setup-cache-9dbb5b0e`)
+
+#### Perf Verification Flow
+- Capture baseline: `zig build baseline-log -Dbench-repeat=5 --global-cache-dir .zig-global-cache`
+- Capture current: `zig build bench-log -Dbench-repeat=5 --global-cache-dir .zig-global-cache`
+- Gate + append history: `zig build bench-gate -Dbench-repeat=5 -Dbench-history-json-path=/tmp/hoist-bench-history.jsonl --global-cache-dir .zig-global-cache`
+- Enforce 2x target: `zig build bench-gate -Dbench-repeat=5 -Dbench-budget-reference-path=/tmp/hoist-baseline.log -Dbench-budget-multiplier=2 --global-cache-dir .zig-global-cache`
+- Enforce 3x target: `zig build bench-gate -Dbench-repeat=5 -Dbench-budget-reference-path=/tmp/hoist-baseline.log -Dbench-budget-multiplier=3 --global-cache-dir .zig-global-cache`
 
 ## Source-ID Reconciliation
 - Full cross-source ID inventory: `/Users/joel/Work/hoist/docs/plan_dot_inventory.md`

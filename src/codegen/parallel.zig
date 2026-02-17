@@ -12,6 +12,10 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Thread = std.Thread;
+const compile_mod = @import("compile.zig");
+const codegen_ctx_mod = @import("context.zig");
+const ir = @import("../ir.zig");
+const sig_mod = @import("../ir/signature.zig");
 
 /// Compilation work item.
 pub const WorkItem = struct {
@@ -33,23 +37,42 @@ pub const CompileResult = struct {
     relocs: []const Reloc,
     /// Error if compilation failed.
     err: ?CompileError,
+    /// True if `code` and `relocs` were heap-allocated and must be freed.
+    owns_memory: bool = false,
 
     pub const Reloc = struct {
         offset: u32,
         kind: RelocKind,
-        target: u32,
+        name: []const u8,
+        addend: i64,
     };
 
     pub const RelocKind = enum {
-        func_ref,
-        data_ref,
-        got_ref,
+        abs8,
+        pcrel4,
+        aarch64_adr_prel_pg_hi21,
+        aarch64_add_abs_lo12_nc,
     };
 
     pub const CompileError = struct {
         func_idx: u32,
         message: []const u8,
+        owned: bool = false,
     };
+
+    pub fn deinit(self: *CompileResult, allocator: Allocator) void {
+        if (self.err) |err| {
+            if (err.owned) allocator.free(err.message);
+        }
+        if (self.owns_memory) {
+            for (self.relocs) |reloc| {
+                allocator.free(reloc.name);
+            }
+            allocator.free(self.relocs);
+            allocator.free(self.code);
+        }
+        self.* = undefined;
+    }
 };
 
 /// Thread-safe work queue.
@@ -84,7 +107,7 @@ pub const WorkQueue = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        if (self.done or self.items.items.len == 0) return null;
+        if (self.items.items.len == 0) return null;
         return self.items.pop();
     }
 
@@ -120,6 +143,12 @@ pub const ResultCollector = struct {
     }
 
     pub fn deinit(self: *ResultCollector) void {
+        for (self.results.items) |*result| {
+            result.deinit(self.allocator);
+        }
+        for (self.errors.items) |err| {
+            if (err.owned) self.allocator.free(err.message);
+        }
         self.results.deinit(self.allocator);
         self.errors.deinit(self.allocator);
     }
@@ -144,6 +173,41 @@ pub const ResultCollector = struct {
         defer self.mutex.unlock();
         return self.results.items.len + self.errors.items.len;
     }
+
+    pub fn takeSorted(self: *ResultCollector, allocator: Allocator) ![]CompileResult {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        const total = self.results.items.len + self.errors.items.len;
+        const out = try allocator.alloc(CompileResult, total);
+        errdefer allocator.free(out);
+
+        var idx: usize = 0;
+        for (self.results.items) |result| {
+            out[idx] = result;
+            idx += 1;
+        }
+        for (self.errors.items) |err| {
+            out[idx] = .{
+                .func_idx = err.func_idx,
+                .code = &.{},
+                .relocs = &.{},
+                .err = err,
+                .owns_memory = false,
+            };
+            idx += 1;
+        }
+
+        self.results.clearRetainingCapacity();
+        self.errors.clearRetainingCapacity();
+
+        std.mem.sort(CompileResult, out, {}, struct {
+            fn lessThan(_: void, a: CompileResult, b: CompileResult) bool {
+                return a.func_idx < b.func_idx;
+            }
+        }.lessThan);
+        return out;
+    }
 };
 
 /// Configuration for parallel compilation.
@@ -166,6 +230,8 @@ pub const ParallelCompiler = struct {
     results: ResultCollector,
     workers: std.ArrayList(Thread),
     running: std.atomic.Value(bool),
+    functions: ?[]*ir.Function,
+    target: ?compile_mod.Target,
 
     /// Stats.
     funcs_compiled: std.atomic.Value(u32),
@@ -177,18 +243,26 @@ pub const ParallelCompiler = struct {
             .config = config,
             .work_queue = WorkQueue.init(allocator),
             .results = ResultCollector.init(allocator),
-            .workers = std.ArrayList(Thread).init(allocator),
+            .workers = std.ArrayList(Thread){},
             .running = std.atomic.Value(bool).init(false),
+            .functions = null,
+            .target = null,
             .funcs_compiled = std.atomic.Value(u32).init(0),
             .total_cycles = std.atomic.Value(u64).init(0),
         };
+    }
+
+    /// Provide function table and target used by worker compilation.
+    pub fn setCompilationInputs(self: *ParallelCompiler, functions: []*ir.Function, target: compile_mod.Target) void {
+        self.functions = functions;
+        self.target = target;
     }
 
     pub fn deinit(self: *ParallelCompiler) void {
         self.stop();
         self.work_queue.deinit();
         self.results.deinit();
-        self.workers.deinit();
+        self.workers.deinit(self.allocator);
     }
 
     /// Add a function to compile.
@@ -216,7 +290,7 @@ pub const ParallelCompiler = struct {
 
         for (0..num_threads) |_| {
             const worker = try Thread.spawn(.{}, workerLoop, .{self});
-            try self.workers.append(worker);
+            try self.workers.append(self.allocator, worker);
         }
     }
 
@@ -231,6 +305,11 @@ pub const ParallelCompiler = struct {
         self.workers.clearRetainingCapacity();
     }
 
+    /// Signal that no more functions will be enqueued.
+    pub fn finish(self: *ParallelCompiler) void {
+        self.work_queue.finish();
+    }
+
     /// Wait for all work to complete.
     pub fn wait(self: *ParallelCompiler) void {
         while (!self.work_queue.isDone() and self.running.load(.acquire)) {
@@ -238,17 +317,22 @@ pub const ParallelCompiler = struct {
         }
     }
 
+    /// Consume and return all completed results sorted by function index.
+    /// Caller owns returned memory and each entry's owned allocations.
+    pub fn takeResultsSorted(self: *ParallelCompiler, allocator: Allocator) ![]CompileResult {
+        return self.results.takeSorted(allocator);
+    }
+
     /// Worker thread main loop.
     fn workerLoop(self: *ParallelCompiler) void {
         while (self.running.load(.acquire)) {
             const item = self.work_queue.pop() orelse {
+                if (self.work_queue.isDone()) break;
                 Thread.yield() catch {};
                 continue;
             };
 
-            // Compile the function
-            // In a real implementation, this would call the actual compiler
-            const result = compileFunction(self.allocator, item);
+            const result = self.compileFunction(item);
 
             if (result.err) |err| {
                 self.results.addError(err) catch {};
@@ -269,16 +353,86 @@ pub const ParallelCompiler = struct {
             .errors = self.results.errors.items.len,
         };
     }
+
+    fn compileFunction(self: *ParallelCompiler, item: WorkItem) CompileResult {
+        const funcs = self.functions orelse return makeErrorResult(self.allocator, item.func_idx, "missing function table");
+        const target = self.target orelse return makeErrorResult(self.allocator, item.func_idx, "missing compile target");
+        if (item.func_idx >= funcs.len) return makeErrorResult(self.allocator, item.func_idx, "function index out of bounds");
+
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const worker_allocator = arena.allocator();
+
+        var codegen_ctx = compile_mod.Context.init(worker_allocator);
+        defer codegen_ctx.deinit();
+
+        const func = funcs[item.func_idx];
+        _ = compile_mod.compile(&codegen_ctx, func, &target) catch |err| {
+            return makeErrorResult(self.allocator, item.func_idx, @errorName(err));
+        };
+
+        const compiled = codegen_ctx.getCompiledCode() orelse {
+            return makeErrorResult(self.allocator, item.func_idx, "missing compiled code");
+        };
+
+        const code = self.allocator.alloc(u8, compiled.code.items.len) catch {
+            return makeErrorResult(self.allocator, item.func_idx, "out of memory");
+        };
+        @memcpy(code, compiled.code.items);
+        errdefer self.allocator.free(code);
+
+        const relocs = self.allocator.alloc(CompileResult.Reloc, compiled.relocs.items.len) catch {
+            return makeErrorResult(self.allocator, item.func_idx, "out of memory");
+        };
+        errdefer self.allocator.free(relocs);
+
+        for (compiled.relocs.items, 0..) |reloc, idx| {
+            const name = self.allocator.dupe(u8, reloc.name) catch {
+                for (relocs[0..idx]) |prev| self.allocator.free(prev.name);
+                self.allocator.free(relocs);
+                self.allocator.free(code);
+                return makeErrorResult(self.allocator, item.func_idx, "out of memory");
+            };
+            relocs[idx] = .{
+                .offset = reloc.offset,
+                .kind = mapRelocKind(reloc.kind),
+                .name = name,
+                .addend = reloc.addend,
+            };
+        }
+
+        return .{
+            .func_idx = item.func_idx,
+            .code = code,
+            .relocs = relocs,
+            .err = null,
+            .owns_memory = true,
+        };
+    }
 };
 
-/// Compile a single function (placeholder).
-fn compileFunction(allocator: Allocator, item: WorkItem) CompileResult {
-    _ = allocator;
+fn mapRelocKind(kind: codegen_ctx_mod.RelocKind) CompileResult.RelocKind {
+    return switch (kind) {
+        .abs8 => .abs8,
+        .pcrel4 => .pcrel4,
+        .aarch64_adr_prel_pg_hi21 => .aarch64_adr_prel_pg_hi21,
+        .aarch64_add_abs_lo12_nc => .aarch64_add_abs_lo12_nc,
+    };
+}
+
+fn makeErrorResult(allocator: Allocator, func_idx: u32, message: []const u8) CompileResult {
+    const duped = allocator.dupe(u8, message) catch null;
+    const owned_msg = duped orelse message;
     return .{
-        .func_idx = item.func_idx,
+        .func_idx = func_idx,
         .code = &.{},
         .relocs = &.{},
-        .err = null,
+        .err = .{
+            .func_idx = func_idx,
+            .message = owned_msg,
+            .owned = duped != null,
+        },
+        .owns_memory = false,
     };
 }
 
@@ -332,4 +486,54 @@ test "Config defaults" {
 
     try testing.expectEqual(@as(u32, 0), config.num_threads);
     try testing.expect(config.work_stealing);
+}
+
+test "ParallelCompiler compileFunction errors without inputs" {
+    const testing = std.testing;
+
+    var pc = ParallelCompiler.init(testing.allocator, .{});
+    defer pc.deinit();
+
+    var result = pc.compileFunction(.{
+        .func_idx = 0,
+        .priority = 0,
+        .estimated_cycles = 1,
+    });
+    defer result.deinit(testing.allocator);
+    try testing.expect(result.err != null);
+}
+
+test "ParallelCompiler compileFunction uses real codegen" {
+    const testing = std.testing;
+
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    var func = try ir.Function.init(testing.allocator, "parallel_compile", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+    const c = try builder.iconst(ir.I64, 7);
+    try builder.retValues(&.{c});
+
+    var funcs = [_]*ir.Function{&func};
+    var target = compile_mod.Target.init(.aarch64);
+    target.verify = false;
+    target.opt_level = .speed;
+
+    var pc = ParallelCompiler.init(testing.allocator, .{});
+    defer pc.deinit();
+    pc.setCompilationInputs(funcs[0..], target);
+
+    var result = pc.compileFunction(.{
+        .func_idx = 0,
+        .priority = 0,
+        .estimated_cycles = 10,
+    });
+    defer result.deinit(testing.allocator);
+    try testing.expect(result.err == null);
+    try testing.expect(result.owns_memory);
+    try testing.expect(result.code.len > 0);
 }

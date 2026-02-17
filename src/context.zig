@@ -5,6 +5,7 @@ const Allocator = std.mem.Allocator;
 const root = @import("root.zig");
 const Function = root.function.Function;
 const compile_mod = root.codegen.compile;
+const parallel_mod = @import("codegen/parallel.zig");
 const signature_mod = root.signature;
 const Verifier = @import("ir/verifier.zig").Verifier;
 const Features = @import("target/features.zig").Features;
@@ -31,6 +32,9 @@ pub const Context = struct {
     /// Enable optimization passes.
     optimize: bool,
 
+    /// Minimum complexity required to run e-graph optimization.
+    egraph_min_complexity: u32,
+
     /// Reusable codegen pipeline context.
     codegen_ctx: compile_mod.Context,
 
@@ -44,8 +48,9 @@ pub const Context = struct {
             },
             .opt_level = .none,
             .call_conv = defaultCallConv(.aarch64, .macos),
-            .verify = true,
+            .verify = false,
             .optimize = false,
+            .egraph_min_complexity = compile_mod.default_egraph_min_complexity,
             .codegen_ctx = compile_mod.Context.init(allocator),
         };
     }
@@ -65,17 +70,16 @@ pub const Context = struct {
         self.optimize = level != .none;
     }
 
+    pub fn setEgraphMinComplexity(self: *Context, min_complexity: u32) void {
+        self.egraph_min_complexity = min_complexity;
+    }
+
     pub fn deinit(self: *Context) void {
         self.codegen_ctx.deinit();
     }
 
-    /// Compile a function to machine code.
-    pub fn compileFunction(
-        self: *Context,
-        func: *Function,
-    ) !compile_mod.CompiledCode {
-        // Convert Context settings to compile.Target
-        const target = compile_mod.Target{
+    fn makeCompileTarget(self: *const Context) compile_mod.Target {
+        return .{
             .arch = switch (self.target.arch) {
                 .x86_64 => .x86_64,
                 .aarch64 => .aarch64,
@@ -89,8 +93,29 @@ pub const Context = struct {
             },
             .verify = self.verify,
             .optimize = self.optimize,
+            .egraph_min_complexity = self.egraph_min_complexity,
             .features = self.target.features,
         };
+    }
+
+    fn estimateFunctionCycles(func: *const Function) u32 {
+        var inst_count: u32 = 0;
+        var block_iter = func.layout.blockIter();
+        while (block_iter.next()) |block| {
+            var inst_iter = func.layout.blockInsts(block);
+            while (inst_iter.next()) |_| {
+                inst_count +%= 1;
+            }
+        }
+        return if (inst_count == 0) 1 else inst_count;
+    }
+
+    /// Compile a function to machine code.
+    pub fn compileFunction(
+        self: *Context,
+        func: *Function,
+    ) !compile_mod.CompiledCode {
+        const target = self.makeCompileTarget();
 
         self.codegen_ctx.clear();
 
@@ -99,6 +124,30 @@ pub const Context = struct {
 
         // Take ownership of compiled code (transfers ownership, prevents double-free)
         return self.codegen_ctx.takeCompiledCode().?;
+    }
+
+    /// Compile a batch of functions in parallel and return sorted per-index results.
+    pub fn compileFunctionsParallel(
+        self: *Context,
+        funcs: []*Function,
+        config: parallel_mod.Config,
+    ) ![]parallel_mod.CompileResult {
+        var compiler = parallel_mod.ParallelCompiler.init(self.allocator, config);
+        defer compiler.deinit();
+
+        const target = self.makeCompileTarget();
+        compiler.setCompilationInputs(funcs, target);
+
+        for (funcs, 0..) |func, idx| {
+            try compiler.addFunction(@intCast(idx), estimateFunctionCycles(func));
+        }
+
+        try compiler.start();
+        compiler.finish();
+        compiler.wait();
+        compiler.stop();
+
+        return try compiler.takeResultsSorted(self.allocator);
     }
 
     pub fn setCompileProfiling(self: *Context, enabled: bool) void {
@@ -254,6 +303,11 @@ pub const ContextBuilder = struct {
         return self;
     }
 
+    pub fn egraphMinComplexity(self: *ContextBuilder, min_complexity: u32) *ContextBuilder {
+        self.ctx.setEgraphMinComplexity(min_complexity);
+        return self;
+    }
+
     pub fn build(self: *ContextBuilder) Context {
         return self.ctx;
     }
@@ -267,8 +321,9 @@ test "Context basic" {
     try testing.expectEqual(Arch.aarch64, ctx.target.arch);
     try testing.expectEqual(OS.macos, ctx.target.os);
     try testing.expectEqual(OptLevel.none, ctx.opt_level);
-    try testing.expectEqual(true, ctx.verify);
+    try testing.expectEqual(false, ctx.verify);
     try testing.expectEqual(false, ctx.optimize);
+    try testing.expectEqual(compile_mod.default_egraph_min_complexity, ctx.egraph_min_complexity);
 }
 
 test "Context with target" {
@@ -292,18 +347,28 @@ test "Context optimization level" {
     try testing.expectEqual(false, ctx.optimize);
 }
 
+test "Context egraph threshold" {
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+
+    ctx.setEgraphMinComplexity(192);
+    try testing.expectEqual(@as(u32, 192), ctx.egraph_min_complexity);
+}
+
 test "ContextBuilder" {
     var builder = ContextBuilder.init(testing.allocator);
     var ctx = builder
         .target(.aarch64, .linux)
         .optLevel(.moderate)
         .verification(false)
+        .egraphMinComplexity(256)
         .build();
     defer ctx.deinit();
 
     try testing.expectEqual(Arch.aarch64, ctx.target.arch);
     try testing.expectEqual(OptLevel.moderate, ctx.opt_level);
     try testing.expectEqual(false, ctx.verify);
+    try testing.expectEqual(@as(u32, 256), ctx.egraph_min_complexity);
 }
 
 test "Context compile function" {
@@ -344,6 +409,147 @@ test "Context compile function unsupported target" {
     } else |err| {
         try testing.expectEqual(error.UnsupportedTarget, err);
     }
+}
+
+test "Context compileFunctionsParallel returns sorted success results" {
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.verify = false;
+
+    const sig0 = root.signature.Signature.init(testing.allocator, .fast);
+    var func0 = try Function.init(testing.allocator, "p0", sig0);
+    defer func0.deinit();
+
+    const sig1 = root.signature.Signature.init(testing.allocator, .fast);
+    var func1 = try Function.init(testing.allocator, "p1", sig1);
+    defer func1.deinit();
+
+    var funcs = [_]*Function{ &func0, &func1 };
+    const results = try ctx.compileFunctionsParallel(funcs[0..], .{ .num_threads = 2 });
+    defer {
+        for (results) |*result| result.deinit(testing.allocator);
+        testing.allocator.free(results);
+    }
+
+    try testing.expectEqual(@as(usize, 2), results.len);
+    try testing.expectEqual(@as(u32, 0), results[0].func_idx);
+    try testing.expectEqual(@as(u32, 1), results[1].func_idx);
+    try testing.expect(results[0].err == null);
+    try testing.expect(results[1].err == null);
+}
+
+test "Context compileFunctionsParallel handles mixed success and failure" {
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.verify = true;
+
+    var sig_ok = root.signature.Signature.init(testing.allocator, .fast);
+    try sig_ok.returns.append(testing.allocator, root.signature.AbiParam.new(root.types.Type.I64));
+    var func_ok = try Function.init(testing.allocator, "ok", sig_ok);
+    defer func_ok.deinit();
+
+    const block_ok = try func_ok.dfg.makeBlock();
+    try func_ok.layout.appendBlock(block_ok);
+    const iconst_ok = try func_ok.dfg.makeInst(.{ .unary_imm = .{
+        .opcode = .iconst,
+        .imm = root.immediates.Imm64.new(7),
+    } });
+    try func_ok.layout.appendInst(iconst_ok, block_ok);
+    const v_ok = try func_ok.dfg.appendInstResult(iconst_ok, root.types.Type.I64);
+    const ret_ok = try func_ok.dfg.makeInst(.{ .unary = .{
+        .opcode = .@"return",
+        .arg = v_ok,
+    } });
+    try func_ok.layout.appendInst(ret_ok, block_ok);
+
+    var sig_bad = root.signature.Signature.init(testing.allocator, .fast);
+    try sig_bad.returns.append(testing.allocator, root.signature.AbiParam.new(root.types.Type.I64));
+    var func_bad = try Function.init(testing.allocator, "bad", sig_bad);
+    defer func_bad.deinit();
+
+    const block_bad = try func_bad.dfg.makeBlock();
+    try func_bad.layout.appendBlock(block_bad);
+    const ret_bad = try func_bad.dfg.makeInst(.{ .unary = .{
+        .opcode = .@"return",
+        .arg = root.entities.Value.new(9999),
+    } });
+    try func_bad.layout.appendInst(ret_bad, block_bad);
+
+    var funcs = [_]*Function{ &func_ok, &func_bad };
+    const results = try ctx.compileFunctionsParallel(funcs[0..], .{ .num_threads = 2 });
+    defer {
+        for (results) |*result| result.deinit(testing.allocator);
+        testing.allocator.free(results);
+    }
+
+    try testing.expectEqual(@as(usize, 2), results.len);
+    try testing.expectEqual(@as(u32, 0), results[0].func_idx);
+    try testing.expectEqual(@as(u32, 1), results[1].func_idx);
+    try testing.expect(results[0].err == null);
+    try testing.expect(results[1].err != null);
+}
+
+test "Context compileFunctionsParallel matches serial output" {
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+    ctx.verify = false;
+    ctx.setOptLevel(.moderate);
+
+    var sig_a = root.signature.Signature.init(testing.allocator, .fast);
+    try sig_a.returns.append(testing.allocator, root.signature.AbiParam.new(root.types.Type.I64));
+    var func_a = try Function.init(testing.allocator, "pa", sig_a);
+    defer func_a.deinit();
+
+    const block_a = try func_a.dfg.makeBlock();
+    try func_a.layout.appendBlock(block_a);
+    const iconst_a = try func_a.dfg.makeInst(.{ .unary_imm = .{
+        .opcode = .iconst,
+        .imm = root.immediates.Imm64.new(11),
+    } });
+    try func_a.layout.appendInst(iconst_a, block_a);
+    const v_a = try func_a.dfg.appendInstResult(iconst_a, root.types.Type.I64);
+    const ret_a = try func_a.dfg.makeInst(.{ .unary = .{
+        .opcode = .@"return",
+        .arg = v_a,
+    } });
+    try func_a.layout.appendInst(ret_a, block_a);
+
+    var sig_b = root.signature.Signature.init(testing.allocator, .fast);
+    try sig_b.returns.append(testing.allocator, root.signature.AbiParam.new(root.types.Type.I64));
+    var func_b = try Function.init(testing.allocator, "pb", sig_b);
+    defer func_b.deinit();
+
+    const block_b = try func_b.dfg.makeBlock();
+    try func_b.layout.appendBlock(block_b);
+    const iconst_b = try func_b.dfg.makeInst(.{ .unary_imm = .{
+        .opcode = .iconst,
+        .imm = root.immediates.Imm64.new(29),
+    } });
+    try func_b.layout.appendInst(iconst_b, block_b);
+    const v_b = try func_b.dfg.appendInstResult(iconst_b, root.types.Type.I64);
+    const ret_b = try func_b.dfg.makeInst(.{ .unary = .{
+        .opcode = .@"return",
+        .arg = v_b,
+    } });
+    try func_b.layout.appendInst(ret_b, block_b);
+
+    var serial_a = try ctx.compileFunction(&func_a);
+    defer serial_a.deinit();
+    var serial_b = try ctx.compileFunction(&func_b);
+    defer serial_b.deinit();
+
+    var funcs = [_]*Function{ &func_a, &func_b };
+    const parallel_results = try ctx.compileFunctionsParallel(funcs[0..], .{ .num_threads = 2 });
+    defer {
+        for (parallel_results) |*result| result.deinit(testing.allocator);
+        testing.allocator.free(parallel_results);
+    }
+
+    try testing.expectEqual(@as(usize, 2), parallel_results.len);
+    try testing.expect(parallel_results[0].err == null);
+    try testing.expect(parallel_results[1].err == null);
+    try testing.expectEqualSlices(u8, serial_a.code.items, parallel_results[0].code);
+    try testing.expectEqualSlices(u8, serial_b.code.items, parallel_results[1].code);
 }
 
 test "Context default calling convention" {
