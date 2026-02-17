@@ -49,6 +49,30 @@ pub fn build(b: *std.Build) void {
         "Build for single-threaded execution (default: false)",
     ) orelse false;
 
+    const bench_baseline_path = b.option(
+        []const u8,
+        "bench-baseline-path",
+        "Baseline benchmark log path for perf gate (default: /tmp/hoist-baseline.log)",
+    ) orelse "/tmp/hoist-baseline.log";
+
+    const bench_current_path = b.option(
+        []const u8,
+        "bench-current-path",
+        "Current benchmark log path for perf gate (default: /tmp/hoist-bench.log)",
+    ) orelse "/tmp/hoist-bench.log";
+
+    const bench_report_path = b.option(
+        []const u8,
+        "bench-report-path",
+        "Perf report output path (default: /tmp/hoist-bench-report.md)",
+    ) orelse "/tmp/hoist-bench-report.md";
+
+    const bench_max_regress_pct = b.option(
+        f64,
+        "bench-max-regress-pct",
+        "Maximum allowed regression percentage (default: 5.0)",
+    ) orelse 5.0;
+
     // Helper to apply flags to a compile step
     const applyFlags = struct {
         fn apply(step: *std.Build.Step.Compile, lto: bool, debug: bool, strip_flag: bool, pic_flag: bool, single_thread: bool) void {
@@ -263,8 +287,6 @@ pub fn build(b: *std.Build) void {
     applyFlags(e2e_merge, enable_lto, debug_info, strip_debug, pic, single_threaded);
     const run_e2e_merge = b.addRunArtifact(e2e_merge);
     test_step.dependOn(&run_e2e_merge.step);
-
-
 
     const aarch64_struct_args = b.addTest(.{
         .root_module = b.createModule(.{
@@ -549,11 +571,43 @@ pub fn build(b: *std.Build) void {
     const bench_log_step = b.step("bench-log", "Run benchmarks and write /tmp/hoist-bench.log");
     const run_bench_log = b.addRunArtifact(baseline);
     run_bench_log.addArg("--out");
-    run_bench_log.addArg("/tmp/hoist-bench.log");
+    run_bench_log.addArg(bench_current_path);
     run_bench_log.addFileArg(bench_fib.getEmittedBin());
     run_bench_log.addFileArg(bench_large.getEmittedBin());
     run_bench_log.addFileArg(bench_aarch64.getEmittedBin());
     bench_log_step.dependOn(&run_bench_log.step);
+
+    const baseline_log_step = b.step("baseline-log", "Run benchmarks and write /tmp/hoist-baseline.log");
+    const run_baseline_log = b.addRunArtifact(baseline);
+    run_baseline_log.addArg("--out");
+    run_baseline_log.addArg(bench_baseline_path);
+    run_baseline_log.addFileArg(bench_fib.getEmittedBin());
+    run_baseline_log.addFileArg(bench_large.getEmittedBin());
+    run_baseline_log.addFileArg(bench_aarch64.getEmittedBin());
+    baseline_log_step.dependOn(&run_baseline_log.step);
+
+    const perf_gate = b.addExecutable(.{
+        .name = "perf_gate",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/perf_gate.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    applyFlags(perf_gate, enable_lto, debug_info, strip_debug, pic, single_threaded);
+
+    const bench_gate_step = b.step("bench-gate", "Run perf gate using baseline/current bench logs");
+    const run_bench_gate = b.addRunArtifact(perf_gate);
+    run_bench_gate.addArg("--baseline");
+    run_bench_gate.addArg(bench_baseline_path);
+    run_bench_gate.addArg("--current");
+    run_bench_gate.addArg(bench_current_path);
+    run_bench_gate.addArg("--out");
+    run_bench_gate.addArg(bench_report_path);
+    run_bench_gate.addArg("--max-regress-pct");
+    run_bench_gate.addArg(b.fmt("{d}", .{bench_max_regress_pct}));
+    run_bench_gate.step.dependOn(&run_bench_log.step);
+    bench_gate_step.dependOn(&run_bench_gate.step);
 
     // Fuzzing
     const fuzz_compile = b.addExecutable(.{
