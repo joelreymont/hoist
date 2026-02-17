@@ -134,7 +134,7 @@ Unify all parity/gap plans into one executable document where every actionable t
 - [x] Kill alloc hotspots (`dot:hoist-kill-alloc-hotspots-5f73ff55`)
 - [x] Reuse lowering state (`dot:hoist-reuse-lowering-state-06ae009d`)
 - [x] Regalloc fast path (`dot:hoist-regalloc-fast-path-ae575e49`)
-- [ ] Addressing mode fusion (`dot:hoist-addressing-mode-fusion-a5d7bc09`)
+- [x] Addressing mode fusion (`dot:hoist-addressing-mode-fusion-a5d7bc09`)
 - [ ] Bench gate + report (`dot:hoist-bench-gate-report-a98c6e5d`)
 
 ## Source-ID Reconciliation

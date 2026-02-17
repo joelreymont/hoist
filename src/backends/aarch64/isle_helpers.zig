@@ -99,14 +99,65 @@ pub fn imm12_from_negated_value(value: lower_mod.Value, ctx: *const lower_mod.Lo
 /// Helper: Extract integer constant value from an iconst instruction.
 /// Returns null if the value is not defined by iconst or if immediate data is not available.
 fn intValue(value: lower_mod.Value, ctx: *const lower_mod.LowerCtx(Inst)) ?i64 {
-    const def = ctx.func.dfg.valueDef(value);
-    const inst = def.inst orelse return null;
+    const def = ctx.func.dfg.valueDef(value) orelse return null;
+    const inst = def.inst() orelse return null;
 
     const inst_data = ctx.func.dfg.insts.get(inst) orelse return null;
     if (inst_data.* != .unary_imm) return null;
     if (inst_data.unary_imm.opcode != .iconst) return null;
 
     return inst_data.unary_imm.imm.value;
+}
+
+const FoldedAddr = struct {
+    base: lower_mod.Reg,
+    offset: i16,
+};
+
+fn foldAddrRegOffset(
+    addr: lower_mod.Value,
+    explicit_offset: i64,
+    ctx: *lower_mod.LowerCtx(Inst),
+) !FoldedAddr {
+    const fallback = FoldedAddr{
+        .base = try getValueReg(ctx, addr),
+        .offset = @intCast(explicit_offset),
+    };
+
+    const def = ctx.func.dfg.valueDef(addr) orelse return fallback;
+    const inst = def.inst() orelse return fallback;
+    const inst_data = ctx.func.dfg.insts.get(inst) orelse return fallback;
+    if (inst_data.* != .binary) return fallback;
+
+    const bin = inst_data.binary;
+    var base_val: lower_mod.Value = undefined;
+    var delta: i64 = 0;
+
+    switch (bin.opcode) {
+        .iadd => {
+            if (intValue(bin.args[1], ctx)) |imm| {
+                base_val = bin.args[0];
+                delta = imm;
+            } else if (intValue(bin.args[0], ctx)) |imm| {
+                base_val = bin.args[1];
+                delta = imm;
+            } else return fallback;
+        },
+        .isub => {
+            const imm = intValue(bin.args[1], ctx) orelse return fallback;
+            base_val = bin.args[0];
+            delta = -imm;
+        },
+        else => return fallback,
+    }
+
+    const total = explicit_offset + delta;
+    if (total < std.math.minInt(i16) or total > std.math.maxInt(i16)) return fallback;
+
+    return .{
+        .base = try getValueReg(ctx, base_val),
+        .offset = @intCast(total),
+    };
 }
 
 fn splatLoadBase(value: lower_mod.Value, ctx: *const lower_mod.LowerCtx(Inst)) ?lower_mod.Value {
@@ -4746,8 +4797,6 @@ fn collectCallOps(
     var stack_ops = std.ArrayList(StackOp){};
     errdefer stack_ops.deinit(ctx.getAllocator());
 
-
-
     for (args, 0..) |arg_value, idx| {
         const arg_type = arg_types[idx];
         switch (layout.arg_locs[idx]) {
@@ -6052,15 +6101,15 @@ pub fn aarch64_ldr(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_ldr");
-    const base = try getValueReg(ctx, addr);
+    const folded = try foldAddrRegOffset(addr, 0, ctx);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
     const size = typeToOperandSize(ty);
 
     return Inst{
         .ldr = .{
             .dst = dst,
-            .base = base,
-            .offset = 0,
+            .base = folded.base,
+            .offset = folded.offset,
             .size = size,
         },
     };
@@ -6074,16 +6123,15 @@ pub fn aarch64_ldr_imm(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_ldr_imm");
-    const base = try getValueReg(ctx, base_val);
+    const folded = try foldAddrRegOffset(base_val, offset, ctx);
     const dst = lower_mod.WritableReg.allocReg(typeToRegClass(ty), ctx);
     const size = typeToOperandSize(ty);
-    const offset_i16: i16 = @intCast(offset);
 
     return Inst{
         .ldr = .{
             .dst = dst,
-            .base = base,
-            .offset = offset_i16,
+            .base = folded.base,
+            .offset = folded.offset,
             .size = size,
         },
     };
@@ -6418,14 +6466,14 @@ pub fn aarch64_istore8(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_istore8");
-    const base = try getValueReg(ctx, addr);
+    const folded = try foldAddrRegOffset(addr, 0, ctx);
     const src = try getValueReg(ctx, val);
 
     return Inst{
         .strb = .{
             .src = src,
-            .base = base,
-            .offset = 0,
+            .base = folded.base,
+            .offset = folded.offset,
         },
     };
 }
@@ -6437,14 +6485,14 @@ pub fn aarch64_istore16(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_istore16");
-    const base = try getValueReg(ctx, addr);
+    const folded = try foldAddrRegOffset(addr, 0, ctx);
     const src = try getValueReg(ctx, val);
 
     return Inst{
         .strh = .{
             .src = src,
-            .base = base,
-            .offset = 0,
+            .base = folded.base,
+            .offset = folded.offset,
         },
     };
 }
@@ -6456,14 +6504,14 @@ pub fn aarch64_istore32(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_istore32");
-    const base = try getValueReg(ctx, addr);
+    const folded = try foldAddrRegOffset(addr, 0, ctx);
     const src = try getValueReg(ctx, val);
 
     return Inst{
         .str = .{
             .src = src,
-            .base = base,
-            .offset = 0,
+            .base = folded.base,
+            .offset = folded.offset,
             .size = .size32, // 32-bit store
         },
     };
@@ -6475,7 +6523,7 @@ pub fn aarch64_str(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_str");
-    const base = try getValueReg(ctx, addr);
+    const folded = try foldAddrRegOffset(addr, 0, ctx);
     const src = try getValueReg(ctx, val);
     const ty = try ctx.getValueType(val);
     const size = typeToOperandSize(ty);
@@ -6483,8 +6531,8 @@ pub fn aarch64_str(
     return Inst{
         .str = .{
             .src = src,
-            .base = base,
-            .offset = 0,
+            .base = folded.base,
+            .offset = folded.offset,
             .size = size,
         },
     };
@@ -6498,17 +6546,16 @@ pub fn aarch64_str_imm(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_str_imm");
-    const base = try getValueReg(ctx, base_val);
+    const folded = try foldAddrRegOffset(base_val, offset, ctx);
     const src = try getValueReg(ctx, val);
     const ty = try ctx.getValueType(val);
     const size = typeToOperandSize(ty);
-    const offset_i16: i16 = @intCast(offset);
 
     return Inst{
         .str = .{
             .src = src,
-            .base = base,
-            .offset = offset_i16,
+            .base = folded.base,
+            .offset = folded.offset,
             .size = size,
         },
     };
@@ -6649,15 +6696,15 @@ pub fn aarch64_vldr(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_vldr");
-    const base = try getValueReg(ctx, addr);
+    const folded = try foldAddrRegOffset(addr, 0, ctx);
     const dst = lower_mod.WritableReg.allocReg(.vector, ctx);
     const fp_size = typeToFpuOperandSize(ty);
 
     return Inst{
         .vldr = .{
             .dst = dst,
-            .base = base,
-            .offset = 0,
+            .base = folded.base,
+            .offset = folded.offset,
             .size = fp_size,
         },
     };
@@ -6670,7 +6717,7 @@ pub fn aarch64_vstr(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_vstr");
-    const base = try getValueReg(ctx, addr);
+    const folded = try foldAddrRegOffset(addr, 0, ctx);
     const src = try getValueRegVec(ctx, val);
     const ty = try ctx.getValueType(val);
     const fp_size = typeToFpuOperandSize(ty);
@@ -6678,8 +6725,8 @@ pub fn aarch64_vstr(
     return Inst{
         .vstr = .{
             .src = src,
-            .base = base,
-            .offset = 0,
+            .base = folded.base,
+            .offset = folded.offset,
             .size = fp_size,
         },
     };
@@ -6690,13 +6737,13 @@ pub fn aarch64_uload8(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_uload8");
-    const base = try getValueReg(ctx, addr);
+    const folded = try foldAddrRegOffset(addr, 0, ctx);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
         .ldrb = .{
             .dst = dst,
-            .base = base,
-            .offset = 0,
+            .base = folded.base,
+            .offset = folded.offset,
             .size = .size64,
         },
     };
@@ -6708,13 +6755,13 @@ pub fn aarch64_uload16(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_uload16");
-    const base = try getValueReg(ctx, addr);
+    const folded = try foldAddrRegOffset(addr, 0, ctx);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
         .ldrh = .{
             .dst = dst,
-            .base = base,
-            .offset = 0,
+            .base = folded.base,
+            .offset = folded.offset,
             .size = .size64,
         },
     };
@@ -6726,13 +6773,13 @@ pub fn aarch64_uload32(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_uload32");
-    const base = try getValueReg(ctx, addr);
+    const folded = try foldAddrRegOffset(addr, 0, ctx);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
         .ldr = .{
             .dst = dst,
-            .base = base,
-            .offset = 0,
+            .base = folded.base,
+            .offset = folded.offset,
             .size = .size32, // LDR Wd auto zero-extends to 64
         },
     };
@@ -6744,13 +6791,13 @@ pub fn aarch64_uload64(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_uload64");
-    const base = try getValueReg(ctx, addr);
+    const folded = try foldAddrRegOffset(addr, 0, ctx);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
         .ldr = .{
             .dst = dst,
-            .base = base,
-            .offset = 0,
+            .base = folded.base,
+            .offset = folded.offset,
             .size = .size64,
         },
     };
@@ -6762,13 +6809,13 @@ pub fn aarch64_sload8(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_sload8");
-    const base = try getValueReg(ctx, addr);
+    const folded = try foldAddrRegOffset(addr, 0, ctx);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
         .ldrsb = .{
             .dst = dst,
-            .base = base,
-            .offset = 0,
+            .base = folded.base,
+            .offset = folded.offset,
             .size = .size64,
         },
     };
@@ -6780,13 +6827,13 @@ pub fn aarch64_sload16(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_sload16");
-    const base = try getValueReg(ctx, addr);
+    const folded = try foldAddrRegOffset(addr, 0, ctx);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
         .ldrsh = .{
             .dst = dst,
-            .base = base,
-            .offset = 0,
+            .base = folded.base,
+            .offset = folded.offset,
             .size = .size64,
         },
     };
@@ -6798,13 +6845,13 @@ pub fn aarch64_sload32(
     ctx: *lower_mod.LowerCtx(Inst),
 ) !Inst {
     recordRule("aarch64_sload32");
-    const base = try getValueReg(ctx, addr);
+    const folded = try foldAddrRegOffset(addr, 0, ctx);
     const dst = lower_mod.WritableReg.allocReg(.int, ctx);
     return Inst{
         .ldrsw = .{
             .dst = dst,
-            .base = base,
-            .offset = 0,
+            .base = folded.base,
+            .offset = folded.offset,
         },
     };
 }
@@ -8733,6 +8780,58 @@ pub fn aarch64_sve_eor(x: lower_mod.Value, y: lower_mod.Value, ctx: *lower_mod.L
         .src1 = x_reg,
         .src2 = y_reg,
     } };
+}
+
+test "aarch64_ldr folds iadd immediate address" {
+    const testing = std.testing;
+
+    var sig = hoist.function.signature.Signature.init(testing.allocator, .system_v);
+    try sig.returns.append(testing.allocator, hoist.function.signature.AbiParam.new(Type.I64));
+
+    var func = try lower_mod.Function.init(testing.allocator, "test_fold_addr", sig);
+    defer func.deinit();
+
+    const block0 = try func.dfg.makeBlock();
+    try func.layout.appendBlock(block0);
+    const base_inst = try func.dfg.makeInst(.{
+        .unary_imm = .{
+            .opcode = .iconst,
+            .imm = hoist.immediates.Imm64.new(256),
+        },
+    });
+    const base_val = try func.dfg.appendInstResult(base_inst, Type.I64);
+    try func.layout.appendInst(base_inst, block0);
+
+    const off_inst = try func.dfg.makeInst(.{
+        .unary_imm = .{
+            .opcode = .iconst,
+            .imm = hoist.immediates.Imm64.new(16),
+        },
+    });
+    const off_val = try func.dfg.appendInstResult(off_inst, Type.I64);
+    try func.layout.appendInst(off_inst, block0);
+
+    const add_inst = try func.dfg.makeInst(.{
+        .binary = .{
+            .opcode = .iadd,
+            .args = .{ base_val, off_val },
+        },
+    });
+    const addr_val = try func.dfg.appendInstResult(add_inst, Type.I64);
+    try func.layout.appendInst(add_inst, block0);
+
+    var vcode = hoist.vcode.VCode(Inst).init(testing.allocator);
+    defer vcode.deinit();
+    var ctx = lower_mod.LowerCtx(Inst).init(testing.allocator, &func, &vcode);
+    defer ctx.deinit();
+    _ = try ctx.startBlock(block0);
+
+    const base_reg = try getValueReg(&ctx, base_val);
+    const inst = try aarch64_ldr(Type.I64, addr_val, &ctx);
+
+    try testing.expectEqual(Inst.ldr, @as(std.meta.Tag(Inst), inst));
+    try testing.expect(base_reg.eq(inst.ldr.base));
+    try testing.expectEqual(@as(i16, 16), inst.ldr.offset);
 }
 
 test "pinnedRegNum matches platform ABI" {
