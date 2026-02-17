@@ -1599,6 +1599,20 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
     var ir_to_vcode_blocks = std.AutoHashMap(Block, BlockIndex).init(ctx.allocator);
     errdefer ir_to_vcode_blocks.deinit();
 
+    if (ctx.aarch64_lowered) |*state| {
+        vreg_origins.deinit();
+        ir_to_vcode_blocks.deinit();
+
+        vreg_origins = state.vreg_origins;
+        ir_to_vcode_blocks = state.ir_to_vcode_blocks;
+
+        state.vreg_origins = std.AutoHashMap(reg_mod.VReg, VRegOrigin).init(ctx.allocator);
+        state.ir_to_vcode_blocks = std.AutoHashMap(Block, BlockIndex).init(ctx.allocator);
+
+        vreg_origins.clearRetainingCapacity();
+        ir_to_vcode_blocks.clearRetainingCapacity();
+    }
+
     // Lower each block
     var block_iter = ctx.func.layout.blockIter();
     var first_block = true;
@@ -1879,14 +1893,20 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
         ctx.aarch64_regalloc = null;
     }
     if (ctx.aarch64_lowered) |*state| {
-        state.deinit();
+        state.vcode.deinit();
+        state.vreg_origins.deinit();
+        state.ir_to_vcode_blocks.deinit();
+        state.vcode = vcode;
+        state.vreg_origins = vreg_origins;
+        state.ir_to_vcode_blocks = ir_to_vcode_blocks;
+    } else {
+        ctx.aarch64_lowered = .{
+            .allocator = ctx.allocator,
+            .vcode = vcode,
+            .vreg_origins = vreg_origins,
+            .ir_to_vcode_blocks = ir_to_vcode_blocks,
+        };
     }
-    ctx.aarch64_lowered = .{
-        .allocator = ctx.allocator,
-        .vcode = vcode,
-        .vreg_origins = vreg_origins,
-        .ir_to_vcode_blocks = ir_to_vcode_blocks,
-    };
 }
 
 /// Collect coalesce pairs from mov_rr instructions.

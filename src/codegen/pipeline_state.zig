@@ -39,6 +39,13 @@ pub const AArch64Lowered = struct {
     vreg_origins: std.AutoHashMap(reg_mod.VReg, VRegOrigin),
     ir_to_vcode_blocks: std.AutoHashMap(ir_entities.Block, vcode_mod.BlockIndex),
 
+    pub fn resetForReuse(self: *AArch64Lowered) void {
+        self.vcode.deinit();
+        self.vcode = vcode_mod.VCode(a64_inst.Inst).init(self.allocator);
+        self.vreg_origins.clearRetainingCapacity();
+        self.ir_to_vcode_blocks.clearRetainingCapacity();
+    }
+
     pub fn deinit(self: *AArch64Lowered) void {
         self.vcode.deinit();
         self.vreg_origins.deinit();
@@ -106,3 +113,22 @@ pub const S390xRegAlloc = struct {
         self.* = undefined;
     }
 };
+
+test "AArch64Lowered resetForReuse clears maps" {
+    var lowered = AArch64Lowered{
+        .allocator = std.testing.allocator,
+        .vcode = vcode_mod.VCode(a64_inst.Inst).init(std.testing.allocator),
+        .vreg_origins = std.AutoHashMap(reg_mod.VReg, VRegOrigin).init(std.testing.allocator),
+        .ir_to_vcode_blocks = std.AutoHashMap(ir_entities.Block, vcode_mod.BlockIndex).init(std.testing.allocator),
+    };
+    defer lowered.deinit();
+
+    try lowered.vreg_origins.put(reg_mod.VReg.new(1, .int), VRegOrigin.forConst(.iconst, 7));
+    try lowered.ir_to_vcode_blocks.put(ir_entities.Block.new(0), 0);
+
+    lowered.resetForReuse();
+
+    try std.testing.expectEqual(@as(usize, 0), lowered.vreg_origins.count());
+    try std.testing.expectEqual(@as(usize, 0), lowered.ir_to_vcode_blocks.count());
+    try std.testing.expectEqual(@as(usize, 0), lowered.vcode.numInsns());
+}

@@ -132,7 +132,7 @@ Unify all parity/gap plans into one executable document where every actionable t
 - [ ] 2-3x compile perf (`dot:hoist-2-3x-compile-dcc76f30`)
 - [x] Profile phase costs (`dot:hoist-profile-phase-costs-ab37034a`)
 - [x] Kill alloc hotspots (`dot:hoist-kill-alloc-hotspots-5f73ff55`)
-- [ ] Reuse lowering state (`dot:hoist-reuse-lowering-state-06ae009d`)
+- [x] Reuse lowering state (`dot:hoist-reuse-lowering-state-06ae009d`)
 - [ ] Regalloc fast path (`dot:hoist-regalloc-fast-path-ae575e49`)
 - [ ] Addressing mode fusion (`dot:hoist-addressing-mode-fusion-a5d7bc09`)
 - [ ] Bench gate + report (`dot:hoist-bench-gate-report-a98c6e5d`)

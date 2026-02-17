@@ -242,8 +242,7 @@ pub const Context = struct {
             self.aarch64_regalloc = null;
         }
         if (self.aarch64_lowered) |*state| {
-            state.deinit();
-            self.aarch64_lowered = null;
+            state.resetForReuse();
         }
     }
 
