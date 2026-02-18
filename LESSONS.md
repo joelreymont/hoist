@@ -95,6 +95,7 @@
 - Retesting VCode-capacity retention against a fresh in-session baseline showed one promising run but failed stability rerun (no sustained >=5% key-metric gains and mixed micro regressions); discarded.
 - Compacting `VRegOrigin` payload after removing binop tracking improved several metrics but did not sustain >=5% gains across key tracked medians; discarded per threshold policy.
 - Bypassing per-block instruction copy in no-opt emit path did not produce qualifying compile-time gains (<5% across tracked medians); discarded.
+- Dense rewrite-time alloc lookup tables for `RegMapper` produced only sub-threshold gains in repeat-9 A/B (best `large(5000)` +4.98%) and no >=5% retained wins; discarded.
 
 ## Process Lessons
 - Always benchmark with repeated runs and medians (`bench-repeat=5`) before keeping an optimization.
