@@ -3,8 +3,8 @@ title: dense rewrite alloc
 status: closed
 priority: 1
 issue-type: task
-created-at: "\"\\\"2026-02-18T10:37:37.335955+01:00\\\"\""
-closed-at: "2026-02-18T10:42:22.305743+01:00"
+created-at: "\"\\\"\\\\\\\"\\\\\\\\\\\\\\\"2026-02-18T10:37:37.335955+01:00\\\\\\\\\\\\\\\"\\\\\\\"\\\"\""
+closed-at: "2026-02-18T10:51:39.088895+01:00"
 close-reason: "discarded: best repeat-9 gain <5%"
 ---
 
