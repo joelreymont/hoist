@@ -97,6 +97,7 @@
 - Bypassing per-block instruction copy in no-opt emit path did not produce qualifying compile-time gains (<5% across tracked medians); discarded.
 - Dense rewrite-time alloc lookup tables for `RegMapper` produced only sub-threshold gains in repeat-9 A/B (best `large(5000)` +4.98%) and no >=5% retained wins; discarded.
 - Gating/disabling no-opt rematerialization in spill rewrite showed mixed gains (`large(5000)` +8.97% in one run) but failed repeat-9 gate on key metrics (`large(100)` +8.11%, rerun `aarch64 memory` +12.50%); discarded.
+- Skipping hint/coalesce hash lookups when maps are empty in linear scan produced a micro-only gain (`aarch64 mixed` +5.26%) but regressed large-function medians (`large(100)` +4.31%, `large(500)` +3.04%, `large(1000)` +1.66%); discarded.
 
 ## Process Lessons
 - Always benchmark with repeated runs and medians (`bench-repeat=5`) before keeping an optimization.

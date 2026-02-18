@@ -177,6 +177,7 @@ Unify all parity/gap plans into one executable document where every actionable t
 - [x] Remove spill pre-scan maps in rewrite (`dot:hoist-hoist-retest-spill-890e6f5d`)
 - [x] Dense rewrite alloc lookup (discarded: <5% retained gain) (`dot:hoist-dense-rewrite-alloc-13e283a7`)
 - [x] No-opt rematerialization gating (discarded: gate regressions) (`dot:hoist-noopt-remat-gate-fc1f9716`)
+- [x] No-hint regalloc fast path (discarded: mixed-only gain, large regressions) (`dot:hoist-nohint-regalloc-fast-1968af99`)
 
 #### Perf Verification Flow
 - Capture baseline: `zig build baseline-log -Dbench-repeat=5 --global-cache-dir .zig-global-cache`
