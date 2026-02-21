@@ -301,6 +301,59 @@ fn noteRangeUse(info: *LivenessInfo, vreg: machinst.VReg, inst_idx: u32) !void {
     info.vreg_to_range_dense.items[vreg_idx] = new_idx;
 }
 
+fn allocBitSetArray(
+    allocator: std.mem.Allocator,
+    len: usize,
+    bit_length: usize,
+) ![]std.DynamicBitSetUnmanaged {
+    const sets = try allocator.alloc(std.DynamicBitSetUnmanaged, len);
+    errdefer allocator.free(sets);
+
+    var init_len: usize = 0;
+    errdefer {
+        for (sets[0..init_len]) |*set| {
+            set.deinit(allocator);
+        }
+    }
+
+    for (sets) |*set| {
+        set.* = try std.DynamicBitSetUnmanaged.initEmpty(allocator, bit_length);
+        init_len += 1;
+    }
+    return sets;
+}
+
+fn freeBitSetArray(allocator: std.mem.Allocator, sets: []std.DynamicBitSetUnmanaged) void {
+    for (sets) |*set| {
+        set.deinit(allocator);
+    }
+    allocator.free(sets);
+}
+
+fn bitSetMaskCount(bit_length: usize) usize {
+    return (bit_length + (@bitSizeOf(usize) - 1)) / @bitSizeOf(usize);
+}
+
+fn subtractBitSet(
+    dst: *std.DynamicBitSetUnmanaged,
+    rhs: *const std.DynamicBitSetUnmanaged,
+    masks_len: usize,
+) void {
+    for (0..masks_len) |i| {
+        dst.masks[i] &= ~rhs.masks[i];
+    }
+}
+
+fn copyBitSetIfChanged(
+    dst: *std.DynamicBitSetUnmanaged,
+    src: *const std.DynamicBitSetUnmanaged,
+    masks_len: usize,
+) bool {
+    if (dst.eql(src.*)) return false;
+    @memcpy(dst.masks[0..masks_len], src.masks[0..masks_len]);
+    return true;
+}
+
 /// Compute liveness information using control flow graph aware dataflow analysis.
 ///
 /// This performs a backward dataflow analysis on the CFG:
@@ -337,137 +390,167 @@ pub fn computeLivenessWithCFGInto(
     info.clearRetainingCapacity();
     const allocator = info.allocator;
 
-    var block_live_in = try allocator.alloc(std.AutoHashMap(u32, void), blocks.len);
-    defer {
-        for (block_live_in) |*set| {
-            set.deinit();
-        }
-        allocator.free(block_live_in);
-    }
-
-    var block_live_out = try allocator.alloc(std.AutoHashMap(u32, void), blocks.len);
-    defer {
-        for (block_live_out) |*set| {
-            set.deinit();
-        }
-        allocator.free(block_live_out);
-    }
-
     const has_get_operands = comptime @hasDecl(Inst, "getOperands");
     var operand_collector = StackOperandCollector{};
 
-    for (0..blocks.len) |block_idx| {
-        block_live_in[block_idx] = std.AutoHashMap(u32, void).init(allocator);
-        block_live_out[block_idx] = std.AutoHashMap(u32, void).init(allocator);
+    var vreg_count: usize = 0;
+    for (block_insns) |insns_opt| {
+        const insns = insns_opt orelse continue;
+        for (insns) |inst| {
+            if (comptime has_get_operands) {
+                operand_collector.reset();
+                try inst.getOperands(&operand_collector);
+
+                for (operand_collector.uses()) |use| {
+                    const vreg = use.toVReg() orelse continue;
+                    vreg_count = @max(vreg_count, @as(usize, vreg.index()) + 1);
+                }
+                for (operand_collector.defs()) |def| {
+                    const vreg = def.toReg().toVReg() orelse continue;
+                    vreg_count = @max(vreg_count, @as(usize, vreg.index()) + 1);
+                }
+            } else {
+                const uses = try inst.getUses(allocator);
+                defer allocator.free(uses);
+                for (uses) |use| {
+                    vreg_count = @max(vreg_count, @as(usize, use.index()) + 1);
+                }
+
+                const defs = try inst.getDefs(allocator);
+                defer allocator.free(defs);
+                for (defs) |def| {
+                    vreg_count = @max(vreg_count, @as(usize, def.index()) + 1);
+                }
+            }
+        }
     }
 
-    var new_live_out = std.AutoHashMap(u32, void).init(allocator);
-    defer new_live_out.deinit();
+    const masks_len = bitSetMaskCount(vreg_count);
 
-    var new_live_in = std.AutoHashMap(u32, void).init(allocator);
-    defer new_live_in.deinit();
+    var block_live_in = try allocBitSetArray(allocator, blocks.len, vreg_count);
+    defer freeBitSetArray(allocator, block_live_in);
 
-    const Set = std.AutoHashMap(u32, void);
+    var block_live_out = try allocBitSetArray(allocator, blocks.len, vreg_count);
+    defer freeBitSetArray(allocator, block_live_out);
 
-    const setChanged = struct {
-        fn check(old_set: *const Set, new_set: *const Set) bool {
-            if (old_set.count() != new_set.count()) return true;
-            var it = new_set.keyIterator();
-            while (it.next()) |vreg_id| {
-                if (!old_set.contains(vreg_id.*)) return true;
+    var block_uses = try allocBitSetArray(allocator, blocks.len, vreg_count);
+    defer freeBitSetArray(allocator, block_uses);
+
+    var block_defs = try allocBitSetArray(allocator, blocks.len, vreg_count);
+    defer freeBitSetArray(allocator, block_defs);
+
+    for (0..blocks.len) |block_idx| {
+        const insns = block_insns[block_idx] orelse continue;
+        for (insns) |inst| {
+            if (comptime has_get_operands) {
+                operand_collector.reset();
+                try inst.getOperands(&operand_collector);
+
+                for (operand_collector.uses()) |use| {
+                    const vreg = use.toVReg() orelse continue;
+                    const vreg_idx: usize = @intCast(vreg.index());
+                    if (!block_defs[block_idx].isSet(vreg_idx)) {
+                        block_uses[block_idx].set(vreg_idx);
+                    }
+                }
+                for (operand_collector.defs()) |def| {
+                    const vreg = def.toReg().toVReg() orelse continue;
+                    block_defs[block_idx].set(@intCast(vreg.index()));
+                }
+            } else {
+                const uses = try inst.getUses(allocator);
+                defer allocator.free(uses);
+                for (uses) |use| {
+                    const vreg_idx: usize = @intCast(use.index());
+                    if (!block_defs[block_idx].isSet(vreg_idx)) {
+                        block_uses[block_idx].set(vreg_idx);
+                    }
+                }
+
+                const defs = try inst.getDefs(allocator);
+                defer allocator.free(defs);
+                for (defs) |def| {
+                    block_defs[block_idx].set(@intCast(def.index()));
+                }
             }
-            return false;
         }
-    }.check;
+    }
 
-    var changed = true;
-    while (changed) {
-        changed = false;
+    var block_preds = try allocator.alloc(std.ArrayListUnmanaged(u32), blocks.len);
+    defer {
+        for (block_preds) |*preds| {
+            preds.deinit(allocator);
+        }
+        allocator.free(block_preds);
+    }
+    for (block_preds) |*preds| {
+        preds.* = .{};
+    }
 
-        var block_idx: i32 = @intCast(blocks.len - 1);
-        while (block_idx >= 0) : (block_idx -= 1) {
-            const idx: usize = @intCast(block_idx);
-            const block = &blocks[idx];
+    for (blocks, 0..) |block, block_idx| {
+        var succ_iter = block.successors.keyIterator();
+        while (succ_iter.next()) |succ_block| {
+            const succ_idx: usize = @intCast(succ_block.toIndex());
+            try block_preds[succ_idx].append(allocator, @intCast(block_idx));
+        }
 
-            new_live_out.clearRetainingCapacity();
+        var exc_succ_iter = block.exception_successors.keyIterator();
+        while (exc_succ_iter.next()) |succ_block| {
+            const succ_idx: usize = @intCast(succ_block.toIndex());
+            try block_preds[succ_idx].append(allocator, @intCast(block_idx));
+        }
+    }
 
-            var succ_iter = block.successors.keyIterator();
-            while (succ_iter.next()) |succ_block| {
-                const succ_id = succ_block.toIndex();
-                const succ_live_in = &block_live_in[succ_id];
-                var vreg_iter = succ_live_in.keyIterator();
-                while (vreg_iter.next()) |vreg_id| {
-                    try new_live_out.put(vreg_id.*, {});
-                }
-            }
+    var worklist = std.ArrayListUnmanaged(u32){};
+    defer worklist.deinit(allocator);
+    try worklist.ensureTotalCapacity(allocator, blocks.len);
+    var queued = try allocator.alloc(bool, blocks.len);
+    defer allocator.free(queued);
+    @memset(queued, true);
 
-            var exc_succ_iter = block.exception_successors.keyIterator();
-            while (exc_succ_iter.next()) |exc_succ_block| {
-                const exc_succ_id = exc_succ_block.toIndex();
-                const exc_succ_live_in = &block_live_in[exc_succ_id];
-                var vreg_iter = exc_succ_live_in.keyIterator();
-                while (vreg_iter.next()) |vreg_id| {
-                    try new_live_out.put(vreg_id.*, {});
-                }
-            }
+    var idx_rev = blocks.len;
+    while (idx_rev > 0) {
+        idx_rev -= 1;
+        worklist.appendAssumeCapacity(@intCast(idx_rev));
+    }
 
-            const old_live_out = &block_live_out[idx];
-            changed = changed or setChanged(old_live_out, &new_live_out);
-            old_live_out.clearRetainingCapacity();
-            var out_iter = new_live_out.keyIterator();
-            while (out_iter.next()) |vreg_id| {
-                try old_live_out.put(vreg_id.*, {});
-            }
+    var tmp_live_out = try std.DynamicBitSetUnmanaged.initEmpty(allocator, vreg_count);
+    defer tmp_live_out.deinit(allocator);
+    var tmp_live_in = try std.DynamicBitSetUnmanaged.initEmpty(allocator, vreg_count);
+    defer tmp_live_in.deinit(allocator);
 
-            const insns = block_insns[idx] orelse continue;
+    while (worklist.pop()) |block_idx_u32| {
+        const block_idx: usize = @intCast(block_idx_u32);
+        queued[block_idx] = false;
+        const block = &blocks[block_idx];
 
-            new_live_in.clearRetainingCapacity();
-            var lo_iter = old_live_out.keyIterator();
-            while (lo_iter.next()) |vreg_id| {
-                try new_live_in.put(vreg_id.*, {});
-            }
+        tmp_live_out.unsetAll();
+        var succ_iter = block.successors.keyIterator();
+        while (succ_iter.next()) |succ_block| {
+            const succ_idx: usize = @intCast(succ_block.toIndex());
+            tmp_live_out.setUnion(block_live_in[succ_idx]);
+        }
+        var exc_succ_iter = block.exception_successors.keyIterator();
+        while (exc_succ_iter.next()) |succ_block| {
+            const succ_idx: usize = @intCast(succ_block.toIndex());
+            tmp_live_out.setUnion(block_live_in[succ_idx]);
+        }
 
-            var inst_idx: i32 = @intCast(insns.len - 1);
-            while (inst_idx >= 0) : (inst_idx -= 1) {
-                const inst = insns[@intCast(inst_idx)];
+        tmp_live_in.unsetAll();
+        @memcpy(tmp_live_in.masks[0..masks_len], tmp_live_out.masks[0..masks_len]);
+        subtractBitSet(&tmp_live_in, &block_defs[block_idx], masks_len);
+        tmp_live_in.setUnion(block_uses[block_idx]);
 
-                if (comptime has_get_operands) {
-                    operand_collector.reset();
-                    try inst.getOperands(&operand_collector);
+        var changed = false;
+        changed = copyBitSetIfChanged(&block_live_out[block_idx], &tmp_live_out, masks_len) or changed;
+        changed = copyBitSetIfChanged(&block_live_in[block_idx], &tmp_live_in, masks_len) or changed;
+        if (!changed) continue;
 
-                    for (operand_collector.defs()) |def| {
-                        if (def.toReg().toVReg()) |vreg| {
-                            _ = new_live_in.remove(vreg.index());
-                        }
-                    }
-
-                    for (operand_collector.uses()) |use| {
-                        if (use.toVReg()) |vreg| {
-                            try new_live_in.put(vreg.index(), {});
-                        }
-                    }
-                } else {
-                    const defs = try inst.getDefs(allocator);
-                    defer allocator.free(defs);
-                    for (defs) |def| {
-                        _ = new_live_in.remove(def.index());
-                    }
-
-                    const uses = try inst.getUses(allocator);
-                    defer allocator.free(uses);
-                    for (uses) |use| {
-                        try new_live_in.put(use.index(), {});
-                    }
-                }
-            }
-
-            const old_live_in = &block_live_in[idx];
-            changed = changed or setChanged(old_live_in, &new_live_in);
-            old_live_in.clearRetainingCapacity();
-            var in_iter = new_live_in.keyIterator();
-            while (in_iter.next()) |vreg_id| {
-                try old_live_in.put(vreg_id.*, {});
-            }
+        for (block_preds[block_idx].items) |pred_idx_u32| {
+            const pred_idx: usize = @intCast(pred_idx_u32);
+            if (queued[pred_idx]) continue;
+            try worklist.append(allocator, pred_idx_u32);
+            queued[pred_idx] = true;
         }
     }
 
@@ -577,17 +660,17 @@ pub fn computeLivenessWithCFGInto(
         const end_inst = start_inst + @as(u32, @intCast(insns.len)) - 1;
 
         const live_in = &block_live_in[block_idx];
-        var in_iter = live_in.keyIterator();
-        while (in_iter.next()) |vreg_id| {
-            const entry = vreg_ranges.getPtr(vreg_id.*) orelse continue;
+        var in_iter = live_in.iterator(.{});
+        while (in_iter.next()) |vreg_idx| {
+            const entry = vreg_ranges.getPtr(@intCast(vreg_idx)) orelse continue;
             entry.start = @min(entry.start, start_inst);
             entry.end = @max(entry.end, end_inst);
         }
 
         const live_out = &block_live_out[block_idx];
-        var out_iter = live_out.keyIterator();
-        while (out_iter.next()) |vreg_id| {
-            const entry = vreg_ranges.getPtr(vreg_id.*) orelse continue;
+        var out_iter = live_out.iterator(.{});
+        while (out_iter.next()) |vreg_idx| {
+            const entry = vreg_ranges.getPtr(@intCast(vreg_idx)) orelse continue;
             entry.start = @min(entry.start, start_inst);
             entry.end = @max(entry.end, end_inst);
         }

@@ -1,9 +1,11 @@
 ---
 title: Out-stack lazy compute
-status: open
+status: closed
 priority: 2
 issue-type: task
-created-at: "2026-02-21T19:21:15.550605+01:00"
+created-at: "\"\\\"2026-02-21T19:21:15.550605+01:00\\\"\""
+closed-at: "2026-02-21T19:39:46.048272+01:00"
+close-reason: "discarded: repeat-9 gate regressions vs parent"
 blocks:
   - hoist-lower-call-tmp-f0e53136
 ---

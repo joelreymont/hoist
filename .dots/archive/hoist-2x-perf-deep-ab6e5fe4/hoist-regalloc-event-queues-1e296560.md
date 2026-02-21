@@ -1,9 +1,11 @@
 ---
 title: Regalloc event queues
-status: open
+status: closed
 priority: 1
 issue-type: task
-created-at: "2026-02-21T19:21:15.591804+01:00"
+created-at: "\"\\\"2026-02-21T19:21:15.591804+01:00\\\"\""
+closed-at: "2026-02-21T20:00:53.697034+01:00"
+close-reason: "discarded: no >=5% retained wins in repeat-9 gate"
 blocks:
   - hoist-emit-stream-peephole-e8171af2
 ---

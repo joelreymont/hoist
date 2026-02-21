@@ -187,17 +187,17 @@ Unify all parity/gap plans into one executable document where every actionable t
 - Enforce 3x target: `zig build bench-gate -Dbench-repeat=5 -Dbench-budget-reference-path=/tmp/hoist-baseline.log -Dbench-budget-multiplier=3 --global-cache-dir .zig-global-cache`
 
 ### 2x Deep Review Execution (Active)
-- [ ] 2x perf deep loop (`dot:hoist-2x-perf-deep-ab6e5fe4`)
+- [x] 2x perf deep loop (cycle complete: 1 retained, remaining dots discarded by gate) (`dot:hoist-2x-perf-deep-ab6e5fe4`)
 - [x] Add +5 win gate (`dot:hoist-add-5-win-14f6c973`)
 - [x] Wire loop build flags (`dot:hoist-wire-loop-build-220461e9`)
 - [x] Document loop in PLAN (`dot:hoist-doc-loop-in-5f24d96f`)
 - [x] Lower call tmp-vcode 1 (discarded: no >=5% retained win) (`dot:hoist-lower-call-tmp-a4ddff2d`)
 - [x] Lower call tmp-vcode 2 (discarded: no >=5% retained win) (`dot:hoist-lower-call-tmp-f0e53136`)
-- [ ] Out-stack lazy compute (`dot:hoist-out-stack-lazy-92cf6490`)
-- [ ] CFG liveness bitset 1 (`dot:hoist-cfg-liveness-bitset-8560996b`)
-- [ ] CFG liveness bitset 2 (`dot:hoist-cfg-liveness-bitset-d3a88f13`)
-- [ ] Emit stream peephole (`dot:hoist-emit-stream-peephole-e8171af2`)
-- [ ] Regalloc event queues (`dot:hoist-regalloc-event-queues-1e296560`)
+- [x] Out-stack lazy compute (discarded: repeat-9 gate regressions) (`dot:hoist-out-stack-lazy-92cf6490`)
+- [x] CFG liveness bitset 1 (retained: repeat-9 gate pass) (`dot:hoist-cfg-liveness-bitset-8560996b`)
+- [x] CFG liveness bitset 2 (discarded: repeat-9 regressions) (`dot:hoist-cfg-liveness-bitset-d3a88f13`)
+- [x] Emit stream peephole (discarded: repeat-9 regressions) (`dot:hoist-emit-stream-peephole-e8171af2`)
+- [x] Regalloc event queues (discarded: no >=5% retained wins) (`dot:hoist-regalloc-event-queues-1e296560`)
 
 #### Self-Improvement Loop (Required)
 1. Pick next ready dot: `dot ready` then `dot on <id>`.

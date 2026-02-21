@@ -36,6 +36,7 @@
 - Reserving `new_insns` capacity up front in `insertSpillScratch` improved repeat-9 parent-vs-candidate `large(100)` compile median by +8.87% with zero gate regressions.
 - Skipping coalesce-pair collection on no-opt AArch64 path (`target.optimize=false`) delivered sustained repeat-9 rerun gains: fib +17.39%, large(100) +15.49%, large(500) +6.14%, large(5000) +9.75%, mixed +9.52%, serial batch +13.06%, parallel batch +29.46%, with zero gate regressions.
 - Skipping AArch64 peephole loops when `target.optimize=false` produced stable repeat-9 compile wins on large functions: large(100) +12.00%, large(500) +7.07%, with zero gate regressions.
+- Replacing CFG live-in/live-out `AutoHashMap` sets with dense `DynamicBitSet` sets plus predecessor-driven worklist propagation improved repeat-9 parent-vs-candidate medians: large(100) +7.44%, vector +6.67%, with zero gate regressions.
 
 ## Did Not Work Well
 - VCode clear-retain reuse path caused repeatable regressions and was discarded.
@@ -99,6 +100,10 @@
 - Gating/disabling no-opt rematerialization in spill rewrite showed mixed gains (`large(5000)` +8.97% in one run) but failed repeat-9 gate on key metrics (`large(100)` +8.11%, rerun `aarch64 memory` +12.50%); discarded.
 - Skipping hint/coalesce hash lookups when maps are empty in linear scan produced a micro-only gain (`aarch64 mixed` +5.26%) but regressed large-function medians (`large(100)` +4.31%, `large(500)` +3.04%, `large(1000)` +1.66%); discarded.
 - Reusing a single temporary call-lowering VCode/LowerCtx across `call`/`call_indirect`/`try_call*` removed per-call allocator churn but failed retained-win gate (best `large(5000)` +3.46%, no metric reached +5% threshold); discarded.
+- Lazily precomputing AArch64 `out_stack_max` only when stack slots exist (with dynamic `setOutStackMax` updates in call lowering) regressed key large benchmarks in repeat-9 parent-vs-candidate A/B (`large(100)` +11.30%, `large(500)` +10.61%, `large(1000)` +22.67%, `large(5000)` +7.11%); discarded.
+- Replacing CFG range synthesis `AutoHashMap` with dense `vreg_seen`/array accumulators regressed large-function medians in repeat-9 A/B vs the retained CFG-bitset baseline (`large(100)` +16.96%, `large(500)` +20.16%, `large(1000)` +17.23%, `large(5000)` +34.90%); discarded.
+- Reworking emit-time peephole to a single-pass reusable-block-buffer path regressed the retained baseline in repeat-9 A/B (`large(5000)` +5.04%) and produced no qualifying >=5% wins; discarded.
+- Class-partitioned active-interval queues in linear scan removed cross-class scans and spill `orderedRemove` costs but produced only sub-threshold gains in repeat-9 A/B (best `aarch64 int` +6.67%, `aarch64 mixed` +5.56%; no qualifying >=5% gain with >=2us absolute delta); discarded.
 
 ## Process Lessons
 - Always benchmark with repeated runs and medians (`bench-repeat=5`) before keeping an optimization.
