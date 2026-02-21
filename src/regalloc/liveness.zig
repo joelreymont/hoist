@@ -676,18 +676,31 @@ pub fn computeLivenessWithCFGInto(
         }
     }
 
-    // Convert to LiveRange objects
+    // Convert to LiveRange objects, then sort once here so linear-scan can
+    // reuse already-sorted ranges without re-sorting per allocation pass.
+    try info.ranges.ensureTotalCapacity(allocator, vreg_ranges.count());
     var iter = vreg_ranges.iterator();
     while (iter.next()) |entry| {
         const vreg_id = entry.key_ptr.*;
         const range_info = entry.value_ptr.*;
-        try info.addRange(.{
+        try info.ranges.append(allocator, .{
             .vreg = machinst.VReg.new(vreg_id, range_info.class),
             .start_inst = range_info.start,
             .end_inst = range_info.end,
             .reg_class = range_info.class,
         });
     }
+
+    std.mem.sort(LiveRange, info.ranges.items, {}, struct {
+        fn lessThan(_: void, a: LiveRange, b: LiveRange) bool {
+            return a.start_inst < b.start_inst;
+        }
+    }.lessThan);
+
+    for (info.ranges.items, 0..) |range, idx| {
+        try info.setRangeIndex(range.vreg.index(), @intCast(idx));
+    }
+    info.ranges_sorted_by_start = true;
 }
 
 test "LiveRange.overlaps" {

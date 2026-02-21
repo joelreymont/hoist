@@ -37,6 +37,7 @@
 - Skipping coalesce-pair collection on no-opt AArch64 path (`target.optimize=false`) delivered sustained repeat-9 rerun gains: fib +17.39%, large(100) +15.49%, large(500) +6.14%, large(5000) +9.75%, mixed +9.52%, serial batch +13.06%, parallel batch +29.46%, with zero gate regressions.
 - Skipping AArch64 peephole loops when `target.optimize=false` produced stable repeat-9 compile wins on large functions: large(100) +12.00%, large(500) +7.07%, with zero gate regressions.
 - Replacing CFG live-in/live-out `AutoHashMap` sets with dense `DynamicBitSet` sets plus predecessor-driven worklist propagation improved repeat-9 parent-vs-candidate medians: large(100) +7.44%, vector +6.67%, with zero gate regressions.
+- Folding single-use `iconst` into `iadd` immediates in AArch64 lowering, gated to single-block functions with >=1000 IR instructions, improved same-session repeat-9 old-vs-new medians: large(500) +40.63%, large(1000) +38.98%, large(5000) +34.40%, int +6.67%, memory +11.11%, with zero gate regressions.
 
 ## Did Not Work Well
 - VCode clear-retain reuse path caused repeatable regressions and was discarded.
@@ -104,6 +105,7 @@
 - Replacing CFG range synthesis `AutoHashMap` with dense `vreg_seen`/array accumulators regressed large-function medians in repeat-9 A/B vs the retained CFG-bitset baseline (`large(100)` +16.96%, `large(500)` +20.16%, `large(1000)` +17.23%, `large(5000)` +34.90%); discarded.
 - Reworking emit-time peephole to a single-pass reusable-block-buffer path regressed the retained baseline in repeat-9 A/B (`large(5000)` +5.04%) and produced no qualifying >=5% wins; discarded.
 - Class-partitioned active-interval queues in linear scan removed cross-class scans and spill `orderedRemove` costs but produced only sub-threshold gains in repeat-9 A/B (best `aarch64 int` +6.67%, `aarch64 mixed` +5.56%; no qualifying >=5% gain with >=2us absolute delta); discarded.
+- Early variants of single-use `iconst`→`iadd` folding with broader enablement thresholds introduced regressions on `large(100)` and small suites; restricting to single-block functions with >=1000 IR instructions removed those regressions.
 
 ## Process Lessons
 - Always benchmark with repeated runs and medians (`bench-repeat=5`) before keeping an optimization.

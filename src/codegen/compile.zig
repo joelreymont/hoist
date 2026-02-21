@@ -1629,6 +1629,99 @@ fn computeOutStackMaxAArch64(ctx: *Context) CodegenError!u32 {
     return max_stack;
 }
 
+fn computeFoldableIaddIconsts(ctx: *Context) CodegenError![]?i64 {
+    const value_len = ctx.func.dfg.values.elems.items.len;
+    const folded_iconsts = try ctx.allocator.alloc(?i64, value_len);
+    @memset(folded_iconsts, null);
+
+    if (value_len == 0) return folded_iconsts;
+
+    const use_counts = try ctx.allocator.alloc(u32, value_len);
+    defer ctx.allocator.free(use_counts);
+    @memset(use_counts, 0);
+
+    const single_use_inst = try ctx.allocator.alloc(?ir.Inst, value_len);
+    defer ctx.allocator.free(single_use_inst);
+    @memset(single_use_inst, null);
+
+    var block_iter_uses = ctx.func.layout.blockIter();
+    while (block_iter_uses.next()) |block| {
+        var inst_iter = ctx.func.layout.blockInsts(block);
+        while (inst_iter.next()) |inst| {
+            const inst_data = ctx.func.dfg.insts.get(inst) orelse continue;
+            const UseCtx = struct {
+                use_counts: []u32,
+                single_use_inst: []?ir.Inst,
+                user_inst: ir.Inst,
+
+                fn visit(use_ctx: *@This(), val: *const ir.Value) !void {
+                    const value_idx: usize = @intCast(val.index);
+                    if (value_idx >= use_ctx.use_counts.len) return;
+                    const prev = use_ctx.use_counts[value_idx];
+                    if (prev == 0) {
+                        use_ctx.single_use_inst[value_idx] = use_ctx.user_inst;
+                    } else {
+                        use_ctx.single_use_inst[value_idx] = null;
+                    }
+                    use_ctx.use_counts[value_idx] = prev + 1;
+                }
+            };
+
+            var use_ctx = UseCtx{
+                .use_counts = use_counts,
+                .single_use_inst = single_use_inst,
+                .user_inst = inst,
+            };
+            try inst_data.*.forEachValue(&ctx.func.dfg.value_lists, &use_ctx, UseCtx.visit);
+        }
+    }
+
+    var block_iter_defs = ctx.func.layout.blockIter();
+    while (block_iter_defs.next()) |block| {
+        var inst_iter = ctx.func.layout.blockInsts(block);
+        while (inst_iter.next()) |inst| {
+            const inst_data = ctx.func.dfg.insts.get(inst) orelse continue;
+            if (inst_data.* != .unary_imm) continue;
+            const unary_imm = inst_data.unary_imm;
+            if (unary_imm.opcode != .iconst) continue;
+
+            const iconst_value = ctx.func.dfg.firstResult(inst) orelse continue;
+            const value_idx: usize = @intCast(iconst_value.index);
+            if (value_idx >= value_len) continue;
+            if (use_counts[value_idx] != 1) continue;
+
+            const user_inst = single_use_inst[value_idx] orelse continue;
+            const user_data = ctx.func.dfg.insts.get(user_inst) orelse continue;
+            if (user_data.* != .binary) continue;
+            const binary = user_data.binary;
+            if (binary.opcode != .iadd) continue;
+
+            const iconst_is_arg0 = std.meta.eql(binary.args[0], iconst_value);
+            const iconst_is_arg1 = std.meta.eql(binary.args[1], iconst_value);
+            if (!iconst_is_arg0 and !iconst_is_arg1) continue;
+
+            const other_arg = if (iconst_is_arg0) binary.args[1] else binary.args[0];
+            // Skip iadd of two constants; this path only folds one constant operand.
+            if (iconstImmediateValue(ctx.func, other_arg) != null) continue;
+
+            const user_result = ctx.func.dfg.firstResult(user_inst) orelse continue;
+            const user_type = ctx.func.dfg.valueType(user_result) orelse continue;
+            if (user_type.isVector()) continue;
+            if (!(user_type.isInt() or user_type.isRef())) continue;
+
+            const imm = unary_imm.imm.value;
+            const imm128: i128 = imm;
+            if (imm128 >= 0 and imm128 <= 4095) {
+                folded_iconsts[value_idx] = imm;
+            } else if (imm128 < 0 and -imm128 <= 4095) {
+                folded_iconsts[value_idx] = imm;
+            }
+        }
+    }
+
+    return folded_iconsts;
+}
+
 /// Lower IR to AArch64 VCode.
 fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
     const Inst = @import("../backends/aarch64/inst.zig").Inst;
@@ -1642,6 +1735,15 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
     const out_stack_max = try computeOutStackMaxAArch64(ctx);
     builder.vcode.out_stack_max = out_stack_max;
     var next_tmp_vreg: u32 = @intCast(reg_mod.Reg.PINNED_VREGS + ctx.func.dfg.values.elems.items.len);
+    const fold_iadd_iconst_min_insts: usize = 1000;
+    var folded_iadd_iconsts: []?i64 = &[_]?i64{};
+    var owned_folded_iadd_iconsts: ?[]?i64 = null;
+    defer if (owned_folded_iadd_iconsts) |items| ctx.allocator.free(items);
+    if (ctx.func.dfg.liveInstCount() >= fold_iadd_iconst_min_insts and isSingleBlockLayout(ctx.func)) {
+        const items = try computeFoldableIaddIconsts(ctx);
+        owned_folded_iadd_iconsts = items;
+        folded_iadd_iconsts = items;
+    }
 
     // Track vreg origins for rematerialization
     var vreg_origins = std.AutoHashMap(reg_mod.VReg, VRegOrigin).init(ctx.allocator);
@@ -1902,6 +2004,7 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
                 .vreg_origins = &vreg_origins,
                 .out_stack_max = out_stack_max,
                 .next_tmp_vreg = &next_tmp_vreg,
+                .folded_iadd_iconsts = folded_iadd_iconsts,
             }, inst, target);
 
             // try_call and try_call_indirect are terminators: emit the normal-edge branch.
@@ -2565,6 +2668,7 @@ fn lowerInstructionAArch64(
     vreg_origins: *std.AutoHashMap(reg_mod.VReg, VRegOrigin),
     out_stack_max: u32,
     next_tmp_vreg: *u32,
+    folded_iadd_iconsts: []const ?i64,
 ) CodegenError!void {
     const InstMod = @import("../backends/aarch64/inst.zig");
     const Inst = InstMod.Inst;
@@ -2588,6 +2692,12 @@ fn lowerInstructionAArch64(
             const value_type = ctx.func.dfg.valueType(result_value) orelse return error.LoweringFailed;
 
             if (data.opcode == .iconst) {
+                const value_idx: usize = @intCast(result_value.index);
+                if (value_idx < folded_iadd_iconsts.len and folded_iadd_iconsts[value_idx] != null) {
+                    // Folded into single-use iadd immediate; no vreg materialization needed.
+                    return;
+                }
+
                 // Integer constant - use MOVZ/MOVN/MOVK for full immediate construction
                 const vreg = VReg.new(@intCast(result_value.index + Reg.PINNED_VREGS), RegClass.int);
                 const writable = WritableReg.fromVReg(vreg);
@@ -2767,15 +2877,64 @@ fn lowerInstructionAArch64(
                     else
                         .size32;
 
-                    // Emit ADD instruction
-                    try builder.emit(Inst{
-                        .add_rr = .{
-                            .dst = dst,
-                            .src1 = src1,
-                            .src2 = src2,
-                            .size = size,
-                        },
-                    });
+                    const arg0_idx: usize = @intCast(data.args[0].index);
+                    const arg1_idx: usize = @intCast(data.args[1].index);
+                    const arg0_imm = if (arg0_idx < folded_iadd_iconsts.len) folded_iadd_iconsts[arg0_idx] else null;
+                    const arg1_imm = if (arg1_idx < folded_iadd_iconsts.len) folded_iadd_iconsts[arg1_idx] else null;
+
+                    if (arg1_imm != null and arg0_imm == null) {
+                        const imm = arg1_imm.?;
+                        if (imm >= 0) {
+                            try builder.emit(Inst{
+                                .add_imm = .{
+                                    .dst = dst,
+                                    .src = src1,
+                                    .imm = @intCast(imm),
+                                    .size = size,
+                                },
+                            });
+                        } else {
+                            try builder.emit(Inst{
+                                .sub_imm = .{
+                                    .dst = dst,
+                                    .src = src1,
+                                    .imm = @intCast(-imm),
+                                    .size = size,
+                                },
+                            });
+                        }
+                    } else if (arg0_imm != null and arg1_imm == null) {
+                        const imm = arg0_imm.?;
+                        if (imm >= 0) {
+                            try builder.emit(Inst{
+                                .add_imm = .{
+                                    .dst = dst,
+                                    .src = src2,
+                                    .imm = @intCast(imm),
+                                    .size = size,
+                                },
+                            });
+                        } else {
+                            try builder.emit(Inst{
+                                .sub_imm = .{
+                                    .dst = dst,
+                                    .src = src2,
+                                    .imm = @intCast(-imm),
+                                    .size = size,
+                                },
+                            });
+                        }
+                    } else {
+                        // Emit ADD instruction
+                        try builder.emit(Inst{
+                            .add_rr = .{
+                                .dst = dst,
+                                .src1 = src1,
+                                .src2 = src2,
+                                .size = size,
+                            },
+                        });
+                    }
 
                 }
             } else if (data.opcode == .isub) {
@@ -6512,6 +6671,7 @@ fn lowerInstruction(lower_ctx: anytype, inst: ir.Inst, target: *const Target) Co
             lower_ctx.vreg_origins,
             lower_ctx.out_stack_max,
             lower_ctx.next_tmp_vreg,
+            lower_ctx.folded_iadd_iconsts,
         ),
         else => return error.UnsupportedTarget,
     }

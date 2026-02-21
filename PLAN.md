@@ -214,6 +214,36 @@ Unify all parity/gap plans into one executable document where every actionable t
    - If gate passes: keep code, run `zig build test -j1 --global-cache-dir .zig-global-cache`, close dot completed, update `LESSONS.md`.
 6. Commit/push after each significant kept or discarded dot and start next dot.
 
+### 2x Performance Loop v2 (Active)
+- [ ] 2x perf loop v2 (`dot:hoist-2x-perf-loop-17ccae93`)
+- [x] 2x baseline snapshot (`dot:hoist-2x-baseline-snapshot-7bfad64b`)
+- [x] liveness cfg sorted ranges (`dot:hoist-liveness-cfg-sorted-0a1621c4`)
+- [x] linear scan first-free fast (discarded: gate regressions) (`dot:hoist-linear-scan-first-263de8c9`)
+- [x] lower single-block maps fast (discarded: no retained >=5% wins) (`dot:hoist-lower-single-block-8d6b2cab`)
+- [x] emit single-block label fast (discarded: gate regressions) (`dot:hoist-emit-single-block-658865a8`)
+- [x] single-block liveness monotonic end update (discarded: no retained >=5% wins) (`dot:hoist-single-block-liveness-7294c693`)
+- [x] drop lower computeValueUses call (discarded: old-vs-new regressions) (`dot:hoist-drop-lower-computevalueuses-666e3a2f`)
+- [x] hybrid rewrite fast path per instruction (discarded: gate regressions) (`dot:hoist-hybrid-rewrite-fast-0caef16a`)
+- [x] gate aarch64 emit peephole by optimize flag (discarded: no retained >=5% wins) (`dot:hoist-gate-aarch64-emit-463d3885`)
+- [x] fold single-use iconst into iadd immediate (retained) (`dot:hoist-fold-single-use-e8793a96`)
+- [ ] regalloc 2x loop bookkeeping (`dot:hoist-regalloc-2x-loop-c637c918`)
+
+#### 2x Loop Contract
+1. Capture loop baseline once: `zig build baseline-log -Dbench-repeat=9 -Dbench-baseline-path=/tmp/hoist-2x-loop-base-r9.log --global-cache-dir .zig-global-cache`.
+2. For each dot candidate:
+   - `dot on <id>`
+   - implement
+   - `zig build test -j1 --global-cache-dir .zig-global-cache`
+   - `zig build bench-log -Dbench-repeat=9 -Dbench-current-path=/tmp/hoist-2x-loop-cand-r9.log --global-cache-dir .zig-global-cache`
+   - `zig build bench-compare -Dbench-baseline-path=/tmp/hoist-2x-loop-base-r9.log -Dbench-current-path=/tmp/hoist-2x-loop-cand-r9.log -Dbench-report-path=/tmp/hoist-2x-loop-report-r9.md -Dbench-report-json-path=/tmp/hoist-2x-loop-report-r9.json -Dbench-min-positive-pct=5 -Dbench-min-positive-count=1 --global-cache-dir .zig-global-cache`
+3. Enforce 2x target each iteration:
+   - `zig build bench-compare -Dbench-baseline-path=/tmp/hoist-2x-loop-base-r9.log -Dbench-current-path=/tmp/hoist-2x-loop-cand-r9.log -Dbench-report-path=/tmp/hoist-2x-loop-budget-r9.md -Dbench-report-json-path=/tmp/hoist-2x-loop-budget-r9.json -Dbench-budget-reference-path=/tmp/hoist-2x-loop-base-r9.log -Dbench-budget-multiplier=2 -Dbench-min-positive-pct=5 -Dbench-min-positive-count=1 --global-cache-dir .zig-global-cache`
+4. Keep/discard:
+   - If no regressions and >=5% retained wins: keep and update loop baseline to candidate.
+   - If regressions or insufficient gains: discard candidate.
+5. Stop condition:
+   - Stop only when 2x budget check passes for all budgeted metrics.
+
 ## Source-ID Reconciliation
 - Full cross-source ID inventory: `/Users/joel/Work/hoist/docs/plan_dot_inventory.md`
 - Inventory result on this merge:
