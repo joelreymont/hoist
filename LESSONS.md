@@ -98,6 +98,7 @@
 - Dense rewrite-time alloc lookup tables for `RegMapper` produced only sub-threshold gains in repeat-9 A/B (best `large(5000)` +4.98%) and no >=5% retained wins; discarded.
 - Gating/disabling no-opt rematerialization in spill rewrite showed mixed gains (`large(5000)` +8.97% in one run) but failed repeat-9 gate on key metrics (`large(100)` +8.11%, rerun `aarch64 memory` +12.50%); discarded.
 - Skipping hint/coalesce hash lookups when maps are empty in linear scan produced a micro-only gain (`aarch64 mixed` +5.26%) but regressed large-function medians (`large(100)` +4.31%, `large(500)` +3.04%, `large(1000)` +1.66%); discarded.
+- Reusing a single temporary call-lowering VCode/LowerCtx across `call`/`call_indirect`/`try_call*` removed per-call allocator churn but failed retained-win gate (best `large(5000)` +3.46%, no metric reached +5% threshold); discarded.
 
 ## Process Lessons
 - Always benchmark with repeated runs and medians (`bench-repeat=5`) before keeping an optimization.
@@ -107,3 +108,4 @@
 - Keep a compare-only gate path (`zig build bench-compare`) so same-tree A/B can compare fixed logs without rerunning benchmarks and overwriting inputs.
 - For same-tree A/B against parent revisions, capture baseline in a separate `jj` workspace and compare fixed log files to avoid stale baseline noise.
 - Parent-baseline logs go stale under thermal/load drift; verify gate stability with a no-change control run and refresh baselines in-session before evaluating candidate dots.
+- Enforce retained-win quality with a positive-gain gate (`--min-positive-pct`, `--min-positive-count`) so dots with `<5%` qualifying wins are automatically rejected.

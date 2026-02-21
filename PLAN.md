@@ -186,6 +186,34 @@ Unify all parity/gap plans into one executable document where every actionable t
 - Enforce 2x target: `zig build bench-gate -Dbench-repeat=5 -Dbench-budget-reference-path=/tmp/hoist-baseline.log -Dbench-budget-multiplier=2 --global-cache-dir .zig-global-cache`
 - Enforce 3x target: `zig build bench-gate -Dbench-repeat=5 -Dbench-budget-reference-path=/tmp/hoist-baseline.log -Dbench-budget-multiplier=3 --global-cache-dir .zig-global-cache`
 
+### 2x Deep Review Execution (Active)
+- [ ] 2x perf deep loop (`dot:hoist-2x-perf-deep-ab6e5fe4`)
+- [x] Add +5 win gate (`dot:hoist-add-5-win-14f6c973`)
+- [x] Wire loop build flags (`dot:hoist-wire-loop-build-220461e9`)
+- [x] Document loop in PLAN (`dot:hoist-doc-loop-in-5f24d96f`)
+- [x] Lower call tmp-vcode 1 (discarded: no >=5% retained win) (`dot:hoist-lower-call-tmp-a4ddff2d`)
+- [x] Lower call tmp-vcode 2 (discarded: no >=5% retained win) (`dot:hoist-lower-call-tmp-f0e53136`)
+- [ ] Out-stack lazy compute (`dot:hoist-out-stack-lazy-92cf6490`)
+- [ ] CFG liveness bitset 1 (`dot:hoist-cfg-liveness-bitset-8560996b`)
+- [ ] CFG liveness bitset 2 (`dot:hoist-cfg-liveness-bitset-d3a88f13`)
+- [ ] Emit stream peephole (`dot:hoist-emit-stream-peephole-e8171af2`)
+- [ ] Regalloc event queues (`dot:hoist-regalloc-event-queues-1e296560`)
+
+#### Self-Improvement Loop (Required)
+1. Pick next ready dot: `dot ready` then `dot on <id>`.
+2. Capture parent baseline in separate workspace:
+   - `jj workspace add /tmp/hoist-parent-<ts> -r @-`
+   - `(cd /tmp/hoist-parent-<ts> && GIT_DIR=/Users/joel/Work/hoist/.git zig build gen-isle --global-cache-dir .zig-global-cache)`
+   - `(cd /tmp/hoist-parent-<ts> && GIT_DIR=/Users/joel/Work/hoist/.git zig build baseline-log -Dbench-repeat=9 -Dbench-baseline-path=/tmp/hoist-parent-r9.log --global-cache-dir .zig-global-cache)`
+3. Capture candidate log in working copy:
+   - `zig build bench-log -Dbench-repeat=9 -Dbench-current-path=/tmp/hoist-cand-r9.log --global-cache-dir .zig-global-cache`
+4. Gate regressions and positive gain threshold:
+   - `zig build bench-compare -Dbench-baseline-path=/tmp/hoist-parent-r9.log -Dbench-current-path=/tmp/hoist-cand-r9.log -Dbench-report-path=/tmp/hoist-parent-vs-cand-r9.md -Dbench-report-json-path=/tmp/hoist-parent-vs-cand-r9.json -Dbench-min-positive-pct=5 -Dbench-min-positive-count=1 --global-cache-dir .zig-global-cache`
+5. Keep/discard rule:
+   - If gate fails for regressions or `<5%` retained positive wins: restore code and close dot as discarded.
+   - If gate passes: keep code, run `zig build test -j1 --global-cache-dir .zig-global-cache`, close dot completed, update `LESSONS.md`.
+6. Commit/push after each significant kept or discarded dot and start next dot.
+
 ## Source-ID Reconciliation
 - Full cross-source ID inventory: `/Users/joel/Work/hoist/docs/plan_dot_inventory.md`
 - Inventory result on this merge:

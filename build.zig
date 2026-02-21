@@ -92,6 +92,21 @@ pub fn build(b: *std.Build) void {
         "bench-min-regress-us",
         "Minimum absolute regression in microseconds required to fail perf gate (default: 2.0)",
     ) orelse 2.0;
+    const bench_min_positive_pct = b.option(
+        f64,
+        "bench-min-positive-pct",
+        "Minimum positive improvement percent to count as retained win (default: 0.0)",
+    ) orelse 0.0;
+    const bench_min_positive_us = b.option(
+        f64,
+        "bench-min-positive-us",
+        "Minimum absolute positive improvement (us) to count as retained win (default: 2.0)",
+    ) orelse 2.0;
+    const bench_min_positive_count = b.option(
+        usize,
+        "bench-min-positive-count",
+        "Required number of metrics meeting positive win threshold (default: 0)",
+    ) orelse 0;
     const bench_repeat = b.option(
         usize,
         "bench-repeat",
@@ -688,6 +703,12 @@ pub fn build(b: *std.Build) void {
     run_bench_gate.addArg(b.fmt("{d}", .{bench_max_regress_pct}));
     run_bench_gate.addArg("--min-regress-us");
     run_bench_gate.addArg(b.fmt("{d}", .{bench_min_regress_us}));
+    run_bench_gate.addArg("--min-positive-pct");
+    run_bench_gate.addArg(b.fmt("{d}", .{bench_min_positive_pct}));
+    run_bench_gate.addArg("--min-positive-us");
+    run_bench_gate.addArg(b.fmt("{d}", .{bench_min_positive_us}));
+    run_bench_gate.addArg("--min-positive-count");
+    run_bench_gate.addArg(b.fmt("{d}", .{bench_min_positive_count}));
     if (bench_refresh_baseline) {
         run_bench_gate.step.dependOn(&run_baseline_log.step);
     }
@@ -718,6 +739,12 @@ pub fn build(b: *std.Build) void {
     run_bench_compare.addArg(b.fmt("{d}", .{bench_max_regress_pct}));
     run_bench_compare.addArg("--min-regress-us");
     run_bench_compare.addArg(b.fmt("{d}", .{bench_min_regress_us}));
+    run_bench_compare.addArg("--min-positive-pct");
+    run_bench_compare.addArg(b.fmt("{d}", .{bench_min_positive_pct}));
+    run_bench_compare.addArg("--min-positive-us");
+    run_bench_compare.addArg(b.fmt("{d}", .{bench_min_positive_us}));
+    run_bench_compare.addArg("--min-positive-count");
+    run_bench_compare.addArg(b.fmt("{d}", .{bench_min_positive_count}));
     bench_compare_step.dependOn(&run_bench_compare.step);
 
     // Fuzzing

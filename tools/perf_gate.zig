@@ -61,6 +61,7 @@ const MetricResult = struct {
     baseline_n: usize,
     current_n: usize,
     regression: bool,
+    improvement: bool,
 };
 
 const BudgetViolation = struct {
@@ -151,6 +152,11 @@ const JsonReport = struct {
     current: []const u8,
     max_regress_pct: f64,
     min_regress_us: f64,
+    min_positive_pct: f64,
+    min_positive_us: f64,
+    min_positive_count: usize,
+    positive_wins: usize,
+    insufficient_gain: bool,
     status: []const u8,
     regressions: usize,
     metrics: [metric_ids.len]JsonMetric,
@@ -170,6 +176,11 @@ const HistoryEntry = struct {
     current: []const u8,
     max_regress_pct: f64,
     min_regress_us: f64,
+    min_positive_pct: f64,
+    min_positive_us: f64,
+    min_positive_count: usize,
+    positive_wins: usize,
+    insufficient_gain: bool,
     status: []const u8,
     regressions: usize,
     metrics: [metric_ids.len]HistoryMetric,
@@ -192,6 +203,9 @@ pub fn main() !void {
     var budget_multiplier: ?f64 = null;
     var max_regress_pct: f64 = 5.0;
     var min_regress_us: f64 = 2.0;
+    var min_positive_pct: f64 = 0.0;
+    var min_positive_us: f64 = 2.0;
+    var min_positive_count: usize = 0;
 
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
@@ -232,6 +246,18 @@ pub fn main() !void {
             if (i + 1 >= args.len) return error.InvalidArgs;
             min_regress_us = try std.fmt.parseFloat(f64, args[i + 1]);
             i += 1;
+        } else if (std.mem.eql(u8, arg, "--min-positive-pct")) {
+            if (i + 1 >= args.len) return error.InvalidArgs;
+            min_positive_pct = try std.fmt.parseFloat(f64, args[i + 1]);
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--min-positive-us")) {
+            if (i + 1 >= args.len) return error.InvalidArgs;
+            min_positive_us = try std.fmt.parseFloat(f64, args[i + 1]);
+            i += 1;
+        } else if (std.mem.eql(u8, arg, "--min-positive-count")) {
+            if (i + 1 >= args.len) return error.InvalidArgs;
+            min_positive_count = try std.fmt.parseUnsigned(usize, args[i + 1], 10);
+            i += 1;
         } else {
             std.debug.print("unknown arg: {s}\n", .{arg});
             return error.InvalidArgs;
@@ -258,6 +284,14 @@ pub fn main() !void {
     }
     if (min_regress_us < 0.0) {
         std.debug.print("--min-regress-us must be >= 0\n", .{});
+        return error.InvalidArgs;
+    }
+    if (min_positive_pct < 0.0) {
+        std.debug.print("--min-positive-pct must be >= 0\n", .{});
+        return error.InvalidArgs;
+    }
+    if (min_positive_us < 0.0) {
+        std.debug.print("--min-positive-us must be >= 0\n", .{});
         return error.InvalidArgs;
     }
 
@@ -294,13 +328,16 @@ pub fn main() !void {
 
     var results: [metric_ids.len]MetricResult = undefined;
     var regressions: usize = 0;
+    var positive_wins: usize = 0;
 
     for (metric_ids, 0..) |id, idx| {
         const b_med = try baseline.median(id);
         const c_med = try current.median(id);
         const delta_pct = deltaPercent(b_med, c_med);
         const reg = isRegression(b_med, c_med, max_regress_pct, min_regress_us);
+        const improved = isImprovement(b_med, c_med, min_positive_pct, min_positive_us);
         regressions += @intFromBool(reg);
+        positive_wins += @intFromBool(improved);
         results[idx] = .{
             .id = id,
             .baseline_median_us = b_med,
@@ -309,6 +346,7 @@ pub fn main() !void {
             .baseline_n = baseline.count(id),
             .current_n = current.count(id),
             .regression = reg,
+            .improvement = improved,
         };
     }
 
@@ -325,7 +363,8 @@ pub fn main() !void {
     }
 
     const budget_failed = budget_violations.items.len != 0;
-    const status = if (regressions == 0 and !budget_failed) "PASS" else "FAIL";
+    const insufficient_gain = positive_wins < min_positive_count;
+    const status = if (regressions == 0 and !budget_failed and !insufficient_gain) "PASS" else "FAIL";
 
     var report = std.ArrayList(u8){};
     defer report.deinit(al);
@@ -335,6 +374,9 @@ pub fn main() !void {
     try w.print("- Current: `{s}`\n", .{current_file});
     try w.print("- Max allowed regression: {d:.2}%\n", .{max_regress_pct});
     try w.print("- Min absolute regression: {d:.2}us\n", .{min_regress_us});
+    try w.print("- Min positive improvement: {d:.2}%\n", .{min_positive_pct});
+    try w.print("- Min absolute improvement: {d:.2}us\n", .{min_positive_us});
+    try w.print("- Required positive wins: {d}\n", .{min_positive_count});
     if (budget_reference_path) |budget_ref_file| {
         try w.print("- Budget reference: `{s}`\n", .{budget_ref_file});
         try w.print("- Budget multiplier: {d:.2}x\n", .{budget_multiplier.?});
@@ -382,6 +424,14 @@ pub fn main() !void {
             try report.appendSlice(al, "Budget status: **PASS** (all tracked metrics meet target)\n");
         }
     }
+    if (min_positive_count != 0) {
+        try w.print("\nPositive wins meeting threshold: {d}\n", .{positive_wins});
+        if (insufficient_gain) {
+            try w.print("Positive-gain status: **FAIL** (required {d})\n", .{min_positive_count});
+        } else {
+            try report.appendSlice(al, "Positive-gain status: **PASS**\n");
+        }
+    }
 
     try w.print("\nStatus: **{s}** ({d} regressions)\n", .{ status, regressions });
 
@@ -411,6 +461,11 @@ pub fn main() !void {
             .current = current_file,
             .max_regress_pct = max_regress_pct,
             .min_regress_us = min_regress_us,
+            .min_positive_pct = min_positive_pct,
+            .min_positive_us = min_positive_us,
+            .min_positive_count = min_positive_count,
+            .positive_wins = positive_wins,
+            .insufficient_gain = insufficient_gain,
             .status = status,
             .regressions = regressions,
             .metrics = metrics_json,
@@ -444,6 +499,11 @@ pub fn main() !void {
             .current = current_file,
             .max_regress_pct = max_regress_pct,
             .min_regress_us = min_regress_us,
+            .min_positive_pct = min_positive_pct,
+            .min_positive_us = min_positive_us,
+            .min_positive_count = min_positive_count,
+            .positive_wins = positive_wins,
+            .insufficient_gain = insufficient_gain,
             .status = status,
             .regressions = regressions,
             .metrics = metrics_history,
@@ -455,6 +515,7 @@ pub fn main() !void {
     std.debug.print("perf report written: {s}\n", .{out_path});
     if (regressions != 0) return error.PerfRegression;
     if (budget_failed) return error.PerfBudgetMiss;
+    if (insufficient_gain) return error.PerfInsufficientGain;
 }
 
 fn appendHistoryEntry(al: std.mem.Allocator, path: []const u8, entry: HistoryEntry) !void {
@@ -604,6 +665,11 @@ fn isRegression(baseline: f64, current: f64, max_regress_pct: f64, min_regress_u
         (current - baseline) > min_regress_us;
 }
 
+fn isImprovement(baseline: f64, current: f64, min_positive_pct: f64, min_positive_us: f64) bool {
+    return -deltaPercent(baseline, current) >= min_positive_pct and
+        (baseline - current) >= min_positive_us;
+}
+
 test "appendHistoryEntry appends JSON lines" {
     const testing = std.testing;
 
@@ -630,6 +696,11 @@ test "appendHistoryEntry appends JSON lines" {
         .current = "c1",
         .max_regress_pct = 5.0,
         .min_regress_us = 2.0,
+        .min_positive_pct = 5.0,
+        .min_positive_us = 2.0,
+        .min_positive_count = 1,
+        .positive_wins = 2,
+        .insufficient_gain = false,
         .status = "PASS",
         .regressions = 0,
         .metrics = metrics,
@@ -640,6 +711,11 @@ test "appendHistoryEntry appends JSON lines" {
         .current = "c2",
         .max_regress_pct = 5.0,
         .min_regress_us = 2.0,
+        .min_positive_pct = 5.0,
+        .min_positive_us = 2.0,
+        .min_positive_count = 1,
+        .positive_wins = 2,
+        .insufficient_gain = false,
         .status = "PASS",
         .regressions = 0,
         .metrics = metrics,
@@ -688,4 +764,10 @@ test "isRegression requires percent and absolute thresholds" {
     try std.testing.expect(!isRegression(100.0, 106.0, 5.0, 10.0));
     try std.testing.expect(!isRegression(100.0, 103.0, 5.0, 2.0));
     try std.testing.expect(isRegression(100.0, 111.0, 5.0, 2.0));
+}
+
+test "isImprovement requires percent and absolute thresholds" {
+    try std.testing.expect(!isImprovement(100.0, 96.0, 5.0, 2.0));
+    try std.testing.expect(!isImprovement(100.0, 94.0, 5.0, 10.0));
+    try std.testing.expect(isImprovement(100.0, 94.0, 5.0, 2.0));
 }
