@@ -11,6 +11,33 @@ const Verifier = @import("ir/verifier.zig").Verifier;
 const Features = @import("target/features.zig").Features;
 const FeatureDetector = @import("target/features.zig").FeatureDetector;
 
+fn envUnsignedOrDefault(
+    comptime T: type,
+    allocator: Allocator,
+    name: []const u8,
+    default_value: T,
+) T {
+    const value = std.process.getEnvVarOwned(allocator, name) catch |err| {
+        return switch (err) {
+            error.EnvironmentVariableNotFound => default_value,
+            error.OutOfMemory => blk: {
+                std.log.warn("failed reading {s}: out of memory", .{name});
+                break :blk default_value;
+            },
+            error.InvalidWtf8 => blk: {
+                std.log.warn("failed reading {s}: invalid UTF-8", .{name});
+                break :blk default_value;
+            },
+        };
+    };
+    defer allocator.free(value);
+    if (value.len == 0) return default_value;
+    return std.fmt.parseUnsigned(T, value, 10) catch {
+        std.log.warn("invalid {s} value: {s}", .{ name, value });
+        return default_value;
+    };
+}
+
 /// Compiler configuration and context.
 /// Central API for configuring and invoking the compiler.
 pub const Context = struct {
@@ -34,6 +61,18 @@ pub const Context = struct {
 
     /// Minimum complexity required to run e-graph optimization.
     egraph_min_complexity: u32,
+    egraph_min_complexity_explicit: bool,
+    /// Minimum complexity required to run alias analysis.
+    alias_min_complexity: u32,
+    alias_min_complexity_explicit: bool,
+    /// Minimum complexity required to run range optimization.
+    range_min_complexity: u32,
+    range_min_complexity_explicit: bool,
+    /// Minimum instruction count required to fold iadd iconst in lowering.
+    fold_iadd_iconst_min_insts: usize,
+    fold_iadd_iconst_min_insts_explicit: bool,
+    /// True after one-time tuning env load.
+    pgo_env_loaded: bool,
 
     /// Reusable codegen pipeline context.
     codegen_ctx: compile_mod.Context,
@@ -51,6 +90,14 @@ pub const Context = struct {
             .verify = false,
             .optimize = false,
             .egraph_min_complexity = compile_mod.default_egraph_min_complexity,
+            .egraph_min_complexity_explicit = false,
+            .alias_min_complexity = compile_mod.default_alias_min_complexity,
+            .alias_min_complexity_explicit = false,
+            .range_min_complexity = compile_mod.default_range_min_complexity,
+            .range_min_complexity_explicit = false,
+            .fold_iadd_iconst_min_insts = compile_mod.default_fold_iadd_iconst_min_insts,
+            .fold_iadd_iconst_min_insts_explicit = false,
+            .pgo_env_loaded = false,
             .codegen_ctx = compile_mod.Context.init(allocator),
         };
     }
@@ -72,6 +119,22 @@ pub const Context = struct {
 
     pub fn setEgraphMinComplexity(self: *Context, min_complexity: u32) void {
         self.egraph_min_complexity = min_complexity;
+        self.egraph_min_complexity_explicit = true;
+    }
+
+    pub fn setAliasMinComplexity(self: *Context, min_complexity: u32) void {
+        self.alias_min_complexity = min_complexity;
+        self.alias_min_complexity_explicit = true;
+    }
+
+    pub fn setRangeMinComplexity(self: *Context, min_complexity: u32) void {
+        self.range_min_complexity = min_complexity;
+        self.range_min_complexity_explicit = true;
+    }
+
+    pub fn setFoldIaddIconstMinInsts(self: *Context, min_insts: usize) void {
+        self.fold_iadd_iconst_min_insts = min_insts;
+        self.fold_iadd_iconst_min_insts_explicit = true;
     }
 
     pub fn deinit(self: *Context) void {
@@ -94,8 +157,48 @@ pub const Context = struct {
             .verify = self.verify,
             .optimize = self.optimize,
             .egraph_min_complexity = self.egraph_min_complexity,
+            .alias_min_complexity = self.alias_min_complexity,
+            .range_min_complexity = self.range_min_complexity,
+            .fold_iadd_iconst_min_insts = self.fold_iadd_iconst_min_insts,
             .features = self.target.features,
         };
+    }
+
+    fn maybeLoadPgoFromEnv(self: *Context) void {
+        if (self.pgo_env_loaded) return;
+        if (!self.egraph_min_complexity_explicit) {
+            self.egraph_min_complexity = envUnsignedOrDefault(
+                u32,
+                self.allocator,
+                "HOIST_EGRAPH_MIN_COMPLEXITY",
+                self.egraph_min_complexity,
+            );
+        }
+        if (!self.alias_min_complexity_explicit) {
+            self.alias_min_complexity = envUnsignedOrDefault(
+                u32,
+                self.allocator,
+                "HOIST_ALIAS_MIN_COMPLEXITY",
+                self.alias_min_complexity,
+            );
+        }
+        if (!self.range_min_complexity_explicit) {
+            self.range_min_complexity = envUnsignedOrDefault(
+                u32,
+                self.allocator,
+                "HOIST_RANGE_MIN_COMPLEXITY",
+                self.range_min_complexity,
+            );
+        }
+        if (!self.fold_iadd_iconst_min_insts_explicit) {
+            self.fold_iadd_iconst_min_insts = envUnsignedOrDefault(
+                usize,
+                self.allocator,
+                "HOIST_FOLD_IADD_ICONST_MIN_INSTS",
+                self.fold_iadd_iconst_min_insts,
+            );
+        }
+        self.pgo_env_loaded = true;
     }
 
     fn estimateFunctionCycles(func: *const Function) u32 {
@@ -115,6 +218,7 @@ pub const Context = struct {
         self: *Context,
         func: *Function,
     ) !compile_mod.CompiledCode {
+        self.maybeLoadPgoFromEnv();
         const target = self.makeCompileTarget();
 
         self.codegen_ctx.clear();
@@ -132,6 +236,7 @@ pub const Context = struct {
         funcs: []*Function,
         config: parallel_mod.Config,
     ) ![]parallel_mod.CompileResult {
+        self.maybeLoadPgoFromEnv();
         var compiler = parallel_mod.ParallelCompiler.init(self.allocator, config);
         defer compiler.deinit();
 
@@ -308,6 +413,21 @@ pub const ContextBuilder = struct {
         return self;
     }
 
+    pub fn aliasMinComplexity(self: *ContextBuilder, min_complexity: u32) *ContextBuilder {
+        self.ctx.setAliasMinComplexity(min_complexity);
+        return self;
+    }
+
+    pub fn rangeMinComplexity(self: *ContextBuilder, min_complexity: u32) *ContextBuilder {
+        self.ctx.setRangeMinComplexity(min_complexity);
+        return self;
+    }
+
+    pub fn foldIaddIconstMinInsts(self: *ContextBuilder, min_insts: usize) *ContextBuilder {
+        self.ctx.setFoldIaddIconstMinInsts(min_insts);
+        return self;
+    }
+
     pub fn build(self: *ContextBuilder) Context {
         return self.ctx;
     }
@@ -324,6 +444,9 @@ test "Context basic" {
     try testing.expectEqual(false, ctx.verify);
     try testing.expectEqual(false, ctx.optimize);
     try testing.expectEqual(compile_mod.default_egraph_min_complexity, ctx.egraph_min_complexity);
+    try testing.expectEqual(compile_mod.default_alias_min_complexity, ctx.alias_min_complexity);
+    try testing.expectEqual(compile_mod.default_range_min_complexity, ctx.range_min_complexity);
+    try testing.expectEqual(compile_mod.default_fold_iadd_iconst_min_insts, ctx.fold_iadd_iconst_min_insts);
 }
 
 test "Context with target" {
@@ -355,6 +478,19 @@ test "Context egraph threshold" {
     try testing.expectEqual(@as(u32, 192), ctx.egraph_min_complexity);
 }
 
+test "Context threshold setters" {
+    var ctx = Context.init(testing.allocator);
+    defer ctx.deinit();
+
+    ctx.setAliasMinComplexity(224);
+    ctx.setRangeMinComplexity(208);
+    ctx.setFoldIaddIconstMinInsts(1536);
+
+    try testing.expectEqual(@as(u32, 224), ctx.alias_min_complexity);
+    try testing.expectEqual(@as(u32, 208), ctx.range_min_complexity);
+    try testing.expectEqual(@as(usize, 1536), ctx.fold_iadd_iconst_min_insts);
+}
+
 test "ContextBuilder" {
     var builder = ContextBuilder.init(testing.allocator);
     var ctx = builder
@@ -362,6 +498,9 @@ test "ContextBuilder" {
         .optLevel(.moderate)
         .verification(false)
         .egraphMinComplexity(256)
+        .aliasMinComplexity(192)
+        .rangeMinComplexity(224)
+        .foldIaddIconstMinInsts(2048)
         .build();
     defer ctx.deinit();
 
@@ -369,6 +508,9 @@ test "ContextBuilder" {
     try testing.expectEqual(OptLevel.moderate, ctx.opt_level);
     try testing.expectEqual(false, ctx.verify);
     try testing.expectEqual(@as(u32, 256), ctx.egraph_min_complexity);
+    try testing.expectEqual(@as(u32, 192), ctx.alias_min_complexity);
+    try testing.expectEqual(@as(u32, 224), ctx.range_min_complexity);
+    try testing.expectEqual(@as(usize, 2048), ctx.fold_iadd_iconst_min_insts);
 }
 
 test "Context compile function" {

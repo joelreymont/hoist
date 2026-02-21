@@ -38,6 +38,7 @@
 - Skipping AArch64 peephole loops when `target.optimize=false` produced stable repeat-9 compile wins on large functions: large(100) +12.00%, large(500) +7.07%, with zero gate regressions.
 - Replacing CFG live-in/live-out `AutoHashMap` sets with dense `DynamicBitSet` sets plus predecessor-driven worklist propagation improved repeat-9 parent-vs-candidate medians: large(100) +7.44%, vector +6.67%, with zero gate regressions.
 - Folding single-use `iconst` into `iadd` immediates in AArch64 lowering, gated to single-block functions with >=1000 IR instructions, improved same-session repeat-9 old-vs-new medians: large(500) +40.63%, large(1000) +38.98%, large(5000) +34.40%, int +6.67%, memory +11.11%, with zero gate regressions.
+- Adding a compiler-threshold PGO tuner (`tools/pgo_tune.zig`, `zig build pgo-tune`) provided an automated no-regression search loop over alias/range/egraph/fold thresholds and writes reproducible tuned env output (`/tmp/hoist-pgo.env`).
 
 ## Did Not Work Well
 - VCode clear-retain reuse path caused repeatable regressions and was discarded.
@@ -116,3 +117,4 @@
 - For same-tree A/B against parent revisions, capture baseline in a separate `jj` workspace and compare fixed log files to avoid stale baseline noise.
 - Parent-baseline logs go stale under thermal/load drift; verify gate stability with a no-change control run and refresh baselines in-session before evaluating candidate dots.
 - Enforce retained-win quality with a positive-gain gate (`--min-positive-pct`, `--min-positive-count`) so dots with `<5%` qualifying wins are automatically rejected.
+- Keep tuning tooling gate-driven by default (no-regression + positive-win thresholds) so candidate configs cannot bypass retained-win policy.

@@ -150,6 +150,8 @@ pub const Context = struct {
     compile_count: u64,
     /// Enable per-stage compile profiling.
     profile_enabled: bool,
+    /// Last AArch64 compile needed allocation-aware spill phi copy repair.
+    aarch64_used_spill_phi_resolver: bool,
 
     pub fn init(allocator: std.mem.Allocator) Context {
         return .{
@@ -175,6 +177,7 @@ pub const Context = struct {
             .accum_profile = CompileProfile.init(),
             .compile_count = 0,
             .profile_enabled = false,
+            .aarch64_used_spill_phi_resolver = false,
         };
     }
 
@@ -202,6 +205,7 @@ pub const Context = struct {
             .accum_profile = CompileProfile.init(),
             .compile_count = 0,
             .profile_enabled = false,
+            .aarch64_used_spill_phi_resolver = false,
         };
     }
 
@@ -303,6 +307,7 @@ pub const Context = struct {
         self.clearRiscv64State();
         self.clearS390xState();
         self.want_disasm = false;
+        self.aarch64_used_spill_phi_resolver = false;
     }
 
     /// Get compiled code result (available after compilation).

@@ -226,6 +226,7 @@ Unify all parity/gap plans into one executable document where every actionable t
 - [x] hybrid rewrite fast path per instruction (discarded: gate regressions) (`dot:hoist-hybrid-rewrite-fast-0caef16a`)
 - [x] gate aarch64 emit peephole by optimize flag (discarded: no retained >=5% wins) (`dot:hoist-gate-aarch64-emit-463d3885`)
 - [x] fold single-use iconst into iadd immediate (retained) (`dot:hoist-fold-single-use-e8793a96`)
+- [x] add compiler pgo tuning workflow (`dot:hoist-add-compiler-pgo-2be9448d`)
 - [ ] regalloc 2x loop bookkeeping (`dot:hoist-regalloc-2x-loop-c637c918`)
 
 #### 2x Loop Contract

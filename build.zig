@@ -127,6 +127,76 @@ pub fn build(b: *std.Build) void {
         "bench-budget-multiplier",
         "Optional budget speedup target multiplier (e.g. 2.0 for 2x, 3.0 for 3x)",
     );
+    const pgo_current_path = b.option(
+        []const u8,
+        "pgo-current-path",
+        "Current benchmark log path used by pgo-tune (default: /tmp/hoist-pgo-current.log)",
+    ) orelse "/tmp/hoist-pgo-current.log";
+    const pgo_report_path = b.option(
+        []const u8,
+        "pgo-report-path",
+        "Markdown report output path used by pgo-tune (default: /tmp/hoist-pgo-report.md)",
+    ) orelse "/tmp/hoist-pgo-report.md";
+    const pgo_report_json_path = b.option(
+        []const u8,
+        "pgo-report-json-path",
+        "JSON report output path used by pgo-tune (default: /tmp/hoist-pgo-report.json)",
+    ) orelse "/tmp/hoist-pgo-report.json";
+    const pgo_result_path = b.option(
+        []const u8,
+        "pgo-result-path",
+        "Output env file for best tuned thresholds (default: /tmp/hoist-pgo.env)",
+    ) orelse "/tmp/hoist-pgo.env";
+    const pgo_refresh_baseline = b.option(
+        bool,
+        "pgo-refresh-baseline",
+        "Refresh baseline benchmark log before pgo-tune (default: false)",
+    ) orelse false;
+    const pgo_alias_list = b.option(
+        []const u8,
+        "pgo-alias-list",
+        "CSV list for alias threshold search (default from tool)",
+    );
+    const pgo_range_list = b.option(
+        []const u8,
+        "pgo-range-list",
+        "CSV list for range threshold search (default from tool)",
+    );
+    const pgo_egraph_list = b.option(
+        []const u8,
+        "pgo-egraph-list",
+        "CSV list for egraph threshold search (default from tool)",
+    );
+    const pgo_fold_list = b.option(
+        []const u8,
+        "pgo-fold-list",
+        "CSV list for fold-iadd-iconst threshold search (default from tool)",
+    );
+    const pgo_max_regress_pct = b.option(
+        f64,
+        "pgo-max-regress-pct",
+        "Maximum allowed regression percentage during tuning (default: 5.0)",
+    ) orelse 5.0;
+    const pgo_min_regress_us = b.option(
+        f64,
+        "pgo-min-regress-us",
+        "Minimum absolute regression in us required to fail tune candidate (default: 2.0)",
+    ) orelse 2.0;
+    const pgo_min_positive_pct = b.option(
+        f64,
+        "pgo-min-positive-pct",
+        "Minimum positive improvement percent per metric for pgo candidate (default: 5.0)",
+    ) orelse 5.0;
+    const pgo_min_positive_us = b.option(
+        f64,
+        "pgo-min-positive-us",
+        "Minimum absolute positive improvement (us) per metric for pgo candidate (default: 2.0)",
+    ) orelse 2.0;
+    const pgo_min_positive_count = b.option(
+        usize,
+        "pgo-min-positive-count",
+        "Required number of metrics meeting positive threshold for pgo candidate (default: 1)",
+    ) orelse 1;
 
     // Helper to apply flags to a compile step
     const applyFlags = struct {
@@ -678,6 +748,73 @@ pub fn build(b: *std.Build) void {
         }),
     });
     applyFlags(perf_gate, enable_lto, debug_info, strip_debug, pic, single_threaded);
+
+    const pgo_tune = b.addExecutable(.{
+        .name = "pgo_tune",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/pgo_tune.zig"),
+            .target = target,
+            .optimize = bench_optimize,
+        }),
+    });
+    applyFlags(pgo_tune, enable_lto, debug_info, strip_debug, pic, single_threaded);
+
+    const pgo_tune_step = b.step("pgo-tune", "Auto-tune compiler thresholds with perf-gate checks");
+    const run_pgo_tune = b.addRunArtifact(pgo_tune);
+    run_pgo_tune.addArg("--baseline-bin");
+    run_pgo_tune.addFileArg(baseline.getEmittedBin());
+    run_pgo_tune.addArg("--perf-gate-bin");
+    run_pgo_tune.addFileArg(perf_gate.getEmittedBin());
+    run_pgo_tune.addArg("--bench");
+    run_pgo_tune.addFileArg(bench_fib.getEmittedBin());
+    run_pgo_tune.addArg("--bench");
+    run_pgo_tune.addFileArg(bench_large.getEmittedBin());
+    run_pgo_tune.addArg("--bench");
+    run_pgo_tune.addFileArg(bench_aarch64.getEmittedBin());
+    run_pgo_tune.addArg("--bench");
+    run_pgo_tune.addFileArg(bench_parallel.getEmittedBin());
+    run_pgo_tune.addArg("--baseline-log");
+    run_pgo_tune.addArg(bench_baseline_path);
+    run_pgo_tune.addArg("--current-log");
+    run_pgo_tune.addArg(pgo_current_path);
+    run_pgo_tune.addArg("--report-out");
+    run_pgo_tune.addArg(pgo_report_path);
+    run_pgo_tune.addArg("--json-out");
+    run_pgo_tune.addArg(pgo_report_json_path);
+    run_pgo_tune.addArg("--result-out");
+    run_pgo_tune.addArg(pgo_result_path);
+    run_pgo_tune.addArg("--repeat");
+    run_pgo_tune.addArg(b.fmt("{d}", .{bench_repeat}));
+    run_pgo_tune.addArg("--max-regress-pct");
+    run_pgo_tune.addArg(b.fmt("{d}", .{pgo_max_regress_pct}));
+    run_pgo_tune.addArg("--min-regress-us");
+    run_pgo_tune.addArg(b.fmt("{d}", .{pgo_min_regress_us}));
+    run_pgo_tune.addArg("--min-positive-pct");
+    run_pgo_tune.addArg(b.fmt("{d}", .{pgo_min_positive_pct}));
+    run_pgo_tune.addArg("--min-positive-us");
+    run_pgo_tune.addArg(b.fmt("{d}", .{pgo_min_positive_us}));
+    run_pgo_tune.addArg("--min-positive-count");
+    run_pgo_tune.addArg(b.fmt("{d}", .{pgo_min_positive_count}));
+    if (pgo_alias_list) |csv| {
+        run_pgo_tune.addArg("--alias-list");
+        run_pgo_tune.addArg(csv);
+    }
+    if (pgo_range_list) |csv| {
+        run_pgo_tune.addArg("--range-list");
+        run_pgo_tune.addArg(csv);
+    }
+    if (pgo_egraph_list) |csv| {
+        run_pgo_tune.addArg("--egraph-list");
+        run_pgo_tune.addArg(csv);
+    }
+    if (pgo_fold_list) |csv| {
+        run_pgo_tune.addArg("--fold-list");
+        run_pgo_tune.addArg(csv);
+    }
+    if (pgo_refresh_baseline) {
+        run_pgo_tune.step.dependOn(&run_baseline_log.step);
+    }
+    pgo_tune_step.dependOn(&run_pgo_tune.step);
 
     const bench_gate_step = b.step("bench-gate", "Run perf gate using baseline/current bench logs");
     const run_bench_gate = b.addRunArtifact(perf_gate);

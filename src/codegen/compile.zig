@@ -847,6 +847,7 @@ pub fn compile(
     target: *const Target,
 ) CompileResult {
     const do_profile = ctx.profile_enabled;
+    const trace_fail = std.posix.getenv("HOIST_TRACE_LOWER_FAIL") != null;
     var total_start: i128 = 0;
     if (do_profile) {
         total_start = std.time.nanoTimestamp();
@@ -896,7 +897,12 @@ pub fn compile(
 
     // 3. Lower to VCode via ISLE
     const lower_start = if (do_profile) std.time.nanoTimestamp() else 0;
-    try lower(ctx, target);
+    lower(ctx, target) catch |err| {
+        if (trace_fail) {
+            std.debug.print("HOIST_COMPILE_FAIL fn={s} stage=lower err={s}\n", .{ func.name, @errorName(err) });
+        }
+        return err;
+    };
     if (do_profile) {
         const lower_end = std.time.nanoTimestamp();
         ctx.last_profile.lower_ns = elapsedNs(lower_start, lower_end);
@@ -904,7 +910,12 @@ pub fn compile(
 
     // 4. Register allocation
     const regalloc_start = if (do_profile) std.time.nanoTimestamp() else 0;
-    try allocateRegisters(ctx, target);
+    allocateRegisters(ctx, target) catch |err| {
+        if (trace_fail) {
+            std.debug.print("HOIST_COMPILE_FAIL fn={s} stage=regalloc err={s}\n", .{ func.name, @errorName(err) });
+        }
+        return err;
+    };
     if (do_profile) {
         const regalloc_end = std.time.nanoTimestamp();
         ctx.last_profile.regalloc_ns = elapsedNs(regalloc_start, regalloc_end);
@@ -912,7 +923,12 @@ pub fn compile(
 
     // 5. Rewrite vregs to pregs
     const rewrite_start = if (do_profile) std.time.nanoTimestamp() else 0;
-    try rewriteRegisters(ctx, target);
+    rewriteRegisters(ctx, target) catch |err| {
+        if (trace_fail) {
+            std.debug.print("HOIST_COMPILE_FAIL fn={s} stage=rewrite err={s}\n", .{ func.name, @errorName(err) });
+        }
+        return err;
+    };
     if (do_profile) {
         const rewrite_end = std.time.nanoTimestamp();
         ctx.last_profile.rewrite_ns = elapsedNs(rewrite_start, rewrite_end);
@@ -920,7 +936,12 @@ pub fn compile(
 
     // 5b. Resolve phi copy conflicts (parallel copy resolution)
     const phi_start = if (do_profile) std.time.nanoTimestamp() else 0;
-    try resolvePhiCopies(ctx, target);
+    resolvePhiCopies(ctx, target) catch |err| {
+        if (trace_fail) {
+            std.debug.print("HOIST_COMPILE_FAIL fn={s} stage=phi err={s}\n", .{ func.name, @errorName(err) });
+        }
+        return err;
+    };
     if (do_profile) {
         const phi_end = std.time.nanoTimestamp();
         ctx.last_profile.phi_ns = elapsedNs(phi_start, phi_end);
@@ -928,7 +949,12 @@ pub fn compile(
 
     // 6. Emit machine code
     const emit_start = if (do_profile) std.time.nanoTimestamp() else 0;
-    try emit(ctx, target);
+    emit(ctx, target) catch |err| {
+        if (trace_fail) {
+            std.debug.print("HOIST_COMPILE_FAIL fn={s} stage=emit err={s}\n", .{ func.name, @errorName(err) });
+        }
+        return err;
+    };
     if (do_profile) {
         const emit_end = std.time.nanoTimestamp();
         ctx.last_profile.emit_ns = elapsedNs(emit_start, emit_end);
@@ -995,6 +1021,7 @@ fn estimateFunctionComplexity(func: *const Function) u32 {
 pub const default_egraph_min_complexity: u32 = 96;
 pub const default_range_min_complexity: u32 = 160;
 pub const default_alias_min_complexity: u32 = 160;
+pub const default_fold_iadd_iconst_min_insts: usize = 1000;
 
 fn shouldRunEGraph(opt_level: Target.OptLevel, complexity: u32, min_complexity: u32) bool {
     return opt_level != .none and complexity >= min_complexity;
@@ -1059,7 +1086,7 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
     }
 
     // 6. Alias analysis (redundant load elimination, store-to-load forwarding)
-    if (complexity >= default_alias_min_complexity) {
+    if (complexity >= target.alias_min_complexity) {
         _ = try runAliasAnalysis(ctx);
         try dumpIrStage(ctx, "alias");
     }
@@ -1068,7 +1095,7 @@ fn optimize(ctx: *Context, target: *const Target) CodegenError!void {
     ctx.func.dfg.resolveAllAliases();
 
     // 8. Range-based optimization (if opt_level >= basic)
-    if (opt_level != .none and complexity >= default_range_min_complexity) {
+    if (opt_level != .none and complexity >= target.range_min_complexity) {
         _ = try runRangeOptimization(ctx);
         try dumpIrStage(ctx, "range");
     }
@@ -1727,23 +1754,30 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
     const Inst = @import("../backends/aarch64/inst.zig").Inst;
     const VCodeBuilder = @import("../machinst/vcode_builder.zig").VCodeBuilder;
     const BlockIndex = @import("../machinst/vcode.zig").BlockIndex;
+    const trace_lower_fail = std.posix.getenv("HOIST_TRACE_LOWER_FAIL") != null;
 
     // Create VCode builder
     var builder = VCodeBuilder(Inst).init(ctx.allocator, .forward);
     defer builder.deinit();
 
-    const out_stack_max = try computeOutStackMaxAArch64(ctx);
+    const out_stack_max = computeOutStackMaxAArch64(ctx) catch |err| {
+        if (trace_lower_fail) {
+            std.debug.print("HOIST_LOWER_FAIL fn={s} stage=out-stack err={s}\n", .{ ctx.func.name, @errorName(err) });
+        }
+        return err;
+    };
     builder.vcode.out_stack_max = out_stack_max;
     var next_tmp_vreg: u32 = @intCast(reg_mod.Reg.PINNED_VREGS + ctx.func.dfg.values.elems.items.len);
-    const fold_iadd_iconst_min_insts: usize = 1000;
     var folded_iadd_iconsts: []?i64 = &[_]?i64{};
     var owned_folded_iadd_iconsts: ?[]?i64 = null;
     defer if (owned_folded_iadd_iconsts) |items| ctx.allocator.free(items);
-    if (ctx.func.dfg.liveInstCount() >= fold_iadd_iconst_min_insts and isSingleBlockLayout(ctx.func)) {
+    if (ctx.func.dfg.liveInstCount() >= target.fold_iadd_iconst_min_insts and isSingleBlockLayout(ctx.func)) {
         const items = try computeFoldableIaddIconsts(ctx);
         owned_folded_iadd_iconsts = items;
         folded_iadd_iconsts = items;
     }
+    var used_values = try collectUsedValues(ctx.allocator, ctx.func);
+    defer used_values.deinit(ctx.allocator);
 
     // Track vreg origins for rematerialization
     var vreg_origins = std.AutoHashMap(reg_mod.VReg, VRegOrigin).init(ctx.allocator);
@@ -1781,9 +1815,28 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
     var block_iter = ctx.func.layout.blockIter();
     var first_block = true;
     while (block_iter.next()) |block| {
+        const block_data = ctx.func.dfg.blocks.get(block) orelse return error.LoweringFailed;
+        const params = block_data.getParams(&ctx.func.dfg.value_lists);
+        var vcode_params = std.ArrayList(reg_mod.VReg){};
+        defer vcode_params.deinit(ctx.allocator);
+        for (params) |param| {
+            if (!valueIsUsed(&used_values, param)) continue;
+            try vcode_params.append(ctx.allocator, reg_mod.VReg.new(@intCast(param.index + reg_mod.Reg.PINNED_VREGS), reg_mod.RegClass.int));
+        }
+
         // Start VCode block
-        const vcode_block = try builder.startBlock(&.{});
-        try ir_to_vcode_blocks.put(block, vcode_block);
+        const vcode_block = builder.startBlock(vcode_params.items) catch |err| {
+            if (trace_lower_fail) {
+                std.debug.print("HOIST_LOWER_FAIL fn={s} stage=start-block block={d} err={s}\n", .{ ctx.func.name, block.index, @errorName(err) });
+            }
+            return err;
+        };
+        ir_to_vcode_blocks.put(block, vcode_block) catch |err| {
+            if (trace_lower_fail) {
+                std.debug.print("HOIST_LOWER_FAIL fn={s} stage=record-block block={d} err={s}\n", .{ ctx.func.name, block.index, @errorName(err) });
+            }
+            return err;
+        };
         if (first_block) {
             builder.setEntry(vcode_block);
 
@@ -1794,9 +1847,6 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
             const RegClass = @import("../machinst/reg.zig").RegClass;
             const OperandSize = @import("../backends/aarch64/inst.zig").OperandSize;
             const FpuOperandSize = @import("../backends/aarch64/inst.zig").FpuOperandSize;
-
-            const block_data = ctx.func.dfg.blocks.get(block) orelse return error.LoweringFailed;
-            const params = block_data.getParams(&ctx.func.dfg.value_lists);
 
             const needs_sret = a64_abi.needsStructReturnPointer(ctx.func.sig.returns.items, &ctx.func.struct_store);
             const arg_locs = try a64_abi.computeArgLocs(ctx.allocator, ctx.func.sig.params.items, needs_sret, &ctx.func.struct_store);
@@ -1997,7 +2047,7 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
         // Lower each instruction in block
         var inst_iter = ctx.func.layout.blockInsts(block);
         while (inst_iter.next()) |inst| {
-            try lowerInstruction(.{
+            lowerInstruction(.{
                 .ctx = ctx,
                 .builder = &builder,
                 .block_map = &block_index_map,
@@ -2005,7 +2055,29 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
                 .out_stack_max = out_stack_max,
                 .next_tmp_vreg = &next_tmp_vreg,
                 .folded_iadd_iconsts = folded_iadd_iconsts,
-            }, inst, target);
+                .used_values = &used_values,
+            }, inst, target) catch |err| {
+                if (std.posix.getenv("HOIST_TRACE_LOWER_FAIL") != null) {
+                    if (ctx.func.dfg.insts.get(inst)) |data| {
+                        std.debug.print("HOIST_LOWER_FAIL fn={s} block={d} inst={d} tag={s} err={s} data={any}\n", .{
+                            ctx.func.name,
+                            block.index,
+                            inst.index,
+                            @tagName(data.*),
+                            @errorName(err),
+                            data.*,
+                        });
+                    } else {
+                        std.debug.print("HOIST_LOWER_FAIL fn={s} block={d} inst={d} tag=<missing> err={s}\n", .{
+                            ctx.func.name,
+                            block.index,
+                            inst.index,
+                            @errorName(err),
+                        });
+                    }
+                }
+                return err;
+            };
 
             // try_call and try_call_indirect are terminators: emit the normal-edge branch.
             const inst_data_ptr = ctx.func.dfg.insts.get(inst);
@@ -2046,11 +2118,26 @@ fn lowerAArch64(ctx: *Context, target: *const Target) CodegenError!void {
             }
         }
 
-        try builder.finishBlock(succs.items);
+        builder.finishBlock(succs.items) catch |err| {
+            if (trace_lower_fail) {
+                std.debug.print("HOIST_LOWER_FAIL fn={s} stage=finish-block block={d} succs={d} err={s}\n", .{
+                    ctx.func.name,
+                    block.index,
+                    succs.items.len,
+                    @errorName(err),
+                });
+            }
+            return err;
+        };
     }
 
     // Finish building VCode
-    var vcode = try builder.finish();
+    var vcode = builder.finish() catch |err| {
+        if (trace_lower_fail) {
+            std.debug.print("HOIST_LOWER_FAIL fn={s} stage=finish-vcode err={s}\n", .{ ctx.func.name, @errorName(err) });
+        }
+        return err;
+    };
     errdefer vcode.deinit();
 
     if (ctx.aarch64_regalloc) |*state| {
@@ -2659,6 +2746,87 @@ fn appendTmpInsns(builder: anytype, vcode: *vcode_mod.VCode(a64_inst.Inst)) Code
     }
 }
 
+fn collectUsedValues(allocator: std.mem.Allocator, func: *const Function) CodegenError!std.DynamicBitSetUnmanaged {
+    var used = try std.DynamicBitSetUnmanaged.initEmpty(allocator, func.dfg.values.elems.items.len);
+    errdefer used.deinit(allocator);
+
+    const Mark = struct {
+        used: *std.DynamicBitSetUnmanaged,
+
+        pub fn visit(self: *@This(), val: anytype) void {
+            const idx = val.*.toIndex();
+            if (idx < self.used.bit_length) self.used.set(idx);
+        }
+    };
+
+    var mark = Mark{ .used = &used };
+    for (func.dfg.insts.elems.items, 0..) |*inst_data, inst_idx| {
+        if (func.dfg.isInstDeleted(ir.Inst.new(inst_idx))) continue;
+        inst_data.forEachValue(&func.dfg.value_lists, &mark, Mark.visit);
+    }
+
+    return used;
+}
+
+fn valueIsUsed(used: *const std.DynamicBitSetUnmanaged, val: ir.Value) bool {
+    const idx = val.toIndex();
+    return idx < used.bit_length and used.isSet(idx);
+}
+
+fn rebuildLivenessRangeIndex(info: *liveness_mod.LivenessInfo) CodegenError!void {
+    std.mem.sort(liveness_mod.LiveRange, info.ranges.items, {}, struct {
+        fn lessThan(_: void, a: liveness_mod.LiveRange, b: liveness_mod.LiveRange) bool {
+            return a.start_inst < b.start_inst;
+        }
+    }.lessThan);
+
+    @memset(info.vreg_to_range_dense.items, std.math.maxInt(u32));
+    for (info.ranges.items, 0..) |range, idx| {
+        const vreg_idx = range.vreg.index();
+        if (vreg_idx >= info.vreg_to_range_dense.items.len) {
+            const old_len = info.vreg_to_range_dense.items.len;
+            try info.vreg_to_range_dense.resize(info.allocator, @as(usize, vreg_idx) + 1);
+            @memset(info.vreg_to_range_dense.items[old_len..], std.math.maxInt(u32));
+        }
+        info.vreg_to_range_dense.items[vreg_idx] = @intCast(idx);
+    }
+    info.ranges_sorted_by_start = true;
+}
+
+fn extendBlockParamLiveRanges(
+    info: *liveness_mod.LivenessInfo,
+    vcode: *const vcode_mod.VCode(a64_inst.Inst),
+    fn_name: []const u8,
+    trace: bool,
+) CodegenError!void {
+    var changed = false;
+    for (vcode.blocks.items) |block| {
+        for (block.params) |param| {
+            const vreg_idx = param.index();
+            if (vreg_idx >= info.vreg_to_range_dense.items.len) continue;
+            const range_idx = info.vreg_to_range_dense.items[vreg_idx];
+            if (range_idx == std.math.maxInt(u32)) continue;
+            const range = &info.ranges.items[range_idx];
+            if (range.start_inst > block.insn_start) {
+                if (trace) {
+                    std.debug.print("HOIST_PARAM_RANGE fn={s} vreg={d} start={d}->{d} end={d} block_start={d} block_end={d}\n", .{
+                        fn_name,
+                        vreg_idx,
+                        range.start_inst,
+                        block.insn_start,
+                        range.end_inst,
+                        block.insn_start,
+                        block.insn_end,
+                    });
+                }
+                range.start_inst = block.insn_start;
+                changed = true;
+            }
+        }
+    }
+    if (changed) try rebuildLivenessRangeIndex(info);
+}
+
 /// Lower a single AArch64 instruction.
 fn lowerInstructionAArch64(
     ctx: *Context,
@@ -2669,6 +2837,7 @@ fn lowerInstructionAArch64(
     out_stack_max: u32,
     next_tmp_vreg: *u32,
     folded_iadd_iconsts: []const ?i64,
+    used_values: *const std.DynamicBitSetUnmanaged,
 ) CodegenError!void {
     const InstMod = @import("../backends/aarch64/inst.zig");
     const Inst = InstMod.Inst;
@@ -2862,7 +3031,6 @@ fn lowerInstructionAArch64(
                         .src2 = src2,
                         .size = vec_size,
                     } });
-
                 } else {
                     const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
                     const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
@@ -2935,7 +3103,6 @@ fn lowerInstructionAArch64(
                             },
                         });
                     }
-
                 }
             } else if (data.opcode == .isub) {
                 const VReg = @import("../machinst/reg.zig").VReg;
@@ -2967,7 +3134,6 @@ fn lowerInstructionAArch64(
                         .size = size,
                     },
                 });
-
             } else if (data.opcode == .imul) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
@@ -2994,7 +3160,6 @@ fn lowerInstructionAArch64(
                         .src2 = src2,
                         .size = vec_size,
                     } });
-
                 } else {
                     // Map IR values to virtual registers
                     // Offset by PINNED_VREGS to avoid collision with physical registers
@@ -3020,7 +3185,6 @@ fn lowerInstructionAArch64(
                             .size = size,
                         },
                     });
-
                 }
             } else if (data.opcode == .smulhi or data.opcode == .umulhi) {
                 const VReg = @import("../machinst/reg.zig").VReg;
@@ -3386,7 +3550,6 @@ fn lowerInstructionAArch64(
                         });
                     }
                 }
-
             } else if (data.opcode == .band_not or data.opcode == .bor_not or data.opcode == .bxor_not) {
                 const VReg = @import("../machinst/reg.zig").VReg;
                 const WritableReg = @import("../machinst/reg.zig").WritableReg;
@@ -3624,7 +3787,6 @@ fn lowerInstructionAArch64(
                         else => unreachable,
                     };
                     try builder.emit(inst_vec);
-
                 } else {
                     const arg0_vreg = VReg.new(@intCast(data.args[0].index + Reg.PINNED_VREGS), RegClass.int);
                     const arg1_vreg = VReg.new(@intCast(data.args[1].index + Reg.PINNED_VREGS), RegClass.int);
@@ -5918,6 +6080,7 @@ fn lowerInstructionAArch64(
                 var phi_count: u32 = 0;
                 var phi_idx: usize = 0;
                 while (phi_idx < jump_args.len) : (phi_idx += 1) {
+                    if (!valueIsUsed(used_values, target_params[phi_idx])) continue;
                     const arg_vreg = VReg.new(@intCast(jump_args[phi_idx].index + Reg.PINNED_VREGS), RegClass.int);
                     const param_vreg = VReg.new(@intCast(target_params[phi_idx].index + Reg.PINNED_VREGS), RegClass.int);
                     // Only emit mov if source != destination
@@ -5936,6 +6099,31 @@ fn lowerInstructionAArch64(
                         .first_insn = first_insn,
                         .count = phi_count,
                     });
+                    if (std.posix.getenv("HOIST_TRACE_LOWER_FAIL") != null) {
+                        std.debug.print("HOIST_PHI_GROUP fn={s} inst={d} dest={d} first={d} count={d} args={d}\n", .{
+                            ctx.func.name,
+                            inst.toIndex(),
+                            data.destination.toIndex(),
+                            first_insn,
+                            phi_count,
+                            jump_args.len,
+                        });
+                        for (jump_args, target_params, 0..) |arg, param, idx| {
+                            const arg_vreg = VReg.new(@intCast(arg.index + Reg.PINNED_VREGS), RegClass.int);
+                            const param_vreg = VReg.new(@intCast(param.index + Reg.PINNED_VREGS), RegClass.int);
+                            if (arg_vreg.index() != param_vreg.index()) {
+                                std.debug.print("HOIST_PHI_GROUP_MOVE fn={s} inst={d} move={d} arg_v={d} param_v={d} arg_vreg={d} param_vreg={d}\n", .{
+                                    ctx.func.name,
+                                    inst.toIndex(),
+                                    idx,
+                                    arg.toIndex(),
+                                    param.toIndex(),
+                                    arg_vreg.index(),
+                                    param_vreg.index(),
+                                });
+                            }
+                        }
+                    }
                 }
             }
 
@@ -6672,8 +6860,68 @@ fn lowerInstruction(lower_ctx: anytype, inst: ir.Inst, target: *const Target) Co
             lower_ctx.out_stack_max,
             lower_ctx.next_tmp_vreg,
             lower_ctx.folded_iadd_iconsts,
+            lower_ctx.used_values,
         ),
         else => return error.UnsupportedTarget,
+    }
+}
+
+fn allocHw(result: *linear_scan_mod.RegAllocResult, vreg: reg_mod.VReg) i32 {
+    const preg = result.getPhysReg(vreg) orelse return -1;
+    return @intCast(preg.hwEnc());
+}
+
+fn allocSpill(result: *linear_scan_mod.RegAllocResult, vreg: reg_mod.VReg) i64 {
+    const slot = result.getSpillSlot(vreg) orelse return -1;
+    return slot.offset;
+}
+
+fn rangeStart(info: *liveness_mod.LivenessInfo, vreg: reg_mod.VReg) u32 {
+    const range = info.getRange(vreg) orelse return std.math.maxInt(u32);
+    return range.start_inst;
+}
+
+fn rangeEnd(info: *liveness_mod.LivenessInfo, vreg: reg_mod.VReg) u32 {
+    const range = info.getRange(vreg) orelse return std.math.maxInt(u32);
+    return range.end_inst;
+}
+
+fn tracePhiAlloc(
+    fn_name: []const u8,
+    vcode: *const vcode_mod.VCode(a64_inst.Inst),
+    liveness_info: *liveness_mod.LivenessInfo,
+    result: *linear_scan_mod.RegAllocResult,
+) void {
+    for (vcode.phi_copy_groups.items, 0..) |group, group_idx| {
+        var scan_idx: usize = group.first_insn;
+        var move_idx: u32 = 0;
+        while (scan_idx < vcode.insns.items.len and move_idx < group.count) : (scan_idx += 1) {
+            const inst = vcode.insns.items[scan_idx];
+            switch (inst) {
+                .mov_rr => |mov| {
+                    move_idx += 1;
+                    const src_vreg = mov.src.toVReg() orelse continue;
+                    const dst_vreg = mov.dst.toReg().toVReg() orelse continue;
+                    std.debug.print("HOIST_PHI_ALLOC fn={s} group={d} move={d} insn={d} src_vreg={d} dst_vreg={d} src_hw={d} dst_hw={d} src_spill={d} dst_spill={d} src_range={d}..{d} dst_range={d}..{d}\n", .{
+                        fn_name,
+                        group_idx,
+                        move_idx - 1,
+                        scan_idx,
+                        src_vreg.index(),
+                        dst_vreg.index(),
+                        allocHw(result, src_vreg),
+                        allocHw(result, dst_vreg),
+                        allocSpill(result, src_vreg),
+                        allocSpill(result, dst_vreg),
+                        rangeStart(liveness_info, src_vreg),
+                        rangeEnd(liveness_info, src_vreg),
+                        rangeStart(liveness_info, dst_vreg),
+                        rangeEnd(liveness_info, dst_vreg),
+                    });
+                },
+                else => {},
+            }
+        }
     }
 }
 
@@ -6720,6 +6968,12 @@ fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
                         liveness_info,
                     );
                 }
+                try extendBlockParamLiveRanges(
+                    liveness_info,
+                    vcode,
+                    ctx.func.name,
+                    std.posix.getenv("HOIST_TRACE_LOWER_FAIL") != null,
+                );
 
                 const has_sret = a64_abi.needsStructReturnPointer(ctx.func.sig.returns.items, null);
                 const pool_key = aarch64PoolKey(ctx.func.sig.call_conv, has_sret);
@@ -6758,6 +7012,11 @@ fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
                     }
                     try linear_scan.allocateInto(liveness_info, &state.result);
 
+                    const trace_lower_fail = std.posix.getenv("HOIST_TRACE_LOWER_FAIL") != null;
+                    if (trace_lower_fail) {
+                        tracePhiAlloc(ctx.func.name, vcode, liveness_info, &state.result);
+                    }
+
                     if (state.result.vreg_to_spill.count() > 0) {
                         // Compute callee-save area size to rebase spill offsets.
                         // Spill slots at offset 0 conflict with the FP/LR and callee-save
@@ -6777,6 +7036,16 @@ fn allocateRegisters(ctx: *Context, target: *const Target) CodegenError!void {
                         const callee_save_pairs = (num_clobbered + 1) / 2;
                         const spill_base_offset: u32 = 16 + callee_save_pairs * 16;
 
+                        if (try resolvePhiCopiesWithAlloc(
+                            ctx.allocator,
+                            ctx.func.name,
+                            vcode,
+                            &state.result,
+                            spill_base_offset,
+                            trace_lower_fail,
+                        )) {
+                            ctx.aarch64_used_spill_phi_resolver = true;
+                        }
                         try insertSpillScratch(ctx.allocator, vcode, &state.result, spill_scratch_regs, &lowered.vreg_origins, &ctx.domtree, spill_base_offset);
                     }
 
@@ -6937,10 +7206,31 @@ fn rewriteRegisters(ctx: *Context, target: *const Target) CodegenError!void {
 /// with a conflict-free caller-saved scratch register, producing correct move
 /// sequences.
 fn pickPhiScratchReg(moves: []const @import("../machinst/parallel_copy.zig").Move) ?u8 {
+    return pickPhiScratchRegAvoid(moves, null);
+}
+
+fn pickPhiScratchRegAvoid(
+    moves: []const @import("../machinst/parallel_copy.zig").Move,
+    avoid: ?u8,
+) ?u8 {
+    return pickPhiScratchRegAvoid2(moves, avoid, null);
+}
+
+fn pickPhiScratchRegAvoid2(
+    moves: []const @import("../machinst/parallel_copy.zig").Move,
+    avoid_a: ?u8,
+    avoid_b: ?u8,
+) ?u8 {
     // Prefer caller-saved temporaries first.
     const candidates = [_]u8{ 16, 17, 15, 14, 13, 12, 11, 10, 9 };
 
     candidate: for (candidates) |cand| {
+        if (avoid_a) |reserved| {
+            if (cand == reserved) continue :candidate;
+        }
+        if (avoid_b) |reserved| {
+            if (cand == reserved) continue :candidate;
+        }
         for (moves) |move| {
             switch (move.src) {
                 .reg => |r| if (r == cand) continue :candidate,
@@ -6956,17 +7246,348 @@ fn pickPhiScratchReg(moves: []const @import("../machinst/parallel_copy.zig").Mov
     return null;
 }
 
+fn phiLocEq(
+    a: @import("../machinst/parallel_copy.zig").Location,
+    b: @import("../machinst/parallel_copy.zig").Location,
+) bool {
+    return switch (a) {
+        .reg => |ra| switch (b) {
+            .reg => |rb| ra == rb,
+            .stack => false,
+        },
+        .stack => |sa| switch (b) {
+            .reg => false,
+            .stack => |sb| sa == sb,
+        },
+    };
+}
+
+fn appendCanonicalPhiMove(
+    allocator: std.mem.Allocator,
+    moves: *std.ArrayList(@import("../machinst/parallel_copy.zig").Move),
+    move: @import("../machinst/parallel_copy.zig").Move,
+) CodegenError!bool {
+    for (moves.items) |existing| {
+        if (phiLocEq(existing.dst, move.dst)) {
+            if (phiLocEq(existing.src, move.src)) return false;
+            return error.LoweringFailed;
+        }
+    }
+    try moves.append(allocator, move);
+    return true;
+}
+
+fn tracePhiMoves(
+    fn_name: []const u8,
+    group_idx: usize,
+    moves: []const @import("../machinst/parallel_copy.zig").Move,
+) void {
+    for (moves, 0..) |move, move_idx| {
+        std.debug.print("HOIST_PHI_SEEN fn={s} group={d} move={d} src={any} dst={any} origin={d}\n", .{
+            fn_name,
+            group_idx,
+            move_idx,
+            move.src,
+            move.dst,
+            move.origin,
+        });
+    }
+}
+
+fn allocPhiLoc(
+    result: *linear_scan_mod.RegAllocResult,
+    vreg: reg_mod.VReg,
+    spill_base_offset: u32,
+) CodegenError!@import("../machinst/parallel_copy.zig").Location {
+    if (result.getPhysReg(vreg)) |preg| {
+        if (preg.class() != .int) return error.LoweringFailed;
+        return .{ .reg = preg.hwEnc() };
+    }
+    if (result.getSpillSlot(vreg)) |slot| {
+        return .{ .stack = @intCast(slot.offset + spill_base_offset) };
+    }
+    return error.RegisterAllocationFailed;
+}
+
+fn phiMovesHaveConflict(moves: []const @import("../machinst/parallel_copy.zig").Move) bool {
+    for (moves, 0..) |move, i| {
+        for (moves, 0..) |other, j| {
+            if (i == j) continue;
+            if (phiLocEq(move.dst, other.src)) return true;
+        }
+    }
+    return false;
+}
+
+fn phiMovesNeedStackScratch(moves: []const @import("../machinst/parallel_copy.zig").Move) bool {
+    for (moves) |move| {
+        if (move.src == .stack and move.dst == .stack) return true;
+    }
+    return false;
+}
+
+fn phiMovesNeedAddrScratch(moves: []const @import("../machinst/parallel_copy.zig").Move) bool {
+    for (moves) |move| {
+        switch (move.dst) {
+            .reg => {},
+            .stack => |offset| {
+                if (offset < 0 or offset > spill_imm9_max) return true;
+            },
+        }
+    }
+    return false;
+}
+
+fn phiStackOffset(loc: @import("../machinst/parallel_copy.zig").Location) CodegenError!u32 {
+    const offset = switch (loc) {
+        .reg => return error.LoweringFailed,
+        .stack => |s| s,
+    };
+    if (offset < 0 or offset > std.math.maxInt(u32)) return error.LoweringFailed;
+    return @intCast(offset);
+}
+
+fn intReg(hw: u8) reg_mod.Reg {
+    return reg_mod.Reg.fromPReg(reg_mod.PReg.new(.int, @truncate(hw)));
+}
+
+fn intWReg(hw: u8) reg_mod.WritableReg {
+    return reg_mod.WritableReg.fromReg(intReg(hw));
+}
+
+fn appendPhiLoad(
+    insns: *std.ArrayList(a64_inst.Inst),
+    allocator: std.mem.Allocator,
+    dst_hw: u8,
+    offset: u32,
+) CodegenError!void {
+    if (offset > spill_imm9_max) {
+        try appendSpillAddr(insns, allocator, reg_mod.PReg.new(.int, @truncate(dst_hw)), offset);
+        try insns.append(allocator, .{ .ldr = .{
+            .dst = intWReg(dst_hw),
+            .base = intReg(dst_hw),
+            .offset = 0,
+            .size = .size64,
+        } });
+        return;
+    }
+    try insns.append(allocator, .{ .ldr = .{
+        .dst = intWReg(dst_hw),
+        .base = intReg(31),
+        .offset = @intCast(offset),
+        .size = .size64,
+    } });
+}
+
+fn appendPhiStore(
+    insns: *std.ArrayList(a64_inst.Inst),
+    allocator: std.mem.Allocator,
+    src_hw: u8,
+    offset: u32,
+    addr_scratch_hw: ?u8,
+) CodegenError!void {
+    if (offset > spill_imm9_max) {
+        const addr_hw = addr_scratch_hw orelse return error.LoweringFailed;
+        if (addr_hw == src_hw) return error.LoweringFailed;
+        try appendSpillAddr(insns, allocator, reg_mod.PReg.new(.int, @truncate(addr_hw)), offset);
+        try insns.append(allocator, .{ .str = .{
+            .src = intReg(src_hw),
+            .base = intReg(addr_hw),
+            .offset = 0,
+            .size = .size64,
+        } });
+        return;
+    }
+    try insns.append(allocator, .{ .str = .{
+        .src = intReg(src_hw),
+        .base = intReg(31),
+        .offset = @intCast(offset),
+        .size = .size64,
+    } });
+}
+
+fn appendPhiMoveInsts(
+    allocator: std.mem.Allocator,
+    insns: *std.ArrayList(a64_inst.Inst),
+    move: @import("../machinst/parallel_copy.zig").Move,
+    stack_scratch_hw: ?u8,
+    addr_scratch_hw: ?u8,
+) CodegenError!void {
+    if (phiLocEq(move.src, move.dst)) return;
+    switch (move.src) {
+        .reg => |src_hw| switch (move.dst) {
+            .reg => |dst_hw| {
+                try insns.append(allocator, .{ .mov_rr = .{
+                    .dst = intWReg(dst_hw),
+                    .src = intReg(src_hw),
+                    .size = .size64,
+                } });
+            },
+            .stack => {
+                try appendPhiStore(insns, allocator, src_hw, try phiStackOffset(move.dst), addr_scratch_hw);
+            },
+        },
+        .stack => switch (move.dst) {
+            .reg => |dst_hw| {
+                try appendPhiLoad(insns, allocator, dst_hw, try phiStackOffset(move.src));
+            },
+            .stack => {
+                const tmp_hw = stack_scratch_hw orelse return error.LoweringFailed;
+                try appendPhiLoad(insns, allocator, tmp_hw, try phiStackOffset(move.src));
+                try appendPhiStore(insns, allocator, tmp_hw, try phiStackOffset(move.dst), addr_scratch_hw);
+            },
+        },
+    }
+}
+
+fn replacePhiGroupInsns(
+    allocator: std.mem.Allocator,
+    vcode: *vcode_mod.VCode(a64_inst.Inst),
+    move_insn_indices: []const u32,
+    new_insns: []const a64_inst.Inst,
+) CodegenError!void {
+    if (move_insn_indices.len == 0) return;
+
+    const original_len = move_insn_indices.len;
+    const write_len = @min(original_len, new_insns.len);
+    for (new_insns[0..write_len], 0..) |inst, i| {
+        vcode.insns.items[move_insn_indices[i]] = inst;
+    }
+    for (write_len..original_len) |i| {
+        vcode.insns.items[move_insn_indices[i]] = .{ .nop = {} };
+    }
+    if (new_insns.len <= original_len) return;
+
+    const last_move_idx = move_insn_indices[original_len - 1];
+    const insert_pos = last_move_idx + 1;
+    const extra = new_insns[original_len..];
+    try vcode.insns.insertSlice(allocator, insert_pos, extra);
+
+    const shift: u32 = @intCast(extra.len);
+    for (vcode.phi_copy_groups.items) |*group| {
+        if (group.first_insn > last_move_idx) group.first_insn += shift;
+    }
+    for (vcode.blocks.items) |*block| {
+        if (block.insn_start > last_move_idx) block.insn_start += shift;
+        if (block.insn_end > last_move_idx) block.insn_end += shift;
+    }
+}
+
+fn resolvePhiCopiesWithAlloc(
+    allocator: std.mem.Allocator,
+    fn_name: []const u8,
+    vcode: *vcode_mod.VCode(a64_inst.Inst),
+    result: *linear_scan_mod.RegAllocResult,
+    spill_base_offset: u32,
+    trace_phi: bool,
+) CodegenError!bool {
+    const parallel_copy = @import("../machinst/parallel_copy.zig");
+
+    var used = false;
+    var group_idx: usize = 0;
+    while (group_idx < vcode.phi_copy_groups.items.len) : (group_idx += 1) {
+        const group = vcode.phi_copy_groups.items[group_idx];
+        var moves = std.ArrayList(parallel_copy.Move){};
+        defer moves.deinit(allocator);
+        var move_insn_indices = std.ArrayList(u32){};
+        defer move_insn_indices.deinit(allocator);
+
+        var scan_idx: usize = group.first_insn;
+        while (scan_idx < vcode.insns.items.len and move_insn_indices.items.len < group.count) : (scan_idx += 1) {
+            const inst = vcode.insns.items[scan_idx];
+            switch (inst) {
+                .mov_rr => |mov| {
+                    try move_insn_indices.append(allocator, @intCast(scan_idx));
+                    const src_vreg = mov.src.toVReg() orelse return error.LoweringFailed;
+                    const dst_vreg = mov.dst.toReg().toVReg() orelse return error.LoweringFailed;
+                    const src = try allocPhiLoc(result, src_vreg, spill_base_offset);
+                    const dst = try allocPhiLoc(result, dst_vreg, spill_base_offset);
+                    if (!phiLocEq(src, dst)) {
+                        _ = appendCanonicalPhiMove(allocator, &moves, .{
+                            .src = src,
+                            .dst = dst,
+                            .origin = move_insn_indices.items.len - 1,
+                        }) catch |err| {
+                            if (trace_phi) {
+                                tracePhiMoves(fn_name, group_idx, moves.items);
+                                std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} scan={d} reason=alloc-duplicate-dst err={s}\n", .{
+                                    fn_name,
+                                    group_idx,
+                                    group.first_insn,
+                                    group.count,
+                                    scan_idx,
+                                    @errorName(err),
+                                });
+                            }
+                            return err;
+                        };
+                    }
+                },
+                else => {},
+            }
+        }
+
+        if (move_insn_indices.items.len != group.count) return error.LoweringFailed;
+
+        const needs_resolve_temp = phiMovesHaveConflict(moves.items);
+        const resolve_temp_hw = if (needs_resolve_temp) pickPhiScratchReg(moves.items) orelse return error.LoweringFailed else null;
+        const needs_stack_scratch = phiMovesNeedStackScratch(moves.items);
+        const needs_addr_scratch = phiMovesNeedAddrScratch(moves.items);
+        const stack_scratch_hw = if (needs_stack_scratch) pickPhiScratchRegAvoid(moves.items, resolve_temp_hw) orelse return error.LoweringFailed else null;
+        const addr_scratch_hw = if (needs_addr_scratch) pickPhiScratchRegAvoid2(moves.items, resolve_temp_hw, stack_scratch_hw) orelse return error.LoweringFailed else null;
+
+        var resolved = parallel_copy.resolve(
+            allocator,
+            moves.items,
+            if (resolve_temp_hw) |hw| .{ .reg = hw } else null,
+        ) catch |err| {
+            if (trace_phi) {
+                tracePhiMoves(fn_name, group_idx, moves.items);
+                std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} reason=alloc-resolve err={s}\n", .{
+                    fn_name,
+                    group_idx,
+                    group.first_insn,
+                    group.count,
+                    @errorName(err),
+                });
+            }
+            return switch (err) {
+                error.OutOfMemory => error.OutOfMemory,
+                error.TempRequired, error.TempConflict, error.DuplicateDestination => error.LoweringFailed,
+            };
+        };
+        defer resolved.deinit(allocator);
+
+        var new_insns = std.ArrayList(a64_inst.Inst){};
+        defer new_insns.deinit(allocator);
+        for (resolved.items) |move| {
+            try appendPhiMoveInsts(allocator, &new_insns, move, stack_scratch_hw, addr_scratch_hw);
+        }
+        if (new_insns.items.len != 0) used = true;
+        try replacePhiGroupInsns(allocator, vcode, move_insn_indices.items, new_insns.items);
+    }
+
+    vcode.phi_copy_groups.clearRetainingCapacity();
+    return used;
+}
+
 fn resolvePhiCopies(ctx: *Context, target: *const Target) CodegenError!void {
     switch (target.arch) {
         .aarch64 => {
-            const lowered = &(ctx.aarch64_lowered orelse return error.LoweringFailed);
+            const trace_phi = std.posix.getenv("HOIST_TRACE_LOWER_FAIL") != null;
+            const lowered = &(ctx.aarch64_lowered orelse {
+                if (trace_phi) {
+                    std.debug.print("HOIST_PHI_FAIL fn={s} reason=no-lowered\n", .{ctx.func.name});
+                }
+                return error.LoweringFailed;
+            });
             const phi_groups = lowered.vcode.phi_copy_groups.items;
             if (phi_groups.len == 0) return;
 
             const parallel_copy = @import("../machinst/parallel_copy.zig");
             const allocator = ctx.allocator;
 
-            for (phi_groups) |group| {
+            for (phi_groups, 0..) |group, group_idx| {
                 // Extract physical register src/dst pairs from rewritten MOVs.
                 // With spill rewriting, phi MOVs may no longer be contiguous:
                 // scan forward from first_insn and collect exactly group.count
@@ -6982,35 +7603,123 @@ fn resolvePhiCopies(ctx: *Context, target: *const Target) CodegenError!void {
                     switch (inst) {
                         .mov_rr => |mov| {
                             try move_insn_indices.append(allocator, @intCast(scan_idx));
-                            const src_preg = mov.src.toRealReg() orelse return error.LoweringFailed;
-                            const dst_preg = mov.dst.toReg().toRealReg() orelse return error.LoweringFailed;
-                            if (src_preg.class() != .int or dst_preg.class() != .int) return error.LoweringFailed;
+                            const src_preg = mov.src.toRealReg() orelse {
+                                if (trace_phi) {
+                                    std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} scan={d} reason=src-not-real inst={any}\n", .{
+                                        ctx.func.name,
+                                        group_idx,
+                                        group.first_insn,
+                                        group.count,
+                                        scan_idx,
+                                        inst,
+                                    });
+                                }
+                                return error.LoweringFailed;
+                            };
+                            const dst_preg = mov.dst.toReg().toRealReg() orelse {
+                                if (trace_phi) {
+                                    std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} scan={d} reason=dst-not-real inst={any}\n", .{
+                                        ctx.func.name,
+                                        group_idx,
+                                        group.first_insn,
+                                        group.count,
+                                        scan_idx,
+                                        inst,
+                                    });
+                                }
+                                return error.LoweringFailed;
+                            };
+                            if (src_preg.class() != .int or dst_preg.class() != .int) {
+                                if (trace_phi) {
+                                    std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} scan={d} reason=non-int src_class={any} dst_class={any} inst={any}\n", .{
+                                        ctx.func.name,
+                                        group_idx,
+                                        group.first_insn,
+                                        group.count,
+                                        scan_idx,
+                                        src_preg.class(),
+                                        dst_preg.class(),
+                                        inst,
+                                    });
+                                }
+                                return error.LoweringFailed;
+                            }
                             const src_hw: u8 = src_preg.hwEnc();
                             const dst_hw: u8 = dst_preg.hwEnc();
                             if (src_hw != dst_hw) {
-                                try moves.append(allocator, .{
+                                _ = appendCanonicalPhiMove(allocator, &moves, .{
                                     .src = .{ .reg = src_hw },
                                     .dst = .{ .reg = dst_hw },
                                     .origin = moves.items.len,
-                                });
+                                }) catch |err| {
+                                    if (trace_phi) {
+                                        tracePhiMoves(ctx.func.name, group_idx, moves.items);
+                                        std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} scan={d} reason=duplicate-dst-conflict src={d} dst={d} err={s}\n", .{
+                                            ctx.func.name,
+                                            group_idx,
+                                            group.first_insn,
+                                            group.count,
+                                            scan_idx,
+                                            src_hw,
+                                            dst_hw,
+                                            @errorName(err),
+                                        });
+                                    }
+                                    return err;
+                                };
                             }
                         },
                         else => {},
                     }
                 }
 
-                if (move_insn_indices.items.len != group.count) return error.LoweringFailed;
+                if (move_insn_indices.items.len != group.count) {
+                    if (trace_phi) {
+                        std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} found={d} scan_end={d} insns={d} reason=short-moves\n", .{
+                            ctx.func.name,
+                            group_idx,
+                            group.first_insn,
+                            group.count,
+                            move_insn_indices.items.len,
+                            scan_idx,
+                            lowered.vcode.insns.items.len,
+                        });
+                    }
+                    return error.LoweringFailed;
+                }
 
                 var has_conflict = false;
                 for (moves.items, 0..) |mv, i| {
                     const dst_hw = switch (mv.dst) {
                         .reg => |r| r,
-                        .stack => return error.LoweringFailed,
+                        .stack => {
+                            if (trace_phi) {
+                                std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} move={d} reason=conflict-dst-stack\n", .{
+                                    ctx.func.name,
+                                    group_idx,
+                                    group.first_insn,
+                                    group.count,
+                                    i,
+                                });
+                            }
+                            return error.LoweringFailed;
+                        },
                     };
                     for (moves.items[i + 1 ..]) |later| {
                         const later_src_hw = switch (later.src) {
                             .reg => |r| r,
-                            .stack => return error.LoweringFailed,
+                            .stack => {
+                                if (trace_phi) {
+                                    std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} move={d} reason=conflict-src-stack\n", .{
+                                        ctx.func.name,
+                                        group_idx,
+                                        group.first_insn,
+                                        group.count,
+                                        i,
+                                    });
+                                }
+                                return error.LoweringFailed;
+                            },
                         };
                         if (dst_hw == later_src_hw) {
                             has_conflict = true;
@@ -7022,16 +7731,50 @@ fn resolvePhiCopies(ctx: *Context, target: *const Target) CodegenError!void {
 
                 if (!has_conflict or moves.items.len < 2) continue;
 
-                const scratch_hw = pickPhiScratchReg(moves.items) orelse return error.LoweringFailed;
+                const scratch_hw = pickPhiScratchReg(moves.items) orelse {
+                    if (trace_phi) {
+                        std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} moves={d} reason=no-scratch\n", .{
+                            ctx.func.name,
+                            group_idx,
+                            group.first_insn,
+                            group.count,
+                            moves.items.len,
+                        });
+                    }
+                    return error.LoweringFailed;
+                };
 
                 // Resolve using parallel copy algorithm with a conflict-free scratch.
                 var resolved = parallel_copy.resolve(
                     allocator,
                     moves.items,
                     .{ .reg = scratch_hw },
-                ) catch |err| return switch (err) {
-                    error.OutOfMemory => error.OutOfMemory,
-                    error.TempRequired, error.TempConflict, error.DuplicateDestination => error.LoweringFailed,
+                ) catch |err| {
+                    if (trace_phi) {
+                        for (moves.items, 0..) |move, move_idx| {
+                            std.debug.print("HOIST_PHI_MOVE fn={s} group={d} move={d} src={any} dst={any} origin={d}\n", .{
+                                ctx.func.name,
+                                group_idx,
+                                move_idx,
+                                move.src,
+                                move.dst,
+                                move.origin,
+                            });
+                        }
+                        std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} moves={d} scratch={d} reason=resolve err={s}\n", .{
+                            ctx.func.name,
+                            group_idx,
+                            group.first_insn,
+                            group.count,
+                            moves.items.len,
+                            scratch_hw,
+                            @errorName(err),
+                        });
+                    }
+                    return switch (err) {
+                        error.OutOfMemory => error.OutOfMemory,
+                        error.TempRequired, error.TempConflict, error.DuplicateDestination => error.LoweringFailed,
+                    };
                 };
                 defer resolved.deinit(allocator);
 
@@ -7046,11 +7789,33 @@ fn resolvePhiCopies(ctx: *Context, target: *const Target) CodegenError!void {
                         const insn_idx = move_insn_indices.items[i];
                         const src_hw = switch (move.src) {
                             .reg => |r| r,
-                            .stack => return error.LoweringFailed,
+                            .stack => {
+                                if (trace_phi) {
+                                    std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} move={d} reason=rewrite-src-stack\n", .{
+                                        ctx.func.name,
+                                        group_idx,
+                                        group.first_insn,
+                                        group.count,
+                                        i,
+                                    });
+                                }
+                                return error.LoweringFailed;
+                            },
                         };
                         const dst_hw = switch (move.dst) {
                             .reg => |r| r,
-                            .stack => return error.LoweringFailed,
+                            .stack => {
+                                if (trace_phi) {
+                                    std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} move={d} reason=rewrite-dst-stack\n", .{
+                                        ctx.func.name,
+                                        group_idx,
+                                        group.first_insn,
+                                        group.count,
+                                        i,
+                                    });
+                                }
+                                return error.LoweringFailed;
+                            },
                         };
                         const src_preg = reg_mod.PReg.new(.int, @truncate(src_hw));
                         const dst_preg = reg_mod.PReg.new(.int, @truncate(dst_hw));
@@ -7073,11 +7838,33 @@ fn resolvePhiCopies(ctx: *Context, target: *const Target) CodegenError!void {
                         const move = resolved.items[i];
                         const src_hw = switch (move.src) {
                             .reg => |r| r,
-                            .stack => return error.LoweringFailed,
+                            .stack => {
+                                if (trace_phi) {
+                                    std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} move={d} reason=expand-src-stack\n", .{
+                                        ctx.func.name,
+                                        group_idx,
+                                        group.first_insn,
+                                        group.count,
+                                        i,
+                                    });
+                                }
+                                return error.LoweringFailed;
+                            },
                         };
                         const dst_hw = switch (move.dst) {
                             .reg => |r| r,
-                            .stack => return error.LoweringFailed,
+                            .stack => {
+                                if (trace_phi) {
+                                    std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} move={d} reason=expand-dst-stack\n", .{
+                                        ctx.func.name,
+                                        group_idx,
+                                        group.first_insn,
+                                        group.count,
+                                        i,
+                                    });
+                                }
+                                return error.LoweringFailed;
+                            },
                         };
                         const src_preg = reg_mod.PReg.new(.int, @truncate(src_hw));
                         const dst_preg = reg_mod.PReg.new(.int, @truncate(dst_hw));
@@ -7096,11 +7883,33 @@ fn resolvePhiCopies(ctx: *Context, target: *const Target) CodegenError!void {
                     for (extra, 0..) |move, i| {
                         const src_hw = switch (move.src) {
                             .reg => |r| r,
-                            .stack => return error.LoweringFailed,
+                            .stack => {
+                                if (trace_phi) {
+                                    std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} move={d} reason=extra-src-stack\n", .{
+                                        ctx.func.name,
+                                        group_idx,
+                                        group.first_insn,
+                                        group.count,
+                                        group.count + i,
+                                    });
+                                }
+                                return error.LoweringFailed;
+                            },
                         };
                         const dst_hw = switch (move.dst) {
                             .reg => |r| r,
-                            .stack => return error.LoweringFailed,
+                            .stack => {
+                                if (trace_phi) {
+                                    std.debug.print("HOIST_PHI_FAIL fn={s} group={d} first={d} count={d} move={d} reason=extra-dst-stack\n", .{
+                                        ctx.func.name,
+                                        group_idx,
+                                        group.first_insn,
+                                        group.count,
+                                        group.count + i,
+                                    });
+                                }
+                                return error.LoweringFailed;
+                            },
                         };
                         const src_preg = reg_mod.PReg.new(.int, @truncate(src_hw));
                         const dst_preg = reg_mod.PReg.new(.int, @truncate(dst_hw));
@@ -7363,6 +8172,12 @@ pub const Target = struct {
     optimize: bool = true,
     /// Minimum complexity required to run e-graph optimization.
     egraph_min_complexity: u32 = default_egraph_min_complexity,
+    /// Minimum complexity required to run alias analysis.
+    alias_min_complexity: u32 = default_alias_min_complexity,
+    /// Minimum complexity required to run range optimization.
+    range_min_complexity: u32 = default_range_min_complexity,
+    /// Minimum instruction count required to fold iadd iconst in lowering.
+    fold_iadd_iconst_min_insts: usize = default_fold_iadd_iconst_min_insts,
     /// CPU features.
     features: @import("../target/features.zig").Features,
 
@@ -7386,6 +8201,9 @@ pub const Target = struct {
             .verify = false,
             .optimize = true,
             .egraph_min_complexity = default_egraph_min_complexity,
+            .alias_min_complexity = default_alias_min_complexity,
+            .range_min_complexity = default_range_min_complexity,
+            .fold_iadd_iconst_min_insts = default_fold_iadd_iconst_min_insts,
             .features = @import("../target/features.zig").Features.init(),
         };
     }
@@ -7402,6 +8220,9 @@ test "compile: target initialization" {
     try testing.expect(!target.verify);
     try testing.expect(target.optimize);
     try testing.expectEqual(default_egraph_min_complexity, target.egraph_min_complexity);
+    try testing.expectEqual(default_alias_min_complexity, target.alias_min_complexity);
+    try testing.expectEqual(default_range_min_complexity, target.range_min_complexity);
+    try testing.expectEqual(default_fold_iadd_iconst_min_insts, target.fold_iadd_iconst_min_insts);
 }
 
 test "compile: IR dump writes stage file" {
@@ -8127,6 +8948,152 @@ test "pickPhiScratchReg returns null when all candidates conflict" {
 
     const scratch = pickPhiScratchReg(&moves);
     try testing.expect(scratch == null);
+}
+
+test "appendCanonicalPhiMove drops equivalent duplicate destination" {
+    const parallel_copy = @import("../machinst/parallel_copy.zig");
+    var moves = std.ArrayList(parallel_copy.Move){};
+    defer moves.deinit(testing.allocator);
+
+    try testing.expect(try appendCanonicalPhiMove(testing.allocator, &moves, .{
+        .src = .{ .reg = 9 },
+        .dst = .{ .reg = 10 },
+        .origin = 0,
+    }));
+    try testing.expect(!try appendCanonicalPhiMove(testing.allocator, &moves, .{
+        .src = .{ .reg = 9 },
+        .dst = .{ .reg = 10 },
+        .origin = 1,
+    }));
+
+    try testing.expectEqual(@as(usize, 1), moves.items.len);
+    try testing.expectEqual(@as(u8, 9), moves.items[0].src.reg);
+    try testing.expectEqual(@as(u8, 10), moves.items[0].dst.reg);
+}
+
+test "appendCanonicalPhiMove rejects mismatched duplicate destination" {
+    const parallel_copy = @import("../machinst/parallel_copy.zig");
+    var moves = std.ArrayList(parallel_copy.Move){};
+    defer moves.deinit(testing.allocator);
+
+    try testing.expect(try appendCanonicalPhiMove(testing.allocator, &moves, .{
+        .src = .{ .reg = 9 },
+        .dst = .{ .reg = 10 },
+        .origin = 0,
+    }));
+    try testing.expectError(error.LoweringFailed, appendCanonicalPhiMove(testing.allocator, &moves, .{
+        .src = .{ .reg = 11 },
+        .dst = .{ .reg = 10 },
+        .origin = 1,
+    }));
+}
+
+test "resolvePhiCopiesWithAlloc emits stores for spilled phi destinations" {
+    var vcode = vcode_mod.VCode(a64_inst.Inst).init(testing.allocator);
+    defer vcode.deinit();
+
+    const src_a = reg_mod.VReg.new(210, .int);
+    const src_b = reg_mod.VReg.new(211, .int);
+    const dst_a = reg_mod.VReg.new(212, .int);
+    const dst_b = reg_mod.VReg.new(213, .int);
+
+    try vcode.insns.append(testing.allocator, .{ .mov_rr = .{
+        .dst = reg_mod.WritableReg.fromVReg(dst_a),
+        .src = reg_mod.Reg.fromVReg(src_a),
+        .size = .size64,
+    } });
+    try vcode.insns.append(testing.allocator, .{ .mov_rr = .{
+        .dst = reg_mod.WritableReg.fromVReg(dst_b),
+        .src = reg_mod.Reg.fromVReg(src_b),
+        .size = .size64,
+    } });
+    try vcode.phi_copy_groups.append(testing.allocator, .{ .first_insn = 0, .count = 2 });
+
+    var result = linear_scan_mod.RegAllocResult.init(testing.allocator);
+    defer result.deinit();
+    try result.assign(src_a, reg_mod.PReg.new(.int, 23));
+    try result.assign(src_b, reg_mod.PReg.new(.int, 20));
+    try result.assignSpillSlot(dst_a, linear_scan_mod.SpillSlot.init(0));
+    try result.assignSpillSlot(dst_b, linear_scan_mod.SpillSlot.init(8));
+
+    try testing.expect(try resolvePhiCopiesWithAlloc(testing.allocator, "test", &vcode, &result, 16, false));
+
+    try testing.expectEqual(@as(usize, 0), vcode.phi_copy_groups.items.len);
+    try testing.expectEqual(@as(usize, 2), vcode.insns.items.len);
+    try testing.expectEqual(a64_inst.Inst.str, @as(std.meta.Tag(a64_inst.Inst), vcode.insns.items[0]));
+    try testing.expectEqual(a64_inst.Inst.str, @as(std.meta.Tag(a64_inst.Inst), vcode.insns.items[1]));
+    try testing.expectEqual(@as(u6, 23), vcode.insns.items[0].str.src.toRealReg().?.hwEnc());
+    try testing.expectEqual(@as(i16, 16), vcode.insns.items[0].str.offset);
+    try testing.expectEqual(@as(u6, 20), vcode.insns.items[1].str.src.toRealReg().?.hwEnc());
+    try testing.expectEqual(@as(i16, 24), vcode.insns.items[1].str.offset);
+}
+
+test "appendPhiMoveInsts lowers stack to stack through scratch" {
+    const parallel_copy = @import("../machinst/parallel_copy.zig");
+    var insns = std.ArrayList(a64_inst.Inst){};
+    defer insns.deinit(testing.allocator);
+
+    try appendPhiMoveInsts(testing.allocator, &insns, parallel_copy.Move{
+        .src = .{ .stack = 24 },
+        .dst = .{ .stack = 40 },
+        .origin = 0,
+    }, 16, null);
+
+    try testing.expectEqual(@as(usize, 2), insns.items.len);
+    try testing.expectEqual(a64_inst.Inst.ldr, @as(std.meta.Tag(a64_inst.Inst), insns.items[0]));
+    try testing.expectEqual(a64_inst.Inst.str, @as(std.meta.Tag(a64_inst.Inst), insns.items[1]));
+    try testing.expectEqual(@as(u6, 16), insns.items[0].ldr.dst.toReg().toRealReg().?.hwEnc());
+    try testing.expectEqual(@as(i16, 24), insns.items[0].ldr.offset);
+    try testing.expectEqual(@as(u6, 16), insns.items[1].str.src.toRealReg().?.hwEnc());
+    try testing.expectEqual(@as(i16, 40), insns.items[1].str.offset);
+}
+
+test "collectUsedValues ignores dead block params" {
+    var sig = ir.Signature.init(testing.allocator, .fast);
+    try sig.returns.append(testing.allocator, sig_mod.AbiParam.new(ir.I64));
+    var func = try Function.init(testing.allocator, "used_params", sig);
+    defer func.deinit();
+
+    var builder = try ir.FunctionBuilder.init(testing.allocator, &func);
+    defer builder.deinit();
+    const block = try builder.createBlock();
+    builder.switchToBlock(block);
+
+    const live_param = try builder.appendBlockParam(block, ir.I64);
+    const dead_param_a = try builder.appendBlockParam(block, ir.I64);
+    const dead_param_b = try builder.appendBlockParam(block, ir.I64);
+    try builder.retValues(&.{live_param});
+
+    var used = try collectUsedValues(testing.allocator, &func);
+    defer used.deinit(testing.allocator);
+
+    try testing.expect(valueIsUsed(&used, live_param));
+    try testing.expect(!valueIsUsed(&used, dead_param_a));
+    try testing.expect(!valueIsUsed(&used, dead_param_b));
+}
+
+test "extendBlockParamLiveRanges starts params at block entry" {
+    var info = liveness_mod.LivenessInfo.init(testing.allocator);
+    defer info.deinit();
+
+    const param = reg_mod.VReg.new(200, .int);
+    try info.addRange(.{
+        .vreg = param,
+        .start_inst = 10,
+        .end_inst = 20,
+        .reg_class = .int,
+    });
+
+    var vcode = vcode_mod.VCode(a64_inst.Inst).init(testing.allocator);
+    defer vcode.deinit();
+    const params = [_]reg_mod.VReg{param};
+    _ = try vcode.startBlock(&params);
+
+    try extendBlockParamLiveRanges(&info, &vcode, "test", false);
+
+    const range = info.getRange(param) orelse return error.TestExpectedEqual;
+    try testing.expectEqual(@as(u32, 0), range.start_inst);
+    try testing.expectEqual(@as(u32, 20), range.end_inst);
 }
 
 test "compile: emits prologue and epilogue" {
